@@ -1,0 +1,52 @@
+/**
+ * The request types and their monthly limits: KP's decisions of 16 Oct 2026
+ * (docs/03-decisions.md, "Request limits").
+ *
+ * One table, so that the request endpoints count against the same numbers the app shows. Limits
+ * are per employee per calendar month. HR is to be able to change them later (task C6); until
+ * then this file is where they live.
+ *
+ *   limit null   no monthly limit (each request still needs approval)
+ *   unit         'count' counts requests; 'minutes' adds up the minutes asked for in the month
+ *   phase        the build phase that ships the request type (ADR-0013)
+ *
+ * Work from home stays in the table, switched off, because KP decided it is not allowed but the
+ * design keeps room to switch it on later. Leave without pay has no limit until KP sets one
+ * (still open).
+ */
+const REQUEST_TYPES = Object.freeze([
+  { type: 'on_duty', offered: true, limit: null, unit: 'count', phase: 1 },
+  { type: 'fix_a_day', offered: true, limit: 3, unit: 'count', phase: 1 },
+  { type: 'excuse_late', offered: true, limit: 3, unit: 'count', phase: 1 },
+  { type: 'short_leave', offered: true, limit: 180, unit: 'minutes', phase: 2 },
+  // The database already allows one CL a month with a unique index; this is the same rule.
+  { type: 'leave_cl', offered: true, limit: 1, unit: 'count', phase: 1 },
+  { type: 'leave_lwp', offered: true, limit: null, unit: 'count', phase: 1 },
+  { type: 'wfh', offered: false, limit: 0, unit: 'count', phase: 1 },
+].map((t) => Object.freeze(t)));
+
+/** Last month's requests close on the 5th of this month: payroll is run from them after that. */
+const PAYROLL_CUTOFF_DAY = 5;
+
+/** A request may be for a day this month or last month, never earlier. */
+const REACH_BACK_MONTHS = 1;
+
+const requestType = (type) => REQUEST_TYPES.find((t) => t.type === type) || null;
+
+const offeredRequestTypes = () => REQUEST_TYPES.filter((t) => t.offered).map((t) => t.type);
+
+/** The `requests` block of the capability document, as fresh objects so a caller cannot edit the table. */
+const requestPolicy = () => ({
+  types: REQUEST_TYPES.map((t) => ({ ...t })),
+  payroll_cutoff_day: PAYROLL_CUTOFF_DAY,
+  reach_back_months: REACH_BACK_MONTHS,
+});
+
+module.exports = {
+  REQUEST_TYPES,
+  PAYROLL_CUTOFF_DAY,
+  REACH_BACK_MONTHS,
+  requestType,
+  offeredRequestTypes,
+  requestPolicy,
+};
