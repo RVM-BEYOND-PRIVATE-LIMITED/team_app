@@ -139,7 +139,16 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-None yet. Wave 1 needs no table. From Wave 2 on, every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, and an agent checks it read-only afterwards.
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, in this order, and an agent checks it read-only afterwards. `npm run test:migrations` applies them all twice to a throwaway Postgres in Docker, checks row-level security and the constraints, and rolls them back.
+
+| Migration (`db/migrations`) | Adds | Used by |
+| --- | --- | --- |
+| `20261105000000_hr_ess_audit.sql` | `hr_ess_audit`: HR's phone resets, data-request resolutions, and reads and changes of personal details | B8, A8, E9 |
+| `20261105000001_hr_ess_data_requests.sql` | `hr_ess_data_requests` | A8 |
+| `20261105000002_hr_ess_personal_details.sql` | `hr_ess_personal_details` | E9 |
+| `20261105000003_hr_ess_mock_location_reports.sql` | `hr_ess_mock_location_reports` | B14 |
+
+B1 (`GET /api/ess/attendance/day`) and B8 (the phone list and reset) need no migration of their own; they read the Scheduler's tables from `20261015000004` to `20261023000000`, which are still to be confirmed in production.
 
 ## Risks
 
