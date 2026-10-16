@@ -14,7 +14,7 @@ info:
     | **ESS** | `ess` | team_app (`apps/ess-api`), its own process on its own host name (ADR-0019) | `https://<ESS host>/api`, so its paths start `/api/ess` | How the new employee self-service API behaves. Changing it is a team_app PR that updates this file in the same PR. |
     | **Scheduler (existing)** | `scheduler` | Scheduler_Backend, the live system of record | `https://scheduler.rvmcad.org/api` | How the Scheduler's code behaves at commit `c28b9ca` (15 Oct 2026), exactly as it is. Nothing here implies a change: Team RVM changes nothing in the Scheduler (ADR-0018). `POST /users/reset-password` is listed only so the app never calls it. |
 
-    The ESS host name is not chosen yet: KP picks it and adds the DNS record (ADR-0019). The server variable `essHost` holds the ADR's example, `team-api.rvmcad.org`.
+    The ESS host name is `team-api.rvmcad.org` (KP, 16 Oct 2026; ADR-0019). The server variable `essHost` defaults to it.
 
     The app calls the Scheduler directly for sign-in and punching (ADR-0006). The ESS never relays a Scheduler call, and one sign-in token works on both hosts. The punch cookie belongs to the Scheduler's host.
 
@@ -76,7 +76,7 @@ paths:
         variables:
           essHost:
             default: team-api.rvmcad.org
-            description: Not chosen yet. KP picks the name and adds the DNS record (ADR-0019); team-api.rvmcad.org is the ADR's example.
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
     get:
       operationId: getHealth
       tags: [ESS]
@@ -135,7 +135,7 @@ paths:
         variables:
           essHost:
             default: team-api.rvmcad.org
-            description: Not chosen yet. KP picks the name and adds the DNS record (ADR-0019); team-api.rvmcad.org is the ADR's example.
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
     get:
       operationId: getMe
       tags: [ESS]
@@ -230,7 +230,7 @@ paths:
         variables:
           essHost:
             default: team-api.rvmcad.org
-            description: Not chosen yet. KP picks the name and adds the DNS record (ADR-0019); team-api.rvmcad.org is the ADR's example.
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
     get:
       operationId: getMyCapabilities
       tags: [ESS]

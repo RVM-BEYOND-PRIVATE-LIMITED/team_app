@@ -18,7 +18,7 @@ Read it in this order:
 
 There are two servers ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)), and each path is relative to its own:
 - The Scheduler's paths (`/users/*`, `/hr/my-attendance/*`) use the top-level server, `https://scheduler.rvmcad.org/api`.
-- The ESS paths (`/ess/*`) name their own server, `https://{essHost}/api`. So `/ess/health` is `https://<ESS host>/api/ess/health`. The host name is not chosen yet; the variable's default, `team-api.rvmcad.org`, is the ADR's example.
+- The ESS paths (`/ess/*`) name their own server, `https://{essHost}/api`. So `/ess/health` is `https://team-api.rvmcad.org/api/ess/health`. KP chose the host name on 16 Oct 2026 ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)), and it is the variable's default.
 
 The device cookie's path, `/api/hr/my-attendance`, is the full path on the Scheduler's host.
 
