@@ -17,7 +17,7 @@ const JSON_BODY_LIMIT = '16kb';
  * with an in-memory store and a fixed clock.
  *
  * Everything is under /api/ess: the app calls https://<ESS host>/api/ess (ADR-0019), and the
- * ESS's own nginx block forwards it, path unchanged, to this process on 127.0.0.1:3001.
+ * ESS's own nginx block forwards it, path unchanged, to this process on 127.0.0.1:3740.
  *
  * @param {object} deps
  * @param {object} deps.config   from config.js loadConfig

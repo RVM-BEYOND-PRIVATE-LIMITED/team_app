@@ -10,6 +10,11 @@
  * src/server.js reads; PORT and HOST are set here so that they win over anything in that file
  * and over anything already in pm2's own environment. HOST keeps the port on loopback, behind
  * the ESS's own nginx file (ADR-0019).
+ *
+ * PORT is set in this one place. The deploy reads it from here for its port check, its health
+ * check and the nginx file. 3740 because the server's other services already hold 3000 (the
+ * Scheduler), 3001 (a Docker container), 3010, 3020 and 8080; the server check
+ * (.github/workflows/check-server.yml) lists them.
  */
 module.exports = {
   apps: [
@@ -25,7 +30,7 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: 'production',
-        PORT: 3001,
+        PORT: 3740,
         HOST: '127.0.0.1',
       },
     },

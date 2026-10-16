@@ -8,7 +8,7 @@
 
 ## Decision
 
-- The ESS runs on the Scheduler's server as its own pm2 process, `team-rvm-ess`, on port 3001. It listens on 127.0.0.1 only, so nginx on the same server is its only caller.
+- The ESS runs on the Scheduler's server as its own pm2 process, `team-rvm-ess`, on port 3740. It listens on 127.0.0.1 only, so nginx on the same server is its only caller. The port was 3001 until the server check of 16 Oct found a Docker container there; the server's other services also hold 3000, 3010, 3020 and 8080. It is set in one place, `apps/ess-api/ecosystem.config.cjs`, and the deploy reads it from there.
 - Its host name is **`team-api.rvmcad.org`**: an A record at GoDaddy to `13.234.232.151`, the Scheduler's server (KP, 16 Oct). The deploy reads it from the repository variable `ESS_HOST`.
 - It sits behind its own nginx server block. team_app's deploy manages that block with [`apps/ess-api/deploy/configure-nginx.sh`](../../apps/ess-api/deploy/configure-nginx.sh):
   1. It writes the block to a file of its own, `/etc/nginx/sites-available/team-rvm`.

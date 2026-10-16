@@ -1,7 +1,7 @@
 name: Check the server
 
 # A read-only look at the server before the first deploy, and any time after:
-# can the deploy log in, which Node runs there, is port 3001 free, can nginx and
+# can the deploy log in, which Node runs there, is the ESS's port free, can nginx and
 # certbot be driven, does the ESS host name point at this server. It changes
 # nothing: no file is written, no process is started or stopped, nginx is only
 # tested (`nginx -t`), never reloaded.
@@ -20,6 +20,19 @@ jobs:
     env:
       ESS_HOST: ${{ vars.ESS_HOST }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # The port is set in one place, the ESS's pm2 file, as the deploy reads it.
+      - name: The ESS's port
+        run: |
+          port=$(node -p "require('./apps/ess-api/ecosystem.config.cjs').apps[0].env.PORT")
+          case "$port" in
+            ''|*[!0-9]*) echo "::error::apps/ess-api/ecosystem.config.cjs has no numeric PORT."; exit 1 ;;
+          esac
+          echo "The ESS's port: ${port}"
+          echo "ESS_PORT=${port}" >> "$GITHUB_ENV"
+
       - name: Settings present
         env:
           DEPLOY_HOST: ${{ secrets.HOST }}
@@ -83,7 +96,8 @@ jobs:
           DEPLOY_HOST: ${{ secrets.HOST }}
           DEPLOY_USER: ${{ secrets.USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -l -s' << 'ENDSSH'
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "ESS_PORT='${ESS_PORT}' bash -l -s" << 'ENDSSH'
           set -u
           ok() { echo "  OK    $*"; }
           fail() { echo "::error::$*"; failed=1; }
@@ -104,10 +118,10 @@ jobs:
             pm2 ls --no-color 2> /dev/null | sed 's/^/    /'
           else fail "pm2 is not on the PATH."; fi
 
-          if ss -ltn | awk '{print $4}' | grep -Eq '(^|:)3001$'; then
-            if pm2 describe team-rvm-ess > /dev/null 2>&1; then ok "port 3001 is the ESS"
-            else fail "port 3001 is taken by something other than the ESS."; fi
-          else ok "port 3001 is free"; fi
+          if ss -ltn | awk '{print $4}' | grep -Eq "(^|:)${ESS_PORT}\$"; then
+            if pm2 describe team-rvm-ess > /dev/null 2>&1; then ok "port ${ESS_PORT} is the ESS"
+            else fail "port ${ESS_PORT}, the ESS's port in ecosystem.config.cjs, is taken by something other than the ESS."; fi
+          else ok "port ${ESS_PORT} (the ESS's) is free"; fi
           # Every listening TCP port and the process holding it (the pid matches pm2's table
           # above), so a free port can be chosen without guessing.
           echo "  listening TCP ports:"

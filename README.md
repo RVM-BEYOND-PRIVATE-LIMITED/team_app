@@ -38,7 +38,7 @@ To run the ESS locally, copy `apps/ess-api/.env.example` to `apps/ess-api/.env`,
 
 ```bash
 npm start --workspace=apps/ess-api
-curl http://127.0.0.1:3001/api/ess/health
+curl http://127.0.0.1:3740/api/ess/health
 ```
 
 The settings, endpoints and error codes are in [apps/ess-api/README.md](apps/ess-api/README.md).

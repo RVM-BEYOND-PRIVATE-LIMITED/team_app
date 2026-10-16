@@ -3,7 +3,10 @@
 # (ADR-0019). Run on the server by .github/workflows/deploy-ess.yml, after
 # the ESS process is up:
 #
-#   ESS_HOST=team-api.example.org bash apps/ess-api/deploy/configure-nginx.sh
+#   ESS_HOST=team-api.example.org ESS_PORT=3740 bash apps/ess-api/deploy/configure-nginx.sh
+#
+# ESS_PORT is the port pm2 gives the ESS (apps/ess-api/ecosystem.config.cjs),
+# which the deploy reads from that file, so the port is set in one place.
 #
 # nginx is shared with the Scheduler, and the Scheduler's deploy stops when
 # `nginx -t` fails for any site. So a broken file from here would block the
@@ -26,6 +29,14 @@ LAST_GOOD="$STATE_DIR/nginx-team-rvm.last-good.conf"
 
 ESS_HOST="${ESS_HOST:-}"
 ESS_HOST="$(printf '%s' "$ESS_HOST" | tr '[:upper:]' '[:lower:]')"
+ESS_PORT="${ESS_PORT:-}"
+
+# The port goes into the nginx file too: digits only, and never a port the
+# server's other services hold by convention (3000 is the Scheduler).
+if ! printf '%s' "$ESS_PORT" | grep -Eq '^[1-9][0-9]{3,4}$' || [ "$ESS_PORT" -gt 65535 ] || [ "$ESS_PORT" = 3000 ]; then
+  echo "::error::ESS_PORT '${ESS_PORT}' is not a usable port (1000 to 65535, and not the Scheduler's 3000)."
+  exit 1
+fi
 
 # The name goes into an nginx file and a certbot command, so only a plain
 # host name is accepted.
@@ -62,7 +73,7 @@ sudo mkdir -p "$ACME_ROOT"
 install_conf() {
   local template="$1" rendered
   rendered="$(mktemp)"
-  sed "s/__ESS_HOST__/${ESS_HOST}/g" "$template" > "$rendered"
+  sed -e "s/__ESS_HOST__/${ESS_HOST}/g" -e "s/__ESS_PORT__/${ESS_PORT}/g" "$template" > "$rendered"
   sudo tee "$CONF" > /dev/null < "$rendered"
   sudo ln -sf "$CONF" "$LINK"
   if sudo nginx -t; then

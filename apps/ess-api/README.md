@@ -1,6 +1,6 @@
 # ESS API (`apps/ess-api`)
 
-The Team RVM employee self-service API. It runs as its own pm2 process (`team-rvm-ess`, port 3001) on the Scheduler's server ([ADR-0005](../../docs/adr/0005-separate-ess-service.md)) and serves everything under `/api/ess`. It is reached on a host name of its own, `https://team-api.rvmcad.org/api/ess` ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)), through an nginx file that the deploy writes from `deploy/nginx/` ([docs/05-deploy.md](../../docs/05-deploy.md)).
+The Team RVM employee self-service API. It runs as its own pm2 process (`team-rvm-ess`, port 3740) on the Scheduler's server ([ADR-0005](../../docs/adr/0005-separate-ess-service.md)) and serves everything under `/api/ess`. It is reached on a host name of its own, `https://team-api.rvmcad.org/api/ess` ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)), through an nginx file that the deploy writes from `deploy/nginx/` ([docs/05-deploy.md](../../docs/05-deploy.md)).
 
 - **The Scheduler stays the system of record.** The ESS shares its Supabase database through the service key and reads the Scheduler's tables; it never writes them directly ([ADR-0003](../../docs/adr/0003-scheduler-is-system-of-record.md)).
 - **One sign-in works for both.** The ESS accepts the tokens the Scheduler issues, the portal JWT and the attendance session ([ADR-0006](../../docs/adr/0006-app-calls-scheduler-directly.md)). It never relays calls to the Scheduler.
@@ -32,8 +32,8 @@ Without it those checks are skipped, and that includes CI, which cannot read the
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `PORT` | no, 3001 | Port to listen on. pm2 sets 3001 |
-| `HOST` | no, `127.0.0.1` | Address to listen on. Loopback, because nginx on the same server is the only caller: point its `proxy_pass` at `http://127.0.0.1:3001`. Opening the port to the network would take tokens over plain HTTP and let a caller choose its own rate-limit bucket with a forged `X-Forwarded-For` |
+| `PORT` | no, 3740 | Port to listen on. pm2 sets 3740 (`ecosystem.config.cjs`, the one place it is set) |
+| `HOST` | no, `127.0.0.1` | Address to listen on. Loopback, because nginx on the same server is the only caller: point its `proxy_pass` at `http://127.0.0.1:3740`. Opening the port to the network would take tokens over plain HTTP and let a caller choose its own rate-limit bucket with a forged `X-Forwarded-For` |
 | `JWT_SECRET` | **yes** | The Scheduler's own `JWT_SECRET`, byte for byte, at least 32 characters. Used to verify the Scheduler's tokens |
 | `SUPABASE_URL` | **yes** | The Scheduler's Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | **yes** | Its service-role key |
@@ -81,6 +81,6 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 
 ## Running it
 
-`ecosystem.config.cjs` runs one instance in fork mode, named `team-rvm-ess`, with `PORT=3001`, listening on `127.0.0.1` (`HOST`). It must stay one instance: the rate limits are counted in memory, and the background jobs still to come must run once. The deploy is `.github/workflows/deploy-ess.yml` ([ADR-0011](../../docs/adr/0011-ci-merge-and-auto-deploy.md)). After the process answers, it runs `deploy/configure-nginx.sh` on the server. That script writes the ESS's own nginx file (`/etc/nginx/sites-available/team-rvm`), gets its certificate with certbot, and reloads nginx only when `nginx -t` passes for the whole server, putting the last good file back when it fails ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)). The Scheduler's nginx files are never written ([ADR-0018](../../docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)). `deploy/test-nginx.sh` runs each case against a real nginx in a container; CI runs it on every push.
+`ecosystem.config.cjs` runs one instance in fork mode, named `team-rvm-ess`, with `PORT=3740`, listening on `127.0.0.1` (`HOST`). It must stay one instance: the rate limits are counted in memory, and the background jobs still to come must run once. The deploy is `.github/workflows/deploy-ess.yml` ([ADR-0011](../../docs/adr/0011-ci-merge-and-auto-deploy.md)). After the process answers, it runs `deploy/configure-nginx.sh` on the server. That script writes the ESS's own nginx file (`/etc/nginx/sites-available/team-rvm`), gets its certificate with certbot, and reloads nginx only when `nginx -t` passes for the whole server, putting the last good file back when it fails ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)). The Scheduler's nginx files are never written ([ADR-0018](../../docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)). `deploy/test-nginx.sh` runs each case against a real nginx in a container; CI runs it on every push.
 
 `@supabase/supabase-js` is held below 2.110, because 2.110 and later need Node 22 and the server's Node version is not confirmed ([ADR-0017](../../docs/adr/0017-repository-layout-and-tooling.md)). Lift the cap once the server runs Node 22 or later. The development tools (ESLint 10, vitest 4) need Node 20.19 or later.

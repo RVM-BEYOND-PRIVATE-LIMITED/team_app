@@ -20,7 +20,7 @@ The ESS is the new employee self-service API in `apps/ess-api`. It runs on the S
 | On the server | Touched by team_app's deploy |
 | --- | --- |
 | `/home/ubuntu/team_app/` | Yes: the code, and `apps/ess-api/.env` (mode 600) |
-| pm2 process `team-rvm-ess` (port 3001, listening on 127.0.0.1 only) | Yes: started or reloaded by name |
+| pm2 process `team-rvm-ess` (port 3740, listening on 127.0.0.1 only) | Yes: started or reloaded by name |
 | `/etc/nginx/sites-available/team-rvm` and its link in `sites-enabled` | Yes |
 | `/var/www/team-rvm-acme/` | Yes: certbot's challenge directory |
 | The certbot certificate named `team-api.rvmcad.org` | Yes |
@@ -36,7 +36,7 @@ nginx is shared, and the Scheduler's deploy stops when `nginx -t` fails for any 
 Actions, then **Check the server**, then **Run workflow**. It only reads: no file is written, no process is started or stopped, and nginx is tested, never reloaded. It reports:
 - that the deploy key logs in;
 - the server's Node version (the ESS needs Node 20 or later, and shares the Scheduler's Node);
-- that port 3001 is free;
+- that the ESS's port, 3740, is free, and which process holds every listening port;
 - that `sudo`, nginx and certbot work as the deploy needs;
 - that `nginx -t` passes today, before any team_app change;
 - that `team-api.rvmcad.org` points at the server the deploy logs in to.
@@ -80,7 +80,7 @@ The deploy writes these into `apps/ess-api/.env`, from the secrets and variables
 | --- | --- | --- |
 | `JWT_SECRET` | Yes, at least 32 characters | Secret: the Scheduler's own value, exactly. A different value makes the ESS refuse every sign-in |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | Yes | Secrets: the Scheduler's own values |
-| `PORT`, `HOST` | No: 3001 and 127.0.0.1 | Set by pm2 (`apps/ess-api/ecosystem.config.cjs`) |
+| `PORT`, `HOST` | No: 3740 and 127.0.0.1 | Set by pm2 (`apps/ess-api/ecosystem.config.cjs`) |
 | `ESS_ENABLED` | No: on unless `false` | Variable |
 | `GIT_SHA` | No | The deploy writes the commit; `/api/ess/health` reports it as the version |
 | `MIN_APP_VERSION`, `LATEST_APP_VERSION` | No | Variables, once the app ships |

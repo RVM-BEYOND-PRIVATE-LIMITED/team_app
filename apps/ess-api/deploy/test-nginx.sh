@@ -81,7 +81,23 @@ reset_state() {
   rm -rf /etc/letsencrypt/live /root/.team-rvm /var/www/team-rvm-acme /tmp/certbot.calls
   rm -f /etc/nginx/sites-available/team-rvm /etc/nginx/sites-enabled/team-rvm
 }
-run() { ESS_HOST="$1" bash "$SRC/configure-nginx.sh" > /tmp/out.txt 2>&1; echo $?; }
+# The ESS's port as the deploy passes it (from ecosystem.config.cjs), unless a
+# scenario gives another.
+PORT=3740
+run() { ESS_HOST="$1" ESS_PORT="${2-$PORT}" bash "$SRC/configure-nginx.sh" > /tmp/out.txt 2>&1; echo $?; }
+
+# A stand-in for the ESS on its port: it echoes the path, the forwarded-for
+# chain and the host it was given, so the proxy settings can be checked.
+cat > /etc/nginx/conf.d/stand-in-ess.conf <<EOF
+server {
+    listen 127.0.0.1:${PORT};
+    location /api/ess/ {
+        default_type application/json;
+        return 200 '{"path":"\$request_uri","xff":"\$http_x_forwarded_for","host":"\$http_host"}';
+    }
+}
+EOF
+nginx -s reload
 
 # 1. Fresh server, certbot succeeds: ends on the HTTPS file, enabled, nginx valid.
 reset_state
@@ -91,27 +107,37 @@ if [ "$rc" = 0 ] && grep -q 'listen 443 ssl' /etc/nginx/sites-available/team-rvm
    && grep -q -- '--cert-name team-api.example.org' /tmp/certbot.calls \
    && grep -q -- '-w /var/www/team-rvm-acme' /tmp/certbot.calls \
    && cmp -s /etc/nginx/sites-available/team-rvm /root/.team-rvm/nginx-team-rvm.last-good.conf \
-   && ! grep -q '__ESS_HOST__' /etc/nginx/sites-available/team-rvm; then
-  pass "fresh server: HTTP stage, certificate, then HTTPS"
+   && grep -q "proxy_pass         http://127.0.0.1:${PORT};" /etc/nginx/sites-available/team-rvm \
+   && ! grep -q '__ESS_' /etc/nginx/sites-available/team-rvm; then
+  pass "fresh server: HTTP stage, certificate, then HTTPS on port ${PORT}"
 else fail "fresh server (rc=$rc)"; cat /tmp/out.txt; fi
 
 # Port 80 redirects, but still serves the challenge directory for renewals.
-# On 443 the API path goes to the proxy (no ESS here, so 502) and any other
-# path gets the JSON 404. nginx -s reload returns before the old workers
-# have gone, so give them a moment.
+# On 443 the API path reaches the ESS unchanged, with nginx's own address as
+# the last forwarded-for entry (the one the ESS trusts), and any other path
+# gets the JSON 404. nginx -s reload returns before the old workers have gone,
+# so give them a moment.
 sleep 1
 expect() { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1 (got '$2')"; fi; }
 H='Host: team-api.example.org'
+R443='--resolve team-api.example.org:443:127.0.0.1'
 expect "port 80 redirects to HTTPS" \
   "$(curl -s -o /dev/null -w '%{http_code}' -H "$H" http://127.0.0.1/api/ess/health)" 301
 mkdir -p /var/www/team-rvm-acme/.well-known/acme-challenge
 echo token-123 > /var/www/team-rvm-acme/.well-known/acme-challenge/probe
 expect "challenge path served on port 80" \
   "$(curl -s -H "$H" http://127.0.0.1/.well-known/acme-challenge/probe)" token-123
-expect "443 /api/ess/ goes to the proxy (502 with no ESS)" \
-  "$(curl -sk -o /dev/null -w '%{http_code}' --resolve team-api.example.org:443:127.0.0.1 https://team-api.example.org/api/ess/health)" 502
+# shellcheck disable=SC2086
+expect "443 /api/ess/ reaches the ESS port with the path unchanged" \
+  "$(curl -sk $R443 https://team-api.example.org/api/ess/health?x=1)" \
+  '{"path":"/api/ess/health?x=1","xff":"127.0.0.1","host":"team-api.example.org"}'
+# shellcheck disable=SC2086
+expect "a forged X-Forwarded-For stays to the left of nginx's own entry" \
+  "$(curl -sk $R443 -H 'X-Forwarded-For: 203.0.113.99' https://team-api.example.org/api/ess/me)" \
+  '{"path":"/api/ess/me","xff":"203.0.113.99, 127.0.0.1","host":"team-api.example.org"}'
+# shellcheck disable=SC2086
 expect "443 other paths: JSON 404" \
-  "$(curl -sk --resolve team-api.example.org:443:127.0.0.1 https://team-api.example.org/anything)" '{"error":"Not found","code":"NOT_FOUND"}'
+  "$(curl -sk $R443 https://team-api.example.org/anything)" '{"error":"Not found","code":"NOT_FOUND"}'
 expect "the Scheduler's site still answers" \
   "$(curl -s -H 'Host: scheduler.rvmcad.org' http://127.0.0.1/)" scheduler
 
@@ -197,6 +223,16 @@ rc=$(FAIL_CERTBOT=1 run api.shop.example.org)
 if [ "$rc" = 0 ]; then pass "similar but different name accepted"
 else fail "similar name refused (rc=$rc)"; cat /tmp/out.txt; fi
 rm -f /etc/nginx/sites-enabled/other /etc/nginx/sites-available/other
+
+# 9. Ports refused before anything is written: empty, not digits, the
+#    Scheduler's 3000, below 1000, above 65535, and an attempt to inject text.
+for bad in "" "abc" "3000" "80" "70000" "3740;evil" "3740 x"; do
+  reset_state
+  rc=$(run team-api.example.org "$bad")
+  if [ "$rc" != 0 ] && [ ! -e /etc/nginx/sites-available/team-rvm ]; then
+    pass "refused port '$bad'"
+  else fail "accepted port '$bad' (rc=$rc)"; cat /tmp/out.txt; fi
+done
 
 nginx -s quit 2>/dev/null
 echo

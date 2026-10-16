@@ -10,7 +10,7 @@ describe('loadConfig', () => {
   it('fills in the defaults', () => {
     const config = load();
     expect(config).toMatchObject({
-      port: 3001,
+      port: 3740,
       host: '127.0.0.1',
       jwtSecret: TEST_JWT_SECRET,
       supabaseUrl: TEST_ENV.SUPABASE_URL,
@@ -33,7 +33,7 @@ describe('loadConfig', () => {
 
   it('reads PORT', () => {
     expect(load({ PORT: '8080' }).port).toBe(8080);
-    expect(load({ PORT: '' }).port).toBe(3001);
+    expect(load({ PORT: '' }).port).toBe(3740);
     expect(() => load({ PORT: 'eighty' })).toThrow(/PORT/);
     expect(() => load({ PORT: '70000' })).toThrow(/PORT/);
   });

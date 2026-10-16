@@ -21,7 +21,7 @@
   5. writes and tests its own nginx block ([ADR-0019](0019-ess-on-its-own-subdomain.md));
   6. checks `https://team-api.rvmcad.org/api/ess/health` from outside.
 - **A safety switch.** The deploy runs only when the repository variable `ESS_DEPLOY_ENABLED` is `true`, so merging can start before the server, the DNS record and the secrets are ready.
-- **A read-only server check.** `.github/workflows/check-server.yml`, run by hand, logs in with the deploy key and reports what the deploy depends on (Node, pm2, port 3001, sudo, nginx, certbot, DNS) without changing anything.
+- **A read-only server check.** `.github/workflows/check-server.yml`, run by hand, logs in with the deploy key and reports what the deploy depends on (Node, pm2, the ESS's port and every listening port, sudo, nginx, certbot, DNS) without changing anything.
 - **Merging.** KP and the mobile developer may both merge to `main`. For now, no second review is required.
 - **Branches.** Branches are named `feat/<topic>`, `fix/<topic>` or `docs/<topic>`, from `origin/main`.
 - **Agents.** On 16 Oct KP told the agents to push team_app work to `main` as each piece is finished, once its lint and tests pass ("Simultaneously start pushing the team app work on main as well"). They still ask KP before anything else that reaches production, such as turning on `ESS_DEPLOY_ENABLED` or running a migration.

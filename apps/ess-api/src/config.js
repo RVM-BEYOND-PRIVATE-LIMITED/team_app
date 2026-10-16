@@ -19,7 +19,7 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A
 const version = () => z.string().trim().regex(SEMVER, 'must be a version such as 1.4.0');
 
 const schema = z.object({
-  PORT: z.preprocess(blank, z.coerce.number().int().min(1).max(65535).default(3001)),
+  PORT: z.preprocess(blank, z.coerce.number().int().min(1).max(65535).default(3740)),
   // Loopback unless told otherwise: nginx on the same server is the only caller. A port open to
   // the outside would take tokens over plain HTTP, and would let a caller write its own
   // X-Forwarded-For and choose its rate-limit bucket (trust proxy, app.js).

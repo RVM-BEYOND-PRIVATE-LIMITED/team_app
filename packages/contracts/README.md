@@ -32,7 +32,7 @@ npx redocly build-docs --config packages/contracts/redocly.yaml packages/contrac
 
 | Tag | `x-owner` | Served by | How it changes |
 | --- | --- | --- | --- |
-| `ESS` | `ess` | team_app, `apps/ess-api`, under `/api/ess` on its own host (port 3001 behind nginx) | A team_app PR that updates this file in the same PR |
+| `ESS` | `ess` | team_app, `apps/ess-api`, under `/api/ess` on its own host (port 3740 behind nginx) | A team_app PR that updates this file in the same PR |
 | `Scheduler (existing)` | `scheduler` | Scheduler_Backend (port 3000), the system of record, at `scheduler.rvmcad.org` | Never by Team RVM ([ADR-0018](../../docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)). If the Scheduler changes one of these endpoints on its own, a team_app PR updates this file to match. |
 
 The Scheduler entries record its behaviour at `c28b9ca` exactly, and nothing in them implies a change. The security holes found in STEP 1 stay open, so the contract keeps showing them where the app could trip over them. For example, `POST /users/reset-password` is marked deprecated and "never call" because it is still live.

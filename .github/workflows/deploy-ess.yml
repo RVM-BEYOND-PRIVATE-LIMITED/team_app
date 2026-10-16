@@ -3,7 +3,7 @@ name: Deploy ESS
 # A merge to main that touches the ESS deploys it (ADR-0011). A manual run from main deploys
 # again, for instance after a repository variable changed.
 #
-# The ESS runs on the Scheduler's server as its own pm2 process (team-rvm-ess, port 3001, bound
+# The ESS runs on the Scheduler's server as its own pm2 process (team-rvm-ess, port 3740, bound
 # to 127.0.0.1) behind its own nginx file for its own host name (ADR-0019). Nothing here touches
 # the Scheduler's directory, its pm2 process or its nginx files. docs/05-deploy.md is the
 # runbook: which secrets and variables to set, in which order, and how to switch it off.
@@ -291,10 +291,18 @@ jobs:
             exit 1
           fi
 
-          # Port 3001 must be free, or already be the ESS.
+          # The port is set in one place, ecosystem.config.cjs; the checks below and the nginx
+          # file use the same number.
+          port=$(node -p "require('./apps/ess-api/ecosystem.config.cjs').apps[0].env.PORT")
+          case "$port" in
+            ''|*[!0-9]*) echo "::error::ecosystem.config.cjs has no numeric PORT for team-rvm-ess."; exit 1 ;;
+          esac
+          echo "The ESS's port: ${port}"
+
+          # The port must be free, or already be the ESS.
           if ! pm2 describe team-rvm-ess > /dev/null 2>&1; then
-            if ss -ltn | awk '{print $4}' | grep -Eq '(^|:)3001$'; then
-              echo "::error::Something other than the ESS already listens on port 3001."
+            if ss -ltn | awk '{print $4}' | grep -Eq "(^|:)${port}\$"; then
+              echo "::error::Something other than the ESS already listens on port ${port}. Run the server check to see what holds it."
               exit 1
             fi
           fi
@@ -312,10 +320,10 @@ jobs:
           # so the wait ends only when the process started by this deploy answers, not an older one.
           want=$(sed -n 's/^APP_VERSION=//p' apps/ess-api/.env)
           if [ -z "$want" ]; then want=$(sed -n 's/^GIT_SHA=//p' apps/ess-api/.env); fi
-          echo "Waiting for /api/ess/health on port 3001 to report ${want}..."
+          echo "Waiting for /api/ess/health on port ${port} to report ${want}..."
           ok=""
           for _ in $(seq 1 20); do
-            body=$(curl -fsS --max-time 5 http://127.0.0.1:3001/api/ess/health || true)
+            body=$(curl -fsS --max-time 5 "http://127.0.0.1:${port}/api/ess/health" || true)
             case "$body" in
               *"\"version\":\"${want}\""*) ok=1; break ;;
             esac
@@ -332,7 +340,7 @@ jobs:
             *) echo "::warning::The ESS is up but cannot reach the database. Check SUPABASE_URL and SUPABASE_SERVICE_KEY." ;;
           esac
 
-          bash apps/ess-api/deploy/configure-nginx.sh
+          ESS_PORT="$port" bash apps/ess-api/deploy/configure-nginx.sh
           echo "Deployed."
           ENDSSH
 
