@@ -108,6 +108,14 @@ jobs:
             if pm2 describe team-rvm-ess > /dev/null 2>&1; then ok "port 3001 is the ESS"
             else fail "port 3001 is taken by something other than the ESS."; fi
           else ok "port 3001 is free"; fi
+          # Every listening TCP port and the process holding it (the pid matches pm2's table
+          # above), so a free port can be chosen without guessing.
+          echo "  listening TCP ports:"
+          if ports=$(sudo -n ss -ltnp 2> /dev/null); then
+            printf '%s\n' "$ports" | awk 'NR > 1 { print "    " $4 "  " $6 }' | sort -u
+          else
+            ss -ltn | awk 'NR > 1 { print "    " $4 }' | sort -u
+          fi
 
           if sudo -n true 2> /dev/null; then ok "sudo works without a password (the nginx step needs it)"
           else fail "sudo asks for a password, so the deploy cannot write its nginx file."; fi
