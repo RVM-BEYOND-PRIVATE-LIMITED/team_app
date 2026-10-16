@@ -1,0 +1,9 @@
+# Redocly CLI settings for this package's lint (npm run lint --workspace @team-rvm/contracts).
+
+# Redocly's recommended rules with every warning raised to an error, so an example that no longer
+# matches its schema fails CI instead of passing as a warning.
+extends:
+  - recommended-strict
+
+# This is a private repository: its lint runs send Redocly no usage data.
+telemetry: 'off'

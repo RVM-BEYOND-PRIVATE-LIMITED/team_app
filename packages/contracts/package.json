@@ -1,0 +1,16 @@
+{
+  "name": "@team-rvm/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Team RVM API contract: one OpenAPI 3.1 file for the ESS endpoints and the existing Scheduler endpoints the app calls (ADR-0010)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0 <21 || >=22.12.0"
+  },
+  "scripts": {
+    "lint": "redocly lint --config redocly.yaml openapi.yaml"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.56.1"
+  }
+}

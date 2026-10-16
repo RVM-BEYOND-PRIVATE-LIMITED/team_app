@@ -1,0 +1,16 @@
+{
+  "name": "team_app",
+  "private": true,
+  "description": "Team RVM: the employee self-service API (apps/ess-api) and, later, the Flutter app",
+  "workspaces": [
+    "apps/ess-api",
+    "packages/contracts"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm test --workspaces --if-present"
+  }
+}

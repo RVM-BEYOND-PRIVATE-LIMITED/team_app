@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Secrets. Real values live in the GitHub repository secrets; the deploy writes them on the server.
+.env
+.env.*
+!.env.example
+
+# Keys. The Firebase service account and the deploy's SSH key belong in the repository secrets,
+# and an app signing key in the developer's own keystore. A copy left in the working tree (for
+# `base64 -w0`, say) must never be committed.
+*.pem
+*.p12
+*.key
+*.jks
+*.keystore
+key.properties
+service-account*.json
+
+# Test and runtime output
+coverage/
+logs/
+*.log
