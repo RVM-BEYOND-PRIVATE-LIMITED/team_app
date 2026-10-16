@@ -20,6 +20,6 @@
 
 ## Consequences
 
-- **Schema coupling.** The two codebases are coupled through the schema. If a Scheduler migration renames or drops a column the new service reads, the new service breaks. The new service's tests therefore run against a snapshot of the Scheduler's schema ([ADR-0021](0021-migrations-new-tables-only.md)).
+- **Schema coupling.** The two codebases are coupled through the schema. If a Scheduler migration renames or drops a column the new service reads, the new service breaks. The new service's tests therefore check every column it reads against a hand-kept list of the Scheduler's columns at `c28b9ca`, and against a schema snapshot once team_app has migrations ([ADR-0021](0021-migrations-new-tables-only.md)).
 - **No Scheduler table changes.** Tables the Scheduler owns are never altered ([ADR-0018](0018-team-app-changes-nothing-in-the-scheduler.md)).
 - **No staging.** Rehearsals run on a local Docker Postgres with PostgREST. During development, developers and agents only read production. The one production change they make is a migration, and KP applies it by hand. The deployed Scheduler and ESS write to production as normal.

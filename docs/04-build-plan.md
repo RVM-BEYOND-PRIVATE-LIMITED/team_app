@@ -31,7 +31,7 @@ Task IDs refer to [02-reconciliation.md](02-reconciliation.md).
 
 ## Wave 2: identity and the attendance extras
 
-**A rule for every ESS endpoint that writes:** it refuses a session still on HR's first-time password with 403 `PASSWORD_CHANGE_REQUIRED`, as the Scheduler's punch does. The read-only endpoints of Wave 1 accept such a session, so the app can show who the person is before they choose their own password.
+**A rule for every ESS endpoint:** `employeeAuth` refuses an attendance session still on HR's first-time password with 403 `PASSWORD_CHANGE_REQUIRED`, as the Scheduler's challenge, punch and ping do (since 16 Oct, after the pre-deploy review). HR can give a whole batch one first-time password, and the employee code is on the ID card, so such a session proves nothing about who holds the phone. The app sends the person to the Scheduler's "Choose your own password" first.
 
 | Work | How, with no Scheduler change | Tasks |
 | --- | --- | --- |
@@ -39,19 +39,21 @@ Task IDs refer to [02-reconciliation.md](02-reconciliation.md).
 | One-field sign-in | An ESS resolver. A portal account found by email or employee code is asked for its username or login phone, because portal login accepts only those | A5 |
 | Per-employee rate limits | ESS middleware, for ESS endpoints | A6 (ESS side) |
 | Request to correct or delete my data | ESS table, plus HR's list | A8 |
-| Shared desk logins kept out | An ESS list of shared logins, checked at sign-in exchange and by `employeeAuth` | A10 |
+| Shared desk logins kept out | Nothing to build. KP, 16 Oct: no desk logins are allowed at all, so there is no list to keep. A portal login with no linked HR record is already refused (403 `NOT_LINKED`) | A10 |
 | `server_now`, the day's note and HR's remark | An ESS endpoint that reads the same rows the punch screen shows | B1 |
 | Mocked location | Refused on the phone. Reported to an ESS table that HR can read | B14 |
-| HR bulk phone reset, branch by branch | An ESS action for HR that writes the same device rows the Scheduler's own reset writes (KP to confirm) | B8 |
+| HR bulk phone reset, branch by branch | An ESS action for HR that writes the same device rows the Scheduler's own reset writes (KP, 16 Oct: yes) | B8 |
 | Personal details (date of birth, blood group, address, emergency contact) | An ESS table keyed to `hr_employees.id` | E9 |
 
-The refreshable session (A3) works like this:
-1. The app exchanges a fresh Scheduler token for a rotating refresh token, bound to the install. Its hash is stored in `hr_ess_sessions`.
+The refreshable session (A3) works like this (KP, 16 Oct: access tokens last 1 hour, the sign-in 90 days from its last use):
+1. The app exchanges a fresh Scheduler token (signed in within the last 10 minutes) for a rotating refresh token, bound to the install. Its hash is stored in `hr_ess_sessions`.
 2. Short access tokens are minted in the Scheduler's existing formats, so the punch path accepts them unchanged.
-3. The session is revoked when:
+3. Every minted token carries the ORIGINAL sign-in's time as its `iat`, never the time it was minted. The Scheduler lets a code sign-in set the attendance password for 15 minutes after its `iat`, and ends sessions older than a password change; a fresh `iat` would defeat both.
+4. The session is revoked when:
    - the attendance password changes (`sessions_valid_from`);
    - HR switches the login off;
-   - the employee leaves.
+   - the employee leaves;
+   - the person signs out, or a used refresh token is presented again (all of that sign-in's tokens end).
 
 ## Wave 3: Phase 1 features
 
@@ -128,12 +130,12 @@ These were in the gap report or found in STEP 1. They stay as they are unless KP
 4. **Mocked pings.** Are they reported to HR like mocked punches?
 5. **Colleague contacts.** Does an employee also see their own managers' phone numbers?
 6. **Cut-off.** Is the 5th itself open? Can a pending request for last month be decided after the cut-off?
-7. **Phone reset.** Does the HR bulk phone reset write the device rows the Scheduler's reset writes?
-8. **HR's web tools.** Where do HR review change requests and documents, and where do helpdesk agents work on the web? The brief put these in the web HRMS, which now stays unchanged. The options are the app itself, or a small web page served by team_app.
-9. **Faculty marking.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open?
-10. **Infra register.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? That writes a Scheduler table.
-11. **The Scheduler's own holes and the committed dump.** These are outside this project, and KP's call.
-12. **An HR Executive who manages people.** Do they approve their own team's attendance and leave requests? [03-decisions.md](03-decisions.md) says an HR Executive never approves attendance or leave. `GET /api/ess/me/capabilities` currently gives every manager their reports' request types, HR Executive included. The approvals endpoints (Wave 3) follow KP's answer.
+7. **HR's web tools.** Where do HR review change requests and documents, and where do helpdesk agents work on the web? The brief put these in the web HRMS, which now stays unchanged. The options are the app itself, or a small web page served by team_app.
+8. **Faculty marking.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open?
+9. **Infra register.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? That writes a Scheduler table.
+10. **The Scheduler's own holes and the committed dump.** These are outside this project, and KP's call.
+
+Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone reset (yes, the same device rows), an HR Executive who manages people (approves their own team, as a manager), staying signed in (1 hour and 90 days), and desk logins (none allowed).
 
 ## Migrations, in run order
 
@@ -142,10 +144,11 @@ None yet. Wave 1 needs no table. From Wave 2 on, every migration is listed here 
 ## Risks
 
 - **Token formats.**
-  - The ESS verifies the Scheduler's tokens, and from A3 it also mints them, using the shared `JWT_SECRET`. If the Scheduler's signing code changes, the ESS breaks. The ESS tests copy that signing code, so a drift fails the tests first.
+  - The ESS verifies the Scheduler's tokens, and from A3 it also mints them, using the shared `JWT_SECRET`. If the Scheduler's signing code changes, the ESS answers 401 `NOT_AUTHENTICATED` to the new tokens and the app signs those people out. The ESS tests hold a verbatim copy of that code, but CI cannot read the Scheduler repository, so the copy is compared with the Scheduler only when someone runs `SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test --workspace apps/ess-api` by hand. Run it whenever the Scheduler changes.
   - Rotating `JWT_SECRET` signs everyone out of both services.
-- **Schema coupling.** The ESS reads Scheduler tables, so a Scheduler migration that renames a column breaks it. Keep the schema snapshot used by the tests current.
-- **Shared nginx.** A broken team_app nginx file would block the Scheduler's deploys. The ESS deploy tests before enabling ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)).
+- **Schema coupling.** The ESS reads Scheduler tables, so a Scheduler migration that renames a column breaks it. The tests' column list (`SCHEMA` in `apps/ess-api/tests/helpers/fakeSupabase.js`) is kept by hand, and nothing compares it with the Scheduler's migrations, so update it with every Scheduler migration that touches a table the ESS reads.
+- **Shared nginx.** A broken team_app nginx file would block the Scheduler's deploys. The ESS deploy tests before reloading, puts the last good file back on a failure, and CI runs every case against nginx 1.18 and 1.24 ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)). Deleting the ESS certificate while its file is enabled would also break `nginx -t`, so [05-deploy.md](05-deploy.md) takes the host off nginx first.
+- **The deploy secrets reach every branch.** On GitHub Free a repository's secrets cannot be limited to `main`. Today only the three organisation admins can push, and they hold the same secrets in Scheduler_Backend; [05-deploy.md](05-deploy.md) lists the steps before anyone else gets write access.
 - **Deploys before migrations.** Merges deploy before KP applies migrations, so new endpoints answer 503 until their tables exist ([ADR-0021](adr/0021-migrations-new-tables-only.md)).
 - **Production state unconfirmed.** Whether the attendance migrations (`20261020000000` to `20261023000000`) and the one-CL index are applied in production is not confirmed. Check, read-only, before Wave 3 relies on them.
 - **Open holes.** The Scheduler's holes stay open while the app ships. Whether to release anyway is KP's decision.

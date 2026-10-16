@@ -111,7 +111,7 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 ## Still open
 
 - **Layout:** [ADR-0017](adr/0017-repository-layout-and-tooling.md) (folder layout, workspaces, Node version), and which Node version the server runs.
-- **Decisions owed:** the ten points in [04-build-plan.md](04-build-plan.md#decisions-still-owed). These include faculty leave, short leave, mocked pings, the contact rule, the cut-off edge cases, the phone reset, where HR reviews on the web, and faculty class marking.
+- **Decisions owed:** the ten points in [04-build-plan.md](04-build-plan.md#decisions-still-owed) (the phone reset, the HR Executive as manager, staying signed in and desk logins were decided on 16 Oct). These include faculty leave, short leave, mocked pings, the contact rule, the cut-off edge cases, the phone reset, where HR reviews on the web, and faculty class marking.
 - **Leave without pay:** whether it has a monthly limit.
 - **Production check (read-only):** confirm that the attendance migrations and the one-CL-a-month index are applied.
 - **Brief re-export:** the fact-check corrections and the 16 Oct answers are in the live brief. KP re-exports it and replaces [the PDF in inputs/](inputs/).

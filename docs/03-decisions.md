@@ -62,11 +62,13 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 
 | Decision | Answer | Status | Source |
 | --- | --- | --- | --- |
-| HR Executive in the app | HR's powers without attendance or leave. Approves documents, profile changes and HR helpdesk tickets. Never approves attendance or leave requests, and makes no overrides. | Decided | KP, 16 Oct (matches how the role was defined on 15 Oct) |
+| HR Executive in the app | HR's powers without attendance or leave: approves documents, profile changes and HR helpdesk tickets, never HR-wide attendance or leave, and makes no overrides. An HR Executive who manages people approves their own team's attendance and leave requests as that team's manager, like any manager. | Decided | KP, 16 Oct (the role as defined on 15 Oct; the manager answer the same evening) |
 | Who sees the location trail | HR, the CEO and super admins, as today. No manager view. | Default | Scheduler today |
 | Keeping location pings and logs | No automatic deletion; KP deletes them by hand ([ADR-0015](adr/0015-no-automated-retention.md)) | Decided | KP, 16 Oct |
 | Push before Firebase is set up | Messages go to the log until the keys are added ([ADR-0016](adr/0016-push-and-integrity-start-off.md)) | Decided | KP, 16 Oct |
-| Shared desk logins (fbd.admin and similar) | Can't use the app; each admin signs in as themselves | Default | Brief |
+| Shared desk logins (fbd.admin and similar) | None are allowed at all: every app login belongs to one employee, and each admin signs in as themselves. There is no list to keep. A portal login with no linked HR record is refused (403 `NOT_LINKED`); one linked to somebody's record would act as that person, so RVM gives each person their own login | Decided | KP, 16 Oct |
+| Staying signed in (task A3) | The ESS swaps a fresh sign-in for a refresh token and issues short sign-in tokens in the Scheduler's own formats. They last 1 hour; the sign-in lasts 90 days from its last use. It ends on an attendance password change, when HR switches the login off, on exit, or on signing out | Decided | KP, 16 Oct |
+| HR's bulk phone reset (task B8) | Writes the same device rows the Scheduler's own reset writes, branch by branch, for HR, the CEO and super admins | Decided | KP, 16 Oct |
 | Faculty class marking in the app (Phase 2) | `POST /api/attendance` keeps its missing server checks, because fixing them is a Scheduler change. Decide before Phase 2 whether the app offers marking. | Open | [ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md) |
 
 ## What RVM must provide (Phase 0)

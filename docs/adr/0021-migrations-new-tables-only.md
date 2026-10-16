@@ -17,7 +17,7 @@
    - Afterwards an agent checks the result read-only through PostgREST: a missing table answers `PGRST205`, a missing column `42703`, and functions are looked up in the OpenAPI listing.
    - Constraints and indexes are confirmed by a catalog query KP runs (`pg_indexes`, `pg_constraint`), never by trying a write in production.
 6. **Deploy window.** Code deploys on merge, before KP applies its migration ([ADR-0011](0011-ci-merge-and-auto-deploy.md)). So every ESS endpoint answers 503 `MODULE_NOT_INSTALLED` until its tables exist, never a 500.
-7. **Tests.** team_app's tests run on a local Postgres with PostgREST. The schema comes in two parts, and production is never used:
+7. **Tests.** Production is never used. Until team_app has a migration, the tests use no database: they run the real store over an in-memory stand-in (`apps/ess-api/tests/helpers/fakeSupabase.js`) that answers `PGRST205`, `42703` and `PGRST116` as PostgREST does, and CI starts no database. From the first migration on, they also run on a local Postgres, with the schema in two parts:
    - a snapshot of the Scheduler tables the ESS reads, generated from the Scheduler's migrations by a script and refreshed by hand;
    - then team_app's own migrations.
 

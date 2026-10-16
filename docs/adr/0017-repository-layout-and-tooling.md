@@ -12,9 +12,10 @@ team_app/
   apps/ess-api/          new backend (Node + Express), served at /api/ess
   apps/rvm_team_app/     Flutter app, Android first (the mobile developer's)
   packages/contracts/    openapi.yaml and the error codes
-  db/migrations/         new hr_ess_* tables, each with a .down.sql
+  db/migrations/         new hr_ess_* tables only (ADR-0021)
+  db/rollbacks/          one rollback per migration, outside the migrations folder (ADR-0021)
   docs/                  summary, inputs, reconciliation, decisions, ADRs
-  .github/workflows/     api-ci, api-deploy, mobile-ci
+  .github/workflows/     ci.yml, deploy-ess.yml, check-server.yml; mobile CI when the app arrives
 ```
 
 - **JavaScript side.** npm workspaces with one `package-lock.json` at the root. Turborepo or Nx would add tooling that one API and one contract package don't need.
@@ -25,4 +26,4 @@ The ESS foundation, started on 16 Oct after KP's "start the backend now", follow
 
 ## Open
 
-- Which Node version the server runs. If one Node install serves both processes, the ESS runs on that version until the server is upgraded.
+- Which Node version the server runs: answered on 16 Oct by the server check, Node 22.23.1, shared with the Scheduler. The ESS still supports Node 20 and holds `@supabase/supabase-js` below 2.110 (which needs Node 22); both can be raised now that the server runs 22.
