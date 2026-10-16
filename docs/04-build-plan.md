@@ -6,7 +6,7 @@ KP started the build on 16 Oct 2026 ("start the backend now"). The same day KP s
 - The Scheduler is used exactly as it is: its endpoints as a client, its database through the paths in [ADR-0020](adr/0020-approvals-through-the-override-function.md).
 - Finished work is pushed to `main` as it passes its lint and tests (KP, 16 Oct). Turning on deploys (`ESS_DEPLOY_ENABLED`) and running migrations still wait for KP's OK.
 
-Task IDs refer to [02-reconciliation.md](02-reconciliation.md).
+Task IDs refer to [02-reconciliation.md](02-reconciliation.md). [06-backend-phases.md](06-backend-phases.md) puts the same work in the order KP runs it, phase by phase (Wave 1 is phase 1A, Wave 2 is 1B, Wave 3 is 1C to 1E, Wave 4 is 2A to 2D).
 
 ## Wave 1: the foundation (on `main`, 16 Oct)
 

@@ -73,6 +73,7 @@ What the deploy reads:
 | [docs/03-decisions.md](docs/03-decisions.md) | Product decisions and limits |
 | [docs/04-build-plan.md](docs/04-build-plan.md) | The build plan, wave by wave |
 | [docs/05-deploy.md](docs/05-deploy.md) | Deploying the ESS, and switching it off |
+| [docs/06-backend-phases.md](docs/06-backend-phases.md) | The backend work left, phase by phase |
 | [docs/adr/](docs/adr/README.md) | Architecture decisions |
 
 The Scheduler is used as it is: its endpoints as a client and its database as a data source, never changed for Team RVM ([ADR-0018](docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
