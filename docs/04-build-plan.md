@@ -29,21 +29,30 @@ Task IDs refer to [02-reconciliation.md](02-reconciliation.md).
 
 **Stopped and removed on 16 Oct:** four Scheduler security branches, a login-page change and an nginx route in the Scheduler's deploy. The holes they would have fixed are still open ([02-reconciliation.md](02-reconciliation.md)).
 
-## Wave 2: identity and the attendance extras
+## Wave 2: identity and the attendance extras (built, 16 Oct)
+
+**Branch:** `feat/ess-wave2` in team_app, merged from `wave2/sessions` (A3, A5) and `wave2/data` (A8, E9, B1, B14, B8). Not pushed. Every endpoint is in the contract (version 0.2.0) and answers 503 `MODULE_NOT_INSTALLED` until its migration is applied ([Migrations, in run order](#migrations-in-run-order)).
 
 **A rule for every ESS endpoint:** `employeeAuth` refuses an attendance session still on HR's first-time password with 403 `PASSWORD_CHANGE_REQUIRED`, as the Scheduler's challenge, punch and ping do (since 16 Oct, after the pre-deploy review). HR can give a whole batch one first-time password, and the employee code is on the ID card, so such a session proves nothing about who holds the phone. The app sends the person to the Scheduler's "Choose your own password" first.
 
-| Work | How, with no Scheduler change | Tasks |
-| --- | --- | --- |
-| Refreshable app session | Detailed below the table | A3 |
-| One-field sign-in | An ESS resolver. A portal account found by email or employee code is asked for its username or login phone, because portal login accepts only those | A5 |
-| Per-employee rate limits | ESS middleware, for ESS endpoints | A6 (ESS side) |
-| Request to correct or delete my data | ESS table, plus HR's list | A8 |
-| Shared desk logins kept out | Nothing to build. KP, 16 Oct: no desk logins are allowed at all, so there is no list to keep. A portal login with no linked HR record is already refused (403 `NOT_LINKED`) | A10 |
-| `server_now`, the day's note and HR's remark | An ESS endpoint that reads the same rows the punch screen shows | B1 |
-| Mocked location | Refused on the phone. Reported to an ESS table that HR can read | B14 |
-| HR bulk phone reset, branch by branch | An ESS action for HR that writes the same device rows the Scheduler's own reset writes (KP, 16 Oct: yes) | B8 |
-| Personal details (date of birth, blood group, address, emergency contact) | An ESS table keyed to `hr_employees.id` | E9 |
+| Work | How, with no Scheduler change | Tasks | State |
+| --- | --- | --- | --- |
+| Refreshable app session | Detailed below the table | A3 | Built: `POST /api/ess/session`, `/session/refresh`, `/session/sign-out`, `GET /api/ess/sessions`, `DELETE /api/ess/sessions/:id` |
+| One-field sign-in | An ESS resolver. A portal account found by email or employee code is asked for its username or login phone, because portal login accepts only those | A5 | Built: `POST /api/ess/sign-in/resolve` |
+| Per-employee rate limits | ESS middleware, for ESS endpoints | A6 (ESS side) | Built (Wave 1), with tighter buckets on the session, sign-in and report endpoints |
+| Request to correct or delete my data | ESS table, plus HR's list | A8 | Built: `POST`, `GET /api/ess/me/data-requests`; `GET /api/ess/hr/data-requests`, `PATCH /api/ess/hr/data-requests/:id` |
+| Shared desk logins kept out | Nothing to build. KP, 16 Oct: no desk logins are allowed at all, so there is no list to keep. A portal login with no linked HR record is already refused (403 `NOT_LINKED`) | A10 | Nothing to build |
+| `server_now`, the day's note and HR's remark | An ESS endpoint that reads the same rows the punch screen shows | B1 | Built: `GET /api/ess/attendance/day` |
+| Mocked location | Refused on the phone. Reported to an ESS table that HR can read (punches only; pings still open) | B14 | Built: `POST /api/ess/attendance/mock-location`, `GET /api/ess/hr/mock-location-reports` |
+| HR bulk phone reset, branch by branch | An ESS action for HR that writes the same device rows the Scheduler's own reset writes (KP, 16 Oct: yes) | B8 | Built: `GET /api/ess/hr/devices`, `POST /api/ess/hr/devices/reset` |
+| Personal details (date of birth, blood group, address, emergency contact) | An ESS table keyed to `hr_employees.id` | E9 | Built: `GET`, `PUT /api/ess/me/personal`; `GET`, `PUT /api/ess/hr/employees/:id/personal` |
+
+**For KP to confirm, from the build:**
+- A portal password change ends a kept sign-in (in the list below).
+- Refresh tokens are kept as an HMAC under a key derived from `JWT_SECRET`, not a plain hash, so rotating the secret ends kept sign-ins as the documented rule says.
+- The one-field sign-in answers `unknown` for a desk login, a leaver's login and a non-staff account, and `{ kind: "attendance", methods: [] }` for a person whose attendance login is off or missing.
+- Personal details and data requests are for `hr`, `hr_executive` and `super_admin`. The Scheduler's own HR set also has the CEO (`config/hrPolicy.js:25-30`); the ESS leaves the CEO out because these are the most personal fields held. One line in `src/policy/hrAccess.js` adds the CEO.
+- An employee sees the note on their own day (`hr_staff_attendance.note`), which can hold HR's override reason (02-reconciliation.md, B1).
 
 The refreshable session (A3) works like this (KP, 16 Oct: access tokens last 1 hour, the sign-in 90 days from its last use):
 1. The app exchanges a fresh Scheduler token (signed in within the last 10 minutes) for a rotating refresh token, bound to the install. Its hash is stored in `hr_ess_sessions`.
@@ -140,19 +149,24 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, in this order, and an agent checks it read-only afterwards.
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). None of them is applied yet.
 
-| # | Migration | Rollback | Creates | Needed by |
+| # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
-| 1 | [`20261101000000_hr_ess_sessions.sql`](../db/migrations/20261101000000_hr_ess_sessions.sql) | [`db/rollbacks/20261101000000_hr_ess_sessions.sql`](../db/rollbacks/20261101000000_hr_ess_sessions.sql) | `hr_ess_sessions` (one row per refresh token, a keyed hash of it only), its indexes, and the functions `hr_ess_session_rotate` and `hr_ess_session_revoke`, service role only | A3: `POST /api/ess/session`, `/session/refresh`, `/session/sign-out`, `GET /api/ess/sessions`, `DELETE /api/ess/sessions/:id` answer 503 `MODULE_NOT_INSTALLED` until it is applied |
-| 2 | `20261105000000_hr_ess_audit.sql` | same name in `db/rollbacks` | `hr_ess_audit`: HR's phone resets, data-request resolutions, and reads and changes of personal details | B8, A8, E9 |
-| 3 | `20261105000001_hr_ess_data_requests.sql` | same name | `hr_ess_data_requests` | A8 |
-| 4 | `20261105000002_hr_ess_personal_details.sql` | same name | `hr_ess_personal_details` | E9 |
-| 5 | `20261105000003_hr_ess_mock_location_reports.sql` | same name | `hr_ess_mock_location_reports` | B14 |
+| 1 | [`20261101000000_hr_ess_sessions.sql`](../db/migrations/20261101000000_hr_ess_sessions.sql) | [`20261101000000_hr_ess_sessions.sql`](../db/rollbacks/20261101000000_hr_ess_sessions.sql): drops both functions, then the table | `hr_ess_sessions`: one row per refresh token, keeping only a keyed hash of it; foreign keys to `hr_employees` and `users` (cascade); CHECKs on the login kind, the install id, the label, the hash and the dates. Indexes `hr_ess_sessions_family_idx`, `hr_ess_sessions_live_family_key` (unique: one live row per sign-in) and `hr_ess_sessions_live_employee_idx`. Functions `hr_ess_session_rotate` and `hr_ess_session_revoke` (SECURITY INVOKER, `search_path` pinned, a lock per sign-in). Table and functions granted to `service_role` only, revoked from `anon` and `authenticated` | A3: the five session endpoints answer 503 `MODULE_NOT_INSTALLED`. Scheduler tokens keep working on every other endpoint |
+| 2 | [`20261105000000_hr_ess_audit.sql`](../db/migrations/20261105000000_hr_ess_audit.sql) | [`20261105000000_hr_ess_audit.sql`](../db/rollbacks/20261105000000_hr_ess_audit.sql): drops the table | `hr_ess_audit`: who did what to whose data (HR's phone resets, data-request resolutions, and reads and changes of personal details). The actor by id (foreign keys, set null when the row goes) and by name; the target employee with no foreign key, so the trail outlives the record; `details` a JSON object of ids, counts and reasons, never personal data. Three indexes (by time, by target, by actor) | B8 and A8 still act, and the entry goes to the server log. E9: HR's read of somebody's personal details is refused (503), because a read must be recorded first |
+| 3 | [`20261105000001_hr_ess_data_requests.sql`](../db/migrations/20261105000001_hr_ess_data_requests.sql) | [`20261105000001_hr_ess_data_requests.sql`](../db/rollbacks/20261105000001_hr_ess_data_requests.sql): drops the table | `hr_ess_data_requests`: kind `correct` or `delete`, details of 1 to 2,000 characters, status `open`, `done` or `rejected`, and HR's answer; a row is either fully open or fully resolved. Cascades with the employee. Two indexes (HR's queue, each person's list) | A8: the four data-request endpoints answer 503 |
+| 4 | [`20261105000002_hr_ess_personal_details.sql`](../db/migrations/20261105000002_hr_ess_personal_details.sql) | [`20261105000002_hr_ess_personal_details.sql`](../db/rollbacks/20261105000002_hr_ess_personal_details.sql): drops the table | `hr_ess_personal_details`: one row per employee (its primary key, cascading); date of birth from 1940, the eight blood groups, address with a 6-digit PIN, and the emergency contact (a 10-digit Indian mobile, a name and a phone together) | E9: the four personal-details endpoints answer 503 |
+| 5 | [`20261105000003_hr_ess_mock_location_reports.sql`](../db/migrations/20261105000003_hr_ess_mock_location_reports.sql) | [`20261105000003_hr_ess_mock_location_reports.sql`](../db/rollbacks/20261105000003_hr_ess_mock_location_reports.sql): drops the table | `hr_ess_mock_location_reports`: kind `punch` only, the mocked fix (both coordinates or neither, in range), accuracy, the phone's clock and app details, and the branch at the time (set null if the branch goes). Cascades with the employee. Three indexes (by time, by branch, by employee) | B14: both mocked-location endpoints answer 503 |
 
-The read-only check afterwards: `hr_ess_sessions` answers through PostgREST (not `PGRST205`), and `hr_ess_session_rotate` and `hr_ess_session_revoke` appear in the OpenAPI listing for the service key and not for the anon key. KP confirms the indexes with `SELECT indexname FROM pg_indexes WHERE tablename = 'hr_ess_sessions'` (five, `hr_ess_sessions_live_family_key` among them).
+None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 
-B1 (`GET /api/ess/attendance/day`) and B8 (the phone list and reset) need no migration of their own; they read the Scheduler's tables from `20261015000004` to `20261023000000`, which are still to be confirmed in production.
+B1 (`GET /api/ess/attendance/day`) and B8 (the phone list and reset) need no migration of their own: they read the Scheduler's tables from `20261015000004` to `20261023000000`, which are still to be confirmed in production, and answer 503 `MODULE_NOT_INSTALLED` while a table or column is missing.
+
+Tested on a throwaway `postgres:17-alpine` in Docker, never on a real database:
+- `npm run test:migrations` (`db/test/run-migrations.js`) applies all five twice over a stub of the Scheduler tables they point at, checks row-level security, no policies, the constraints and the cascades, rolls them back twice in reverse, and checks that no Scheduler table changed.
+- `ESS_MIGRATION_TEST=docker npx vitest --run tests/migration.test.js` (in `apps/ess-api`) checks number 1 in more depth: Supabase-like roles and grants, both functions as the service role, and a failed rotate leaving the old row live.
+- CI runs neither yet.
 
 ## Risks
 
@@ -163,6 +177,8 @@ B1 (`GET /api/ess/attendance/day`) and B8 (the phone list and reset) need no mig
 - **Shared nginx.** A broken team_app nginx file would block the Scheduler's deploys. The ESS deploy tests before reloading, puts the last good file back on a failure, and CI runs every case against nginx 1.18 and 1.24 ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)). Deleting the ESS certificate while its file is enabled would also break `nginx -t`, so [05-deploy.md](05-deploy.md) takes the host off nginx first.
 - **The deploy secrets reach every branch.** On GitHub Free a repository's secrets cannot be limited to `main`. Today only the three organisation admins can push, and they hold the same secrets in Scheduler_Backend; [05-deploy.md](05-deploy.md) lists the steps before anyone else gets write access.
 - **Deploys before migrations.** Merges deploy before KP applies migrations, so new endpoints answer 503 until their tables exist ([ADR-0021](adr/0021-migrations-new-tables-only.md)).
+- **The one Scheduler write.** HR's bulk phone reset (B8) updates `hr_attendance_devices` exactly as the Scheduler's own reset does (`attendanceAdminController.js:280-293`), only for rows still `active`, in slices of 150 ids, and never with an empty id list. If the Scheduler changes its reset, change this one to match.
+- **Kept sign-ins after a rollback.** Rolling back `hr_ess_sessions` makes every access token the ESS minted answer 503 on the ESS (not 401), so the app does not sign out by itself; on the Scheduler those tokens last out their hour.
 - **Production state unconfirmed.** Whether the attendance migrations (`20261020000000` to `20261023000000`) and the one-CL index are applied in production is not confirmed. Check, read-only, before Wave 3 relies on them.
 - **Open holes.** The Scheduler's holes stay open while the app ships. Whether to release anyway is KP's decision.
 - **Another agent session.** It works in the Scheduler repositories. team_app work never touches them, and reads only from detached read-only copies.

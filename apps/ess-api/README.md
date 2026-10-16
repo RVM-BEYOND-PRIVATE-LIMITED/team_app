@@ -2,7 +2,7 @@
 
 The Team RVM employee self-service API. It runs as its own pm2 process (`team-rvm-ess`, port 3740) on the Scheduler's server ([ADR-0005](../../docs/adr/0005-separate-ess-service.md)) and serves everything under `/api/ess`. It is reached on a host name of its own, `https://team-api.rvmcad.org/api/ess` ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)), through an nginx file that the deploy writes from `deploy/nginx/` ([docs/05-deploy.md](../../docs/05-deploy.md)).
 
-- **The Scheduler stays the system of record.** The ESS shares its Supabase database through the service key and reads the Scheduler's tables; it never writes them directly ([ADR-0003](../../docs/adr/0003-scheduler-is-system-of-record.md)).
+- **The Scheduler stays the system of record.** The ESS shares its Supabase database through the service key and reads the Scheduler's tables ([ADR-0003](../../docs/adr/0003-scheduler-is-system-of-record.md)). It writes its own `hr_ess_*` tables, and one Scheduler table by one path only: HR's bulk phone reset makes exactly the update the Scheduler's own reset makes on `hr_attendance_devices` (`src/lib/store.js` `revokeActiveDevices`; KP, 16 Oct; [ADR-0018](../../docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 - **One sign-in works for both.** The ESS accepts the tokens the Scheduler issues, the portal JWT and the attendance session ([ADR-0006](../../docs/adr/0006-app-calls-scheduler-directly.md)). It never relays calls to the Scheduler.
 - **Stack:** JavaScript (CommonJS) on Express 4, zod, `@supabase/supabase-js`, vitest and supertest, ESLint ([ADR-0008](../../docs/adr/0008-javascript-express.md)). Runs on Node 20 or later.
 
@@ -28,7 +28,7 @@ SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test
 
 Without it those checks are skipped, and that includes CI, which cannot read the private Scheduler repository. Run them by hand whenever the Scheduler changes.
 
-Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. CI does not run it yet.
+Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all five migrations more broadly. CI runs neither yet.
 
 ## Settings
 
@@ -46,6 +46,23 @@ Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migrati
 | `MIN_APP_VERSION` | no | Semver (`1.4.0`, `1.4.0+12`). An app below it must update. May not be above `LATEST_APP_VERSION` |
 | `LATEST_APP_VERSION` | no | Semver. The newest app version, offered as an update |
 | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY_B64` | no | Push. Until all three are set, push stays log-only ([ADR-0016](../../docs/adr/0016-push-and-integrity-start-off.md)). The private key is the PEM, base64-encoded on one line |
+
+Wave 2 adds no setting. Its numbers are in the code, each in one place, so a change is a reviewed commit:
+
+| What | Value | Where |
+| --- | --- | --- |
+| Access token lifetime | 1 hour | `src/policy/sessions.js` |
+| A kept sign-in | 90 days from its last refresh | `src/policy/sessions.js` |
+| How fresh a sign-in must be to keep it | issued in the last 10 minutes, at most 60 seconds in the future | `src/policy/sessions.js` |
+| A spent refresh token retried by the same install | 409 for 60 seconds, then reuse | `src/policy/sessions.js` |
+| Refresh, and sign-out by refresh token | 120 in 15 minutes per address | `src/middleware/rateLimit.js` (`sessionPerIp`) |
+| Keeping a sign-in | 10 in 15 minutes per employee | `exchangePerEmployee` |
+| The sign-in resolver | 40 in 15 minutes per address, 10 per identifier | `signInPerIp`, `signInPerIdentifier` |
+| Mocked-location reports | 30 a day per employee | `mockReports` |
+| Open data requests | 5 per employee | `src/routes/dataRequests.js` |
+| HR lists | 1,000 phones, 500 reports, 500 data requests; `truncated` says more were left out | `src/lib/store.js` `LIST_LIMITS` |
+| The bulk reset's id list | 1 to 500 ids, a 32 kB body | `src/routes/devices.js`, `src/app.js` |
+| Who may use HR's tools | personal details and data requests: hr, hr_executive, super_admin; phones and mocked-location reports: hr, ceo, super_admin | `src/policy/hrAccess.js` |
 
 ## Endpoints
 
@@ -71,9 +88,9 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `GET /api/ess/hr/mock-location-reports?from=&to=&branch_id=` | portal: hr, ceo, super_admin | The reports, with whose each is |
 | `GET /api/ess/hr/devices?branch_id=&status=`, `POST /api/ess/hr/devices/reset` | portal: hr, ceo, super_admin | Registered phones, and the bulk reset (B8): the Scheduler's own revoke update on every active phone of a branch or a list of people. The one write to a Scheduler table |
 
-The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes. These routes are not in the contract yet (`AWAITING_CONTRACT` in `tests/contract.test.js`).
+The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)); the six Wave 2 routes are listed in `tests/contract.test.js` as awaiting it, and their replies are checked against it once it documents them.
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.2.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
 
 ### Staying signed in (task A3)
 
@@ -84,6 +101,13 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 ### One-field sign-in (task A5)
 
 `src/policy/signIn.js` finds an identifier the way each of the Scheduler's sign-ins would (`tests/signIn.test.js` checks it against verbatim copies of both lookups), and answers only for logins the app can use: never the connector identity, a login linked to nobody, or somebody who has left. Nobody, or more than one person, is `{ kind: "unknown" }`, after the same database reads whatever the reason. Nothing identifying is returned.
+
+### My data, my day and HR's tools (tasks A8, E9, B1, B14, B8)
+
+- **Always the caller's own.** The self-service routes (`/me/...`, `/attendance/...`) take no employee id; a body field the route does not take is refused with 400, never ignored.
+- **HR on somebody else's data.** Nobody resolves their own data request (409 `OWN_REQUEST`) or changes their own date of birth or address (409 `OWN_RECORD`).
+- **The audit trail** (`hr_ess_audit`, `src/lib/audit.js`) records HR's reads and changes of personal details, data-request resolutions and phone resets, with ids, counts and reasons, never the personal data. A read is recorded before the reply and refused (503) if it cannot be; a change is made first and, if its row cannot be written, the entry goes to the pm2 log.
+- **The phone reset** writes only `status`, `revoked_at`, `revoked_by`, `revoked_by_name` (the caller's username, as the Scheduler records it) and `revoke_reason`, only on rows still `active`, in slices of 150 ids.
 
 ### How sign-in is checked
 
@@ -113,9 +137,9 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB (32 kB for the phone reset's id list) |
 | 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier; 30 mocked-location reports a day per employee (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
 | 503 | `UNAVAILABLE` | The database could not be reached. Never a 401 |
-| 503 | `MODULE_NOT_INSTALLED` | A table or column the ESS reads is missing: the code is live before its migration ([ADR-0021](../../docs/adr/0021-migrations-new-tables-only.md)) |
+| 503 | `MODULE_NOT_INSTALLED` | A table, column or function the ESS needs is missing: the code is live before its migration ([ADR-0021](../../docs/adr/0021-migrations-new-tables-only.md)) |
 | 503 | `MODULE_DISABLED` | `ESS_ENABLED=false` |
-| 500 | `INTERNAL_ERROR` | Anything unexpected. The detail goes to the pm2 log, never to the reply |
+| 500 | `INTERNAL_ERROR` | Anything unexpected, including a write the database refused (a constraint the ESS's own checks should have caught). The detail goes to the pm2 log, never to the reply |
 
 ## Running it
 

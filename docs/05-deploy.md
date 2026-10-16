@@ -105,6 +105,32 @@ The deploy writes these into `apps/ess-api/.env`, from the secrets and variables
 
 The workflow itself also reads `HOST`, `USER` and `SSH_PRIVATE_KEY` (the server login), and the variables `ESS_HOST` and `ESS_DEPLOY_ENABLED`. `SSH_KNOWN_HOSTS` is optional: the server's host key as known_hosts lines, which the server check prints after "store these lines". Never paste the fingerprint lines printed above them: they match no host, and every deploy would then fail with "Host key verification failed".
 
-## Migrations
+## Migrations to apply
 
-The `hr_ess_*` tables are in `db/migrations`, with a rollback for each in `db/rollbacks`; [04-build-plan.md](04-build-plan.md#migrations-in-run-order) lists them in run order. KP applies them by hand, in order, in the Supabase SQL editor ([ADR-0021](adr/0021-migrations-new-tables-only.md)); the deploy never runs one. Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED`. Before applying, `npm run test:migrations` (Docker only) runs them against a throwaway Postgres.
+The deploy never runs a migration ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, after review. Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED` and nothing else changes, so the code can deploy first.
+
+Wave 2 brings five, none applied yet. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
+
+| # | Migration | Rollback |
+| --- | --- | --- |
+| 1 | `db/migrations/20261101000000_hr_ess_sessions.sql` | `db/rollbacks/20261101000000_hr_ess_sessions.sql` |
+| 2 | `db/migrations/20261105000000_hr_ess_audit.sql` | `db/rollbacks/20261105000000_hr_ess_audit.sql` |
+| 3 | `db/migrations/20261105000001_hr_ess_data_requests.sql` | `db/rollbacks/20261105000001_hr_ess_data_requests.sql` |
+| 4 | `db/migrations/20261105000002_hr_ess_personal_details.sql` | `db/rollbacks/20261105000002_hr_ess_personal_details.sql` |
+| 5 | `db/migrations/20261105000003_hr_ess_mock_location_reports.sql` | `db/rollbacks/20261105000003_hr_ess_mock_location_reports.sql` |
+
+**Applying them (KP):**
+1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all five against a throwaway Postgres and must end "Every migration check passed."
+2. In the Supabase dashboard, open the SQL editor of the Scheduler's project.
+3. Paste one file whole, from the `main` branch, and run it. Then the next, in the order above. Each is safe to run again if a run is interrupted.
+4. Each file ends by telling PostgREST to reload its schema, so the endpoints work within seconds, with no restart.
+
+**The check afterwards (an agent, read-only, with KP's OK).** Nothing is written; each step only reads:
+- Each new table answers through PostgREST with the service key: `GET /rest/v1/<table>?select=id&limit=0` (`select=employee_id` for `hr_ess_personal_details`) is 200, not 404 `PGRST205`.
+- The same request with the anon key gets no rows: an empty list (row-level security on, no policy), or a permission error for `hr_ess_sessions`, whose grants are revoked.
+- `hr_ess_session_rotate` and `hr_ess_session_revoke` appear in the PostgREST OpenAPI listing (`GET /rest/v1/`) for the service key, and not for the anon key.
+- KP, in the SQL editor, which also only reads: `SELECT relname, relrowsecurity FROM pg_class WHERE relname LIKE 'hr\_ess\_%' AND relkind = 'r';` shows the five tables, each `true`; `SELECT tablename, policyname FROM pg_policies WHERE tablename LIKE 'hr\_ess\_%';` shows no rows; `SELECT indexname FROM pg_indexes WHERE tablename = 'hr_ess_sessions';` shows five, `hr_ess_sessions_live_family_key` among them.
+
+**Going back.** Run the rollback of the same name, last applied first. A rollback deletes that table's rows. Rolling back `hr_ess_sessions` makes the tokens the ESS minted answer 503 instead of 401, so tell staff to sign out of the app and in again ([04-build-plan.md](04-build-plan.md#migrations-in-run-order)).
+
+B1 (the day read) and B8 (the phone list and reset) need no migration of their own, but they read the Scheduler's attendance tables (`20261015000004` to `20261023000000`), which are still to be confirmed in production. Until they are, those endpoints answer 503 `MODULE_NOT_INSTALLED`.
