@@ -34,7 +34,8 @@ In scope, as phased in the brief's Keka parity map:
 - the faculty and leader views.
 
 **Out of scope**
-- Phase 3 and Later items: languages, pulse surveys, letters and policies, assets in custody, payslips, optional holidays, points and rewards.
+- Phase 3 and Later items: languages, pulse surveys, letters and policies (including the Letters folder in E4, following the parity map's Phase 3 row), assets in custody, payslips, optional holidays, points and rewards.
+- Anything that would need a change to the Scheduler ([ADR-0018](0018-team-app-changes-nothing-in-the-scheduler.md)). [04-build-plan.md](../04-build-plan.md) lists these items and how team_app works around each one.
 - Work from home, which is not offered at all ([../03-decisions.md](../03-decisions.md)).
 
 ## Consequences

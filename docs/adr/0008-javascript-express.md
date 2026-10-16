@@ -29,7 +29,7 @@ It has no linter, and it has shipped bugs where a handler used a name that was n
   - errors are `{ "error": "<message for staff>", "code": "<CODE>" }`;
   - 401 is only for an absent or rejected token; 403 or 409 for everything else;
   - dates are in IST (`Asia/Kolkata`) as `YYYY-MM-DD`, and days turn over at IST midnight;
-  - role names and inheritance come from a copy of the Scheduler's `config/roles.js`, with a test that fails when the copy drifts from the original;
+  - role names and inheritance come from a copy of the Scheduler's `config/roles.js`, and the HR and attendance role sets from a copy of `config/hrPolicy.js` (where `HR_ROLES` includes `hr_executive` and `ATTENDANCE_OVERRIDE_ROLES` does not). A test compares both copies with a local Scheduler_Backend checkout when one is available. CI can't read the private Scheduler repository, so the copies are refreshed by hand when the Scheduler changes;
   - a response never contains a password hash, a storage path or a full Aadhaar number.
 
 ## Consequences

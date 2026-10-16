@@ -21,6 +21,8 @@ team_app/
 - **Flutter side.** The mobile developer decides. A Dart pub workspace with melos would match flutterapps.
 - **Node version.** Node 24 LTS for the new service. The Scheduler's CI uses Node 20, which reached end of life on 30 Apr 2026.
 
+The ESS foundation, started on 16 Oct after KP's "start the backend now", follows this layout. It is still easy to change until KP confirms it.
+
 ## Open
 
 - Which Node version the server runs. If one Node install serves both processes, the ESS runs on that version until the server is upgraded.

@@ -1,6 +1,6 @@
 # ADR-0005: The new API runs as a separate service at /api/ess
 
-- Status: Accepted
+- Status: Accepted for the separate process. Its location (`/api/ess` on scheduler.rvmcad.org) and nginx consequences are superseded by [ADR-0019](0019-ess-on-its-own-subdomain.md) (16 Oct 2026): the ESS gets its own subdomain and never touches the Scheduler's nginx file.
 - Date: 16 Oct 2026
 - Decided by: KP
 - Source: KP's answer of 16 Oct 2026

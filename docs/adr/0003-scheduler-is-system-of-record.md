@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 16 Oct 2026
 - Decided by: KP
-- Source: App Brief, Summary ("The Scheduler stays the single source of truth: the app calls the same backend and applies the same rules as the web"); KP on 16 Oct 2026 ("other functionalities can be pulled via API calls through the Scheduler frontend and backend")
+- Source: App Brief, Summary ("The Scheduler stays the single source of truth: the app calls the same backend and applies the same rules as the web"); KP on 16 Oct 2026 ("other functionalities can be pulled via API calls through the Scheduler frontend and backend"; "Same database, new tables")
 
 ## Context
 
@@ -13,13 +13,13 @@
 
 ## Decision
 
-- The new service uses the same Supabase project as the Scheduler.
-- The new service never re-implements a Scheduler rule. Punching, the geofence, shifts, late and half-day judgement and the midnight close stay in the Scheduler.
-- When both services need the same write, the rule lives in a Postgres function that either service can call. Approving an on-duty request, which writes the day, is one example. `hr_attendance_apply_override` is today's model for such a function.
-- The new service only reads the tables the Scheduler owns: `hr_employees`, `hr_branches`, `hr_staff_attendance`, `users` and the rest. It writes to them only through such a function.
+- **Same database.** The new service uses the same Supabase project as the Scheduler. Its own data goes in new `hr_ess_*` tables ([ADR-0021](0021-migrations-new-tables-only.md)).
+- **No re-implemented rules.** The new service never re-implements a Scheduler rule. Punching, the geofence, shifts, late and half-day judgement and the midnight close stay in the Scheduler. The app reaches them through the Scheduler's existing endpoints.
+- **Shared writes go through existing functions.** When the new service must change a day, it uses the Scheduler's own database function rather than writing its own version of the rule. For approvals that function is `hr_attendance_apply_override` ([ADR-0020](0020-approvals-through-the-override-function.md)).
+- **Scheduler tables are read-only by default.** The new service reads the tables the Scheduler owns (`hr_employees`, `hr_branches`, `hr_staff_attendance`, `users` and the rest). It writes them only through the paths in [ADR-0020](0020-approvals-through-the-override-function.md).
 
 ## Consequences
 
-- The two codebases are coupled through the schema. If a Scheduler migration renames or drops a column the new service reads, the new service breaks. The new service's tests therefore run against the Scheduler's migrations.
-- Changes to tables the Scheduler owns are Scheduler PRs ([ADR-0007](0007-scheduler-changes-as-scheduler-prs.md), [ADR-0009](0009-migrations.md)).
-- There is no staging environment. Rehearsals run on a local Docker Postgres with PostgREST. Production is only ever read, except by migrations KP applies.
+- **Schema coupling.** The two codebases are coupled through the schema. If a Scheduler migration renames or drops a column the new service reads, the new service breaks. The new service's tests therefore run against a snapshot of the Scheduler's schema ([ADR-0021](0021-migrations-new-tables-only.md)).
+- **No Scheduler table changes.** Tables the Scheduler owns are never altered ([ADR-0018](0018-team-app-changes-nothing-in-the-scheduler.md)).
+- **No staging.** Rehearsals run on a local Docker Postgres with PostgREST. During development, developers and agents only read production. The one production change they make is a migration, and KP applies it by hand. The deployed Scheduler and ESS write to production as normal.

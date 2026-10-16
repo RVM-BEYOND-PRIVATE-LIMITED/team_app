@@ -1,8 +1,8 @@
 # ADR-0009: Where migrations live and how they reach production
 
-- Status: Proposed
+- Status: Superseded by [ADR-0021](0021-migrations-new-tables-only.md) (16 Oct 2026). This proposal is kept for history; its split into team_app and Scheduler migrations no longer applies, because Scheduler tables are never altered.
 - Date: 16 Oct 2026
-- Decided by: waiting for KP
+- Decided by: KP, through ADR-0021
 - Source: STEP 0 recommendation of 16 Oct 2026
 
 ## Context

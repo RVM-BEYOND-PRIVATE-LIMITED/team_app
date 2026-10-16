@@ -1,6 +1,6 @@
 # ADR-0007: Changes to existing Scheduler code ship as Scheduler PRs
 
-- Status: Accepted
+- Status: Superseded by [ADR-0018](0018-team-app-changes-nothing-in-the-scheduler.md) (16 Oct 2026). Team RVM makes no Scheduler PRs. This ADR is kept as the record of where each fix would sit in the Scheduler's code.
 - Date: 16 Oct 2026
 - Decided by: KP
 - Source: Follows from [ADR-0002](0002-monorepo-is-team-app.md), [ADR-0005](0005-separate-ess-service.md) and [ADR-0006](0006-app-calls-scheduler-directly.md)

@@ -7,7 +7,7 @@
 
 ## Decision
 
-- `packages/contracts/openapi.yaml` describes every endpoint the app calls. That covers:
+- One OpenAPI file describes every endpoint the app calls. Its path, `packages/contracts/openapi.yaml`, follows the layout proposed in [ADR-0017](0017-repository-layout-and-tooling.md). The ESS and the Scheduler appear as two servers in the file ([ADR-0019](0019-ess-on-its-own-subdomain.md)). The file covers:
   - the new `/api/ess` endpoints;
   - the existing Scheduler endpoints the app uses. These are marked as existing and described exactly as they behave: auth, request, response and error codes.
 - An endpoint change updates the contract in the same PR.

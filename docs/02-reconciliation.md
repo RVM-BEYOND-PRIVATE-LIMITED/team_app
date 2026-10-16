@@ -1,19 +1,21 @@
 # The gap report checked against the current backend (STEP 1)
 
-This is STEP 1 of the developer's prompt. Each gap-report task (A1–K6) was checked against the backend as it is today. So were the six issue #70 items the prompt names and the brief's `/api/dashboard` claim.
+This is STEP 1 of the developer's prompt. Every gap-report task (A1–K6) was checked against the backend as it is today. So were the six issue #70 items the prompt names, and the brief's `/api/dashboard` claim.
 
-What was checked:
+**What was checked:**
 - **Backend:** Scheduler_Backend `c28b9ca` (`origin/main`, 15 Oct 2026).
 - **Web:** Scheduler_frontend `cd35abd`.
 - **Flutter apps:** flutterapps `4712b91`.
 
-How it was checked:
+**How it was checked:**
 - **Read-only.** Nothing was run, no database was queried, and no secrets were read.
 - **Readers.** Five agents each read one group of tasks.
-- **Checkers.** Five more agents tried to refute every status and correct the evidence.
-- **Corrections applied.** Each checker's corrections are applied below.
+- **Checkers.** Five more tried to refute every status and correct the evidence.
+- **Corrections.** Every correction from the checkers is applied below.
 
 Checked on 16 Oct 2026. Every claim cites file:line evidence ([status table](#status-table), [evidence](#evidence-item-by-item)).
+
+**Since 16 Oct, Team RVM changes nothing in the Scheduler** ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)). This page records what the code is, including the Scheduler's own faults. It is not a list of work to do in the Scheduler. [04-build-plan.md](04-build-plan.md) says which items team_app builds, which it works around, and which are out of scope.
 
 ## The answer in numbers
 
@@ -23,95 +25,107 @@ Checked on 16 Oct 2026. Every claim cites file:line evidence ([status table](#st
 | --- | --- | --- |
 | AVAILABLE: built, nothing to do | 16 | A2; B6, B7, B9–B13; D2, D3; the six issue #70 items |
 | VERIFY-PASSED: the brief said live, and it is | 5 | B2, B3, B4, B5, B16 |
-| UPDATE: exists but must change | 30 | A1, A6, A9; B1, B8, B17; C2, C6, C9, C11; E4, E10, E11, E12; G6; H1, H2, H3, H5, H7; I; J1–J6, J8, the /api/dashboard claim; K4 |
+| UPDATE: part of it exists, and something must change or be added | 30 | A1, A6, A9; B1, B8, B17; C2, C6, C9, C11; E4, E10, E11, E12; G6; H1, H2, H3, H5, H7; I; J1–J6, J8, the /api/dashboard claim; K4 |
 | MISSING: to build | 53 | A3, A4, A5, A7, A8, A10; B14, B15; C1, C3, C4, C5, C7, C8, C10, C12; D1, D4–D8; E1, E2, E3, E5–E9; F1–F9; G1–G5; H4, H6; J7, J9; K1, K2, K3, K5, K6 |
 | OPS: RVM's own step | 1 | H8 |
 
-The gap report checked `d2595e4`, which is 97 commits older. Since then, the attendance work has been built:
-- In section B, it marked 11 items MISSING.
+K5 is missing but won't be built ([ADR-0015](adr/0015-no-automated-retention.md)).
+
+The gap report checked `d2595e4`, which is 97 commits older. Since then the attendance work has been built.
+- In section B, it marked 11 items MISSING:
   - Seven exist as written: B6, B7 and B9–B13.
   - Two exist in part: B8 and B17.
-  - Only B14 (mocked location) and B15 (batched pings) are truly missing.
-- K5 (purge) is also missing, but it won't be built ([ADR-0015](adr/0015-no-automated-retention.md)).
+  - Only B14 (mocked location) and B15 (batched pings) are really missing.
 - A2 (attendance sign-in) and D2–D3 (priority tasks) are done.
 
 Everything that makes the app Keka-like is still to build: requests, the Inbox, push, self-service profile, the Wall and the Helpdesk.
 
-| Where the work lands | Count | IDs |
+| Where the fix sits (as seen at STEP 1) | Count | IDs |
 | --- | --- | --- |
-| Scheduler PRs (edits to existing Scheduler code, [ADR-0007](adr/0007-scheduler-changes-as-scheduler-prs.md)) | 25 | A6, A7, A9; B1, B8, B14, B15, B17; C9, C11; E9; H1, H2, H3; J1–J6, J8, the /api/dashboard claim; K1, K4, K5 |
-| Both repositories | 19 | A5, A10; C1, C3, C7; D6, D7; E4, E6, E8, E11; F9; G6; H5, H7; I; J7, J9; K6 |
-| team_app only (new endpoints and tables) | 39 | A1, A3, A4, A8; C2, C4, C5, C6, C8, C10, C12; D1, D4, D5, D8; E1, E2, E3, E5, E7, E10, E12; F1–F8; G1–G5; H4, H6; K2, K3 |
+| Scheduler code: out of scope since ADR-0018 | 24 | A6, A7, A9; B1, B8, B14, B15, B17; C9, C11; E9; H1, H2, H3; J1–J6, J8, the /api/dashboard claim; K1, K4 |
+| Scheduler code plus team_app: built in team_app where possible ([04-build-plan.md](04-build-plan.md)) | 19 | A5, A10; C1, C3, C7; D6, D7; E4, E6, E8, E11; F9; G6; H5, H7; I; J7, J9; K6 |
+| team_app (new endpoints and tables) | 39 | A1, A3, A4, A8; C2, C4, C5, C6, C8, C10, C12; D1, D4, D5, D8; E1, E2, E3, E5, E7, E10, E12; F1–F8; G1–G5; H4, H6; K2, K3 |
 | Nothing to build | 20 | A2; B2–B7, B9–B12, B16; D2, D3; the six issue #70 items |
-| The app only / RVM operations | 2 | B13 (send a phone User-Agent) / H8 (re-role HODs and HoOs) |
+| The app only / RVM operations | 2 | B13 (send a phone User-Agent) / H8 (re-role HODs and HoOs; the backend side lists the accounts for KP and changes no role) |
+| Not built | 1 | K5 ([ADR-0015](adr/0015-no-automated-retention.md)) |
 
-K4 is the same work as A6, and K5 won't be built.
+Several IDs describe the same work, so the counts overstate it:
+
+| Same work | Overlap |
+| --- | --- |
+| K4 and A6 | identical |
+| J5 and A9 | the same reset-password endpoint |
+| J2 and H2 | the roster reply |
+| J1 and H1 | J1 is part of H1 |
+| J6 | H3 plus the H8 re-role |
+| J7 | K1 plus K2 |
+| J9 and K6 | they overlap |
+| C9 and B17 | the daily-sheet lock |
+| K3 and D7 | K3 is part of D7 |
+| B15 and K5 | the purge part of B15 is K5 |
+
+B5 and B16 passed their gap-report checks but carry the live bugs listed below.
 
 ## Read this first: what the gap report missed
 
-### Security holes that are open today
+### Security holes in the Scheduler that are open today
 
-These are live in production now, independent of the app. [ADR-0012](adr/0012-security-first.md) puts them first.
+These are live in production, independent of the app. The gap report missed some and understated others (J1, J2, J5). Fixing them means changing the Scheduler, which this project doesn't do ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)). They are recorded here for KP.
 
-1. **A phone number is enough to take over a portal account.**
-   - `POST /api/users/reset-password` sets a new password for any account whose phone number the caller types, with no code.
+1. **A phone number is enough to take over any portal account without two-factor sign-in, and to lock the owner out of one that has it.**
+   - `POST /api/users/reset-password` sets a new password for the account whose phone number the caller types. No code is needed. It answers 409 only when two accounts share the number.
    - `GET /api/users` gives every login's phone number at a branch to any signed-in token, including a student's.
    - A student token needs only an admission number and a phone (A9, J5 and the identity findings in the appendix).
 2. **A database dump with password hashes is committed to Scheduler_Backend.**
-   - `physical_dump_2026.sql` (19.4 MB, tracked since 4 Apr 2026) holds the April users table with usernames, phone numbers and password hashes.
-   - It also holds Supabase auth sessions and refresh tokens, students, payments and receipts.
-   - Taking it out of the history is a force-push, so it is KP's decision.
+   - `physical_dump_2026.sql` (19.4 MB, added 4 Apr 2026) is still in the current tree, not only in the history. It holds the April users table (usernames, phone numbers, password hashes), Supabase auth sessions and refresh tokens, students, payments and receipts.
+   - Deleting it, rewriting history, and revoking what it exposed are KP's decisions, outside this project.
 3. **Money writes have no role check.**
-   - `PATCH /api/accounts/admissions/:id/approve` lets any signed-in token approve any branch's pending admission at an amount taken from the request.
+   - `PATCH /api/accounts/admissions/:id/approve` lets any signed-in token approve any branch's pending admission, at an amount taken from the request.
    - `POST /api/accounts/payments` lets a faculty token record a receipt.
-   - Neither is in the gap report.
-4. **A plain branch admin can take over elevated accounts in its branch.**
-   - `updateUser`, `assignRole` and `deleteUser` check the new role and the branch, never the target's current role.
-   - So a branch admin can reset the password of a HoO, an Admin Manager, an HOD, or a super admin whose row carries that branch.
-5. **Student and staff data is open to student tokens:**
+4. **A plain branch admin can take over elevated accounts in its branch.** `updateUser`, `assignRole` and `deleteUser` check the new role and the branch, never the target's current role.
+5. **Student and staff data is open to student tokens.**
    - `POST /api/attendance` writes any batch and date (J1).
    - The marking roster, `GET /api/students` and the batch create and update replies return whole student rows, `password_hash` included (J2, wider than reported).
-   - `/api/dashboard` and `GET /api/accounts/admissions` return the branch's admissions with phones and dues.
-   - `/api/alerts` can be read and resolved by them.
+   - `/api/dashboard` and `GET /api/accounts/admissions` return the branch's admissions, with phones and dues.
+   - `/api/alerts` can be read and resolved.
    - Anyone at a branch can post to `/api/announcements`, and anyone can delete any announcement (J4).
    - Any token can create, edit and delete batches (J3).
    - Any branch token can read any faculty member's attendance report.
    - `GET /api/faculty` returns faculty phones and leave reasons.
 6. **Leaving the company does not end portal access.** Nothing on exit touches the `users` row, and `auth` never reads `hr_employees`.
 7. **Smaller items:**
-   - The login and code limiters can probably be skipped with a doubled slash in the URL. This is inferred from the code, not tried.
-   - The unused legacy `/api/chat/:ticketId` routes let any token read or post any ticket's old thread. Remove them.
-   - With one shared first-time password, a colleague can claim someone's attendance login first. KP was told this on 15 Oct.
+   - The login and code limiters can probably be skipped with a doubled slash in the path (inferred from the code, not tried).
+   - The unused legacy `/api/chat/:ticketId` routes let any token read or post any ticket's old thread.
+   - Under the shared first-time password, a colleague can claim someone's attendance login first (KP was told on 15 Oct).
 
 ### Live bugs found on the way
 
-None of these is app work, but each hurts today.
+None of these is app work, but each one hurts today. Each is in Scheduler code, so it is out of scope for this project.
 
-- **Faculty on approved leave are marked absent** by the midnight job, wherever migration `20261022000000` is applied (C11).
-- **People on notice period disappear** from HR's daily sheet, the Live view, the org chart, the dashboard and the alerts, while they can still punch (E11).
-- **Leaving before punching out costs a half day, with no way to fix it.**
-  - The geofence also applies to punch-out, so someone who leaves before punching out cannot punch out. The day closes as a "No punch-out" half day.
-  - No employee can ask for a correction today, which makes "fix a day" the most urgent request type.
-- **The remarks endpoint has two faults.** It accepts a session still on HR's first-time password, and its 503 names the wrong migration (B5).
+- **Faculty on approved leave are marked absent by the midnight job,** wherever migration `20261022000000` is applied (C11).
+- **People on notice period disappear** from HR's daily sheet, the Live view, the org chart and the alerts. The HR dashboard counts them as already exited, yet they can still punch (E11).
+- **Leaving before punching out costs a half day, and only an HR override can fix it.**
+  - The geofence also applies to punch-out, so someone who has already left cannot punch out. The day then closes as a "No punch-out" half day.
+  - No employee can ask for a correction today, which makes "fix a day" the most urgent request type. Team RVM builds it ([04-build-plan.md](04-build-plan.md)).
+- **The remarks endpoint accepts a session still on HR's first-time password.** Its 503 also names the wrong migration (B5).
 - **The one-CL-a-month index may not exist.** Its migration skips it, with only a NOTICE, if anyone already had two CLs in a month. Check production.
-- **HR's two leave counters disagree** on a blank leave type (C5).
-- **The student portal's Reopen button probably gets 403.** That follows from the ticket hardening of 12 Oct. The portal copy checked is from 17 Jul, so confirm it on the live portal.
+- **HR's two leave counters disagree on a blank leave type** (C5).
+- **The student portal's Reopen button probably gets 403.** This would follow from the ticket hardening of 12 Oct. The portal copy checked is from 17 Jul, so confirm on the live portal.
 - **The Admin Manager's attendance read is not limited to their branch** (B16).
-- **Attendance actions are not audited.** HR's attendance admin actions and reads of the location trail write nothing to the audit trail.
+- **HR's attendance admin actions and reads of the location trail write nothing to the audit trail.**
 
-### Production state to confirm, read-only
+### Production state to confirm (read-only)
 
-When its migration is missing, the code at `c28b9ca` switches the feature off silently. Before treating B5 and B9–B12 as live in production:
-- confirm that migrations `20261020000000` to `20261023000000` are applied;
-- confirm that the one-CL-a-month index exists.
+When its migration is missing, the code at `c28b9ca` switches the feature off silently. Before treating B5 and B9–B12 as live in production, confirm two things:
+- migrations `20261020000000` to `20261023000000` are applied;
+- the one-CL-a-month index exists.
 
 ### Corrections to the gap report
 
-- **H3 is not AVAILABLE.** `hod_placement` is in no server interview role set. It reaches its own rounds only when its login is linked to an HR record with a "head" title.
-- **D2 and D3 already exist.** Priority tasks v2 shipped on 29 Sep, and its citations have moved.
-- **J8 counts 49 non-session 401s, not about 40:** 43 for a missing branch, 4 for a wrong current password, 2 for sign-in failures.
-- **"Please authenticate" is also sent during a database outage.** Recheck before signing anyone out.
-- **The punch body uses `latitude` and `longitude`, not `lat` and `lng`** (B3). A note longer than 200 characters is cut, not refused.
+- **H3 is not AVAILABLE.** `hod_placement` is in no server interview role set. It reaches its own rounds only when its login is linked to an HR record whose ladder role, or failing that its designation, matches the leader pattern (HOD, a head, CEO, COO, CTO or HR).
+- **D2 and D3 already exist.** Priority tasks v2 shipped on 29 Sep. The citations have moved.
+- **J8 undercounts.** It says about 40; the code has 49 places that answer a 401 that isn't about the session: 43 for a missing branch, 4 for a wrong current password, 2 for sign-in failures. These are places in the code, not endpoints. "Please authenticate" is also sent during a database outage, so check again before signing anyone out.
+- **The punch body uses `latitude` and `longitude`, not `lat` and `lng` (B3).** A note longer than 200 characters is cut, not refused.
 - **Line numbers have moved:**
   - `READ_ONLY_ROLES` is `config/roles.js:109`;
   - the batch routes are `routes/batches.js:19-21`;
@@ -121,177 +135,180 @@ When its migration is missing, the code at `c28b9ca` switches the feature off si
 
 ### What the native app must do on the existing punch path
 
-- **Headers and cookies:**
-  - Send a phone User-Agent.
-  - Keep the `rvm_att_dev` cookie in a persistent jar.
-  - The flutterapps HTTP client does neither today, so out of the box every punch is refused (B8, B13).
-- **Limits:** Read the limits from `GET /api/hr/my-attendance` (`rules.max_accuracy_m`); don't hard-code them.
-- **Ping replies:** A ping's 204 has four meanings, so re-read `GET /my-attendance` to decide whether to stop tracking (B4).
-- **Sign-out:** Sign out only on a 401 with "No token provided", "Please authenticate" or code `NOT_AUTHENTICATED`, and recheck once first (J8).
+- **Send a phone User-Agent and keep the `rvm_att_dev` cookie in a persistent jar.** The flutterapps HTTP client does neither today, so out of the box every punch is refused (B8, B13).
+- **Read the limits from `GET /api/hr/my-attendance`** (`rules.max_accuracy_m`); don't hard-code them.
+- **Re-read `GET /my-attendance` when a ping answers 204.** A 204 can mean four different things, so that read decides whether to stop tracking (B4).
+- **Sign out only on the right 401.** That means a 401 with "No token provided" or "Please authenticate", or code `NOT_AUTHENTICATED`. Recheck once before signing out (J8).
 
 ## Status table
 
-"Gap report" is the status given at d2595e4. "Now" is the status at c28b9ca, after an independent check. Each ID links to its evidence below.
+How to read the columns:
+
+- **Gap report** is the status the report gave at d2595e4.
+- **Now** is the status at c28b9ca, after an independent check.
+- **Fix sits in** is where the change would be made, as seen when STEP 1 ran. Since [ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md) (16 Oct), nothing in the Scheduler changes. So an item marked "Scheduler code" is out of scope, unless [04-build-plan.md](04-build-plan.md) rebuilds it inside team_app.
+
+Each ID links to its evidence below.
 
 ### A. Identity, sign-in and session
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [A1](#item-a1) | Employee identity middleware (generalise punchAuth): portal token or attendance session -> hr_employees.id | MISSING | UPDATE | team_app (new code) |
+| [A1](#item-a1) | Employee identity middleware (generalise punchAuth): portal token or attendance session -> hr_employees.id | MISSING | UPDATE | team_app |
 | [A2](#item-a2) | Attendance-login sign-in (HRMS): password-login, otp/request, otp/verify, password; temporary:true; 5 -> 15 min lockout | MISSING | AVAILABLE | Nothing to build |
-| [A3](#item-a3) | Refreshable app session: short access token + rotating hashed refresh token, install-bound, revoked on password change / HR disable / exit | MISSING | MISSING | team_app (new code) |
-| [A4](#item-a4) | GET /api/ess/me/capabilities (tabs, sections, approver rights) | MISSING | MISSING | team_app (new code) |
-| [A5](#item-a5) | Single-field sign-in resolver (one identifier -> portal or attendance login) | MISSING (optional) | MISSING | Both repos |
-| [A6](#item-a6) | Per-employee rate limiting, not per office IP | UPDATE | UPDATE | Scheduler PR |
-| [A7](#item-a7) | Sign out everywhere + refuse old tokens after a password change (portal logins) | MISSING | MISSING | Scheduler PR |
-| [A8](#item-a8) | Request account/data deletion form routed to HR | MISSING | MISSING | team_app (new code) |
-| [A9](#item-a9) | Retire POST /api/users/reset-password (username + phone, no code) | UPDATE | UPDATE | Scheduler PR |
-| [A10](#item-a10) | Block shared desk logins (fbd.admin etc.) from holding a PIN, biometric or registered phone | MISSING | MISSING | Both repos |
+| [A3](#item-a3) | Refreshable app session: short access token + rotating hashed refresh token, install-bound, revoked on password change / HR disable / exit (access tokens minted in the Scheduler's existing formats, ADR-0006) | MISSING | MISSING | team_app |
+| [A4](#item-a4) | GET /api/ess/me/capabilities (tabs, sections, approver rights) | MISSING | MISSING | team_app |
+| [A5](#item-a5) | Single-field sign-in resolver (one identifier -> portal or attendance login) | MISSING (optional) | MISSING | Scheduler code + team_app |
+| [A6](#item-a6) | Per-employee rate limiting, not per office IP | UPDATE | UPDATE | Scheduler code |
+| [A7](#item-a7) | Sign out everywhere + refuse old tokens after a password change (portal logins) | MISSING | MISSING | Scheduler code |
+| [A8](#item-a8) | Request account/data deletion form routed to HR | MISSING | MISSING | team_app |
+| [A9](#item-a9) | Retire POST /api/users/reset-password (username + phone, no code) | UPDATE | UPDATE | Scheduler code |
+| [A10](#item-a10) | Block shared desk logins (fbd.admin etc.) from holding a PIN, biometric or registered phone | MISSING | MISSING | Scheduler code + team_app |
 
 ### B. Attendance punch
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [B1](#item-b1) | GET /api/hr/my-attendance?month= with server_now, the day's note and HR remark in the employee's own rows | VERIFY | UPDATE | Scheduler PR |
-| [B2](#item-b2) | GET /api/hr/my-attendance/challenge: valid 2 minutes, single use | VERIFY | VERIFY-PASSED | Nothing to build |
-| [B3](#item-b3) | POST /api/hr/my-attendance/punch with its full refusal set | VERIFY | VERIFY-PASSED | Nothing to build |
-| [B4](#item-b4) | POST /api/hr/my-attendance/ping every 2 minutes while punched in | VERIFY | VERIFY-PASSED | Nothing to build |
-| [B5](#item-b5) | PUT /api/hr/my-attendance/remarks (this month + last) | VERIFY | VERIFY-PASSED | Nothing to build |
+| [B1](#item-b1) | GET /api/hr/my-attendance?month= with server_now, the day's note and HR remark in the employee's own rows | VERIFY: the brief says it is live, including server_now, the day's note and HR's remark... | UPDATE | Scheduler code |
+| [B2](#item-b2) | GET /api/hr/my-attendance/challenge: valid 2 minutes, single use | VERIFY: the brief says it is live (2-minute challenge, single use) | VERIFY-PASSED | Nothing to build |
+| [B3](#item-b3) | POST /api/hr/my-attendance/punch with its full refusal set | VERIFY: brief lists body (kind, nonce, lat, lng, accuracy_m, client_at, note &lt;=200) and... | VERIFY-PASSED | Nothing to build |
+| [B4](#item-b4) | POST /api/hr/my-attendance/ping every 2 minutes while punched in | VERIFY: the brief says it is live | VERIFY-PASSED | Nothing to build |
+| [B5](#item-b5) | PUT /api/hr/my-attendance/remarks (this month + last) | VERIFY: the brief says it is live | VERIFY-PASSED | Nothing to build |
 | [B6](#item-b6) | Geofence per branch (150 m default) + HR field-staff exemption | MISSING | AVAILABLE | Nothing to build |
 | [B7](#item-b7) | GPS accuracy rule &lt;= 100 m (rules.max_accuracy_m) | MISSING | AVAILABLE | Nothing to build |
-| [B8](#item-b8) | One phone per person: first punch registers, HR reset, device-id header alternative to the rvm_att_dev cookie, Keystore key later | MISSING | UPDATE | Scheduler PR |
+| [B8](#item-b8) | One phone per person: first punch registers, HR reset, device-id header alternative to the rvm_att_dev cookie, Keystore key later | MISSING | UPDATE | Scheduler code |
 | [B9](#item-b9) | Shifts (start/end, grace), week-offs, holidays per branch | MISSING | AVAILABLE | Nothing to build |
 | [B10](#item-b10) | Late/half-day engine: grace, every 3rd late = half day, under 4 h = half day, early exit no grace, 00:05 IST close, no overtime | MISSING | AVAILABLE | Nothing to build |
 | [B11](#item-b11) | One session per day; punch-in reopens at midnight IST (DAY_DONE) | MISSING | AVAILABLE | Nothing to build |
 | [B12](#item-b12) | Holiday list (this month + next 12 within 120 days, per branch) | MISSING | AVAILABLE | Nothing to build |
 | [B13](#item-b13) | Phone User-Agent enforcement (NOT_MOBILE for default OkHttp/Dart agents) | MISSING | AVAILABLE | App only |
-| [B14](#item-b14) | is_mock flag on punch and ping (+ refuse vs flag) | MISSING | MISSING | Scheduler PR |
-| [B15](#item-b15) | Batch ping upload with capture times (offline queue) + ping purge job | MISSING | MISSING | Scheduler PR |
-| [B16](#item-b16) | Leader/HR attendance board and controls with exact guarding role sets | VERIFY | VERIFY-PASSED | Nothing to build |
-| [B17](#item-b17) | HR daily-sheet lock against an approved/overridden day (Admin Manager daily sheet) | MISSING | UPDATE | Scheduler PR |
+| [B14](#item-b14) | is_mock flag on punch and ping (KP, 16 Oct: refuse a mocked punch; done on the phone, ADR-0018) | MISSING | MISSING | Scheduler code |
+| [B15](#item-b15) | Batch ping upload with capture times (offline queue); the ping purge job is not built (ADR-0015) | MISSING | MISSING | Scheduler code |
+| [B16](#item-b16) | Leader/HR attendance board and controls with exact guarding role sets | VERIFY: the brief says it is live | VERIFY-PASSED | Nothing to build |
+| [B17](#item-b17) | HR daily-sheet lock against an approved/overridden day (Admin Manager daily sheet) | MISSING | UPDATE | Scheduler code |
 
 ### C. Requests, leave and approvals
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [C1](#item-c1) | Attendance request tables + history + work_mode (office/WFH/on duty) on the daily record | MISSING | MISSING | Both repos |
-| [C2](#item-c2) | Employee leave (CL one a month, leave without pay) | MISSING | UPDATE | team_app (new code) |
-| [C3](#item-c3) | Attendance requests (WFH, on duty, fix a day, excuse a late, short leave) with monthly quota counters - POST/GET /api/ess/attendance-requests | MISSING | MISSING | Both repos |
-| [C4](#item-c4) | Leave requests - POST/GET /api/ess/leave-requests | MISSING | MISSING | team_app (new code) |
-| [C5](#item-c5) | Leave balances - GET /api/ess/leave/balances | MISSING | MISSING | team_app (new code) |
-| [C6](#item-c6) | Monthly limits config (WFH 2, on duty 4, fix a day 3, excuse a late 2, short leave 120 min, CL 1) | MISSING | UPDATE | team_app (new code) |
-| [C7](#item-c7) | One DB function per request type that decides and writes the day in one transaction, modelled on hr_attendance_apply_override | MISSING | MISSING | Both repos |
-| [C8](#item-c8) | Withdraw a pending request; after approval only HR can cancel | MISSING | MISSING | team_app (new code) |
-| [C9](#item-c9) | Lock an approved day against the Admin Manager daily sheet, like an override | MISSING | UPDATE | Scheduler PR |
-| [C10](#item-c10) | Approver resolution: reporting manager (hr_employees.manager_id), HR fallback; HR/CEO/super admin can decide any | MISSING | MISSING | team_app (new code) |
-| [C11](#item-c11) | Faculty approved leave also reaches staff attendance, so the midnight job does not mark those days absent | UPDATE | UPDATE | Scheduler PR |
-| [C12](#item-c12) | Reach-back window (this month + last) and the monthly payroll cut-off | MISSING | MISSING | team_app (new code) |
+| [C1](#item-c1) | Attendance request tables + history + work_mode (office/WFH/on duty) on the daily record | MISSING | MISSING | Scheduler code + team_app |
+| [C2](#item-c2) | Employee leave (CL one a month, leave without pay) | MISSING | UPDATE | team_app |
+| [C3](#item-c3) | Attendance requests (on duty, fix a day, excuse a late, short leave; WFH is not offered) with monthly quota counters - POST/GET /api/ess/attendance-requests | MISSING | MISSING | Scheduler code + team_app |
+| [C4](#item-c4) | Leave requests - POST/GET /api/ess/leave-requests | MISSING | MISSING | team_app |
+| [C5](#item-c5) | Leave balances - GET /api/ess/leave/balances | MISSING | MISSING | team_app |
+| [C6](#item-c6) | Monthly limits config (KP, 16 Oct: no WFH; on duty no limit; fix a day 3; excuse a late 3; short leave 180 min; CL 1) | MISSING | UPDATE | team_app |
+| [C7](#item-c7) | One DB function per request type that decides and writes the day in one transaction, modelled on hr_attendance_apply_override | MISSING | MISSING | Scheduler code + team_app |
+| [C8](#item-c8) | Withdraw a pending request; after approval only HR can cancel | MISSING | MISSING | team_app |
+| [C9](#item-c9) | Lock an approved day against the Admin Manager daily sheet, like an override | MISSING | UPDATE | Scheduler code |
+| [C10](#item-c10) | Approver resolution: reporting manager (hr_employees.manager_id), HR fallback; HR/CEO/super admin can decide any | MISSING | MISSING | team_app |
+| [C11](#item-c11) | Faculty approved leave also reaches staff attendance, so the midnight job does not mark those days absent | UPDATE | UPDATE | Scheduler code |
+| [C12](#item-c12) | Reach-back window (this month + last) and the monthly payroll cut-off | MISSING | MISSING | team_app |
 
 ### D. Inbox, notifications and push
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [D1](#item-d1) | Approvals inbox and decide - GET /api/ess/approvals; POST /api/ess/approvals/:type/:id/decide | MISSING | MISSING | team_app (new code) |
-| [D2](#item-d2) | Priority tasks visible to every role except the CEO | UPDATE | AVAILABLE | Nothing to build |
+| [D1](#item-d1) | Approvals inbox and decide - GET /api/ess/approvals; POST /api/ess/approvals/:type/:id/decide | MISSING | MISSING | team_app |
+| [D2](#item-d2) | Priority tasks visible to every role except the CEO (portal logins only: tasks are keyed to users.id, so attendance-only staff get none; changing that is a Scheduler change) | UPDATE | AVAILABLE | Nothing to build |
 | [D3](#item-d3) | Priority task remarks endpoint (POST /:id/remarks) | MISSING | AVAILABLE | Nothing to build |
-| [D4](#item-d4) | Multi-level approval chains with auto-skip and escalation (Phase 2) | MISSING | MISSING | team_app (new code) |
-| [D5](#item-d5) | FCM device registration (POST /api/ess/devices) | MISSING | MISSING | team_app (new code) |
-| [D6](#item-d6) | Notifications list + unread count (GET /api/ess/notifications) | MISSING | MISSING | Both repos |
-| [D7](#item-d7) | Push worker on Firebase + FIREBASE_\* secrets with a length check | MISSING | MISSING | Both repos |
-| [D8](#item-d8) | Notification categories with opt-outs and quiet hours | MISSING | MISSING | team_app (new code) |
+| [D4](#item-d4) | Multi-level approval chains with auto-skip and escalation (Phase 2) | MISSING | MISSING | team_app |
+| [D5](#item-d5) | FCM device registration (POST /api/ess/devices) | MISSING | MISSING | team_app |
+| [D6](#item-d6) | Notifications list + unread count (GET /api/ess/notifications) | MISSING | MISSING | Scheduler code + team_app |
+| [D7](#item-d7) | Push worker on Firebase + FIREBASE_\* secrets with a length check | MISSING | MISSING | Scheduler code + team_app |
+| [D8](#item-d8) | Notification categories with opt-outs and quiet hours | MISSING | MISSING | team_app |
 
 ### E. Me and My Team
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [E1](#item-e1) | Self profile (Summary / Timeline / Personal / Job), never pay or HR remarks | MISSING | MISSING | team_app (new code) |
-| [E2](#item-e2) | My org chain, department, colleague directory (search by name/code, filter by branch/department) | MISSING | MISSING | team_app (new code) |
-| [E3](#item-e3) | Sensitive change requests (old + new values -> HR approval) | MISSING | MISSING | team_app (new code) |
-| [E4](#item-e4) | Employee documents: upload (camera/PDF), verification status, letters folder, 5-min signed link, strip storage path, masked Aadhaar | UPDATE | UPDATE | Both repos |
-| [E5](#item-e5) | HR review queues (change requests, document verification) inside the web HRMS | MISSING | MISSING | team_app (new code) |
-| [E6](#item-e6) | Team today (All / Not in yet / Late / WFH / On leave) and Off this week for anyone with reports | MISSING | MISSING | Both repos |
-| [E7](#item-e7) | Digital ID card (photo, name, code, designation, branch, blood group, emergency contact) | MISSING | MISSING | team_app (new code) |
-| [E8](#item-e8) | Colleague contact visibility rule (email/phone) | MISSING/DECISION | MISSING | Both repos |
-| [E9](#item-e9) | hr_employees columns date_of_birth, blood_group, address, emergency_contact | MISSING | MISSING | Scheduler PR |
-| [E10](#item-e10) | Expose the employee photo to self/team views | UPDATE | UPDATE | team_app (new code) |
-| [E11](#item-e11) | Keep notice-period people on the chain with a 'Notice period' chip (the web org chart drops them) | UPDATE | UPDATE | Both repos |
-| [E12](#item-e12) | Timeline from HR events (joining, confirmation, changes, increments as dates only) | UPDATE | UPDATE | team_app (new code) |
+| [E1](#item-e1) | Self profile (Summary / Timeline / Personal / Job), never pay or HR remarks | MISSING | MISSING | team_app |
+| [E2](#item-e2) | My org chain, department, colleague directory (search by name/code, filter by branch/department) | MISSING | MISSING | team_app |
+| [E3](#item-e3) | Sensitive change requests (old + new values -> HR approval) | MISSING | MISSING | team_app |
+| [E4](#item-e4) | Employee documents: upload (camera/PDF), verification status, letters folder, 5-min signed link, strip storage path, masked Aadhaar | UPDATE | UPDATE | Scheduler code + team_app |
+| [E5](#item-e5) | HR review queues (change requests, document verification) inside the web HRMS | MISSING | MISSING | team_app |
+| [E6](#item-e6) | Team today (All / Not in yet / Late / WFH / On leave) and Off this week for anyone with reports | MISSING | MISSING | Scheduler code + team_app |
+| [E7](#item-e7) | Digital ID card (photo, name, code, designation, branch, blood group, emergency contact) | MISSING | MISSING | team_app |
+| [E8](#item-e8) | Colleague contact visibility rule (email/phone) | MISSING/DECISION | MISSING | Scheduler code + team_app |
+| [E9](#item-e9) | hr_employees columns date_of_birth, blood_group, address, emergency_contact | MISSING | MISSING | Scheduler code |
+| [E10](#item-e10) | Expose the employee photo to self/team views | UPDATE | UPDATE | team_app |
+| [E11](#item-e11) | Keep notice-period people on the chain with a 'Notice period' chip (the web org chart drops them) | UPDATE | UPDATE | Scheduler code + team_app |
+| [E12](#item-e12) | Timeline from HR events (joining, confirmation, changes, increments as dates only) | UPDATE | UPDATE | team_app |
 
 ### F. Wall
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [F1](#item-f1) | Wall posts (text, &lt;=5 photos/PDFs, @mentions, wall choice), edit 15 min, delete | MISSING | MISSING | team_app (new code) |
-| [F2](#item-f2) | Six reactions + comments (one level of replies) + reactions on comments + who reacted | MISSING | MISSING | team_app (new code) |
-| [F3](#item-f3) | Praise with RVM badges (8-12, HR-editable), reason &lt;=280, optional photo + certificate PDF | MISSING | MISSING | team_app (new code) |
-| [F4](#item-f4) | Polls (>=2 options, single/multi, anonymous, closing date, options locked after the first vote) | MISSING | MISSING | team_app (new code) |
-| [F5](#item-f5) | Staff announcements: audience, schedule, closing date, push + email, read/ack counts, pin &lt;=3 | UPDATE | MISSING | team_app (new code) |
-| [F6](#item-f6) | Celebrations (birthdays day+month only, anniversaries, new joiners &lt;=15 days, one-tap wish, hide own birthday) | MISSING (needs DOB) | MISSING | team_app (new code) |
-| [F7](#item-f7) | Moderation: report post/comment -> HR queue; hide/delete with reason; logged | MISSING | MISSING | team_app (new code) |
-| [F8](#item-f8) | Wall settings: who may post what | MISSING | MISSING | team_app (new code) |
-| [F9](#item-f9) | Compress photos &lt; 1 MB and store on the server | MISSING | MISSING | Both repos |
+| [F1](#item-f1) | Wall posts (text, &lt;=5 photos/PDFs, @mentions, wall choice), edit 15 min, delete | MISSING | MISSING | team_app |
+| [F2](#item-f2) | Six reactions + comments (one level of replies) + reactions on comments + who reacted | MISSING | MISSING | team_app |
+| [F3](#item-f3) | Praise with RVM badges (8-12, HR-editable), reason &lt;=280, optional photo + certificate PDF | MISSING | MISSING | team_app |
+| [F4](#item-f4) | Polls (>=2 options, single/multi, anonymous, closing date, options locked after the first vote) | MISSING | MISSING | team_app |
+| [F5](#item-f5) | Staff announcements: audience, schedule, closing date, push + email, read/ack counts, pin &lt;=3 | UPDATE | MISSING | team_app |
+| [F6](#item-f6) | Celebrations (birthdays day+month only, anniversaries, new joiners &lt;=15 days, one-tap wish, hide own birthday) | MISSING (needs DOB) | MISSING | team_app |
+| [F7](#item-f7) | Moderation: report post/comment -> HR queue; hide/delete with reason; logged | MISSING | MISSING | team_app |
+| [F8](#item-f8) | Wall settings: who may post what | MISSING | MISSING | team_app |
+| [F9](#item-f9) | Compress photos &lt; 1 MB and store on the server | MISSING | MISSING | Scheduler code + team_app |
 
 ### G. Helpdesk
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [G1](#item-g1) | Helpdesk categories (HR-editable) with routing target, priority and SLA | MISSING | MISSING | team_app (new code) |
-| [G2](#item-g2) | Tickets + thread + lifecycle (Open / In progress / On hold / Resolved / Closed), reopen &lt;=7 d, rating 1-5, withdraw, HD-0001 | MISSING | MISSING | team_app (new code) |
-| [G3](#item-g3) | Response-time targets in working hours per branch, 'Overdue by 3h', escalation (category head -> HoO -> CEO) | MISSING | MISSING | team_app (new code) |
-| [G4](#item-g4) | Confidential categories and optional anonymity | MISSING | MISSING | team_app (new code) |
-| [G5](#item-g5) | Agent workspace (phone + web queue, filters, bulk close, saved replies, reports) | MISSING | MISSING | team_app (new code) |
-| [G6](#item-g6) | Mirror lab/facility tickets into infra_tickets so the Admin Manager register stays complete | UPDATE | UPDATE | Both repos |
+| [G1](#item-g1) | Helpdesk categories (HR-editable) with routing target, priority and SLA | MISSING | MISSING | team_app |
+| [G2](#item-g2) | Tickets + thread + lifecycle (Open / In progress / On hold / Resolved / Closed), reopen &lt;=7 d, rating 1-5, withdraw, HD-0001 | MISSING | MISSING | team_app |
+| [G3](#item-g3) | Response-time targets in working hours per branch, 'Overdue by 3h', escalation (category head -> HoO -> CEO) | MISSING | MISSING | team_app |
+| [G4](#item-g4) | Confidential categories and optional anonymity | MISSING | MISSING | team_app |
+| [G5](#item-g5) | Agent workspace (phone + web queue, filters, bulk close, saved replies, reports) | MISSING | MISSING | team_app |
+| [G6](#item-g6) | Mirror lab/facility tickets into infra_tickets so the Admin Manager register stays complete | UPDATE | UPDATE | Scheduler code + team_app |
 
 ### H. Role views
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [H1](#item-h1) | Server-side checks on marking class attendance (caller owns the batch, date window, lock after first save, refuse student tokens) | UPDATE | UPDATE | Scheduler PR |
-| [H2](#item-h2) | Trim the marking roster reply (full students rows incl. password hashes) | UPDATE | UPDATE | Scheduler PR |
-| [H3](#item-h3) | hod_placement as an interviewer, and whether it can see its own interview calendar | AVAILABLE/VERIFY (roles.js | UPDATE | Scheduler PR |
-| [H4](#item-h4) | HoO 'my team today' attendance view | MISSING | MISSING | team_app (new code) |
-| [H5](#item-h5) | Light KPI endpoints (CEO dashboard refuses super admins and runs full scans) | MISSING | UPDATE | Both repos |
-| [H6](#item-h6) | HR approval endpoints for the new request types | MISSING (depends on C) | MISSING | team_app (new code) |
-| [H7](#item-h7) | Faculty 'my day' endpoint aware of substitutions + indicators card data | UPDATE | UPDATE | Both repos |
-| [H8](#item-h8) | Re-role every HOD and HoO before launch | OPS | OPS | RVM operations |
+| [H1](#item-h1) | Server-side checks on marking class attendance (caller owns the batch, date window, lock after first save, refuse student tokens) | UPDATE | UPDATE | Scheduler code |
+| [H2](#item-h2) | Trim the marking roster reply (full students rows incl. password hashes) | UPDATE | UPDATE | Scheduler code |
+| [H3](#item-h3) | hod_placement as an interviewer, and whether it can see its own interview calendar | AVAILABLE/VERIFY (roles.js:9, migration 20260914000001) | UPDATE | Scheduler code |
+| [H4](#item-h4) | HoO 'my team today' attendance view | MISSING | MISSING | team_app |
+| [H5](#item-h5) | Light KPI endpoints (CEO dashboard refuses super admins and runs full scans) | MISSING | UPDATE | Scheduler code + team_app |
+| [H6](#item-h6) | HR approval endpoints for the new request types | MISSING (depends on C) | MISSING | team_app |
+| [H7](#item-h7) | Faculty 'my day' endpoint aware of substitutions + indicators card data | UPDATE | UPDATE | Scheduler code + team_app |
+| [H8](#item-h8) | Re-role every HOD and HoO before launch (RVM operations; the backend side lists the accounts for KP, read-only, and changes no role) | OPS | OPS | RVM operations |
 
 ### I. Data model
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [I](#item-i) | Data model: indicative tables, columns and functions mapped to what exists at c28b9ca | Indicative data model (attendance, punches, challenges, p... | UPDATE | Both repos |
+| [I](#item-i) | Data model: indicative tables, columns and functions mapped to what exists at c28b9ca | Indicative data model (attendance, punches, challenges, pings, devices, shifts,...) | UPDATE | Scheduler code + team_app |
 
 ### J. Security before launch, and the issue #70 list
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [J1](#item-j1) | POST /api/attendance accepts any signed-in token (student included) for any batch and date | OPEN (attendanceRoutes.js | UPDATE | Scheduler PR |
-| [J2](#item-j2) | Marking roster returns full student rows incl. password hashes | OPEN | UPDATE | Scheduler PR |
-| [J3](#item-j3) | Batch create/edit/delete have no role check | OPEN (routes/batches.js | UPDATE | Scheduler PR |
-| [J4](#item-j4) | Announcement create/delete have no role check | OPEN (routes/announcements.js | UPDATE | Scheduler PR |
-| [J5](#item-j5) | Unsafe POST /api/users/reset-password (username + phone, no code) still registered | OPEN (routes/user.js | UPDATE | Scheduler PR |
-| [J6](#item-j6) | hod_placement as interviewer; HOD/HoO on the right role | PART | UPDATE | Scheduler PR |
-| [J7](#item-j7) | nginx upload limit + health and minimum-app-version endpoint | OPEN | MISSING | Both repos |
-| [J8](#item-j8) | 401 semantics: sign out only when the session is really over | SERVER+CLIENT | UPDATE | Scheduler PR |
-| [J9](#item-j9) | Play Integrity verification server-side | OPEN | MISSING | Both repos |
+| [J1](#item-j1) | POST /api/attendance accepts any signed-in token (student included) for any batch and date | OPEN (attendanceRoutes.js:43) | UPDATE | Scheduler code |
+| [J2](#item-j2) | Marking roster returns full student rows incl. password hashes | OPEN | UPDATE | Scheduler code |
+| [J3](#item-j3) | Batch create/edit/delete have no role check | OPEN (routes/batches.js:9-11) | UPDATE | Scheduler code |
+| [J4](#item-j4) | Announcement create/delete have no role check | OPEN (routes/announcements.js:13-14) | UPDATE | Scheduler code |
+| [J5](#item-j5) | Unsafe POST /api/users/reset-password (username + phone, no code) still registered | OPEN (routes/user.js:28) | UPDATE | Scheduler code |
+| [J6](#item-j6) | hod_placement as interviewer; HOD/HoO on the right role | PART | UPDATE | Scheduler code |
+| [J7](#item-j7) | nginx upload limit + health and minimum-app-version endpoint | OPEN | MISSING | Scheduler code + team_app |
+| [J8](#item-j8) | 401 semantics: sign out only when the session is really over | SERVER+CLIENT | UPDATE | Scheduler code |
+| [J9](#item-j9) | Play Integrity verification server-side | OPEN | MISSING | Scheduler code + team_app |
 | [70a](#item-70a) | /api/activities without auth | Issue #70 leftover | AVAILABLE | Nothing to build |
 | [70b](#item-70b) | Public course writes (/api/courses) | Issue #70 leftover | AVAILABLE | Nothing to build |
 | [70c](#item-70c) | Public intake list (GET /api/intakes) | Issue #70 leftover | AVAILABLE | Nothing to build |
 | [70d](#item-70d) | Public /api/chat | Issue #70 leftover | AVAILABLE | Nothing to build |
 | [70e](#item-70e) | ensureFacultyId with a blank email | Issue #70 leftover | AVAILABLE | Nothing to build |
 | [70f](#item-70f) | Missing /api/intakes/by-phone | Issue #70 leftover | AVAILABLE | Nothing to build |
-| [DASH](#item-dash) | Brief: '/api/dashboard shows branch fee totals to faculty' (who can call it) | Brief claim (no report id) | UPDATE | Scheduler PR |
+| [DASH](#item-dash) | Brief: '/api/dashboard shows branch fee totals to faculty' (who can call it) | Brief claim (no report id) | UPDATE | Scheduler code |
 
 ### K. Infrastructure
 
-| ID | Task | Gap report | Now | Work lands in |
+| ID | Task | Gap report | Now | Fix sits in |
 | --- | --- | --- | --- | --- |
-| [K1](#item-k1) | nginx upload limit above the 1 MB default (written by deploy.yml) | MISSING | MISSING | Scheduler PR |
-| [K2](#item-k2) | Health + minimum-app-version endpoint | MISSING | MISSING | team_app (new code) |
-| [K3](#item-k3) | FIREBASE_\* secrets in the deploy workflow with a length check | MISSING | MISSING | team_app (new code) |
-| [K4](#item-k4) | Per-employee rate limiting (same as A6) | UPDATE | UPDATE | Scheduler PR |
-| [K5](#item-k5) | Ping purge job (retention) + 180-day access-log retention | MISSING | MISSING (not built, ADR-0015) | Scheduler PR |
-| [K6](#item-k6) | Play Integrity / Keystore key verification server-side; device binding id | MISSING | MISSING | Both repos |
+| [K1](#item-k1) | nginx upload limit above the 1 MB default (written by deploy.yml) | MISSING | MISSING | Scheduler code |
+| [K2](#item-k2) | Health + minimum-app-version endpoint | MISSING | MISSING | team_app |
+| [K3](#item-k3) | FIREBASE_\* secrets in the deploy workflow with a length check | MISSING | MISSING | team_app |
+| [K4](#item-k4) | Per-employee rate limiting (same as A6) | UPDATE | UPDATE | Scheduler code |
+| [K5](#item-k5) | Ping purge job (retention) + 180-day access-log retention (not built: KP deletes by hand, ADR-0015) | MISSING | MISSING (not built, ADR-0015) | Scheduler code |
+| [K6](#item-k6) | Play Integrity / Keystore key verification server-side; device binding id | MISSING | MISSING | Scheduler code + team_app |
 
 ## Evidence, item by item
 
@@ -303,7 +320,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A1: Employee identity middleware (generalise punchAuth): portal token or attendance session -> hr_employees.id
 
 - Gap report: MISSING
-- Now: **UPDATE**; work lands in: team_app (new code)
+- Now: **UPDATE**; the fix sits in: team_app
 - What exists: Both token kinds are already accepted (punchAuth) and resolved to an active hr_employees row with exit and attendance-login checks on every request (loadEmployee), but only inside the punch controller and only on /api/hr/my-attendance/\*.
 - What remains: A reusable employeeAuth middleware that runs punchAuth, refuses student tokens, resolves and attaches req.employee / req.employeeId, applies isActive + sessionProblem in the middleware instead of per controller, answers unlinked portal logins with 403 NOT_LINKED, and can be mounted on a new /api/ess router outside the HR module switch. It must also accept whatever access token A3 mints.
 - Notes: Can be a new file composing the exported loadEmployee/sessionProblem/readPunchSession with no change to existing routes; moving loadEmployee out of the controller into a service would be an optional refactor of existing code. A disabled attendance login is answered 403 NO_ATTENDANCE_LOGIN, not 401, because the status check runs before the epoch check (services/attendanceAccounts.js:43-51).
@@ -321,7 +338,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A2: Attendance-login sign-in (HRMS): password-login, otp/request, otp/verify, password; temporary:true; 5 -> 15 min lockout
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: The whole attendance sign-in as written, including first-time HR passwords (#83), temporary flag, forced own-password before punching, 5-wrong 15-minute lock and session revocation on password set/reset/disable.
 - What remains: nothing
 - Notes: Shipped after the audited d2595e4 (#76/#77/#83). App caveats: an employee with a portal login gets 403 HAS_PORTAL_LOGIN (attendanceOtpController.js:163-172) and HR cannot create an attendance login for them (attendanceAccountsController.js:133-135); an OTP session can punch even while HR's password is still in force (passwordChangeDue checks only method 'pw', attendancePunchController.js:190-195), so drive the forced screen from GET must_set_password, not from the sign-in temporary flag; all three sign-in routes share one 40-per-15-min per-IP bucket; HR_MODULE_ENABLED=false switches sign-in off (routes/hr.js:66-74).
@@ -337,10 +354,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
   - supabase/migrations/20261021000000_hr_attendance_accounts.sql:23-46 - failed_attempts, locked_until, sessions_valid_from, password_set_at columns
 
 <a id="item-a3"></a>
-#### A3: Refreshable app session: short access token + rotating hashed refresh token, install-bound, revoked on password change / HR disable / exit
+#### A3: Refreshable app session: short access token + rotating hashed refresh token, install-bound, revoked on password change / HR disable / exit (access tokens minted in the Scheduler's existing formats, ADR-0006)
 
 - Gap report: MISSING; 64-hour JWT, no refresh (authSecurityController.js:29); model on lib/mcp/oauth.js refresh tokens
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Two non-refreshable bearer tokens (64h portal JWT, 30-day punch session), an MCP-only rotating refresh implementation, an attendance revocation epoch, and an unused users.password_changed_at column.
 - What remains: New table (token_hash, family_id, subject user|employee, user_id, employee_id, install_id, created/last_used/expires/consumed/revoked) plus POST exchange (fresh sign-in token -> access + refresh bound to install id), POST refresh (atomic compare-and-set rotation, replay revokes the family), POST sign-out; refresh-time revocation checks: users row exists and password unchanged (e.g. fingerprint of password_hash), hr_attendance_accounts status and sessions_valid_from, hr_employees active.
 - Notes: Self-contained only if: the app exchanges a fresh token from today's sign-in endpoints at a new endpoint (with an iat freshness window, else a stolen 64h token can mint a refresh family), access tokens are minted in today's portal/punch formats with a short expiry (auth.js and punchAuth then accept them unchanged), and revocation is checked at refresh time. Changing the login handlers or adding a new token kind makes it 'both'. Mint punch-format tokens as m:'pw' only: an 'otp' token counts as a fresh code sign-in for 15 min from iat and may set the password (attendanceOtpController.js:345-346). Do not copy oauth.js's consume step verbatim (race). Portal JWTs have no aud/iss and auth.js:14 checks only the signature.
@@ -360,7 +377,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A4: GET /api/ess/me/capabilities (tabs, sections, approver rights)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: The role sets to compute from; no endpoint serving capabilities.
 - What remains: A new GET /api/ess/me/capabilities behind employeeAuth (A1), returning tabs, sections and approver rights. Tabs and sections come from users.role for portal callers; decision 3 (03-decisions.md:15) gives admin, admin_manager and accounts_admin all five tabs and no Work section. Punch-session callers get the employee tabs KP settles for attendance-only staff, who are meant to use the new ESS features too (decision 8, 03-decisions.md:20). Approver rights come from the reporting line: direct reports via hr_employees.manager_id, with HR as the fallback (decision 1). Role rules sit on top: hr, ceo and super_admin may decide any request, and hr_executive only documents, profile changes and helpdesk (03-decisions.md:50). Derive the role parts from config/roles.js and config/hrPolicy.js (mirrored in client/lib/roles.ts) so the app, web and server cannot drift.
 - Decided on 16 Oct: Admin, Admin Manager and Finance Admin get all five tabs. HR Executive approves documents, profile changes and HR helpdesk tickets only, never attendance or leave.
@@ -378,10 +395,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A5: Single-field sign-in resolver (one identifier -> portal or attendance login)
 
 - Gap report: MISSING (optional)
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: Two separate doors with different identifier sets and no endpoint that tells them apart.
 - What remains: A new public resolver (e.g. POST /api/ess/auth/resolve {identifier}) that says which door applies and what it needs. Portal: whether a branch picker is needed. Attendance: password or code. It must handle one identifier that matches both a users row and another person's hr_employees row, and carry per-IP and per-identifier limits on the route itself. Decision 4 also needs the Scheduler's login() to accept users.email and a linked employee's employee code or HR-record phone (resolved via hr_employees.user_id), because login matches only username or users.phone_number today. Returning the username to the app instead would reveal more than login does (ADR-0004).
-- Decided on 16 Oct: One sign-in field. Portal login matches only the username or users.phone_number, so accepting an email or employee code for portal accounts needs a Scheduler change to login(). Settle the exact behaviour in the STEP 2 plan.
+- Decided on 16 Oct: One sign-in field. Portal login matches only the username or users.phone_number, and changing login() is out of scope (ADR-0018). So the ESS resolver tells the app to ask for the username or login phone when the field holds a portal account's email or employee code.
 - Notes: Dropping the branch picker would mean changing login (existing code). The resolver is an existence oracle for portal usernames, which forgot-password was written to avoid; the attendance OTP request already confirms existence by design (attendanceOtpController.js:31-37). One phone can be both a users.phone_number (e.g. a desk login) and another person's hr_employees.phone, so it must handle two answers.
 - Check: corrected: No resolver route exists anywhere, so MISSING is confirmed. The reader's plan says which door, but misses that the portal door cannot accept three of the four identifiers decision 4 promises (email, employee code, HR phone) for linked employees. That pushes existing login() code into scope, so lands_in becomes 'both'. It stays new-self-contained only if KP accepts a 'sign in with your username or phone' fallback for portal accounts found by email or code. The note also needs a fix: the resolver is not a new kind of existence oracle. Portal login (404 vs 401) and attendance password-login (HAS_PORTAL_LOGIN and the others, before the password check) already reveal existence. The resolver only needs limits at least as strong as theirs.
 - Evidence:
@@ -398,7 +415,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A6: Per-employee rate limiting, not per office IP
 
 - Gap report: UPDATE; current limiter is global/IP in server.js; a branch shares one office IP; 300 req/min
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Per-IP limiters only, in-process memory store (no store option set anywhere), reset on every pm2 restart.
 - What remains: Key authenticated traffic on the token subject (users.id or employee id; the keyGenerator must verify or decode the bearer because apiLimiter runs before auth), keep IP only for anonymous calls, re-key sign-in limiters on IP + identifier (or skip successful requests), attach the new limiters per route.
 - Notes: Today the 21st portal sign-in from one office IP in 15 minutes is refused, and an OTP sign-in costs 2 of the 40 punch sign-in slots, so about 20 attendance-only people per office IP per 15 minutes. Prefix mounts are skippable (see extra findings). Same work as K4.
@@ -415,7 +432,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A7: Sign out everywhere + refuse old tokens after a password change (portal logins)
 
 - Gap report: MISSING; attendance logins already have sessions_valid_from; portal does not
-- Now: **MISSING**; work lands in: Scheduler PR
+- Now: **MISSING**; the fix sits in: Scheduler code
 - What exists: A password_changed_at column stamped by 2 of the 5 password-write paths and checked by nothing.
 - What remains: A portal revocation epoch (reuse password_changed_at or add users.sessions_valid_from), stamped by all five password writes and by a new POST /api/me/sign-out-everywhere, compared with token iat in auth.js (whole seconds), and fresh tokens returned by the password-change endpoints so the caller stays signed in.
 - Notes: auth.js already loads users.\* on every request (auth.js:60-65), so the check costs no extra query. Exiting an employee never writes users, so this (or A3) is also what would end a portal login at exit.
@@ -433,7 +450,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A8: Request account/data deletion form routed to HR
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing.
 - What remains: A new table (requester employee_id/user_id, kind deletion|correction, note, status, handled_by, timestamps), a POST behind employeeAuth so both token kinds work, an HR list/resolve tab in the web HRMS page, and a public web URL for Play's deletion link.
 - Notes: Brief p.33 words it as 'Request correction or deletion of my data' in Me, routed to HR. The public web page is client work.
@@ -447,7 +464,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A9: Retire POST /api/users/reset-password (username + phone, no code)
 
 - Gap report: UPDATE; still registered at routes/user.js:28, handler userController.js:953
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: The weak route with two live callers; the OTP replacement /api/users/forgot-password (+/confirm) exists (routes/user.js:34-35).
 - What remains: Remove the route and handler (or answer 410), repoint the web Login button to /forgot-password, and replace staff_app's dialog. Give accounts without a verified email a way back: forgot-password needs email_verified_at (authSecurityController.js:149), so offer an SMS code to users.phone_number or an admin reset (PATCH /api/users/update/:userId already takes a password). Treat it as urgent: a phone number alone takes an account over today.
 - Notes: Web and flutterapps must change with or before the backend (they are live consumers). The committed DB dump (extra findings) holds usernames and phones, exactly this route's inputs.
@@ -465,7 +482,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### A10: Block shared desk logins (fbd.admin etc.) from holding a PIN, biometric or registered phone
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: Accidental partial protection only: unlinked desk logins cannot punch or register a phone.
 - What remains: An account flag (e.g. users.is_shared or a shared-login table) or policy, enforced where the app gets a long-lived session (A3 refuses to issue), at phone registration in punch, and at HR linking (PATCH /api/hr/employees/:id/account refuses a shared login).
 - Notes: The brief's 14 unlinked desk logins (14 Oct) is database state and cannot be verified from code.
@@ -482,7 +499,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B1: GET /api/hr/my-attendance?month= with server_now, the day's note and HR remark in the employee's own rows
 
 - Gap report: VERIFY: the brief says it is live, including server_now, the day's note and HR's remark on the employee's own day rows
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: The endpoint is live. It returns today (punches, live worked_minutes, kind, holiday, status, late/early minutes, late_count, late_half_day, late_excused), the month's day rows, the shift, week-offs, the month's holidays and upcoming ones, the employee's own remarks, the device verdict (this_phone / has_registered_phone / registered_at) and rules.max_accuracy_m / mobile_only.
 - What remains: Add server_now (an ISO timestamp) to the body. Add note to MY_DAY_COLUMNS: it holds the override reason, 'No punch', 'No punch-out', the holiday name or the sheet note. Add HR's remark for the month from hr_attendance_remarks, either per day or as hr_remarks[] with updated_by_name and updated_at. RVM should decide whether override reasons written for HR may be shown to the employee.
 - Notes: This is a small edit to attendancePunchController.me. No migration is needed, because the column and the table already exist. Node sends an HTTP Date header by default, but that is framework behaviour, not repo code, and nothing in the body carries the time. An invalid month such as 2026-13 is not range-checked and surfaces as a 500.
@@ -499,7 +516,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B2: GET /api/hr/my-attendance/challenge: valid 2 minutes, single use
 
 - Gap report: VERIFY: the brief says it is live (2-minute challenge, single use)
-- Now: **VERIFY-PASSED**; work lands in: Nothing to build
+- Now: **VERIFY-PASSED**; the fix sits in: Nothing to build
 - What exists: A stateless signed challenge that lasts 120 s and is bound to one employee. It is single use per ACCEPTED punch, through the nonce_hash lookup plus the UNIQUE index.
 - What remains: nothing
 - Notes: 'Single use' means one accepted punch. A refused attempt does not use the nonce up, so the same nonce can be resent within its 120 s, for example after ACCURACY_LOW. After a lost 201, a resend gets 409 CHALLENGE_REUSED, which means the punch is already recorded: the client should reload GET, not retry. Errors: 401 with no code (portal auth), 401 NOT_AUTHENTICATED, 403 NOT_LINKED (an error here, unlike on GET), 403 NOT_ACTIVE, 403 NO_ATTENDANCE_LOGIN, 403 PASSWORD_CHANGE_REQUIRED, 503 MODULE_DISABLED / MODULE_NOT_INSTALLED, 500 'Failed to start the punch.'. Issuing a challenge checks neither the User-Agent nor the device. The key is derived from JWT_SECRET.
@@ -519,7 +536,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B3: POST /api/hr/my-attendance/punch with its full refusal set
 
 - Gap report: VERIFY: brief lists body (kind, nonce, lat, lng, accuracy_m, client_at, note &lt;=200) and errors CHALLENGE_REUSED/EXPIRED, OUTSIDE_GEOFENCE, ACCURACY_LOW, DEVICE_\*, DAY_DONE/ALREADY_IN/NOT_IN, PASSWORD_CHANGE_REQUIRED, BRANCH_NOT_CONFIGURED/NOT_LINKED
-- Now: **VERIFY-PASSED**; work lands in: Nothing to build
+- Now: **VERIFY-PASSED**; the fix sits in: Nothing to build
 - What exists: The endpoint is live and checks in this order: auth, linked/active/session, password change, kind, phone UA, device, challenge, location/accuracy, geofence, in/out alternation. Accepted punches return 201 {kind, at (server time), distance_m, inside_geofence, flags[], device_registered, today{worked_minutes, punched_in, status, late_minutes, early_exit_minutes, late_count, late_half_day}}, plus Set-Cookie rvm_att_dev on the first registration.
 - What remains: nothing
 - Notes: EVERY reply the punch path can give (\* = stored as a refused attempt in hr_attendance_punches before the reply). Before the controller: 429 with no code (global limiter); 503 MODULE_DISABLED; 401 'No token provided' / 'Please authenticate' with no code; malformed JSON gets a 400 from Express's default handler as HTML, not JSON, because server.js has no app-level error handler (inference about framework behaviour). loadEmployee: 401 NOT_AUTHENTICATED (3 messages); 403 NOT_LINKED; 403 NOT_ACTIVE; 403 NO_ATTENDANCE_LOGIN (2 messages). Then: 403 PASSWORD_CHANGE_REQUIRED; 400 VALIDATION_FAILED; 403 NOT_MOBILE\*; 403 DEVICE_OTHER_EMPLOYEE\* (flag shared_device); 403 DEVICE_REVOKED\* (flag revoked_device); 403 DEVICE_NOT_REGISTERED\*, or 409 DEVICE_NOT_REGISTERED\* on a registration race; 400 CHALLENGE_MISSING\*; 400 CHALLENGE_INVALID\*; 400 CHALLENGE_EXPIRED\*; 409 CHALLENGE_REUSED\* (lookup or insert race); 422 LOCATION_MISSING\*; 422 ACCURACY_LOW\* +accuracy_m; 422 BRANCH_NOT_CONFIGURED\* (no branch or no coordinates; skipped for geofence_exempt staff); 422 OUTSIDE_GEOFENCE\* +distance_m,radius_m; 409 ALREADY_IN\*; 409 DAY_DONE\*; 409 NOT_IN\*; 503 MODULE_NOT_INSTALLED (names 20261020000000 or 20261021000000); generic 409 HR_RULE_VIOLATION / 409 DUPLICATE / 404 NOT_FOUND only on unexpected DB errors; 500 with no code. Brief corrections: the coordinate fields are latitude/longitude, not lat/lng (a client sending lat/lng gets 422 LOCATION_MISSING); a note longer than 200 characters is cut, not refused; an invalid client_at is stored as null, never refused. Flags that never refuse: new_device, suspicious_accuracy (accuracy 0), exempt_outside, off_network, possible_proxy. A client should sign out only on 401 'No token provided', 401 'Please authenticate' or 401 NOT_AUTHENTICATED.
@@ -544,10 +561,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B4: POST /api/hr/my-attendance/ping every 2 minutes while punched in
 
 - Gap report: VERIFY: the brief says it is live; it asks what the ping answers when the day is closed, the phone is revoked or pings come too fast
-- Now: **VERIFY-PASSED**; work lands in: Nothing to build
+- Now: **VERIFY-PASSED**; the fix sits in: Nothing to build
 - What exists: Single-fix pings, accepted only from the registered phone while the person is punched in today, at most one per 60 s by server time.
 - What remains: nothing
-- Decided on 16 Oct: Tracking continues with the screen off while punched in, from a foreground service.
+- Decided on 16 Oct: Tracking continues with the screen off while punched in, from a foreground service. It stops at punch-out, at shift end plus grace, or at midnight IST.
 - Notes: Answers. Day closed (punched out, never punched in, or after IST midnight): 204. Phone revoked (also someone else's phone, or no or unknown cookie): 204, never 403. Pings too fast (under 60 s since the last STORED ping): 204, never 429. Session on HR's first-time password: 204. The only 429 is the shared /api limiter (300 requests a minute per IP, with no code). 400 LOCATION_MISSING comes only after those checks pass. Auth and identity errors are the same as for GET (401 with no code, 401 NOT_AUTHENTICATED, 403 NOT_LINKED / NOT_ACTIVE / NO_ATTENDANCE_LOGIN, 503, 500 'Failed to record location.'). There is no User-Agent check, no accuracy limit and no client timestamp, and nothing is ever deleted. Because 204 covers four different cases, a native tracker has to re-read GET /my-attendance (device.this_phone, today.punched_in) to know when to stop.
 - Check: confirmed: Confirmed. The handler (591-612) answers 204 at 593, 595, 598 and 605, 400 at 600, and 201 at 611. identifyDevice (156-167) gives a non-'own' verdict for a revoked phone, someone else's phone and an unknown phone. PING_MIN_INTERVAL_MS is 60 s (attendancePunch.js:26). The frontend's PunchPanel.tsx:36,135 sends every 2 minutes. One wording slip: identity errors are 'the same as for GET' except NOT_LINKED, which GET turns into {linked:false} (206) while ping returns it as a 403. The notes' list already shows 403.
 - Evidence:
@@ -563,7 +580,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B5: PUT /api/hr/my-attendance/remarks (this month + last)
 
 - Gap report: VERIFY: the brief says it is live
-- Now: **VERIFY-PASSED**; work lands in: Nothing to build
+- Now: **VERIFY-PASSED**; the fix sits in: Nothing to build
 - What exists: Each employee can add, change or delete one remark per day, for any day from the 1st of last calendar month up to today. HR sees it beside HR's remark (staff-attendance employee_remarks, history employee_remarks).
 - What remains: nothing
 - Notes: There are two small defects; fixing them is optional and would touch attendancePunchController.js / attendanceRules.js. (1) A session signed in with HR's first-time password can write remarks without setting a password, unlike challenge, punch and ping. (2) The MODULE_NOT_INSTALLED 503 names the wrong migration. The remark changes nothing about the day itself.
@@ -579,7 +596,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B6: Geofence per branch (150 m default) + HR field-staff exemption
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: A per-branch point and radius (default 150 m, 25-2000), office IPs (flag only), a per-employee field-staff exemption, and the HR, CEO and super admin endpoints to set them.
 - What remains: nothing
 - Notes: The radius check applies to punch-OUT as well, so someone who has already left cannot punch out, and the day closes at 00:05 as a 'No punch-out' half day. GPS accuracy is not subtracted from the distance. The exemption is set per employee, not per branch. OPS check (not verifiable read-only): every branch needs its coordinates set in HR › Attendance › Branch locations, or every non-exempt punch is refused with BRANCH_NOT_CONFIGURED.
@@ -597,7 +614,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B7: GPS accuracy rule &lt;= 100 m (rules.max_accuracy_m)
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: The server refuses fixes worse than 100 m and publishes the limit as rules.max_accuracy_m.
 - What remains: nothing
 - Notes: The limit is one global env value, not set per branch. Pings have no accuracy limit (controller:599-611). The server compares accuracy_m exactly as sent and does no platform scaling, so the client should read the limit from rules.max_accuracy_m and not hard-code it.
@@ -613,10 +630,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B8: One phone per person: first punch registers, HR reset, device-id header alternative to the rvm_att_dev cookie, Keystore key later
 
 - Gap report: MISSING
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Device binding with a cookie token: the first accepted punch registers the phone; one active phone per employee; a token can never belong to two people; HR can reset a phone with a reason; a reset token is refused for good (DEVICE_REVOKED); GET reports the device verdict.
 - What remains: (1) Accept the device token in a request header (for example X-RVM-Device) as an alternative to the cookie, in readCookie/identifyDevice, which serve GET, punch, ping and the sign-in code request, and return a newly issued token in the 201 body or a response header for native clients. (2) Later, add a Keystore public key on hr_attendance_devices (a new column) and have the device sign the challenge. (3) Plan the rollout for phones already registered from a browser: an HR bulk reset or a transfer flow.
-- Decided on 16 Oct: Phones move from the browser to the app by an HR bulk reset, branch by branch. Only a one-at-a-time reset exists today, so a bulk reset joins this item.
+- Decided on 16 Oct: Phones move from the browser to the app by an HR bulk reset, branch by branch. Only a one-at-a-time reset exists today. The ESS adds an HR action that writes the same device rows the Scheduler's own reset writes (KP to confirm). A device-id header is out of scope (ADR-0018), so the app keeps the cookie.
 - Notes: Without a header, a native app must persist the cookie and never clear it on logout. With the flutterapps HTTP stack as it is, the token would be lost after the first punch, and every later punch would get 403 DEVICE_NOT_REGISTERED. Staff who registered a browser will get DEVICE_NOT_REGISTERED in the app until HR resets them (controller:371-373). 'A reset phone never re-registers' depends on the token alone, so wiping the app data re-registers the phone. A header token behaves the same way; only a hardware-backed key changes that.
 - Check: confirmed: Confirmed. readCookie reads only req.headers.cookie (attendancePunch.js:55-67), and identifyDevice uses nothing else (157). The token goes out only in Set-Cookie (452, 80-90), and the 201 carries only device_registered (482). hr_attendance_devices has no key or platform column (20261020000000:77-90). HR resets one phone at a time, with a reason (attendanceAdminController.js:280-293). The sign-in code limiter uses the same device verdict (attendanceOtpController.js:195-198). The flutterapps Scheduler Dio has no CookieManager (dio_factory.dart:29-42). The gap and the landing are right.
 - Evidence:
@@ -635,7 +652,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B9: Shifts (start/end, grace), week-offs, holidays per branch
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: Shifts with start, end and grace; per-person shift and week-off assignment; holidays for one branch or for all branches; the HR, CEO and super admin endpoints to manage them.
 - What remains: nothing
 - Notes: Shifts and week-offs are assigned per employee (in bulk), not per branch; there is no default shift for a branch. Shifts must end on the day they start. The day row keeps a copy of the shift it was judged by. This depends on migration 20261022000000 being applied: without it the code answers 503 or returns empty lists (attendanceRules.js:25-39,87-126).
@@ -654,7 +671,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B10: Late/half-day engine: grace, every 3rd late = half day, under 4 h = half day, early exit no grace, 00:05 IST close, no overtime
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: All the rules sit in one SQL function, hr_attendance_recompute, re-run for the whole month after every punch, sheet marking, override, excused late and shift change. The nightly settle and auto-fill run at 00:05 IST, with a retry and a catch-up on boot. There is no overtime.
 - What remains: nothing
 - Notes: Only people on a shift are judged late or early. The 3rd-late rule and the under-4-hour rule change the STATUS only on self_punch rows: sheet and override rows keep HR's status but are still counted and flagged. Excused lates do not count. The auto-fill covers staff with no shift only from 2026-10-15 (attendanceSettle.js:100,124), and shift staff from their shift_since. Each run covers the last three days (D-1 to D-3). The rules are a no-op until migration 20261022000000 is applied.
@@ -675,7 +692,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B11: One session per day; punch-in reopens at midnight IST (DAY_DONE)
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: After a punch-out the day is done; the next punch-in is accepted after IST midnight by server clock.
 - What remains: nothing
 - Notes: Someone still punched in at midnight leaves that day open. It is settled at 00:05 as 'No punch-out' (counting completed pairs only), and the new day starts NOT_IN, so an 'out' gets NOT_IN. The client must reload at IST midnight. A stale comment at 20261022000000:70-71 still says the day turns at 04:00.
@@ -690,7 +707,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B12: Holiday list (this month + next 12 within 120 days, per branch)
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: GET /my-attendance already returns the requested month's holidays and up to 12 upcoming ones within 120 days, filtered to the employee's branch plus all-branch holidays.
 - What remains: nothing
 - Notes: upcoming_holidays includes today. If one day has both an all-branch and an own-branch holiday, both appear in the lists. The lists are empty until 20261022000000 is applied.
@@ -705,7 +722,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B13: Phone User-Agent enforcement (NOT_MOBILE for default OkHttp/Dart agents)
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: App only
+- Now: **AVAILABLE**; the fix sits in: App only
 - What exists: The server already refuses any punch whose User-Agent names no phone. The defaults 'Dart/x.y (dart:io)' and 'okhttp/x.y' match none of the alternatives and get 403 NOT_MOBILE.
 - What remains: Backend: nothing. The client must send a User-Agent containing 'Android' (or 'Mobile').
 - Notes: The check runs only on POST /punch, not on GET, /challenge or /ping. It is a speed bump, since any client can set the header. Setting ATTENDANCE_MOBILE_ONLY=false switches it off.
@@ -717,13 +734,13 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
   - [flutterapps 4712b91] packages/core_network/lib/src/dio_factory.dart:29-42 - the existing Scheduler Dio sets no User-Agent
 
 <a id="item-b14"></a>
-#### B14: is_mock flag on punch and ping (+ refuse vs flag)
+#### B14: is_mock flag on punch and ping (KP, 16 Oct: refuse a mocked punch; done on the phone, ADR-0018)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Scheduler PR
+- Now: **MISSING**; the fix sits in: Scheduler code
 - What exists: Nothing receives a mock signal. The punch flags column (text[]) could carry a new flag without a migration.
 - What remains: Accept is_mock on punch and ping. On punch, either refuse with a new stored reject code (for example 422 MOCK_LOCATION) or add a 'mock_location' flag. On ping, add an is_mock column (ALTER hr_attendance_pings), or drop or flag mock fixes. A flagged punch already shows in /attendance-admin/punches?only=flagged; the web needs a label for it ([frontend] client/lib/services/attendance.ts:463-471). RVM decides between refusing and flagging.
-- Decided on 16 Oct: Refuse a punch from a mocked location; record mocked pings and flag them for HR.
+- Decided on 16 Oct: Refuse a mocked punch. The Scheduler's punch API can't take a mock flag without a change (ADR-0018), so the app refuses on the phone and reports the attempt to the ESS for HR.
 - Notes: This touches the existing punch and ping controllers and the existing pings table, so it is Scheduler work, not a self-contained service.
 - Check: confirmed: git grep for is_mock, isMock, mock_location and mocked finds nothing in backend code. readFix (144-153) reads only the three fields. The pings table (131-141) has no flag column. The existing flags never refuse (396-397, 423-438). change-existing is right.
 - Evidence:
@@ -734,10 +751,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
   - grep of the backend for is_mock|isMock|mock_location - no hits outside tests
 
 <a id="item-b15"></a>
-#### B15: Batch ping upload with capture times (offline queue) + ping purge job
+#### B15: Batch ping upload with capture times (offline queue); the ping purge job is not built (ADR-0015)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Scheduler PR
+- Now: **MISSING**; the fix sits in: Scheduler code
 - What exists: Live single pings only. A flushed queue would keep one point (60 s throttle), and points sent after midnight are dropped (punched-in-today check).
 - What remains: Add POST /api/hr/my-attendance/pings (under the existing punchAuth router). It takes a bounded batch of [{latitude, longitude, accuracy_m, captured_at, is_mock?}]. Each captured_at must fall inside that day's open session and not ahead of server time. Dedupe on (employee_id, captured_at) and apply the 60 s throttle on captured_at. ALTER hr_attendance_pings to add captured_at with a unique index, and make HR's trail (attendanceAdminController.trail) order by it. Add a purge cron in scheduledJobs.js with the K5 retention period.
 - Decided on 16 Oct: Offline punching stays off in the first version. The purge part is dropped: KP deletes old pings by hand (ADR-0015).
@@ -755,7 +772,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B16: Leader/HR attendance board and controls with exact guarding role sets
 
 - Gap report: VERIFY: the brief says it is live; asks for the exact role set guarding each route
-- Now: **VERIFY-PASSED**; work lands in: Nothing to build
+- Now: **VERIFY-PASSED**; the fix sits in: Nothing to build
 - What exists: Exact guards: GET /api/hr/staff-attendance = {hr, admin_manager, ceo, super_admin}. POST /attendance-admin/override, POST /attendance-admin/excuse-late, POST /attendance-admin/devices/:id/revoke, GET /attendance-admin/punches (including ?only=flagged and ?only=rejected) and GET /attendance-admin/history = {hr, ceo, super_admin}. The same three hold /trail, /devices, /overrides, /summary, shifts, holidays and geofences. Attendance logins are {hr, super_admin} (hrPolicy.js:82-85).
 - What remains: nothing
 - Notes: Every one of these routes needs a portal token; a punch-only session gets 401. Roles left out by exact match: hr_executive, admin, hoo, hod, hod_placement, accounts_admin, faculty. Caveats: (1) an admin_manager can READ every branch through GET /staff-attendance (rows, HR remarks, employees' own remarks, CL days), because only marking and remarks are branch-fenced. (2) No attendance view is scoped to a manager or team: nothing in the attendance code uses hr_employees.manager_id (grep), so a 'My Team' view for HOD, HoO or reporting managers needs a new endpoint.
@@ -776,7 +793,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### B17: HR daily-sheet lock against an approved/overridden day (Admin Manager daily sheet)
 
 - Gap report: MISSING
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: An overridden day is locked against the daily sheet, later punches and the nightly job.
 - What remains: No approved-request day exists yet, and the lock covers only source='override' rows. When approvals are built, choose one. (a) Write approved days as 'override'. They inherit the lock with no change, but later punches no longer update the row, which the brief rules out for WFH and on-duty days. (b) Add a source such as 'request'. Extend hr_staff_attendance_source_chk (20261022000000:125-127) and the sheet's lock test (staffAttendanceController.js:350) so the Admin Manager's sheet answers OVERRIDE_LOCKED for it too. The punch roll-up, the settle job and the auto-fill already treat such a row correctly. The lock lives in application code only; consider a DB trigger if more writers appear.
 - Notes: The lock is keyed on source='override' and enforced in application code only; there is no DB trigger. No approved requests exist yet. When attendance or leave requests are built, approving one should write through hr_attendance_apply_override so the day inherits the lock. A new source value such as 'request' would need the CHECK at 20261022000000:125-127 and the checks above extended. A separate service writing hr_staff_attendance directly would bypass the lock.
@@ -799,10 +816,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C1: Attendance request tables + history + work_mode (office/WFH/on duty) on the daily record
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: The daily record hr_staff_attendance (one row per employee per day: status, leave_type, note, source, punch times, shift snapshot, late/early fields) and the HR override log. No request tables, no request history, no work mode.
 - What remains: New attendance-request table(s) (type, day(s), times or minutes, reason, status pending/approved/rejected/withdrawn/cancelled, resolved approver, decided by/at, quota month) and a request-history table, with requester, approver and actor keyed on hr_employees.id (hr_round_reschedule_requests' dual employee/user keys are the in-repo precedent). Add work_mode (office/wfh/on_duty, default office) to hr_staff_attendance and return it from GET /my-attendance (MY_DAY_COLUMNS), the HR sheet read, history and summary. The brief settles the punching question: WFH 'punching works outside the geofence and location is still recorded' and on duty 'the geofence is waived that day', so the existing punch controller (attendancePunchController.js:408-413) needs a day-level waiver read from the approved request or work_mode.
-- Decided on 16 Oct: Work from home is not offered, so work_mode needs office and on_duty only (keep wfh possible for later). Approved on-duty days still need the day-level geofence waiver in the punch controller.
+- Decided on 16 Oct: Work from home is not offered. The work_mode column and the geofence waiver would change Scheduler tables and code, which is out of scope (ADR-0018). So approved days are written through hr_attendance_apply_override: an on-duty day as present, needing no punch (ADR-0020). The request tables are new hr_ess_\* tables (ADR-0021).
 - Notes: Model WFH/on duty as work_mode on a 'present' row, not as new statuses: recompute counts lates only on present/half_day (20261022000000_hr_attendance_shifts.sql:251) and every counter and colour map keys on the six statuses. Decide whether WFH/on-duty days are punched at all; if yes, the existing punch controller needs a day-level geofence exemption.
 - Check: corrected: MISSING and both hold: grep finds no request table, history or work_mode. Fixed the day-row citation: line 177 is a comment, MY_DAY_COLUMNS is line 178, and the rule columns on 179 are also returned (223), so the employee already sees late/early fields. Added hr_round_reschedule_requests as a closer precedent than inventory history. The note's open question ('decide whether WFH/on-duty days are punched') is answered by the brief, which makes the punch-controller change a requirement and supports 'both'.
 - Evidence:
@@ -819,7 +836,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C2: Employee leave (CL one a month, leave without pay)
 
 - Gap report: MISSING; leave_requests exists but is the Admin-Manager -> faculty flow (leaveController.js), not self-service CL/LWP
-- Now: **UPDATE**; work lands in: team_app (new code)
+- Now: **UPDATE**; the fix sits in: team_app
 - What exists: CL and LWP exist only as HR-recorded days: hr_staff_attendance.status='leave' with leave_type 'cl' or 'lwp'. HR/CEO/super admin record them by Override (any day, future days only for leave); HR and the Admin Manager by the daily sheet (today; past days HR with a reason). One CL a month is enforced in app code in both paths (Rules.clTaken + CL_PER_MONTH = 1) and backed by a conditional unique index. The faculty leave_requests flow (planned/emergency, AM then HoO) is unchanged and never writes hr_staff_attendance.
 - What remains: The employee self-service side: a leave request (CL or LWP, one or many days, split per day and per month), pending CL counted against the one-a-month rule (clTaken sees only recorded rows), and approval writing the days through the existing CL rule and index (C4, C5, C7). Decide whether ESS leave replaces /api/am/leave for faculty or feeds it.
 - Notes: Reuse Rules.CL_PER_MONTH, clTaken and isClIndexClash so the app and the HR sheet cannot disagree. No half-day leave exists (a day is either leave or half_day). A blank type is stored as 'leave', which the HR dashboard counts as unpaid (controllers/hr/attendanceShiftsController.js:379) but the history does not count as lwp (attendanceShiftsController.js:522-523).
@@ -835,10 +852,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
   - supabase/migrations/20261022000000_hr_attendance_shifts.sql:129-146 - unique index uq_hr_staff_attendance_one_cl_a_month WHERE status='leave' AND leave_type='cl', created only if nobody already has two CLs in a month
 
 <a id="item-c3"></a>
-#### C3: Attendance requests (WFH, on duty, fix a day, excuse a late, short leave) with monthly quota counters - POST/GET /api/ess/attendance-requests
+#### C3: Attendance requests (on duty, fix a day, excuse a late, short leave; WFH is not offered) with monthly quota counters - POST/GET /api/ess/attendance-requests
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: HR-only equivalents of two of the five types (Override for fix a day, Excuse-late). No employee request API, no WFH/on-duty concept, no short-leave model, no request quota counters (the only monthly counters are recompute's late numbering and CL).
 - What remains: New ESS endpoints and tables for the five types with per-type validation; quota counters per employee per month counting pending + approved; decision functions (C7). Changes to existing code: a day-level geofence waiver in the punch controller for approved WFH/on-duty days (the brief requires punching on those days); for short leave (Phase 2 in the brief, 'lateness inside the window is not counted') hr_attendance_recompute must skip lateness inside an approved window, and whether early-leaving minutes protect against the 240-minute half day still needs a rule. Employee-requested excuses need provenance (request id) beside late_excused so the 2-a-month quota can tell them from HR's, and quota checks must use the current late numbering (recompute renumbers, 20261022000000:171-196). WFH/on duty need work_mode (C1).
 - Decided on 16 Oct: Offered types: on duty (no limit), fix a day (3 a month), excuse a late (3 a month) and short leave (180 minutes a month, Phase 2). Work from home is not offered.
@@ -858,7 +875,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C4: Leave requests - POST/GET /api/ess/leave-requests
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing employee-facing. /api/am/leave is an admin ledger for faculty.
 - What remains: New POST/GET /api/ess/leave-requests on a new employee leave table: caller resolved to hr_employees, CL/LWP with the one-CL rule, withdraw (C8), decision through D1/C7.
 - Notes: Needs the ESS identity middleware first: punch-only sessions are accepted only on /my-attendance (middleware/punchAuth.js:17-34).
@@ -873,7 +890,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C5: Leave balances - GET /api/ess/leave/balances
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: HR-side counters of CL used against one allowed per month. No employee balance endpoint, no accrual or carry-forward table.
 - What remains: New endpoint: per-month CL remaining (1 minus recorded minus pending), LWP taken, and request-quota usage (C6). With no accrual in the code, a 'balance' is this month's allowance unless RVM decides otherwise.
 - Notes: HR's two counters disagree on 'leave'/free-text rows (dashboard: unpaid; history: neither cl nor lwp). Settle one rule first, or the app and HR will show different numbers.
@@ -886,10 +903,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
   - controllers/hr/attendancePunchController.js:177 - GET /my-attendance day rows carry status and leave_type, so the employee sees their own leave days but no balance
 
 <a id="item-c6"></a>
-#### C6: Monthly limits config (WFH 2, on duty 4, fix a day 3, excuse a late 2, short leave 120 min, CL 1)
+#### C6: Monthly limits config (KP, 16 Oct: no WFH; on duty no limit; fix a day 3; excuse a late 3; short leave 180 min; CL 1)
 
 - Gap report: MISSING
-- Now: **UPDATE**; work lands in: team_app (new code)
+- Now: **UPDATE**; the fix sits in: team_app
 - What exists: Only CL = 1 a month, as Rules.CL_PER_MONTH.
 - What remains: Add the five request limits (WFH 2, on duty 4, fix a day 3, excuse a late 2, short leave 120 minutes) as named config, or as an HR-editable settings row since the brief labels them 'Limit HR sets', reading CL from Rules.CL_PER_MONTH so there is one source of truth. CL stays fixed at 1 because the unique index enforces it. The five numbers are still an open RVM decision.
 - Decided on 16 Oct: Limits per month: on duty no limit; fix a day 3; excuse a late 3; short leave 180 minutes; CL 1; work from home not offered.
@@ -906,9 +923,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C7: One DB function per request type that decides and writes the day in one transaction, modelled on hr_attendance_apply_override
 
 - Gap report: MISSING; hr_attendance_apply_override not in that checkout
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: hr_attendance_apply_override exists at c28b9ca (migration 20261020000000, from #76) and writes one day plus its log atomically. The SQL function itself would write a FUTURE day and any status the table allows; the 'future days only for leave' and six-status rules exist only in the HTTP controller. A WFH/on-duty status cannot be written at all (controller list and table CHECK).
 - What remains: Per-type SQL functions (leave, WFH/on duty, fix a day, excuse a late, short leave, and cancel) that in one transaction lock the request, check it is pending and the caller may decide, check the monthly quota/CL, write hr_staff_attendance (with work_mode), keep the before-row for reversal, write request history and PERFORM hr_attendance_recompute. The controller's guards must be re-implemented inside SQL.
+- Decided on 16 Oct: Approvals go through the existing hr_attendance_apply_override (ADR-0020). The ESS enforces the statuses, the future-day rule, one CL a month, the reach-back window and the cut-off, then recomputes the month. No new Scheduler function is added.
 - Notes: Reusing the override function as is would stamp every approval source 'override' (later punches on that day are only logged: attendancePunchController.js:511), replace the day's note with the reason, and list approvals in HR's override history (attendanceAdminController.js:171-192). A distinct source value needs the source CHECK widened (20261022000000_hr_attendance_shifts.sql:125-127), hence 'both'.
 - Check: confirmed: hr_attendance_apply_override exists (20261020000000:282-341): FOR UPDATE, upsert with source 'override' and note = p_reason, before/after into hr_attendance_overrides, no day or status check; service_role only (349-366). The six-status list and future-only-for-leave rule are in the controller (attendanceAdminController.js:15,57-60); the table CHECK refuses other statuses (20261015000004:18-20); the CL check runs before and ensureSnapshot/recompute after the RPC, outside its transaction (96-128); recompute is plpgsql with a transaction-scoped advisory lock (20261022000000:197-286). No per-type decision function exists. Both holds: new functions plus a widened source CHECK and work_mode on an existing table.
 - Evidence:
@@ -924,7 +942,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C8: Withdraw a pending request; after approval only HR can cancel
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: No attendance or leave request to withdraw. Withdraw/cancel patterns exist in inventory requests; faculty leave has an unreachable 'cancelled' status.
 - What remains: Requester withdraw while pending (race-safe, as inventoryRequestsController.js:985-996 does); an HR-only cancel of an approved request that restores the pre-approval day and re-runs recompute in the same transaction; history rows for both. Restoring needs the before-row stored at approval, as the override stores it; cancelling an approved CL must free that month's CL. Use ATTENDANCE_OVERRIDE_ROLES (or hr alone), not HR_ROLES, which includes hr_executive.
 - Notes: Restoring needs the before-row stored at approval time, as the override stores it. Cancelling an approved CL must free that month's CL. Use role hr (plus CEO/super admin if RVM wants), not HR_ROLES, which includes hr_executive (config/hrPolicy.js:25-30).
@@ -940,9 +958,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C9: Lock an approved day against the Admin Manager daily sheet, like an override
 
 - Gap report: MISSING
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: The lock is hr_staff_attendance.source = 'override'. The daily sheet refuses to change such a row (OVERRIDE_LOCKED), punches only log, settle and auto-submit skip it, and only another override changes it.
 - What remains: Request-approved days have no source of their own. Writing them as 'override' locks them but files them as HR overrides (override history, note = reason) and keeps punch times off the row, which does not fit WFH/on-duty days the brief says are punched. A new source such as 'request' needs: the source CHECK widened (20261022000000:125-127); the sheet lock extended to it (staffAttendanceController.js:350-357); the forced snapshot refresh to skip it (attendanceRules.js:201); a per-type rule at the punch roll-up (attendancePunchController.js:511): lock leave and fix-a-day rows, but on WFH/on-duty days keep the status and record the times (the existing non-override path at 513-531 already does that); a decision on whether nightly settle (attendanceSettle.js:79-87, self_punch only) closes a request day left punched in; and a web label. Excuse-late deliberately does not lock.
+- Decided on 16 Oct: Covered by writing approved days through the override function: source override already locks the day against the daily sheet (ADR-0020).
 - Notes: Excuse-late deliberately does not lock (attendanceAdminController.js:131-138); decide per request type whether an approval locks the day.
 - Check: corrected: UPDATE and change-existing hold. Two refinements. 'Only another override changes it' is true for status and times, but excuse-late (no source check) and recompute still rewrite an override row's late fields. And the suggestion to treat a new source like 'override' at attendancePunchController.js:511 would keep punch times off WFH/on-duty days; nightly settle is a further touchpoint the reader did not list.
 - Evidence:
@@ -958,7 +977,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C10: Approver resolution: reporting manager (hr_employees.manager_id), HR fallback; HR/CEO/super admin can decide any
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: The reporting line (manager_id, cycle-safe) and the 'decide any' role set (ATTENDANCE_OVERRIDE_ROLES). No code resolves an approver from manager_id.
 - What remains: A resolver: approver = the requester's current manager_id when that person is active and can sign in (linked portal login, or an attendance-only login, which unlinked people can hold: attendanceOtpController.js:164-167), else HR (role hr); HR/CEO/super admin may decide any; no self-approval. Because the lifecycle, sweep and dismissal functions re-parent reports silently, resolve at read/decide time (or re-resolve on a schedule) rather than trusting an approver stored at submit; hooking those functions instead would change existing code.
 - Decided on 16 Oct: The reporting manager decides, HR is the fallback, and HR, the CEO and super admins may decide any request. HR Executive does not decide attendance or leave requests.
@@ -979,7 +998,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C11: Faculty approved leave also reaches staff attendance, so the midnight job does not mark those days absent
 
 - Gap report: UPDATE; leaveController.js mirrors to faculty.leave_\*
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Approval mirrors to faculty.leave_\* only. For a faculty member with an hr_employees row who is on approved /api/am/leave today and is neither punched nor marked, the next 00:05 IST run writes that day 'absent' / 'No punch' / source 'auto' (unless a holiday or week-off), and it stays until HR corrects it on the sheet with a reason or by Override.
 - What remains: On approval (including emergency leave approved after the fact), write the leave days into hr_staff_attendance for the linked employee (status leave, CL or LWP per the CL rule), replacing 'auto' rows but never 'override' rows; or make fillInDay mark approved leave_requests days as leave. Needs the faculty -> users.faculty_id -> hr_employees.user_id join, which fails for unlinked faculty.
 - Notes: This is live now, not only for the app: since 2026-10-15 every employed person not on a shift is auto-filled (if 20261022000000 is applied in production). leave_requests.leave_type is planned/emergency, so mapping to CL vs LWP is a policy call.
@@ -998,7 +1017,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### C12: Reach-back window (this month + last) and the monthly payroll cut-off
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: A this-month-plus-last window for employee remarks only. No payroll cut-off concept anywhere.
 - What remains: Validate request days against this month + last (reuse the remark window logic) and a configurable payroll cut-off day after which last month closes to requests; RVM to pick the day.
 - Decided on 16 Oct: The payroll cut-off is the 5th of the next month: last month stays open to requests until then.
@@ -1017,7 +1036,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### D1: Approvals inbox and decide - GET /api/ess/approvals; POST /api/ess/approvals/:type/:id/decide
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Three per-module decide paths (faculty leave, interview reschedules, inventory requests). No cross-module inbox.
 - What remains: New inbox listing requests where the caller is the resolved approver (C10) or holds ATTENDANCE_OVERRIDE_ROLES, with counts, and a decide endpoint per type calling the C7 functions. Decide which existing queues also appear: the brief's HoO list names asset requests, faculty leave over 2 days or touching the 1st, interview reschedules and the final hiring decision, each with its own decide endpoint today.
 - Notes: The existing faculty-leave decide is PATCH, the brief's new one is POST. Record decisions in the audit trail the way the guards do (middleware/allowRoles.js:21-29).
@@ -1031,10 +1050,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
   - routes/accountsRoutes.js:49,52,74-75; routes/inventory.js:84-85; routes/studentCertificates.js:56 - further per-module approve/reject paths (admissions, payment adjustments, inventory edit requests, certificates)
 
 <a id="item-d2"></a>
-#### D2: Priority tasks visible to every role except the CEO
+#### D2: Priority tasks visible to every role except the CEO (portal logins only: tasks are keyed to users.id, so attendance-only staff get none; changing that is a Scheduler change)
 
 - Gap report: UPDATE; read guard requireRole(ADMIN) at routes/priorityTasks.js:17; recipients limited to admin_manager/admin at reportingPolicy.js:69
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: Every portal role except the CEO can be set a task by name (CEO/super admin may name all of them; the HoO may name faculty, hod, admin, admin_manager at their own centre). A broadcast reaches admin_manager and admin. Every participant role (all but student and bot_readonly; the CEO reads an always-empty inbox) uses the bell, opens tasks, moves their own with a remark of 3+ characters, adds remarks and acks. Only the CEO or a super admin closes or re-raises.
 - What remains: nothing
 - Notes: Attendance-only staff (no users row) cannot receive tasks: assigned_to is a users FK, createTask and the recipient list read users, and their punch session is refused on /api/priority-tasks. If the Team app must give them tasks, that is new work: create users rows with a minimal role (TASK_ASSIGNEE_ROLES derives from ROLES, so it would join automatically) or add an employee-keyed assignee and accept the ESS identity here. The app must call these routes with the portal JWT.
@@ -1052,7 +1071,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### D3: Priority task remarks endpoint (POST /:id/remarks)
 
 - Gap report: MISSING
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: POST /api/priority-tasks/:id/remarks is live and adds to the task's append-only thread.
 - What remains: nothing
 - Notes: Plain remarks have no minimum length; the 3-character minimum applies only to status moves (controllers/priorityTasksController.js:521-530). Requires the portal JWT.
@@ -1069,7 +1088,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### D4: Multi-level approval chains with auto-skip and escalation (Phase 2)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: One hard-coded two-step chain (faculty leave) and flag-only escalation jobs.
 - What remains: Configurable chains per request type, auto-skip (absent, on leave, same person, no login) and time-based escalation that re-routes and notifies.
 - Notes: RVM removed multi-step approval from inventory requests on 2026-10-08; confirm appetite before building Phase 2 chains.
@@ -1083,7 +1102,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### D5: FCM device registration (POST /api/ess/devices)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing for push. The only device table is the punch binding.
 - What remains: New push-token table keyed on hr_employees.id plus an installation id (token, platform, app version, last seen, revoked) and POST/DELETE /api/ess/devices; revoke on sign-out, exit and HR disable.
 - Notes: Ops: a Firebase project and Android app registration are needed; none exists in any repo. Keep push tokens separate from hr_attendance_devices to avoid confusing them with the punch binding.
@@ -1098,7 +1117,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### D6: Notifications list + unread count (GET /api/ess/notifications)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: No hr_notifications or general notification table. Three bells: the priority-task bell (with real unread receipts), the HR alerts bell (computed, HR roles only) and pending_alerts (student remark alerts for branch staff). Outbound channels are email (interview mails, HR digest, custom email worker) and SMS codes.
 - What remains: New notification table keyed on hr_employees.id (category, title, body, deep link, read_at), GET /api/ess/notifications with an unread count and mark-read, and writers on request submitted/decided (new code). Task-event entries, which the reader's scope includes, need hooks in the existing priority-task controller (createTask, addToThread, close/reraise) or a trigger on priority_tasks/priority_task_remarks; the only new-only alternative is to merge /api/priority-tasks/inbox into the list at read time.
 - Notes: Do not reuse /api/alerts as a notification source: it checks only location, not role (see extra findings). Folding priority-task events into the new list avoids a second polling loop.
@@ -1117,7 +1136,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### D7: Push worker on Firebase + FIREBASE_\* secrets with a length check
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: No push worker and no Firebase secrets. Patterns to copy exist: the deploy-time secret checks and the in-process email worker.
 - What remains: Push outbox table + in-process worker sending through FCM HTTP v1, started from server.js; FIREBASE_\* lines in the deploy heredoc plus a length/format check step; console mode (log, do not send) when the keys are blank, matching the SMS convention.
 - Decided on 16 Oct: No Firebase project yet: the worker writes messages to the log until the FIREBASE_\* keys exist (ADR-0016). It runs inside the ESS, so its secrets go in team_app's deploy job.
@@ -1134,7 +1153,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### D8: Notification categories with opt-outs and quiet hours
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing.
 - What remains: Per-employee preferences per category (with some categories not opt-out-able, e.g. approvals assigned to me) and quiet hours applied by the push worker, which keeps the in-app list unchanged.
 - Notes: Compute quiet hours in IST, like all day logic in the code (services/attendancePunch.js:171-185).
@@ -1149,7 +1168,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E1: Self profile (Summary / Timeline / Personal / Job), never pay or HR remarks
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Every read of the HR record is limited to the four HR roles (hr, hr_executive, ceo, super_admin), with pay under the same four through its own guard. What employees can read about themselves: GET /api/hr/my-attendance (name, code, geofence flag, branch, shift, week-offs, holidays, attendance days), GET /api/me (login account, no HR data) and their own interview rounds. The Job data is all there in hr_employees: designation, role_id to the hr_roles ladder, department, branch, manager, date_of_joining, seniority, employment_status and shift. Pay is in hr_employee_compensation and remarks in hr_employee_remarks, both in separate guarded tables.
 - What remains: New self endpoints (for example GET /api/hr/me/profile) behind punchAuth with no allowRoles (allowRoles returns 401 for punch sessions). Resolve the caller the way loadEmployee does (punch employee id, else hr_employees.user_id = req.user.id). Re-read the record on every call and refuse NOT_LINKED, NOT_ACTIVE and PASSWORD_CHANGE_REQUIRED. Whitelist columns, leaving out performance_tag, bgv_\*, archive_\*, legacy_\*, attribution, user_id and increment_date. Resolve department, branch, role, manager and status labels on the server, since /lookups is HR-only. Sign the photo. Take the Timeline from E12 and the Personal section from E9.
 - Notes: The Personal section is blocked on E9 and the Timeline on E12. Routes mounted inside routes/hr.js inherit the HR kill switch. Punch-only tokens are designed to open only /my-attendance (services/attendancePunch.js:190-199), so serving attendance-only staff here is a deliberate policy widening. date_of_joining was empty on every migrated row (controllers/hr/dashboardController.js:124-126), so tenure may be blank until HR backfills it.
@@ -1172,7 +1191,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E2: My org chain, department, colleague directory (search by name/code, filter by branch/department)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: All the data (the manager_id graph, department, branch, employee code) plus HR-only search and filters. There is no read for non-HR users.
 - What remains: New punchAuth endpoints: (1) the chain, walking manager_id over live rows (is_archived = false, so notice-period people stay) and flagging an inferred top; (2) a department view derived from people and ladder rank, since departments are flat; (3) a directory with q (name or code) and branch/department filters returning a redacted person shape (contact fields per E8) with photos signed in one batch. Build it on hr_employees, not on GET /api/users, which is a branch login list that already leaks contact fields (E8).
 - Decided on 16 Oct: Work email is visible to every colleague; a phone number only to that person's manager chain and HR.
@@ -1191,7 +1210,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E3: Sensitive change requests (old + new values -> HR approval)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing for HR-record change requests. A reusable request/approve pattern (inventory_edit_requests) and the validators exist.
 - What remains: A new table (employee_id, field, old_value, new_value, reason, attachment, status, reviewer, decided_at). Self create, list and withdraw endpoints behind punchAuth. An HR decide endpoint that applies the change with the same validation as PATCH /employees/:id (phoneConflict; manager changes via hr_move_employee) and records an event with the employee as actor.
 - Notes: A phone or email change moves a person's attendance sign-in identity, so approval must re-check uniqueness and should notify both the old and the new contact. Logging into hr_activity_events needs its entity_type CHECK widened and the actor fixed (see extra findings). The HR queue is E5.
@@ -1208,7 +1227,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E4: Employee documents: upload (camera/PDF), verification status, letters folder, 5-min signed link, strip storage path, masked Aadhaar
 
 - Gap report: UPDATE; hr_documents exists; HR uploads only, no verification, returns storage path
-- Now: **UPDATE**; work lands in: Both repos
+- Now: **UPDATE**; the fix sits in: Scheduler code + team_app
 - What exists: HR-only upload, list and delete into the private bucket, with 5-minute signed URLs (that part already meets the task). The letter types (offer, joining, experience, exit) exist as doc_type values. Camera image types and PDF are accepted, judged by the declared MIME type.
 - What remains: Self list, upload and delete endpoints (punchAuth, owner forced to the caller, a self-allowed doc_type subset). New columns: uploaded_by_employee_id, review_status (pending/verified/rejected, with HR uploads defaulting to verified), reviewed_by/_name/_at and review_note. Leave storage_path out of self responses and sign on tap rather than on every list. A letters view is a doc_type filter. Masked Aadhaar is impossible today: no Aadhaar number field exists anywhere, only the 'identity' doc_type. Check, then raise, the nginx body limit for phone photos.
 - Notes: The web client never reads storage_path (no match in Scheduler_frontend client), so it could also be dropped from the HR list safely. A self-upload by a punch-only caller would record uploaded_by null with the name 'unknown' unless the new uploader column is used.
@@ -1227,10 +1246,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E5: HR review queues (change requests, document verification) inside the web HRMS
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing. The HR alerts bell and the HRMS tab framework are possible places to put it.
 - What remains: Queue endpoints (pending change requests, pending documents) with approve/reject and a reason, for HR_WRITE_ROLES. A tab inside the HRMS page (RVM rule: module views stay tabs inside the module). Optionally, a new alert kind or count. Needs the E3 table and the E4 review columns first.
-- Decided on 16 Oct: HR Executive may approve documents and profile changes.
+- Decided on 16 Oct: HR Executive may approve documents and profile changes. Where HR reviews them is open: the web HRMS stays unchanged (ADR-0018), so the choice is the app or a small web page served by team_app.
 - Notes: Needs the E3 table and the E4 review columns first. The web tab is Scheduler_frontend work (client/lib/hr/tabs.ts and client/pages/HrWorkspace.tsx). Decide whether hr_executive may approve; the brief recommends yes for documents and profile changes.
 - Check: corrected: Status and lands_in stand. One evidence line was misdescribed: EmployeeDrawer.tsx contains no 'joining-verification' text. Its only 'verif' matches are the background-verification (BGV) section (853-867) and an 'unverified' pay-amount label (1604). I verified the routes, tabs.ts and the alert kinds.
 - Evidence:
@@ -1243,7 +1262,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E6: Team today (All / Not in yet / Late / WFH / On leave) and Off this week for anyone with reports
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: All the raw inputs: punches, day rows with late fields, shifts, week-offs and holidays, plus a branch/day read limited to HR and the Admin Manager. The manager graph is in hr_employees.manager_id. Nothing is scoped to a manager.
 - What remains: A new endpoint for any caller with direct or indirect reports, resolved through manager_id over live rows (notice period included) rather than login role. It returns today's buckets (All / Not in yet / Late / On leave, plus WFH if adopted) and Off this week. 'On leave' and 'Off this week' can already use future hr_staff_attendance rows with status 'leave', which HR records ahead through the override, plus projected week-offs and holidays. For teaching staff, approved faculty leave_requests can be bridged through users.faculty_id and hr_employees.user_id. What does not exist is an employee-raised leave request for HR employees, which is a separate module. WFH needs a new status (the hr_staff_attendance CHECK, punch geofence handling and the settle job) or must be dropped. Do not copy activeEmployees' date_of_exit filter.
 - Notes: Do not copy activeEmployees' date_of_exit filter, or a manager's notice-period reports vanish. No login carries 'hod', so gate by the org chart. Without WFH this is new-self-contained only. geofence_exempt (20261020000000_hr_attendance_punch.sql:58-59) is a permanent per-person flag for field staff, not a daily WFH.
@@ -1264,7 +1283,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E7: Digital ID card (photo, name, code, designation, branch, blood group, emergency contact)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Name, code, designation, branch and the HR photo exist, but no endpoint shows them to the employee.
 - What remains: A self ID-card endpoint (or a block in /me/profile) with a signed photo (E10), plus the E9 columns (blood_group, emergency contact). Optionally a QR/verify link.
 - Notes: Blocked on E9 and E10. The code on the card doubles as a sign-in identifier; that is low risk on its own because a password or OTP is still needed.
@@ -1279,7 +1298,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E8: Colleague contact visibility rule (email/phone)
 
 - Gap report: MISSING/DECISION
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: Contact data exists, visible to HR only.
 - What remains: An RVM decision first (for example: email visible to colleagues; phone only to self, the manager chain and HR). Then one server-side policy constant, applied in the E2, E6 and E7 responses. The decision must also cover two existing routes that already show contacts beyond HR: GET /api/users (login phone and email to every signed-in token at the branch, students included) and GET /api/faculty (faculty email, phone and leave reason). Either role-gate them or drop the contact fields for non-admin callers; otherwise any portal or student token can bypass the app's rule.
 - Decided on 16 Oct: Work email is visible to every colleague; a phone number only to that person's manager chain and HR.
@@ -1299,9 +1318,10 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E9: hr_employees columns date_of_birth, blood_group, address, emergency_contact
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Scheduler PR
+- Now: **MISSING**; the fix sits in: Scheduler code
 - What exists: None of the four columns exists.
 - What remains: A migration adding date_of_birth (date), blood_group (CHECK list), current and permanent address, and emergency contact name, relation and phone. Add them to WRITABLE and SELECT (or a separate personal read), add the HR drawer fields, decide readers (self plus HR) and keep them out of colleague views. Consider excluding them from AUDITED or redacting them.
+- Decided on 16 Oct: Personal details go in an ESS table keyed to hr_employees.id, because hr_employees must not be altered (ADR-0018, ADR-0021).
 - Notes: Apply the migration before deploying any code that selects the columns, because the backend deploys first and migrations are applied by hand afterwards. Add blood_group and emergency fields to WITHHOLD_VALUE_KEYS if they should be withheld. F6 birthdays depend on date_of_birth.
 - Check: confirmed: No migration gives hr_employees a date_of_birth, blood group, address or emergency column; the only date_of_birth is admission_intakes (20260514000000_schema_gaps.sql:78). The SELECT has no 42703 fallback (employeesController.js:62-71), AUDITED is every WRITABLE key (163-166), and the deploy workflow lints migrations but never applies them (deploy.yml:36-38). One refinement to the notes. WITHHOLD_VALUE_KEYS (auditPolicy.js:89-94) masks values only when an event is written to audit_events (applyFieldPolicy, 347-365). HR edits go to hr_activity_events, and the CEO audit view shows those before/after values verbatim (controllers/ceo/auditReadController.js:124-147,186). Adding the new names to WITHHOLD_VALUE_KEYS would therefore not protect them; they must be kept out of AUDITED, or redacted in fromHrEvent.
 - Evidence:
@@ -1315,7 +1335,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E10: Expose the employee photo to self/team views
 
 - Gap report: UPDATE; photo storage exists (a 20260830 migration)
-- Now: **UPDATE**; work lands in: team_app (new code)
+- Now: **UPDATE**; the fix sits in: team_app
 - What exists: Two photo stores in the same private bucket. The HR photo is readable only by HR roles (Employees list); the self photo only by its owner. Colleagues see neither, and punch-only staff can set neither.
 - What remains: Pick the canonical photo (HR record or users). Sign it in the new self, team, directory and ID-card responses by reusing signPhotos. Optionally add a self-upload path for punch-only staff, with HR approval if wanted.
 - Notes: Signed URLs last 300 s, so fetch them at render time and never cache them. Merging the two stores would touch /api/me/photo (existing code).
@@ -1332,7 +1352,7 @@ Paths are relative to Scheduler_Backend at c28b9ca unless marked [frontend] (Sch
 #### E11: Keep notice-period people on the chain with a 'Notice period' chip (the web org chart drops them)
 
 - Gap report: UPDATE
-- Now: **UPDATE**; work lands in: Both repos
+- Now: **UPDATE**; the fix sits in: Scheduler code + team_app
 - What exists: How the chart treats each status today:
 - active: shown
 - notice_period: hidden, though the person is still live and punching
@@ -1357,7 +1377,7 @@ No node shows a status chip.
 #### E12: Timeline from HR events (joining, confirmation, changes, increments as dates only)
 
 - Gap report: UPDATE; hr_activity_events read
-- Now: **UPDATE**; work lands in: team_app (new code)
+- Now: **UPDATE**; the fix sits in: team_app
 - What exists: The raw HR trail (HR-only) and the dates a timeline needs: date_of_joining, the promotion, manager, code and status events, and revision dates.
 - What remains: A curated self timeline endpoint showing joining (date_of_joining), promotions and designation changes, manager changes, increments as dates only (effective_from / increment_date, with no amounts and no increment_percent), and notice or exit. It must leave out remarks, document notes, actor names and COMPENSATION_VIEWED. 'Confirmation' needs an RVM decision, because no field or event exists for it.
 - Notes: It has to query two entities (employee and compensation). Migrated history carries no dates, so early timelines will be sparse.
@@ -1378,7 +1398,7 @@ No node shows a status chip.
 #### F1: Wall posts (text, &lt;=5 photos/PDFs, @mentions, wall choice), edit 15 min, delete
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing beyond the upload and storage patterns.
 - What remains: New tables (posts, up to 5 attachments, mentions, wall/channel) and endpoints (create, edit within 15 minutes, delete), keyed on hr_employees.id so attendance-only staff can take part. Media handling per F9.
 - Notes: Depends on F8 (who may post) and F9 (media). Push for @mentions needs new FCM infrastructure; none exists.
@@ -1394,7 +1414,7 @@ No node shows a status chip.
 #### F2: Six reactions + comments (one level of replies) + reactions on comments + who reacted
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing for this. The thread and receipt patterns key on users, so they exclude punch-only staff.
 - What remains: Tables for reactions (6 types, unique per person per target, posts and comments), comments with parent_id (one level), and a who-reacted list endpoint, all keyed on hr_employees.id.
 - Notes: Ships with F1.
@@ -1408,7 +1428,7 @@ No node shows a status chip.
 #### F3: Praise with RVM badges (8-12, HR-editable), reason &lt;=280, optional photo + certificate PDF
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing for praise. A PDF generator exists.
 - What remains: A badges table (8-12 rows, HR CRUD), praise posts (giver, receiver(s), badge, reason &lt;=280, optional photo), and a certificate PDF, either generated with pdfkit or uploaded.
 - Notes: Uses the F1 post model and F9 media.
@@ -1422,7 +1442,7 @@ No node shows a status chip.
 #### F4: Polls (>=2 options, single/multi, anonymous, closing date, options locked after the first vote)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing.
 - What remains: Tables for polls, options and votes (single or multi choice, an anonymous flag, closes_at), with a guard or trigger that locks options after the first vote, and results that hide voters when the poll is anonymous.
 - Check: confirmed: Searched routes, controllers, services and migrations for poll, option and vote: no poll model exists anywhere.
@@ -1433,7 +1453,7 @@ No node shows a status chip.
 #### F5: Staff announcements: audience, schedule, closing date, push + email, read/ack counts, pin &lt;=3
 
 - Gap report: UPDATE; the existing announcements table is student/batch scope only (title, message, scope, batch_id)
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: A student/batch notice feed consumed by the web (admin roles), flutterapps staff_app and the student portal. It has no author, audience, schedule, expiry, pin, or read/ack tracking. Email infrastructure exists; push does not.
 - What remains: New staff-announcement tables: audience rules by branch, department, ladder or portal role, and named people; author; publish_at and closes_at; pinned (at most 3); reads and acks keyed on hr_employees.id. Endpoints, a scheduling cron, email fan-out (utils/mailer or the email queue) and push (new FCM infrastructure). Keep all of it off /api/announcements and the announcements table.
 - Notes: The report's UPDATE framing is misleading. Reusing the table would show staff notices to students on the student portal (same location filter), the scope CHECK refuses new values, and staff_app would render them as 'unknown'. Separately, the existing route needs a role gate (change-existing; see extra findings). For 'role' audiences, decide between the ladder role (hr_roles) and the portal role (users.role via user_id).
@@ -1456,7 +1476,7 @@ No node shows a status chip.
 #### F6: Celebrations (birthdays day+month only, anniversaries, new joiners &lt;=15 days, one-tap wish, hide own birthday)
 
 - Gap report: MISSING (needs DOB)
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Joining dates (possibly sparse) and an HR-only new-joiner filter. No DOB, no celebrations endpoint, no wish mechanism.
 - What remains: The DOB column (E9) and a self 'hide my birthday' preference. A celebrations endpoint: birthdays by day and month only, anniversaries from date_of_joining, joiners within 15 days, live people only. A one-tap wish built on the F1/F2 models.
 - Notes: Blocked on E9 and on HR backfilling date_of_joining. Filter on is_archived, as in E11.
@@ -1471,7 +1491,7 @@ No node shows a status chip.
 #### F7: Moderation: report post/comment -> HR queue; hide/delete with reason; logged
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Audit infrastructure only.
 - What remains: Report table, HR queue endpoints, hide/delete with a reason, and logging of each action.
 - Notes: Ships with F1 and F2. Decide whether hr_executive moderates.
@@ -1485,7 +1505,7 @@ No node shows a status chip.
 #### F8: Wall settings: who may post what
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing.
 - What remains: A settings table, or policy plus an HR UI: which walls exist, who may post, who may announce or praise, and whether attachments are allowed.
 - Decided on 16 Oct: Everyone may post, comment, react, praise and run polls; announcements only by HR, the CEO and super admins.
@@ -1498,7 +1518,7 @@ No node shows a status chip.
 #### F9: Compress photos &lt; 1 MB and store on the server
 
 - Gap report: MISSING; needs the nginx upload limit raised
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: Uploads go through backend multer (in memory) into Supabase Storage. There is no compression, no wall-media store and no local-disk storage.
 - What remains: Client-side compression in Flutter to under 1 MB. A new wall-media upload endpoint (one file per request, or a raised limit) with a decision between signed and public delivery. Raise client_max_body_size in deploy.yml itself, because a manual edit on the VPS is overwritten by the next deploy.
 - Notes: client_max_body_size caps the whole request body, so five photos under 1 MB each in one multipart request still exceed a 1 MB limit. Server-side recompression would need a new dependency such as sharp. Feed images in the private bucket need batch signing (createSignedUrls, as in signPhotos).
@@ -1523,7 +1543,7 @@ No node shows a status chip.
 #### G1: Helpdesk categories (HR-editable) with routing target, priority and SLA
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing.
 - What remains: A categories table (name, routing target such as a role, person or department head, default priority, SLA hours, confidential flag, infra audit_type mapping) with HR CRUD.
 - Notes: Routing to the HoO must bridge hr_branches to Scheduler locations by name (see extra findings).
@@ -1538,7 +1558,7 @@ No node shows a status chip.
 #### G2: Tickets + thread + lifecycle (Open / In progress / On hold / Resolved / Closed), reopen &lt;=7 d, rating 1-5, withdraw, HD-0001
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Student-support tickets only (student to admin). Nothing for employees.
 - What remains: New tables (for example hd_tickets with a serial rendered HD-0001, hd_ticket_messages, hd_ticket_events) with a 5-state lifecycle, reopen within 7 days, a 1-5 rating and withdraw, under a new mount keyed on hr_employees.id.
 - Notes: Avoid the table names tickets and ticket_chats, the enum types ticket_status and ticket_priority, and the /api/tickets path. student_app's support tickets live on the JobPortal (flutterapps packages/data/lib/src/datasources/support_remote_data_source.dart:22-25), not on this backend.
@@ -1557,7 +1577,7 @@ No node shows a status chip.
 #### G3: Response-time targets in working hours per branch, 'Overdue by 3h', escalation (category head -> HoO -> CEO)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Day-count escalation flags and a per-branch holiday list. No business-hours SLA.
 - What remains: A per-branch working-hours calendar (reusing hr_holidays), a business-hours SLA calculator, overdue labels, and an escalation cron (category head -> HoO -> CEO) with notifications.
 - Notes: Registering the cron is a one-line addition to scheduledJobs.js. The HoO sits on Scheduler locations while employees sit on hr_branches (see extra findings).
@@ -1572,7 +1592,7 @@ No node shows a status chip.
 #### G4: Confidential categories and optional anonymity
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing.
 - What remains: A confidential flag on categories that limits visibility to named handlers, optional anonymity (the raiser hidden from agents but kept for audit) and logging that respects it.
 - Check: confirmed: No confidential or anonymous flag exists anywhere. Every admin-level user sees all of a branch's tickets (ticketManagementController.js:134-146), and HR events always carry the actor's name and role (hrms_tables.sql:472-474).
@@ -1585,7 +1605,7 @@ No node shows a status chip.
 #### G5: Agent workspace (phone + web queue, filters, bulk close, saved replies, reports)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Patterns only, in the student-ticket controller.
 - What remains: Agent queue endpoints with filters, bulk close, saved replies (table plus CRUD) and report aggregates, plus phone and web screens.
 - Notes: Includes client work in the app and the web.
@@ -1599,7 +1619,7 @@ No node shows a status chip.
 #### G6: Mirror lab/facility tickets into infra_tickets so the Admin Manager register stays complete
 
 - Gap report: UPDATE; infra_tickets exists
-- Now: **UPDATE**; work lands in: Both repos
+- Now: **UPDATE**; the fix sits in: Scheduler code + team_app
 - What exists: A branch infra register owned by admin-level roles, with A-D categories, open/closed status and a 7-day escalation flag. Faculty, HR, hod and punch-only staff cannot write to it.
 - What remains: A mirror service that maps helpdesk lab/facility categories to audit_type, maps hr_branches to locations by name, sets raised_by null for punch-only raisers (name in owner or issue), and stores the link (a new column on infra_tickets or a link table). Closing must sync both ways (hook closeInfraTicket or reconcile), and RVM must decide whether an Admin Manager closing the register entry resolves the helpdesk ticket.
 - Notes: infra_tickets has no in-progress state and no thread, so the helpdesk stays the system of record and the register gets a summary row.
@@ -1621,7 +1641,7 @@ No node shows a status chip.
 #### H1: Server-side checks on marking class attendance (caller owns the batch, date window, lock after first save, refuse student tokens)
 
 - Gap report: UPDATE; POST /api/attendance only auth + denyWrite (attendanceRoutes.js:43); denyWrite is a no-op
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: A working upsert endpoint used by both clients (FE client/lib/services/api.ts saveAttendance; flutterapps packages/data/lib/src/datasources/attendance_remote_data_source.dart:20-34), with one audit event per save. None of the four checks exists on the server.
 - What remains: Before or inside addOrUpdateAttendance: (1) refuse userType 'student', and any role that does not teach or administer (hr, hr_executive, hod_placement); (2) require the batch to be in the caller's branch unless isSuperAdmin; (3) for faculty/hod, require batches.faculty_id = req.user.faculty_id, or a faculty_substitutions row covering that date with substitute_faculty_id = the caller; (4) require a valid YYYY-MM-DD date inside batch start..min(end, today IST), with no future dates; (5) require every student_id to be on batch_students for the batch; (6) answer 409 when a teaching role re-saves a batch+date that already has rows, while admin roles may still correct it. Optionally store marked_by per row. Use 403/409 with codes, never 401.
 - Notes: The sibling write PATCH /api/attendance/remarks (attendanceRoutes.js:107) has a branch fence but no role check. A student token at the branch can write absence remarks, and they are recorded as 'Admin' because students have no username (attendanceController.js:1119-1123,1168-1186). The Flutter staff app also marks attendance, so any new refusal codes must be handled there.
@@ -1639,7 +1659,7 @@ No node shows a status chip.
 #### H2: Trim the marking roster reply (full students rows incl. password hashes)
 
 - Gap report: UPDATE; selects students(\*, is_on_hold) incl. password hashes at attendanceController.js:186,191
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: The roster endpoint, returning full student rows to any signed-in caller for any batch.
 - What remains: Replace both embeds with an explicit column list, e.g. students(id, name, admission_number, phone_number, is_on_hold). Add the H1 scope check to this read: branch, own or covered batch for teaching roles, and refuse students. Apply the same trimming to the sibling reads named in extra_findings.
 - Notes: The column trim is safe for both known clients. Students' own job-portal sign-in runs on a separate backend (flutterapps packages/core_network/lib/src/api_environment.dart:9-28), so whatever students.password_hash holds is exposed here.
@@ -1656,7 +1676,7 @@ No node shows a status chip.
 #### H3: hod_placement as an interviewer, and whether it can see its own interview calendar
 
 - Gap report: AVAILABLE/VERIFY (roles.js:9, migration 20260914000001)
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: The role is in the enum, in roles.js and in the web routing. The 24-hour banner GET /api/interviews/mine/upcoming works for any linked login (interviewsController.js:1198-1243).
 - What remains: Add ROLES.HOD_PLACEMENT to INTERVIEWER_ROLES (hrPolicy.js:236), so it can be named and gets its own diary by role. RVM must decide whether it should see every interview ('hod_placement' in SEES_EVERY_INTERVIEW, interviewsController.js:117) and whether it may decide reschedules (INTERVIEW_RESCHEDULE_DECIDE_ROLES). Its login must also be linked through hr_employees.user_id.
 - Notes: Direct answer: a hod_placement login cannot see an interview calendar by virtue of its role. Without a linked employee whose label matches LEADER_ROLE_PATTERN it gets 403, even though the web lands it on /interviews.
@@ -1676,7 +1696,7 @@ No node shows a status chip.
 #### H4: HoO 'my team today' attendance view
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: The data needed: hr_staff_attendance rows with first_in, late and leave status, the shift rules, hr_employees.manager_id, and the user_id link.
 - What remains: A new read endpoint, e.g. GET /api/hr/my-team/today. It resolves the caller's employee through hr_employees.user_id, takes their manager_id descendants (or, for the HoO, their branch), and returns today's status, first_in, late, leave and not-punched for each person. Gate it to hoo (and optionally hod and admin_manager), with the scope enforced on the server.
 - Notes: The route is additive: one new line in routes/hr.js or its own mount. Do not reuse staffAttendance.read as it stands, because it is not fenced.
@@ -1693,7 +1713,7 @@ No node shows a status chip.
 #### H5: Light KPI endpoints (CEO dashboard refuses super admins and runs full scans)
 
 - Gap report: MISSING
-- Now: **UPDATE**; work lands in: Both repos
+- Now: **UPDATE**; the fix sits in: Scheduler code + team_app
 - What exists: A cached, cheap operational KPI read (/api/dashboard/overview) and a cheap today % read. The finance KPIs exist only in the heavy, CEO-only /api/ceo/dashboard.
 - What remains: Add one role-gated light KPI read for the app's leader cards. Give it the guard collectionRateAccess already uses (routes/ceo.js:58-65): exactly ceo, super_admin and hoo, with the HoO pinned to its branch, so students and faculty are refused. Read the finance figures from stored data rather than the 8 live scans: branch_period_metrics already holds revenue_collected, billed_due and outstanding per branch per week/month (nightly), and dashboard_snapshots holds the operational KPIs (hourly). 'Predicted' (unpaid installments due in a window) and today's collected amount are in neither store, so add them to the hourly snapshot payload or compute them with one indexed query. Optionally put the same gate on /api/dashboard/overview, which today serves any branch token, students included. Confirm that 20261019000000 is applied in production.
 - Notes: Check that 20261019000000 has been applied in production before the app relies on /overview.
@@ -1714,7 +1734,7 @@ No node shows a status chip.
 #### H6: HR approval endpoints for the new request types
 
 - Gap report: MISSING (depends on C)
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing for the new request types.
 - What remains: Once C defines the types: request tables keyed to hr_employees.id, and approve/reject endpoints for HR (and HR Executive, if RVM agrees) behind allowRoles, with audit events. An inbox listing for the approver is also needed.
 - Decided on 16 Oct: HR Executive is left out of attendance and leave approvals.
@@ -1731,7 +1751,7 @@ No node shows a status chip.
 #### H7: Faculty 'my day' endpoint aware of substitutions + indicators card data
 
 - Gap report: UPDATE; /api/attendance/reports/faculty/:id exists
-- Now: **UPDATE**; work lands in: Both repos
+- Now: **UPDATE**; the fix sits in: Scheduler code + team_app
 - What exists: Building blocks: the substitution-aware faculty report (month health, today %, unmarked dates per batch), today's substitution-aware batch list, and the per-faculty student counts.
 - What remains: One endpoint, e.g. GET /api/faculty/me/day?date=, that resolves req.user.faculty_id. It returns: today's sessions from days_of_week/schedule and start/end time, owned or covered through faculty_substitutions (other centres included); a marked flag per session; the pending-remarks count; and an indicators block (month attendance health %, today %, active and total students, sessions with no attendance). Also add a self-or-admin check to /reports/faculty/:facultyId.
 - Notes: The faculty indicators on the web are assembled from the four separate calls above, each with its own scope rules.
@@ -1745,10 +1765,10 @@ No node shows a status chip.
   - controllers/facultyController.js:466-534,536-571 - active-students is a branch list with one row per faculty; total-students/:faculty_id counts every batch ever, ignores substitutions and has no caller scope
 
 <a id="item-h8"></a>
-#### H8: Re-role every HOD and HoO before launch
+#### H8: Re-role every HOD and HoO before launch (RVM operations; the backend side lists the accounts for KP, read-only, and changes no role)
 
 - Gap report: OPS
-- Now: **OPS**; work lands in: RVM operations
+- Now: **OPS**; the fix sits in: RVM operations
 - What exists: All the role-gated code is in place. It needs the right role values on the accounts.
 - What remains: RVM, through a super admin in User Management: every HOD gets role 'hod', a department (CAD, CAM, PLC or Interior) and a linked faculty record; every HoO gets role 'hoo' with its branch set; each is linked to its hr_employees row (user_id). Re-count first.
 - Notes: The code comments still say no account holds 'hod' (routes/interviews.js:18-20; config/hrPolicy.js:229-231; services/hrPeople.js:25-30; FE client/lib/roles.ts:396-400). RVM's own notes record 5 hod, 2 hoo and 1 hod_placement accounts as of 2026-09-15. That is not verifiable read-only here, so part of this may already be done.
@@ -1769,7 +1789,7 @@ No node shows a status chip.
 #### I: Data model: indicative tables, columns and functions mapped to what exists at c28b9ca
 
 - Gap report: Indicative data model (attendance, punches, challenges, pings, devices, shifts, holidays, requests, leave, refresh tokens, notifications, wall, praise, polls, announcements, helpdesk, change requests; profile, work_mode, document, geofence and desk-flag columns; per-request functions and the midnight close)
-- Now: **UPDATE**; work lands in: Both repos
+- Now: **UPDATE**; the fix sits in: Scheduler code + team_app
 - What exists: The attendance core exists: hr_staff_attendance plus hr_attendance_punches/pings/devices/overrides/otp_codes/accounts/remarks/employee_remarks, hr_shifts and hr_holidays, with the functions hr_attendance_apply_override, hr_attendance_recompute and hr_attendance_otp_issue. None of the ESS tables beyond attendance exist.
 - What remains: New tables: attendance and leave/WFH/profile-change requests with history, leave balances, ESS notifications and push device tokens, wall/praise/polls, announcements with acks, celebrations, and the helpdesk. New columns on existing tables: hr_employees date_of_birth, blood_group, address and emergency contact; hr_staff_attendance work_mode (plus a status/CHECK decision); hr_documents verification status and flags; a shared-desk flag on users. One decision-and-write SQL function per request type, modelled on hr_attendance_apply_override.
 - Notes: Mapping (indicative -> real (migration) or NONE):
@@ -1823,7 +1843,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J1: POST /api/attendance accepts any signed-in token (student included) for any batch and date
 
 - Gap report: OPEN (attendanceRoutes.js:43; denyWrite empty at roles.js:94)
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Still open, exactly as reported.
 - What remains: Same as H1. A minimum fix is staffOnly (middleware/staffOnly.js) plus a branch and ownership check in the controller.
 - Notes: The student login is not covered by loginLimiter (server.js:119 covers /api/users/login only), so a token is cheap to get for anyone who knows a student's admission number and phone.
@@ -1839,7 +1859,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J2: Marking roster returns full student rows incl. password hashes
 
 - Gap report: OPEN
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Still open, and wider than reported.
 - What remains: Explicit column lists in all four places, plus the H2 scope check on the roster.
 - Notes: Before trimming GET /api/students, check which fields its web and Flutter consumers read.
@@ -1854,7 +1874,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J3: Batch create/edit/delete have no role check
 
 - Gap report: OPEN (routes/batches.js:9-11)
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Still open.
 - What remains: Add requireRole(ROLES.ADMIN), or an exact allowlist such as ENROLL_ROLES, to routes/batches.js:19-21. Add a branch check on the target batch in update and delete, and apply the cross-branch ownership rule to the studentIds sent with create and update.
 - Notes: The Flutter staff app exposes create and edit to faculty (flutterapps packages/data/lib/src/datasources/batches_remote_data_source.dart:42-48), so it must hide them once the server refuses.
@@ -1870,7 +1890,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J4: Announcement create/delete have no role check
 
 - Gap report: OPEN (routes/announcements.js:13-14)
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Still open.
 - What remains: Add an admin-level gate (requireRole(ADMIN) or an allowlist) on POST and DELETE. Scope the delete to the caller's branch unless isSuperAdmin, validate that batch_id belongs to the branch, and let branchless global roles pass a location_id.
 - Notes: The Flutter app exposes create and delete (flutterapps packages/data/lib/src/datasources/announcements_remote_data_source.dart:23-29).
@@ -1884,7 +1904,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J5: Unsafe POST /api/users/reset-password (username + phone, no code) still registered
 
 - Gap report: OPEN (routes/user.js:28)
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Still open, and weaker than described: knowing a phone number is enough.
 - What remains: Remove the route, or require an OTP to the account's verified phone or email. Move the web Login page and the Flutter staff app to /api/users/forgot-password[/confirm], and add an SMS-code variant for staff who have no verified email. Optionally reject tokens issued before password_changed_at in auth.
 - Notes: Accounts with 2FA on still need the emailed code to sign in (userController.js:467), but their password can still be changed, which locks the owner out. The removal also needs client changes.
@@ -1903,7 +1923,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J6: hod_placement as interviewer; HOD/HoO on the right role
 
 - Gap report: PART
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: The HOD and HoO code paths are complete. hod_placement is wired on the web, but the server never names it.
 - What remains: Code: add HOD_PLACEMENT to INTERVIEWER_ROLES, and to SEES_EVERY_INTERVIEW and the reschedule-decide set if RVM agrees. Ops: H8 (re-role HODs and HoOs, set hod_domains, link hr_employees.user_id).
 - Notes: The code part is small. The rest is the H8 operations step.
@@ -1919,7 +1939,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J7: nginx upload limit + health and minimum-app-version endpoint
 
 - Gap report: OPEN
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: Nothing. The nginx side cannot be seen from the repo.
 - What remains: Code: add GET /api/health (JSON, no auth, a quick database ping such as the MCP health tool's head count on locations) and GET /api/app/min-version returning {min_version, latest_version, force_update} from config or env, both mounted before the SPA catch-all at server.js:212. Repo infra: add client_max_body_size (for example 25m, at least the largest multipart the app sends) to the /api/ location blocks in .github/workflows/deploy.yml: the scheduler vhost at 340-350, plus the student vhost at 470-477 and 510-517 if the portal uploads. Optionally add error_page handlers there so nginx's 413, 502 and 504 on /api come back as JSON the app can detect. Editing nginx on the VPS alone does not stick: the next push to main overwrites it. Ops: check whether the VPS's /etc/nginx/nginx.conf already sets a global client_max_body_size.
 - Notes: The nginx limit is an operations step on the VPS. If it is still the 1 MB default, uploads over 1 MB fail with an nginx HTML 413 before they reach Node.
@@ -1939,7 +1959,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J8: 401 semantics: sign out only when the session is really over
 
 - Gap report: SERVER+CLIENT; ~40 endpoints reuse 401 for other reasons
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Count at c28b9ca: 49 app-facing 401 sites are NOT token rejections. That is 43 'no branch' sites, 4 wrong-current-password sites and 2 sign-in credential failures, plus 3 non-app ones. Only these mean the session is over: 'No token provided', 'Please authenticate' (no code) and code NOT_AUTHENTICATED (punch sessions only).
 - What remains: Server: turn the 43 branch-context 401s into 403 with a code (e.g. NO_BRANCH_CONTEXT), and the 4 wrong-password 401s into 400/403 with a code (WRONG_PASSWORD). Add code NOT_AUTHENTICATED (or TOKEN_EXPIRED/TOKEN_INVALID) to auth.js's two 401s, and answer 503 rather than 401 when the user lookup fails for a database reason. Client: sign out only on that code (or those exact messages), never on any 401.
 - Notes: The report's '~40' undercounts: the figure is 49. Eleven of the branch-context sites are unconditional and hit a CEO or super admin whose row has no branch: announcementController.js:36; batchesController.js:162,305; skillsController.js:29; studentsController.js:164; substitutionController.js:22,211,396; suggestionController.js:25; facultyController.js:96 and admissionController.js:189 unless body.location_id is sent. HR and HR Executive (no branch) hit the rest. The client half of the fix is client-only work.
@@ -1969,7 +1989,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### J9: Play Integrity verification server-side
 
 - Gap report: OPEN
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: Nothing.
 - What remains: A server module that verifies Play Integrity tokens (decode through Google's API with a service account, check the package name, certificate digest, nonce or requestHash and app and device verdicts). It needs a flag so it runs log-only until the keys exist, and it must be hooked into punch-session issuance and/or the punch and challenge endpoints.
 - Decided on 16 Oct: No Play project yet: verification is built behind a switch that stays off (ADR-0016).
@@ -1985,7 +2005,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### 70a: /api/activities without auth
 
 - Gap report: Issue #70 leftover
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: Fixed.
 - What remains: nothing
 - Notes: A student token can still read its branch's last 10 activity lines; this is low risk.
@@ -1998,7 +2018,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### 70b: Public course writes (/api/courses)
 
 - Gap report: Issue #70 leftover
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: Fixed in 8ec22fd.
 - What remains: nothing
 - Notes: requireRole(ADMIN) admits every admin-level role (admin, admin_manager, hoo, accounts_admin, super_admin, ceo).
@@ -2011,7 +2031,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### 70c: Public intake list (GET /api/intakes)
 
 - Gap report: Issue #70 leftover
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: Fixed (64530d5 and e5bfbd8).
 - What remains: nothing
 - Notes: Remaining gap: listIntakes returns every branch's intakes with select('\*'), ID numbers and addresses included, to any staff role, faculty and HR included (controllers/intakeController.js:459-485). The tokenless grace is meant to be removed once the logs show no use.
@@ -2025,7 +2045,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### 70d: Public /api/chat
 
 - Gap report: Issue #70 leftover
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: No longer public.
 - What remains: nothing
 - Notes: Remaining gap: there is no ticket-ownership check. Any token can read or post any ticket's legacy messages (controllers/chatController.js:10-58,67-85), while the newer /api/tickets/:id/chat does check (controllers/ticketManagementController.js:20-37,458-463).
@@ -2038,7 +2058,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### 70e: ensureFacultyId with a blank email
 
 - Gap report: Issue #70 leftover
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: Fixed in 8ec22fd.
 - What remains: nothing
 - Notes: A sibling remains: POST /api/faculty inserts the body email as given (controllers/facultyController.js:99,133-141), and the web sends whatever was typed (FE client/hooks/useFacultyData.ts:63-70). A blank field can still hit the same '' clash.
@@ -2051,7 +2071,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### 70f: Missing /api/intakes/by-phone
 
 - Gap report: Issue #70 leftover
-- Now: **AVAILABLE**; work lands in: Nothing to build
+- Now: **AVAILABLE**; the fix sits in: Nothing to build
 - What exists: Present (64530d5 and e5bfbd8).
 - What remains: nothing
 - Notes: GET /api/admissions/by-phone/:phone stays public but returns only a mode and undertaking_completed (routes/admissionRoutes.js:42-47; controllers/admissionController.js:578-598).
@@ -2064,7 +2084,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### DASH: Brief: '/api/dashboard shows branch fee totals to faculty' (who can call it)
 
 - Gap report: Brief claim (no report id)
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: The claim is true and understated. Any branch token gets the full branch admissions list and fee totals: faculty, HOD and students alike.
 - What remains: Gate GET /api/dashboard to admin-level roles (requireRole(ADMIN) or an exact allowlist). If the staff app's faculty dashboard needs numbers, give teaching roles a separate, teaching-scoped, non-financial reply.
 - Notes: Gating it does not affect the web, which already restricts the page, but the Flutter staff app's faculty dashboard must change.
@@ -2083,9 +2103,10 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### K1: nginx upload limit above the 1 MB default (written by deploy.yml)
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Scheduler PR
+- Now: **MISSING**; the fix sits in: Scheduler code
 - What exists: Nothing in the repo; the http-level value in the VPS nginx.conf is unknown.
 - What remains: Add client_max_body_size (e.g. 12m, or larger only on upload paths) to the /api/ location in deploy.yml, and to the student vhost if it uploads; confirm with nginx -T on the VPS.
+- Decided on 16 Oct: The ESS sets its own upload limit in its own nginx block (ADR-0019). The Scheduler's /api/ limit stays as it is (ADR-0018).
 - Notes: Until then any body over 1 MB likely gets nginx's HTML 413 before multer (inferred from nginx defaults). Ops step: check the VPS http{} block.
 - Check: confirmed: deploy.yml sets no client_max_body_size anywhere: not in the scheduler vhost (323-411), its /api/ location (340-350) or the student vhosts (453-533). `git log -S client_max_body_size --all` is empty. Multer allows 10 MB x 10 files (hrPolicy.js:1259-1260; routes/hr.js:79), 5 MB for the photo (routes/me.js:16), and 15 MB in intakeController.js:15 and admissionUndertakingController.js:7. express.json() keeps its 100 kB default (server.js:103). ADR-0005:23-26 also puts the /api/ess location block, with its upload limit, in this same Scheduler deploy.yml, so change-existing-scheduler-code is right. Whether the VPS http{} block already raises the limit is still an ops check.
 - Evidence:
@@ -2098,10 +2119,10 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### K2: Health + minimum-app-version endpoint
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing the app can call.
 - What remains: A public GET under /api (nginx proxies only /api/) returning {ok, server_time, version/sha, min_app_version, latest_app_version, features}, with MIN_APP_VERSION / APP_VERSION added to the deploy heredoc.
-- Decided on 16 Oct: Built in the ESS (team_app), which owns the app-facing health and version answers.
+- Decided on 16 Oct: Built in the ESS (team_app), on its own subdomain (ADR-0019).
 - Notes: GET /api/health today answers 200 with the SPA's HTML, so a client that trusts the status code would read it as healthy.
 - Check: confirmed: server.js:127-201 mounts no health or version route. GET /api/health matches no GET in mcpRoutes (routes/mcp.js), passes express.static and reaches the SPA catch-all (server.js:208-220), which answers 200 with HTML. The MCP 'health' tool (lib/mcp/tools/shared.js:4-19) is bot-only. GET /api/ceo/audit/health (routes/ceo.js:169) is the CEO's audit-ingestion panel, not an app health check, so it does not meet the task. APP_VERSION is read at services/audit.js:220 and lib/mcp/server.js:104 but never written by deploy.yml. Under ADR-0005 the endpoint lives in the ESS (/api/ess/...), with its version values in team_app's deploy env, so new-self-contained holds.
 - Evidence:
@@ -2114,7 +2135,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### K3: FIREBASE_\* secrets in the deploy workflow with a length check
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: team_app (new code)
+- Now: **MISSING**; the fix sits in: team_app
 - What exists: Nothing.
 - What remains: In team_app's ESS deploy job: write FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY_B64 (base64, one line) into .env without the Scheduler's unquoted-heredoc expansion (quote the delimiter or use printf). Add a 'Check the push configuration' step that prints lengths and says push is log-only while they are empty, and add firebase-admin to apps/ess-api. Ops: create the Firebase project and the team_app repository secrets.
 - Decided on 16 Oct: Built in team_app's own deploy job (ADR-0005, ADR-0011).
@@ -2131,7 +2152,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### K4: Per-employee rate limiting (same as A6)
 
 - Gap report: UPDATE
-- Now: **UPDATE**; work lands in: Scheduler PR
+- Now: **UPDATE**; the fix sits in: Scheduler code
 - What exists: Per-IP limiters only (see A6).
 - What remains: As A6: subject-keyed limiter for authenticated calls, IP + identifier for sign-in, route-level attachment.
 - Notes: Duplicate of A6; build once.
@@ -2143,10 +2164,10 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
   - middleware/punchCodeLimiter.js:19-26 - punch sign-in 15 min / 40 per IP
 
 <a id="item-k5"></a>
-#### K5: Ping purge job (retention) + 180-day access-log retention
+#### K5: Ping purge job (retention) + 180-day access-log retention (not built: KP deletes by hand, ADR-0015)
 
 - Gap report: MISSING
-- Now: **MISSING (not built, ADR-0015)**; work lands in: Scheduler PR
+- Now: **MISSING (not built, ADR-0015)**; the fix sits in: Scheduler code
 - What exists: Nothing. Pings, punch attempts and the DB logs grow forever, and nginx log retention is whatever the VPS's own log rotation does, outside the repo.
 - What remains: (1) A purge job: a SQL function plus a node-cron registration in scheduledJobs.js beside the attendance jobs (710-719). It deletes hr_attendance_pings older than the chosen period. Decide the same for the latitude, longitude, ip and user_agent columns of hr_attendance_punches, while keeping the attendance records themselves for 5 years. (2) Access-log retention. The DB logs (audit_events, audit_access_log, user_security_events, ops_bot_call_log) are never deleted today. That meets a 'keep at least 180 days / one year' minimum by default, but nothing deletes them after the period; add purges if RVM sets a maximum. The nginx and pm2 logs are an OPS step on the VPS: confirm logrotate keeps at least the chosen period, since the repo sets nothing. (3) Optionally, record HR reads of location (GET /attendance-admin/trail and /punches) in audit_access_log or audit_events. RVM chooses the period.
 - Decided on 16 Oct: Not built. KP deletes old pings and logs by hand (ADR-0015).
@@ -2166,7 +2187,7 @@ the midnight close -> NONE in SQL. It is Node code, services/attendanceSettle.js
 #### K6: Play Integrity / Keystore key verification server-side; device binding id
 
 - Gap report: MISSING
-- Now: **MISSING**; work lands in: Both repos
+- Now: **MISSING**; the fix sits in: Scheduler code + team_app
 - What exists: Cookie-based one-phone binding; a native app can replay the cookie value in its own Cookie header (readCookie parses req.headers.cookie) with no backend change.
 - What remains: Accept an install id and a registered Keystore public key (new columns or table), verify a Keystore-signed punch or a Play Integrity token (nonce bound to the punch challenge, MEETS_DEVICE_INTEGRITY) on punch and ping, store verdicts as flags, and a migration path for people already bound through a browser cookie.
 - Decided on 16 Oct: No Play project yet: verification is built behind a switch that stays off (ADR-0016).

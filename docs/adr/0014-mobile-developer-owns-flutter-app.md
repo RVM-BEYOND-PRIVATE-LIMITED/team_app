@@ -7,7 +7,7 @@
 
 ## Decision
 
-- The mobile developer moves the existing `rvm_team_app` scaffold into `team_app/apps/rvm_team_app` and builds the app.
+- The mobile developer moves the existing `rvm_team_app` scaffold into team_app and builds the app there. The folder name, `apps/rvm_team_app`, follows the layout proposed in [ADR-0017](0017-repository-layout-and-tooling.md).
 - The backend side delivers:
   - the contract ([ADR-0010](0010-openapi-contract-first.md));
   - a handover note: base URL, auth flow, endpoints per screen and error codes;
