@@ -45,4 +45,22 @@ CREATE INDEX IF NOT EXISTS idx_hr_ess_audit_actor
 ALTER TABLE public.hr_ess_audit ENABLE ROW LEVEL SECURITY;
 
 -- PostgREST caches the schema; tell it about the new table now rather than at its next reload.
+-- Row-level security with no policy keeps the API roles out of every row, but not out of
+-- statements it does not cover, such as TRUNCATE. So they hold no privilege on the table at
+-- all, as on hr_ess_sessions; only the service role keeps what the ESS uses. The ESS never
+-- deletes a row: KP does, by hand (ADR-0015).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON TABLE public.hr_ess_audit FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON TABLE public.hr_ess_audit FROM authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT SELECT, INSERT ON TABLE public.hr_ess_audit TO service_role;
+  END IF;
+END
+$$;
+
 NOTIFY pgrst, 'reload schema';

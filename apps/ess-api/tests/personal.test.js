@@ -12,7 +12,7 @@ const { expectRefusal, expectInvalid, quietErrors, CALLERS, guardOutcome } = req
 
 const MINE = '/api/ess/me/personal';
 const theirs = (id) => `/api/ess/hr/employees/${id}/personal`;
-const HR_ROLES = ['hr', 'hr_executive', 'super_admin'];
+const HR_ROLES = ['hr', 'hr_executive', 'ceo', 'super_admin'];
 
 const EMPTY = {
   date_of_birth: null, blood_group: null, address_line1: null, address_line2: null, city: null, state: null, pincode: null,

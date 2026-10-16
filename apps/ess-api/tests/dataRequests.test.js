@@ -8,7 +8,7 @@ const { expectRefusal, expectInvalid, quietErrors, CALLERS, guardOutcome } = req
 
 const MINE = '/api/ess/me/data-requests';
 const HR = '/api/ess/hr/data-requests';
-const HR_ROLES = ['hr', 'hr_executive', 'super_admin'];
+const HR_ROLES = ['hr', 'hr_executive', 'ceo', 'super_admin'];
 
 const file = (app, token, body) => request(app).post(MINE).set(bearer(token)).send(body);
 const resolve = (app, token, id, body) => request(app).patch(`${HR}/${id}`).set(bearer(token)).send(body);

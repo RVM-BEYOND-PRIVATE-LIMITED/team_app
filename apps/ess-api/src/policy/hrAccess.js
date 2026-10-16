@@ -6,11 +6,9 @@ const { ATTENDANCE_OVERRIDE_ROLES } = require('./hrPolicy');
  * module names them (config/hrPolicy.js:3-16, guarded with allowRoles at routes/hr.js:39-53).
  *
  * HR_RECORD_ROLES: an employee's personal details and their requests to correct or delete their
- * data. hr and hr_executive, plus super_admin (task brief, 16 Oct; docs/03-decisions.md: an HR
- * Executive "approves documents, profile changes"). This is the Scheduler's HR_ROLES
- * (config/hrPolicy.js:25-30) without the CEO: these are the most personal fields the company
- * holds, and DPDP asks that only the people who need them see them. The CEO can be added here
- * in one line if KP decides so.
+ * data. The Scheduler's HR_ROLES (config/hrPolicy.js:25-30: hr, ceo, super_admin), who read the
+ * HR record today, plus hr_executive (docs/03-decisions.md: an HR Executive "approves documents,
+ * profile changes"). Every HR read of someone's personal details is written to hr_ess_audit.
  *
  * ATTENDANCE_ROLES: the location trail, the mocked-location reports and the phone reset. The
  * Scheduler's ATTENDANCE_OVERRIDE_ROLES (hr, ceo, super_admin; config/hrPolicy.js:68-72): "the
@@ -20,6 +18,7 @@ const { ATTENDANCE_OVERRIDE_ROLES } = require('./hrPolicy');
 const HR_RECORD_ROLES = new Set([
   ROLES.HR,
   ROLES.HR_EXECUTIVE,
+  ROLES.CEO,
   ROLES.SUPER_ADMIN,
 ]);
 

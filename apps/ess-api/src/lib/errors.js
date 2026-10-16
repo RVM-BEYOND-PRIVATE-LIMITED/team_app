@@ -60,7 +60,7 @@ const MESSAGES = Object.freeze({
 
   // Who may use HR's tools. The codes are the Scheduler's own for the same refusals
   // (routes/hr.js:53 HR_ACCESS_DENIED, routes/hr.js:206 ATTENDANCE_OVERRIDE_DENIED).
-  HR_ACCESS_DENIED: 'Only HR and super admins can open this.',
+  HR_ACCESS_DENIED: 'Only HR, the CEO and super admins can open this.',
   ATTENDANCE_OVERRIDE_DENIED: 'Only HR, the CEO and super admins can do this.',
   PORTAL_LOGIN_REQUIRED: 'HR tools need your portal login. Sign in with your username or login phone.',
 

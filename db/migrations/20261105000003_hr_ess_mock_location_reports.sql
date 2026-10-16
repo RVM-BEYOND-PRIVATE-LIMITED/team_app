@@ -49,4 +49,22 @@ CREATE INDEX IF NOT EXISTS idx_hr_ess_mock_location_reports_employee
 
 ALTER TABLE public.hr_ess_mock_location_reports ENABLE ROW LEVEL SECURITY;
 
+-- Row-level security with no policy keeps the API roles out of every row, but not out of
+-- statements it does not cover, such as TRUNCATE. So they hold no privilege on the table at
+-- all, as on hr_ess_sessions; only the service role keeps what the ESS uses. The ESS never
+-- deletes a row: KP does, by hand (ADR-0015).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON TABLE public.hr_ess_mock_location_reports FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON TABLE public.hr_ess_mock_location_reports FROM authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT SELECT, INSERT ON TABLE public.hr_ess_mock_location_reports TO service_role;
+  END IF;
+END
+$$;
+
 NOTIFY pgrst, 'reload schema';

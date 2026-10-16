@@ -62,7 +62,7 @@ Wave 2 adds no setting. Its numbers are in the code, each in one place, so a cha
 | Open data requests | 5 per employee | `src/routes/dataRequests.js` |
 | HR lists | 1,000 phones, 500 reports, 500 data requests; `truncated` says more were left out | `src/lib/store.js` `LIST_LIMITS` |
 | The bulk reset's id list | 1 to 500 ids, a 32 kB body | `src/routes/devices.js`, `src/app.js` |
-| Who may use HR's tools | personal details and data requests: hr, hr_executive, super_admin; phones and mocked-location reports: hr, ceo, super_admin | `src/policy/hrAccess.js` |
+| Who may use HR's tools | personal details and data requests: hr, hr_executive, ceo, super_admin; phones and mocked-location reports: hr, ceo, super_admin | `src/policy/hrAccess.js` |
 
 ## Endpoints
 
@@ -80,9 +80,9 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `DELETE /api/ess/sessions/:id` | as above | 204, ending one of the caller's own; 404 for anything else |
 | `POST /api/ess/sign-in/resolve` | none: `{ identifier }` | Which sign-in the one field holds (task A5): `{ kind: "portal", login_with: "as_typed", location_names }` (every branch, for every account), `{ kind: "portal", login_with: "username_or_phone" }`, `{ kind: "attendance", methods }` or `{ kind: "unknown" }` |
 | `POST`, `GET /api/ess/me/data-requests` | either | File and list my requests to correct or delete my data (A8). At most 5 open |
-| `GET /api/ess/hr/data-requests?status=`, `PATCH /api/ess/hr/data-requests/:id` | portal: hr, hr_executive, super_admin | HR's queue, and done or rejected with a note. Never one's own (409 `OWN_REQUEST`) |
+| `GET /api/ess/hr/data-requests?status=`, `PATCH /api/ess/hr/data-requests/:id` | portal: hr, hr_executive, ceo, super_admin | HR's queue, and done or rejected with a note. Never one's own (409 `OWN_REQUEST`) |
 | `GET`, `PUT /api/ess/me/personal` | either | My date of birth, blood group, address and emergency contact (E9). I change only the blood group and emergency contact; the rest is 403 `SENSITIVE_FIELD` |
-| `GET`, `PUT /api/ess/hr/employees/:id/personal` | portal: hr, hr_executive, super_admin | Anybody's personal details, every field. Never one's own (409 `OWN_RECORD`). Every read and change goes to `hr_ess_audit`, and a read that cannot be recorded is refused |
+| `GET`, `PUT /api/ess/hr/employees/:id/personal` | portal: hr, hr_executive, ceo, super_admin | Anybody's personal details, every field. Never one's own (409 `OWN_RECORD`). Every read and change goes to `hr_ess_audit`, and a read that cannot be recorded is refused |
 | `GET /api/ess/attendance/day?date=` | either | `server_now`, my day as stored, its note, HR's remark and my remarks (B1); this month or last month |
 | `POST /api/ess/attendance/mock-location` | either | Report a punch refused for a mocked location (B14); 30 a day per person |
 | `GET /api/ess/hr/mock-location-reports?from=&to=&branch_id=` | portal: hr, ceo, super_admin | The reports, with whose each is |

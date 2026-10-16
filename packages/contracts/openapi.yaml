@@ -967,7 +967,7 @@ paths:
       x-owner: ess
       summary: HR's queue of requests to correct or delete data
       description: |
-        A portal login whose role is `hr`, `hr_executive` or `super_admin` (`HR_RECORD_ROLES`, `src/policy/hrAccess.js`), after the checks of `GET /ess/me`. Everybody else is 403: an attendance session `PORTAL_LOGIN_REQUIRED`, any other role `HR_ACCESS_DENIED`.
+        A portal login whose role is `hr`, `hr_executive`, `ceo` or `super_admin` (`HR_RECORD_ROLES`, `src/policy/hrAccess.js`), after the checks of `GET /ess/me`. Everybody else is 403: an attendance session `PORTAL_LOGIN_REQUIRED`, any other role `HR_ACCESS_DENIED`.
 
         `status` is `open` (the default), `done`, `rejected` or `all`, given once. Newest first, at most 500; `truncated` says more were left out.
       parameters:
@@ -1274,7 +1274,7 @@ paths:
       x-owner: ess
       summary: An employee's personal details, for HR
       description: |
-        The roles of `GET /ess/hr/data-requests` (`hr`, `hr_executive`, `super_admin`, from a portal login). Managers do not see these.
+        The roles of `GET /ess/hr/data-requests` (`hr`, `hr_executive`, `ceo`, `super_admin`, from a portal login). Managers do not see these.
 
         Every read is recorded in the ESS's audit trail (`hr_ess_audit`: who looked at whose record, never the values) **before** the answer is sent. If that row cannot be written the read is refused with 503, so nobody sees personal details unrecorded.
       parameters:
@@ -5672,7 +5672,7 @@ components:
     EssHrAccessDenied:
       summary: A portal role outside HR
       value:
-        error: Only HR and super admins can open this.
+        error: Only HR, the CEO and super admins can open this.
         code: HR_ACCESS_DENIED
     EssAttendanceOverrideDenied:
       summary: A portal role outside HR, the CEO and super admins
