@@ -1,0 +1,3828 @@
+openapi: 3.1.0
+
+info:
+  title: Team RVM API
+  version: 0.1.0
+  summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
+  description: |
+    The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
+
+    ## Who owns what
+
+    | Tag | `x-owner` | Served by | Base URL | What this file promises |
+    | --- | --- | --- | --- | --- |
+    | **ESS** | `ess` | team_app (`apps/ess-api`), its own process on its own host name (ADR-0019) | `https://<ESS host>/api`, so its paths start `/api/ess` | How the new employee self-service API behaves. Changing it is a team_app PR that updates this file in the same PR. |
+    | **Scheduler (existing)** | `scheduler` | Scheduler_Backend, the live system of record | `https://scheduler.rvmcad.org/api` | How the Scheduler's code behaves at commit `c28b9ca` (15 Oct 2026), exactly as it is. Nothing here implies a change: Team RVM changes nothing in the Scheduler (ADR-0018). `POST /users/reset-password` is listed only so the app never calls it. |
+
+    The ESS host name is not chosen yet: KP picks it and adds the DNS record (ADR-0019). The server variable `essHost` holds the ADR's example, `team-api.rvmcad.org`.
+
+    The app calls the Scheduler directly for sign-in and punching (ADR-0006). The ESS never relays a Scheduler call, and one sign-in token works on both hosts. The punch cookie belongs to the Scheduler's host.
+
+    ## Rules that hold everywhere
+
+    - **Errors** are JSON: `{ "error": "<message written for staff>", "code": "UPPER_SNAKE" }`. Show `error` as it is and decide on `code`, never on the text, which may be reworded. Every ESS error has a `code`. Some Scheduler errors have none, and each response below says which.
+    - **Days** are IST (`Asia/Kolkata`) dates, `YYYY-MM-DD`, and turn over at IST midnight. **Instants** are ISO 8601 with an offset (the Scheduler often sends `+00:00`); always parse the offset.
+    - **Requests** send `Content-Type: application/json` and `Authorization: Bearer <token>`, spelt exactly so: the Scheduler removes only `Bearer ` with a capital B and one space.
+
+    ## When to sign out
+
+    Sign out only when a reply says the token itself is finished:
+    - **ESS:** 401 with code `NOT_AUTHENTICATED`. The ESS answers 401 for nothing else, and never for a database outage (that is 503 `UNAVAILABLE`).
+    - **Scheduler:** 401 whose `error` is exactly "No token provided" or "Please authenticate" (these two carry no code), or 401 with code `NOT_AUTHENTICATED`.
+
+    Every other 401 means something else, for example "Invalid password" at sign-in.
+
+    **Check once before signing out on "Please authenticate".** The Scheduler sends it for a bad or expired token, and also when its own database lookup fails. Call `GET /ess/me` with the same token and sign out only if that answers 401 `NOT_AUTHENTICATED`. Any other answer (200, 403, 429, 503, no answer, or a reply that is not JSON) means keep the session and say that something went wrong. A token whose `exp` claim has passed is finished whatever a server says; the app may read `exp` from the token without verifying it.
+
+    ## Replies that are not JSON
+
+    - nginx answers 502 or 504 with an HTML page while either process restarts or is down.
+    - The Scheduler answers an unknown `GET` path with **200 and the web app's HTML page** (its catch-all, `server.js:212-220`), and an unknown path for any other method with a 404 HTML page. That includes an ESS path sent to the Scheduler's host by mistake: `/api/ess` is not on `scheduler.rvmcad.org`.
+    - The Scheduler answers malformed JSON with Express's default 400 HTML page, and a body over 100 kB with a 413 HTML page: `server.js` has no JSON error handler.
+
+    Treat any reply whose `Content-Type` is not `application/json` as "the server is restarting": never as success, and never as a reason to sign out. The ESS itself always answers JSON, including 404 `NOT_FOUND` for an address it does not have.
+
+    ## Rate limits
+
+    - **Scheduler:** counted per IP address, so a whole office on one Wi-Fi shares every bucket. All of `/api` allows 300 requests a minute; the sign-in routes have tighter buckets, listed on each operation. Its 429 bodies carry no code, except the attendance sign-in bucket's `RATE_LIMITED` and the refusals each operation names. Replies carry `RateLimit-Policy`, `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (IETF draft 6) from the last bucket that counted the request, and a 429 carries `Retry-After` in seconds. The buckets live in memory, so they also reset when the Scheduler restarts.
+    - **ESS:** 600 requests a minute per IP address on every path, counted before the token is checked, and 120 a minute per employee after it. A 429 has code `RATE_LIMITED`, with the same draft-6 headers and `Retry-After`.
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: https://scheduler.rvmcad.org/api
+    description: The Scheduler, in production (the only environment), for every path here except /ess/*. Each ESS path names its own server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: ESS
+    description: |
+      New employee self-service endpoints, served by team_app (`apps/ess-api`) as its own process on its own host name, under `/api/ess`. Every operation here has `x-owner: ess`.
+  - name: Scheduler (existing)
+    description: |
+      Endpoints of the live Scheduler (Scheduler_Backend) that the app calls directly, documented exactly as they behave at commit `c28b9ca`, with no change implied. Every operation here has `x-owner: scheduler`. Team RVM changes nothing in the Scheduler (ADR-0018); if the Scheduler ever changes one of these on its own, this file is updated to match.
+
+paths:
+
+  # ════════════════════════════ ESS ════════════════════════════
+
+  /ess/health:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: Not chosen yet. KP picks the name and adds the DNS record (ADR-0019); team-api.rvmcad.org is the ADR's example.
+    get:
+      operationId: getHealth
+      tags: [ESS]
+      x-owner: ess
+      summary: Check the ESS, the server clock and the allowed app versions
+      description: |
+        No token. Call it when the app starts and when it comes back to the foreground.
+
+        - `server_time` is the server's clock. Punch times are always the server's, so warn the person when the phone's clock is far off.
+        - `min_app_version`: an app older than this must update before it goes on. `latest_app_version`: an app older than this may offer an update. Either is null when it is not set.
+        - `db` comes from a cheap read with a short timeout. When the read fails the answer is still 200, with `db: "unavailable"`; the endpoints behind a token then answer 503 `UNAVAILABLE` until it recovers.
+        - It still answers when the ESS is switched off (`ESS_ENABLED=false`), so the version check keeps working; the endpoints behind a token then answer 503 `MODULE_DISABLED`.
+      security: []
+      responses:
+        '200':
+          description: The ESS is running. Look at `db` before relying on the endpoints behind it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              examples:
+                healthy:
+                  summary: Everything up
+                  value:
+                    ok: true
+                    server_time: '2026-10-16T04:30:00.000Z'
+                    version: 0.1.0
+                    min_app_version: 1.0.0
+                    latest_app_version: 1.2.0
+                    db: ok
+                databaseDown:
+                  summary: The database check failed
+                  value:
+                    ok: true
+                    server_time: '2026-10-16T04:30:00.000Z'
+                    version: 0.1.0
+                    min_app_version: null
+                    latest_app_version: null
+                    db: unavailable
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+      x-notes:
+        - >-
+          Call the ESS host, never scheduler.rvmcad.org: there this path reaches the Scheduler's catch-all, which answers 200 with an HTML page. Trust the reply only when Content-Type is application/json and ok is true.
+        - >-
+          A 502 or 504 HTML page comes from nginx: the ESS is restarting or down. Keep the session and try again later.
+        - >-
+          Compare versions as semver (1.10.0 is newer than 1.9.0), never as strings.
+
+  /ess/me:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: Not chosen yet. KP picks the name and adds the DNS record (ADR-0019); team-api.rvmcad.org is the ADR's example.
+    get:
+      operationId: getMe
+      tags: [ESS]
+      x-owner: ess
+      summary: Who is signed in
+      description: |
+        Either token kind. Returns the caller's HR record and the login they used.
+
+        The caller is found in this order, and the first failure answers:
+        1. **The token.** No token, a bad signature, an expired token or a wrong algorithm: 401 `NOT_AUTHENTICATED`. A valid token that is not a staff login (a student token, an admission-undertaking token, anything else signed with `JWT_SECRET`): 403 `NOT_AN_EMPLOYEE`.
+        2. **The HR record.** A portal login is matched to its HR record through `hr_employees.user_id`; none linked is 403 `NOT_LINKED`. Before that, its account must be a staff one: the connector account (role `bot_readonly`) is 403 `NOT_AN_EMPLOYEE`. An attendance session names its employee directly.
+        3. **Still employed.** Archived, `employment_status` "exited", or a `date_of_exit` before today (IST): 403 `NOT_ACTIVE`. This is the Scheduler's punch rule (`controllers/hr/attendancePunchController.js:88-129`): someone on notice stays active up to and including their last working day.
+        4. **Attendance session only.** The attendance login is missing or switched off: 403 `NO_ATTENDANCE_LOGIN`. The session was issued before the login's `sessions_valid_from`, because a password was set or reset since: 401 `NOT_AUTHENTICATED`. The switch-off is checked first, so a switched-off login answers 403 even though its old sessions also predate the cut-off (`services/attendanceAccounts.js:39-53`).
+
+        A token whose account has since been deleted (the `users` row, or the attendance session's employee row) counts as rejected: 401 `NOT_AUTHENTICATED`, as on the Scheduler.
+
+        Before any of this, every request passes the per-IP limit (429 `RATE_LIMITED`) and the ESS switch (503 `MODULE_DISABLED`); the per-employee limit comes after step 4.
+
+        Everything is read again on every request, so an exit, a new manager or a new role shows on the next call, without signing in again.
+      responses:
+        '200':
+          description: The caller's HR record and login.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              examples:
+                portalLogin:
+                  summary: A faculty member signed in with a portal login
+                  value:
+                    employee:
+                      id: 9b2f4c1e-5a3d-4e8f-9c21-7d6e5f4a3b2c
+                      full_name: Ravi Kumar
+                      employee_code: RVM-0142
+                      designation: Faculty, AutoCAD
+                      employment_status: active
+                      branch:
+                        id: 1c7e9a2b-3d4f-4a5b-8c6d-0e1f2a3b4c5d
+                        name: Faridabad
+                      department:
+                        id: 5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9
+                        name: CAD
+                      manager:
+                        id: 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+                        full_name: Neha Singh
+                    login:
+                      kind: portal
+                      role: faculty
+                      user_id: 6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a
+                attendanceSession:
+                  summary: A member of staff with no portal login, on an attendance session
+                  value:
+                    employee:
+                      id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                      full_name: Suresh Yadav
+                      employee_code: RVM-0217
+                      designation: Office Assistant
+                      employment_status: notice_period
+                      branch:
+                        id: 1c7e9a2b-3d4f-4a5b-8c6d-0e1f2a3b4c5d
+                        name: Faridabad
+                      department: null
+                      manager: null
+                    login:
+                      kind: attendance
+                      role: null
+                      user_id: null
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+      x-notes:
+        - >-
+          This is the check to make before signing out on the Scheduler's "Please authenticate": sign out only if this answers 401 NOT_AUTHENTICATED.
+        - >-
+          login.role is the role on the users row as it is now, not the claim inside the token, so a role change shows without signing in again.
+        - >-
+          Decide what to show from GET /ess/me/capabilities, never from login.role.
+        - >-
+          NOT_LINKED here matches the Scheduler's GET /hr/my-attendance answering linked: false. HR fixes both with one link (hr_employees.user_id).
+
+  /ess/me/capabilities:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: Not chosen yet. KP picks the name and adds the DNS record (ADR-0019); team-api.rvmcad.org is the ADR's example.
+    get:
+      operationId: getMyCapabilities
+      tags: [ESS]
+      x-owner: ess
+      summary: What the signed-in person may see and do
+      description: |
+        Either token kind, with the same checks as `GET /ess/me`. The app draws its tabs, sections and approval screens from this answer and never works the rules out for itself.
+
+        The rules (KP, 16 Oct 2026; `docs/03-decisions.md`):
+
+        | Role | `sections.work` | `approvals.any_request` | `approvals.hr_scope` | `wall.announce` | `wall.moderate` |
+        | --- | --- | --- | --- | --- | --- |
+        | faculty, hod, hod_placement, hoo | true | false | none | false | false |
+        | ceo, super_admin | true | true | none | true | false |
+        | admin, admin_manager, accounts_admin | false | false | none | false | false |
+        | hr | false | true | attendance, documents, profile_changes, helpdesk_hr | true | true |
+        | hr_executive | false | false, always | documents, profile_changes, helpdesk_hr | false | false |
+        | attendance-only staff (no portal role) | false | false | none | false | false |
+
+        For every staff login:
+        - `tabs` holds all five, and `sections.time`, `sections.helpdesk`, `sections.documents` and `sections.profile` are true.
+        - `team.direct_reports` counts the active employees (active by the `NOT_ACTIVE` rule) whose `manager_id` is the caller. `team.has_reports` and `approvals.own_reports` are true when it is above 0.
+        - `approvals.request_types` lists every offered request type when `any_request` or `own_reports` is true, and is empty otherwise. This holds for an hr_executive with direct reports too.
+        - An attendance session carries no portal role, so it gets the attendance-only row whatever role the person's portal account has.
+        - `requests` comes from the one policy module the request endpoints will enforce, so the numbers here are the numbers that apply.
+        - `wall.post` is true.
+        - `push.enabled` is true only when the server has its `FIREBASE_*` settings (ADR-0016); until then notifications are written to the server log, not sent. `integrity.required` is false: there is no Play project yet, so no Play Integrity token is asked for.
+      responses:
+        '200':
+          description: What this person may see and do.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+              examples:
+                facultyWithReports:
+                  summary: A faculty member with two direct reports
+                  value:
+                    tabs: [home, inbox, wall, me, team]
+                    sections:
+                      time: true
+                      helpdesk: true
+                      documents: true
+                      profile: true
+                      work: true
+                    team:
+                      has_reports: true
+                      direct_reports: 2
+                    approvals:
+                      own_reports: true
+                      any_request: false
+                      request_types: [on_duty, fix_a_day, excuse_late, short_leave, leave_cl, leave_lwp]
+                      hr_scope: []
+                    requests:
+                      types:
+                        - { type: on_duty, offered: true, limit: null, unit: count, phase: 1 }
+                        - { type: fix_a_day, offered: true, limit: 3, unit: count, phase: 1 }
+                        - { type: excuse_late, offered: true, limit: 3, unit: count, phase: 1 }
+                        - { type: short_leave, offered: true, limit: 180, unit: minutes, phase: 2 }
+                        - { type: leave_cl, offered: true, limit: 1, unit: count, phase: 1 }
+                        - { type: leave_lwp, offered: true, limit: null, unit: count, phase: 1 }
+                        - { type: wfh, offered: false, limit: 0, unit: count, phase: 1 }
+                      payroll_cutoff_day: 5
+                      reach_back_months: 1
+                    wall:
+                      post: true
+                      announce: false
+                      moderate: false
+                    push:
+                      enabled: false
+                    integrity:
+                      required: false
+                hr:
+                  summary: HR, with no direct reports
+                  value:
+                    tabs: [home, inbox, wall, me, team]
+                    sections:
+                      time: true
+                      helpdesk: true
+                      documents: true
+                      profile: true
+                      work: false
+                    team:
+                      has_reports: false
+                      direct_reports: 0
+                    approvals:
+                      own_reports: false
+                      any_request: true
+                      request_types: [on_duty, fix_a_day, excuse_late, short_leave, leave_cl, leave_lwp]
+                      hr_scope: [attendance, documents, profile_changes, helpdesk_hr]
+                    requests:
+                      types:
+                        - { type: on_duty, offered: true, limit: null, unit: count, phase: 1 }
+                        - { type: fix_a_day, offered: true, limit: 3, unit: count, phase: 1 }
+                        - { type: excuse_late, offered: true, limit: 3, unit: count, phase: 1 }
+                        - { type: short_leave, offered: true, limit: 180, unit: minutes, phase: 2 }
+                        - { type: leave_cl, offered: true, limit: 1, unit: count, phase: 1 }
+                        - { type: leave_lwp, offered: true, limit: null, unit: count, phase: 1 }
+                        - { type: wfh, offered: false, limit: 0, unit: count, phase: 1 }
+                      payroll_cutoff_day: 5
+                      reach_back_months: 1
+                    wall:
+                      post: true
+                      announce: true
+                      moderate: true
+                    push:
+                      enabled: false
+                    integrity:
+                      required: false
+                attendanceOnly:
+                  summary: Attendance-only staff with no direct reports
+                  value:
+                    tabs: [home, inbox, wall, me, team]
+                    sections:
+                      time: true
+                      helpdesk: true
+                      documents: true
+                      profile: true
+                      work: false
+                    team:
+                      has_reports: false
+                      direct_reports: 0
+                    approvals:
+                      own_reports: false
+                      any_request: false
+                      request_types: []
+                      hr_scope: []
+                    requests:
+                      types:
+                        - { type: on_duty, offered: true, limit: null, unit: count, phase: 1 }
+                        - { type: fix_a_day, offered: true, limit: 3, unit: count, phase: 1 }
+                        - { type: excuse_late, offered: true, limit: 3, unit: count, phase: 1 }
+                        - { type: short_leave, offered: true, limit: 180, unit: minutes, phase: 2 }
+                        - { type: leave_cl, offered: true, limit: 1, unit: count, phase: 1 }
+                        - { type: leave_lwp, offered: true, limit: null, unit: count, phase: 1 }
+                        - { type: wfh, offered: false, limit: 0, unit: count, phase: 1 }
+                      payroll_cutoff_day: 5
+                      reach_back_months: 1
+                    wall:
+                      post: true
+                      announce: false
+                      moderate: false
+                    push:
+                      enabled: false
+                    integrity:
+                      required: false
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+      x-notes:
+        - >-
+          Fetch it after every sign-in and when the app comes back to the foreground: a new role, a new report or an exit changes it without a new token.
+        - >-
+          Hide a request type whose offered is false (work from home today). The limits are per employee per calendar month; null means no limit.
+
+  # ═══════════════════ Scheduler: portal sign-in ═══════════════════
+
+  /users/login:
+    post:
+      operationId: signInPortal
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/user.js:25; controllers/userController.js:263-538; server.js:60-66,119,125'
+      summary: Sign in with a portal login
+      description: |
+        No token. For people with a portal login (a `users` row). Answers with the portal JWT, or with a two-factor challenge when the account has two-factor on.
+
+        How the account is found:
+        1. `locationName` must be a branch name the Scheduler knows, or the answer is 404 "Location not found.".
+        2. Every account whose username or login phone is exactly `username` is a candidate. None: 404 "User not found. Please check your credentials.".
+        3. A single candidate wins. Otherwise the one at the chosen branch, then the one with no branch (HR, the CEO and the like), then a role that sees every branch. Still undecided: the password decides, and if it cannot, 409.
+        4. The password is checked. If it is wrong for the chosen account but right for exactly one other candidate, that account signs in instead. Otherwise 401 "Invalid password".
+        5. Two-factor on, with a verified email: 200 with a challenge, and the token comes from `POST /users/login/verify`.
+
+        The token lasts 64 hours and cannot be refreshed. Neither a password change nor leaving the company ends it on the Scheduler, and changing that is out of scope (ADR-0018). The ESS refuses an employee who has left (403 `NOT_ACTIVE`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalLoginRequest'
+            examples:
+              byUsername:
+                summary: Username and branch
+                value:
+                  username: ravi.kumar
+                  password: correct horse battery
+                  locationName: Faridabad
+      responses:
+        '200':
+          description: Signed in, or a two-factor challenge to finish at `POST /users/login/verify`. Tell them apart by `two_factor_required`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PortalSession'
+                  - $ref: '#/components/schemas/TwoFactorChallenge'
+              examples:
+                signedIn:
+                  summary: Signed in
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PAYLOAD.SIGNATURE
+                    user:
+                      userId: 6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a
+                      username: ravi.kumar
+                      role: faculty
+                      locationId: 1
+                      locationName: Faridabad
+                twoFactor:
+                  summary: Right password; the account wants the emailed code too
+                  value:
+                    two_factor_required: true
+                    challenge_id: 4a3b2c1d-0e9f-4a8b-9c7d-6e5f4a3b2c1d
+                    sent_to: ra•••@rvmcad.org
+                    expires_at: '2026-10-16T04:40:00.000+00:00'
+                    location_name: Faridabad
+        '400':
+          description: |
+            - "Username, password, and locationName are required" (no code): one of the three is missing or empty.
+            - An HTML page, not JSON: the body is not valid JSON (Express's default handler).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                missingField:
+                  value:
+                    error: Username, password, and locationName are required
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '401':
+          description: |
+            "Invalid password" (no code): the identifier is known and the password is wrong. This is a failed sign-in, not a session ending: there is no session yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                wrongPassword:
+                  value:
+                    error: Invalid password
+        '403':
+          description: |
+            "This account cannot sign in. It is a connector identity, not a login." (no code): the reporting bot's account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                connector:
+                  value:
+                    error: This account cannot sign in. It is a connector identity, not a login.
+        '404':
+          description: |
+            No code on either:
+            - "Location not found.": `locationName` is not a branch the Scheduler knows. Also what a database outage looks like here, because the branch is looked up first.
+            - "User not found. Please check your credentials.": no account has that username or login phone.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unknownBranch:
+                  value:
+                    error: Location not found.
+                unknownAccount:
+                  value:
+                    error: User not found. Please check your credentials.
+        '409':
+          description: |
+            "More than one account answers to that name. ..." (no code): several accounts share the identifier, and neither the branch nor the password picks one.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                ambiguous:
+                  value:
+                    error: More than one account answers to that name. Select the branch it belongs to, or ask an administrator to give it a distinct username.
+        '429':
+          description: |
+            No code on either:
+            - "Too many login attempts. Please try again in 15 minutes.": 20 requests in 15 minutes from this IP address, successes included, in a bucket shared with `POST /users/login/verify`.
+            - "Too many requests. Please slow down.": 300 requests in a minute from this IP address, across all of `/api`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                loginBucket:
+                  $ref: '#/components/examples/LoginRateLimited'
+                apiBucket:
+                  $ref: '#/components/examples/ApiRateLimited'
+        '500':
+          description: '"Internal server error" (no code): an unexpected failure, for example the account lookup failing.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Internal server error
+        '502':
+          description: |
+            `MAIL_FAILED`: the password was right and two-factor is on, but the email with the code could not be sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                mailFailed:
+                  value:
+                    error: 'Two-factor is on for this account but the code could not be sent: The code could not be sent: ZeptoMail answered 500.'
+                    code: MAIL_FAILED
+        '503':
+          description: |
+            The password was right and two-factor is on, but no code can be sent:
+            - `MAIL_NOT_CONFIGURED`: email is not set up on the server.
+            - `TWO_FACTOR_UNAVAILABLE`, or a database error code, when the challenge could not be stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                mailNotConfigured:
+                  value:
+                    error: 'Two-factor is on for this account but the code could not be sent: Codes are sent by email, and email is not configured on this server yet (missing ZEPTOMAIL_API_TOKEN). Ask whoever runs the server to set ZEPTOMAIL_API_TOKEN and EMAIL_FROM_ADDRESS.'
+                    code: MAIL_NOT_CONFIGURED
+                challengeNotStored:
+                  summary: The database could not be reached while storing the challenge
+                  value:
+                    error: 'Two-factor is on for this account but the code could not be sent: TypeError: fetch failed'
+                    code: TWO_FACTOR_UNAVAILABLE
+      x-notes:
+        - >-
+          The field is called username but takes the username or the login phone number, matched exactly as stored on the users row. A phone typed with +91, a space or a leading 0 does not match one stored as ten digits. Email and employee code are not accepted; when the one sign-in field holds a portal account's email or employee code, the app asks for its username or login phone instead (decision 4, task A5).
+        - >-
+          There is no public branch list: GET /api/locations needs a token. The web hard-codes Faridabad, Pune, Ahmedabad and Lucknow. An account with no branch (HR, the CEO, a super admin, finance admin) is found from any branch name.
+        - >-
+          A 404 "Location not found." for a branch that worked before means the database could not be reached: say "try again", not "wrong branch".
+        - >-
+          Wrong passwords never lock a portal account; only the per-IP bucket applies, and a whole office shares it: about 20 sign-ins in 15 minutes from one office Wi-Fi fill it.
+        - >-
+          The token's claims (role, locationId, isSuperAdmin) are a snapshot from sign-in. The Scheduler re-reads role and branch from the database on every request, and so does the ESS.
+
+  /users/login/verify:
+    post:
+      operationId: verifyPortalSignIn
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/user.js:31; controllers/authSecurityController.js:20-31,43-107; services/otp.js:149-192; server.js:60-66,119'
+      summary: Finish a two-factor sign-in with the emailed code
+      description: |
+        No token. The second step when `POST /users/login` answered `two_factor_required: true`. Send the challenge id, the six-digit code from the email, and the `location_name` the challenge carried.
+
+        The code lives 10 minutes and allows 5 wrong tries; the fifth wrong try spends it. Signing in again sends a new code and retires the old one. The token is the same 64-hour portal JWT that `POST /users/login` gives.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginVerifyRequest'
+            examples:
+              verify:
+                value:
+                  challenge_id: 4a3b2c1d-0e9f-4a8b-9c7d-6e5f4a3b2c1d
+                  code: '482915'
+                  location_name: Faridabad
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalSession'
+              examples:
+                signedIn:
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PAYLOAD.SIGNATURE
+                    user:
+                      userId: 6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a
+                      username: ravi.kumar
+                      role: faculty
+                      locationId: 1
+                      locationName: Faridabad
+        '400':
+          description: |
+            - "The challenge and the code are both required." (no code).
+            - `BAD_CODE`: the code is not six digits (spaces are ignored).
+            - `NO_LIVE_CODE`: no unspent code for this challenge.
+            - `EXPIRED`: the code is older than 10 minutes.
+            - `WRONG_CODE`: wrong code; the message says how many tries are left.
+            - `ATTEMPTS_EXHAUSTED`: the fifth wrong try; sign in again for a new code.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                missing:
+                  value:
+                    error: The challenge and the code are both required.
+                badCode:
+                  $ref: '#/components/examples/PortalBadCode'
+                noLiveCode:
+                  $ref: '#/components/examples/PortalNoLiveCode'
+                expired:
+                  $ref: '#/components/examples/PortalCodeExpired'
+                wrongCode:
+                  $ref: '#/components/examples/PortalWrongCode'
+                exhausted:
+                  $ref: '#/components/examples/PortalAttemptsExhausted'
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '404':
+          description: '"Account not found." (no code): the account behind the challenge is gone.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                gone:
+                  value:
+                    error: Account not found.
+        '409':
+          description: '"Two-factor is not on for this account. Sign in normally." (no code): two-factor was switched off after the challenge was sent.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                twoFactorOff:
+                  value:
+                    error: Two-factor is not on for this account. Sign in normally.
+        '429':
+          description: |
+            No code on either: the login bucket (20 in 15 minutes per IP address, shared with `POST /users/login`), or 300 a minute across `/api`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                loginBucket:
+                  $ref: '#/components/examples/LoginRateLimited'
+                apiBucket:
+                  $ref: '#/components/examples/ApiRateLimited'
+        '500':
+          description: '"Could not verify the code." (no code): an unexpected failure, and also any `challenge_id` that is not a uuid, which the database rejects.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Could not verify the code.
+      x-notes:
+        - >-
+          Send back the location_name the challenge carried. The server does not check it; it only goes into the token and the reply.
+        - >-
+          WRONG_CODE here has no attempts_left field; the count is only in the message.
+
+  /users/forgot-password:
+    post:
+      operationId: requestPortalPasswordReset
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/user.js:34; controllers/authSecurityController.js:109-162; services/otp.js:75-140; server.js:72-78,120'
+      summary: Ask for a password-reset code by email (portal logins)
+      description: |
+        No token. `identifier` is a username or the account's email, matched exactly (the email in lower case). When exactly one account matches and it has a verified email, a six-digit code is emailed; it lives 10 minutes and allows 5 wrong tries, and a new request retires the previous code.
+
+        The answer is the same whether or not the account exists, and whether or not the email could be sent.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+            examples:
+              byUsername:
+                value:
+                  identifier: ravi.kumar
+      responses:
+        '200':
+          description: Always this body, for known and unknown accounts alike.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkMessage'
+              examples:
+                generic:
+                  value:
+                    ok: true
+                    message: If that account has a verified email, a code has been sent to it.
+        '400':
+          description: An HTML page, not JSON, when the body is not valid JSON.
+          content:
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '429':
+          description: |
+            No code on either:
+            - "Too many code requests. Wait fifteen minutes and try again.": 10 requests in 15 minutes from this IP address, in one bucket shared with `POST /users/forgot-password/confirm` and the account-change code requests under `/api/me`.
+            - "Too many requests. Please slow down.": 300 a minute across `/api`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                codeBucket:
+                  $ref: '#/components/examples/CodeRequestsRateLimited'
+                apiBucket:
+                  $ref: '#/components/examples/ApiRateLimited'
+        '503':
+          description: |
+            `MAIL_NOT_CONFIGURED`: email is not set up on the server. Sent only for an account that exists with a verified email, because only then would a code have gone out.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                mailNotConfigured:
+                  value:
+                    error: Codes are sent by email, and email is not configured on this server yet (missing ZEPTOMAIL_API_TOKEN). Ask whoever runs the server to set ZEPTOMAIL_API_TOKEN and EMAIL_FROM_ADDRESS.
+                    code: MAIL_NOT_CONFIGURED
+      x-notes:
+        - >-
+          A phone number is not accepted here: use the username or the email. Someone with no verified email cannot reset this way; send them to HR or an admin.
+        - >-
+          This is the code-based reset that replaces the retired POST /users/reset-password.
+
+  /users/forgot-password/confirm:
+    post:
+      operationId: confirmPortalPasswordReset
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/user.js:35; controllers/authSecurityController.js:164-196; services/otp.js:149-192; server.js:72-78,120'
+      summary: Set a new portal password with the emailed code
+      description: |
+        No token. Send the same `identifier` as the request step, the code, and the new password (at least 8 characters). On success the password changes and `password_changed_at` is stamped. No token comes back: sign in again with `POST /users/login`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordConfirmRequest'
+            examples:
+              confirm:
+                value:
+                  identifier: ravi.kumar
+                  code: '482915'
+                  new_password: a longer pass phrase
+                  confirm_password: a longer pass phrase
+      responses:
+        '200':
+          description: The password is changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkMessage'
+              examples:
+                changed:
+                  value:
+                    ok: true
+                    message: Password changed. Sign in with the new one.
+        '400':
+          description: |
+            - No code: "Account, code and new password are all required."; "The new password and its confirmation do not match."; "Use at least 8 characters.".
+            - `NO_LIVE_CODE`: an unknown account ("Wrong code, or no code is waiting. Request a new one."), or no unspent code.
+            - `BAD_CODE`, `EXPIRED`, `WRONG_CODE` (the message counts the tries left), `ATTEMPTS_EXHAUSTED`: as for `POST /users/login/verify`.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                missing:
+                  value:
+                    error: Account, code and new password are all required.
+                mismatch:
+                  value:
+                    error: The new password and its confirmation do not match.
+                tooShort:
+                  value:
+                    error: Use at least 8 characters.
+                unknownAccount:
+                  value:
+                    error: Wrong code, or no code is waiting. Request a new one.
+                    code: NO_LIVE_CODE
+                noLiveCode:
+                  $ref: '#/components/examples/PortalNoLiveCode'
+                badCode:
+                  $ref: '#/components/examples/PortalBadCode'
+                expired:
+                  $ref: '#/components/examples/PortalCodeExpired'
+                wrongCode:
+                  $ref: '#/components/examples/PortalWrongCode'
+                exhausted:
+                  $ref: '#/components/examples/PortalAttemptsExhausted'
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '429':
+          description: |
+            No code: the code bucket (10 in 15 minutes per IP address, shared with `POST /users/forgot-password`), or 300 a minute across `/api`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                codeBucket:
+                  $ref: '#/components/examples/CodeRequestsRateLimited'
+                apiBucket:
+                  $ref: '#/components/examples/ApiRateLimited'
+        '500':
+          description: |
+            "Could not reset the password." (no code). Rarely this comes after the password has already changed (when the audit trail runs in enforce mode and cannot be written), so let the person try the new password before asking for another code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Could not reset the password.
+      x-notes:
+        - >-
+          Tokens issued before the change keep working until they expire (64 hours): nothing on the Scheduler revokes them, and changing that is out of scope (ADR-0018).
+        - >-
+          An unknown account answers NO_LIVE_CODE, the same as a missing code, on purpose: do not try to tell them apart.
+        - >-
+          Only the length is checked (8 characters or more). The attendance-login rules (no single repeated character, not the phone number, at most 72 bytes) do not apply here; only the first 72 bytes of the password count.
+
+  /users/reset-password:
+    post:
+      operationId: legacyResetPassword
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/user.js:28; controllers/userController.js:1175-1274'
+      deprecated: true
+      summary: Retired for the app. Never call.
+      description: |
+        **Never call this, and never build a screen that does.** It sets a new password for a username and phone number with no code, which is how a phone number alone takes over a portal account (`docs/02-reconciliation.md`, security hole 1).
+
+        It is still live. A Scheduler change to answer 410 `RESET_RETIRED` was proposed, then dropped when KP ruled that Team RVM changes nothing in the Scheduler (ADR-0018). So it behaves as at `c28b9ca`, as the responses below record, and the hole is reported to KP to handle separately. Use `POST /users/forgot-password` and `POST /users/forgot-password/confirm` instead.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyResetPasswordRequest'
+      responses:
+        '200':
+          description: At `c28b9ca`. The password was replaced.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageOnly'
+              examples:
+                legacyReset:
+                  value:
+                    message: Password reset successfully. You can now log in with your new password.
+        '400':
+          description: At `c28b9ca`. No code; a field is missing or the new password is under 6 characters. An HTML page when the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                missing:
+                  value:
+                    error: Username, phone number, and new password are required.
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '404':
+          description: At `c28b9ca`. No code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                noMatch:
+                  value:
+                    error: No account found matching those details.
+        '409':
+          description: At `c28b9ca`. No code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                severalBranches:
+                  value:
+                    error: This account exists at multiple branches. Please select your branch and try again.
+        '410':
+          description: |
+            Not live, and not planned by Team RVM. `RESET_RETIRED` is what the dropped proposal would have answered, and what to expect if KP retires the reset separately. Treat it as "use Forgot password". The wording of `error` would come with that change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                retired:
+                  value:
+                    error: This way of resetting a password has been retired. Use Forgot password to get a code by email.
+                    code: RESET_RETIRED
+        '429':
+          $ref: '#/components/responses/SchedulerApiRateLimited'
+        '500':
+          description: At `c28b9ca`. No code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: An unexpected error occurred.
+      x-notes:
+        - >-
+          Never call it. The web's and the existing staff app's "Forgot password" still use it, and nothing in this project changes them (ADR-0018).
+
+  # ═════════════════ Scheduler: attendance sign-in ═════════════════
+
+  /hr/my-attendance/password-login:
+    post:
+      operationId: signInAttendancePassword
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,197; controllers/hr/attendanceOtpController.js:114-172,380-449; middleware/punchCodeLimiter.js:19-26'
+      summary: Sign in to an attendance login with its password
+      description: |
+        No token. For staff with no portal login, on an attendance login HR created. `identifier` is the main phone on the HR record, the email on it, or the employee code (any case). Answers with a 30-day attendance session.
+
+        Checked in this order, and the first failure answers: the identifier's form; a password is present; exactly one active employee owns the identifier; that employee has an active attendance login; the login has a password; the login is not locked; the try is claimed on the counter; the password itself.
+
+        Five wrong passwords lock the login for 15 minutes (429 `LOCKED`), and the count starts again after the lock. The way out of a lock or a forgotten password is the code route (`otp/request`, then `otp/verify`).
+
+        `temporary: true` means the password is still the one HR gave. Such a session cannot punch until the person chooses their own with `POST /hr/my-attendance/password`; until then `GET /hr/my-attendance` answers `must_set_password: true`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendancePasswordLoginRequest'
+            examples:
+              byEmployeeCode:
+                value:
+                  identifier: RVM-0217
+                  password: a longer pass phrase
+      responses:
+        '201':
+          description: Signed in. Store the token; it opens `/hr/my-attendance/*` and `/ess/*` only.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceSession'
+              examples:
+                firstTimePassword:
+                  summary: Signed in with the password HR gave
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PAYLOAD.SIGNATURE
+                    expires_in_days: 30
+                    employee:
+                      full_name: Suresh Yadav
+                    password_set: true
+                    temporary: true
+        '400':
+          description: |
+            - `BAD_IDENTIFIER`: empty, or not a phone, email or employee code ("Enter your phone number, email or employee code."), or a malformed email ("That is not a valid email address.").
+            - `BAD_PASSWORD`: no password.
+            - `WRONG_CREDENTIALS`: nobody has that identifier (no `attempts_left`, the same words as a wrong password), or the password is wrong (`attempts_left` says how many tries remain before the lock).
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                badIdentifier:
+                  value:
+                    error: Enter your phone number, email or employee code.
+                    code: BAD_IDENTIFIER
+                badEmail:
+                  value:
+                    error: That is not a valid email address.
+                    code: BAD_IDENTIFIER
+                noPassword:
+                  value:
+                    error: Enter your password.
+                    code: BAD_PASSWORD
+                unknownIdentifier:
+                  value:
+                    error: Wrong phone number, email, employee code or password.
+                    code: WRONG_CREDENTIALS
+                wrongPassword:
+                  value:
+                    error: Wrong phone number, email, employee code or password. 3 attempts left.
+                    code: WRONG_CREDENTIALS
+                    attempts_left: 3
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '403':
+          description: |
+            Answered before the password is checked:
+            - `NOT_ACTIVE`: the only matching employee record is no longer active.
+            - `HAS_PORTAL_LOGIN`: this person has a portal login and no active attendance login. Sign them in with `POST /users/login`.
+            - `NO_ATTENDANCE_LOGIN`: HR has not created an attendance login, or has switched it off.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notActive:
+                  $ref: '#/components/examples/PunchNotActive'
+                hasPortalLogin:
+                  $ref: '#/components/examples/HasPortalLogin'
+                noLogin:
+                  $ref: '#/components/examples/NoAttendanceLoginYet'
+                loginOff:
+                  $ref: '#/components/examples/NoAttendanceLoginOff'
+        '404':
+          description: |
+            `NOT_MAIN_PHONE`: the number is one of the employee's extra phones, not the main one. Only an unknown identifier is folded into `WRONG_CREDENTIALS`; this one is not.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notMainPhone:
+                  $ref: '#/components/examples/NotMainPhone'
+        '409':
+          description: |
+            - `AMBIGUOUS`: the identifier is on more than one active employee record.
+            - `PASSWORD_NOT_SET`: the login has no password yet; sign in with a code and set one.
+            - `TRY_AGAIN`: another try on the same login landed at the same moment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                ambiguous:
+                  value:
+                    error: This employee code is on more than one employee record. Ask HR to correct it.
+                    code: AMBIGUOUS
+                passwordNotSet:
+                  value:
+                    error: You have not set a password yet. Use "Get a code" to sign in and set one.
+                    code: PASSWORD_NOT_SET
+                tryAgain:
+                  value:
+                    error: Please try again.
+                    code: TRY_AGAIN
+        '429':
+          description: |
+            - `LOCKED`: five wrong passwords; the login is locked for 15 minutes. The message gives the time in IST, or says "in 15 minutes" on the fifth wrong try.
+            - `RATE_LIMITED`: 40 sign-in requests in 15 minutes from this IP address, one bucket shared by `password-login`, `otp/request` and `otp/verify`.
+            - "Too many requests. Please slow down." (no code): 300 a minute across `/api`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                lockedNow:
+                  value:
+                    error: Too many wrong passwords. Try again in 15 minutes, or use "Get a code".
+                    code: LOCKED
+                stillLocked:
+                  value:
+                    error: Too many wrong passwords. Try again after 03:30 pm, or use "Get a code".
+                    code: LOCKED
+                signInBucket:
+                  $ref: '#/components/examples/AttendanceSignInRateLimited'
+                apiBucket:
+                  $ref: '#/components/examples/ApiRateLimited'
+        '500':
+          description: '"Failed to sign in." (no code): an unexpected failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to sign in.
+        '503':
+          description: |
+            - `MODULE_DISABLED`: the HR module is switched off (`HR_MODULE_ENABLED=false`), which switches attendance sign-in off too.
+            - `MODULE_NOT_INSTALLED`: a migration this needs is not applied yet; `migration` names it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                moduleDisabled:
+                  $ref: '#/components/examples/HrModuleDisabled'
+                accountsNotInstalled:
+                  $ref: '#/components/examples/AccountsNotInstalled'
+                punchNotInstalled:
+                  $ref: '#/components/examples/PunchNotInstalled'
+      x-notes:
+        - >-
+          Drive the "choose your own password" screen from GET /hr/my-attendance (must_set_password), not from temporary: a code sign-in may punch while HR's password is still set, and only a password session is held back.
+        - >-
+          Show the 403, 404 and 409 messages as they are: they tell the person exactly whom to ask.
+        - >-
+          The phone is normalised (+91, 91 and a leading 0 are dropped), unlike the portal sign-in.
+        - >-
+          The 40-in-15-minutes bucket is per IP address and shared with the code routes, where one code sign-in costs two requests: a branch signing in from one office Wi-Fi on the first morning can fill it.
+
+  /hr/my-attendance/otp/request:
+    post:
+      operationId: requestAttendanceCode
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,193; controllers/hr/attendanceOtpController.js:92-261; supabase/migrations/20261020000000_hr_attendance_punch.sql (hr_attendance_otp_issue)'
+      summary: Send a sign-in code to the phone or email on the HR record
+      description: |
+        No token. `identifier` is the main phone (by SMS) or the email on the HR record, never one of the extra phones. When exactly one active employee owns it and they have an active attendance login, a six-digit code is sent; it lives 10 minutes and allows 5 wrong tries.
+
+        Codes are capped per requester, which is this phone when it sends its `rvm_att_dev` cookie and otherwise the IP address: 3 in 15 minutes and 10 in 24 hours. Across every requester except the employee's own registered phone there is also a ceiling of 20 a day per employee. HR can clear them.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceCodeRequest'
+            examples:
+              byPhone:
+                value:
+                  identifier: '+91 98100 12345'
+      responses:
+        '201':
+          description: The code is on its way.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceCodeSent'
+              examples:
+                sms:
+                  value:
+                    challenge_id: 7c6b5a49-3827-4615-a504-f3e2d1c0b9a8
+                    channel: sms
+                    sent_to: ••••••2345
+                    expires_at: '2026-10-16T03:40:00.000+00:00'
+                    ttl_minutes: 10
+                    sandbox: false
+        '400':
+          description: |
+            - `BAD_IDENTIFIER`: empty, a malformed email, or not a ten-digit Indian mobile number.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                empty:
+                  value:
+                    error: Enter the phone number or email on your employee record.
+                    code: BAD_IDENTIFIER
+                badEmail:
+                  value:
+                    error: That is not a valid email address.
+                    code: BAD_IDENTIFIER
+                badPhone:
+                  value:
+                    error: Enter a ten-digit Indian mobile number, or your email.
+                    code: BAD_IDENTIFIER
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '403':
+          description: |
+            - `NOT_ACTIVE`: the only matching employee record is no longer active.
+            - `HAS_PORTAL_LOGIN`: this person has a portal login and no active attendance login.
+            - `NO_ATTENDANCE_LOGIN`: no attendance login yet, or switched off.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notActive:
+                  $ref: '#/components/examples/PunchNotActive'
+                hasPortalLogin:
+                  $ref: '#/components/examples/HasPortalLogin'
+                noLogin:
+                  $ref: '#/components/examples/NoAttendanceLoginYet'
+                loginOff:
+                  $ref: '#/components/examples/NoAttendanceLoginOff'
+        '404':
+          description: |
+            - `NOT_MAIN_PHONE`: the number is one of the employee's extra phones.
+            - `NOT_FOUND`: no active employee has this phone or email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notMainPhone:
+                  $ref: '#/components/examples/NotMainPhone'
+                notFound:
+                  value:
+                    error: We could not find an employee with this phone number. Ask HR to add it to your employee record, or contact the tech team.
+                    code: NOT_FOUND
+        '409':
+          description: '`AMBIGUOUS`: the phone or email is on more than one active employee record.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                ambiguous:
+                  value:
+                    error: This phone number is on more than one employee record. Ask HR to correct it.
+                    code: AMBIGUOUS
+        '429':
+          description: |
+            - `TOO_MANY_CODES`: a cap on codes was reached (this requester's 15-minute or daily allowance, or the employee's daily ceiling, which HR can clear).
+            - `RATE_LIMITED`: 40 sign-in requests in 15 minutes from this IP address (shared bucket).
+            - "Too many requests. Please slow down." (no code): 300 a minute across `/api`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                window:
+                  value:
+                    error: Too many codes asked for. Wait fifteen minutes and try again.
+                    code: TOO_MANY_CODES
+                ceiling:
+                  value:
+                    error: Too many codes have been asked for on this employee today. Contact HR -- they can clear it.
+                    code: TOO_MANY_CODES
+                day:
+                  value:
+                    error: Too many codes asked for today. Contact HR or the tech team.
+                    code: TOO_MANY_CODES
+                signInBucket:
+                  $ref: '#/components/examples/AttendanceSignInRateLimited'
+                apiBucket:
+                  $ref: '#/components/examples/ApiRateLimited'
+        '500':
+          description: '"Failed to send the code." (no code): an unexpected failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to send the code.
+        '502':
+          description: '`SMS_FAILED` or `MAIL_FAILED`: the provider refused the message. The code was retired, so ask again or use the other channel.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                smsFailed:
+                  value:
+                    error: The code could not be sent. Try again in a minute, or use your email.
+                    code: SMS_FAILED
+                mailFailed:
+                  value:
+                    error: The code could not be sent. Try again in a minute.
+                    code: MAIL_FAILED
+        '503':
+          description: |
+            - `SMS_NOT_CONFIGURED` or `MAIL_NOT_CONFIGURED`: that channel is not set up on the server; offer the other one.
+            - `MODULE_DISABLED`: the HR module is switched off.
+            - `MODULE_NOT_INSTALLED`: a migration this needs is not applied yet; `migration` names it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                smsNotConfigured:
+                  value:
+                    error: Codes cannot be sent by SMS right now (SMS_PROVIDER is not set). Try the other option, or contact the tech team.
+                    code: SMS_NOT_CONFIGURED
+                mailNotConfigured:
+                  value:
+                    error: Codes cannot be sent by email right now (missing ZEPTOMAIL_API_TOKEN). Try the other option, or contact the tech team.
+                    code: MAIL_NOT_CONFIGURED
+                moduleDisabled:
+                  $ref: '#/components/examples/HrModuleDisabled'
+                punchNotInstalled:
+                  $ref: '#/components/examples/PunchNotInstalled'
+                accountsNotInstalled:
+                  $ref: '#/components/examples/AccountsNotInstalled'
+      x-notes:
+        - >-
+          sandbox: true means the server is in console mode: the code was written to the server log, not delivered. Say so on screen instead of leaving the person waiting for an SMS.
+        - >-
+          Send the rvm_att_dev cookie when the jar holds one (its path covers this URL): the employee's own phone then counts as its own requester and sits outside the daily ceiling, so colleagues cannot use up its codes.
+        - >-
+          Unlike the portal reset, this tells the person whether their number or email is on file (NOT_FOUND, NOT_MAIN_PHONE). That is by design: RVM wants someone who is stuck told to go to HR.
+        - >-
+          The phone is normalised (+91, 91 and a leading 0 are dropped) and matched against the main phone on the HR record only.
+
+  /hr/my-attendance/otp/verify:
+    post:
+      operationId: verifyAttendanceCode
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,194; controllers/hr/attendanceOtpController.js:263-325'
+      summary: Turn a sign-in code into an attendance session
+      description: |
+        No token. A right code answers with a 30-day attendance session. The employee is checked again at this point, so an exit, or HR switching the login off, between the request and the code is refused here, after the code has been spent.
+
+        `password_set: false` means the login has no password yet: offer to set one with `POST /hr/my-attendance/password`, which a code sign-in may do for 15 minutes.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceCodeVerifyRequest'
+            examples:
+              verify:
+                value:
+                  challenge_id: 7c6b5a49-3827-4615-a504-f3e2d1c0b9a8
+                  code: '305618'
+      responses:
+        '201':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceSession'
+              examples:
+                noPasswordYet:
+                  summary: The login has no password yet
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PAYLOAD.SIGNATURE
+                    expires_in_days: 30
+                    employee:
+                      full_name: Suresh Yadav
+                    password_set: false
+                    temporary: false
+        '400':
+          description: |
+            - `NO_LIVE_CODE`: `challenge_id` is not a uuid ("Ask for a code first."), or the code is spent or unknown.
+            - `BAD_CODE`: not six digits (spaces are ignored).
+            - `EXPIRED`: older than 10 minutes.
+            - `ATTEMPTS_EXHAUSTED`: the tries are used up.
+            - `WRONG_CODE`: wrong code; `attempts_left` says how many tries remain.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                noChallenge:
+                  value:
+                    error: Ask for a code first.
+                    code: NO_LIVE_CODE
+                noLiveCode:
+                  value:
+                    error: No code is waiting. Ask for a new one.
+                    code: NO_LIVE_CODE
+                badCode:
+                  value:
+                    error: Enter the six-digit code.
+                    code: BAD_CODE
+                expired:
+                  value:
+                    error: That code has expired. Ask for a new one.
+                    code: EXPIRED
+                exhausted:
+                  value:
+                    error: Too many wrong codes. Ask for a new one.
+                    code: ATTEMPTS_EXHAUSTED
+                wrongCode:
+                  value:
+                    error: Wrong code. 2 attempts left.
+                    code: WRONG_CODE
+                    attempts_left: 2
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '403':
+          description: |
+            - `NOT_ACTIVE`: the employee record stopped being active after the code was sent.
+            - `HAS_PORTAL_LOGIN`: the person now has a portal login and no active attendance login.
+            - `NO_ATTENDANCE_LOGIN`: HR has no attendance login for them, or switched it off.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notActive:
+                  $ref: '#/components/examples/PunchNotActive'
+                hasPortalLogin:
+                  $ref: '#/components/examples/HasPortalLogin'
+                noLogin:
+                  $ref: '#/components/examples/NoAttendanceLoginYet'
+                loginOff:
+                  $ref: '#/components/examples/NoAttendanceLoginOff'
+        '409':
+          description: '`TRY_AGAIN`: another try on the same code landed at the same moment and took the slot.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                tryAgain:
+                  value:
+                    error: That code was just tried from somewhere else. Wait a moment and try again.
+                    code: TRY_AGAIN
+        '429':
+          description: |
+            - `RATE_LIMITED`: 40 sign-in requests in 15 minutes from this IP address (shared bucket).
+            - "Too many requests. Please slow down." (no code): 300 a minute across `/api`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                signInBucket:
+                  $ref: '#/components/examples/AttendanceSignInRateLimited'
+                apiBucket:
+                  $ref: '#/components/examples/ApiRateLimited'
+        '500':
+          description: '"Failed to check the code." (no code): an unexpected failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to check the code.
+        '503':
+          $ref: '#/components/responses/HrUnavailable'
+      x-notes:
+        - >-
+          Each try is claimed on the counter before the code is compared, so two phones guessing at once get 409 TRY_AGAIN rather than extra tries.
+        - >-
+          The 15-minute window for setting a password is counted from this token's issue time. After it, sign in with a code again to set or change the password.
+
+  /hr/my-attendance/password:
+    post:
+      operationId: setAttendancePassword
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,198; controllers/hr/attendanceOtpController.js:327-378; services/attendancePunch.js:241-266'
+      summary: Choose your own attendance password
+      description: |
+        Attendance session only. Allowed in two cases:
+        - within 15 minutes of signing in with a code; or
+        - from a password session while the password is still the one HR gave.
+
+        The rules for the new password: at least 8 characters, at most 72 bytes, not one character repeated, not containing the ten digits of the employee's main phone (even split up by other characters), and not the same as HR's first-time password.
+
+        On success every other session of this login stops working, and the reply carries a fresh 30-day session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceSetPasswordRequest'
+            examples:
+              choose:
+                value:
+                  password: a longer pass phrase
+      responses:
+        '200':
+          description: The password is set. Store `token` in place of the old one before any other call.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendancePasswordSet'
+              examples:
+                set:
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PAYLOAD.SIGNATURE
+                    password_set: true
+        '400':
+          description: |
+            - `WEAK_PASSWORD`: the message names the rule that failed.
+            - `SAME_AS_HR_PASSWORD`: it is the password HR gave.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                tooShort:
+                  value:
+                    error: Use at least 8 characters.
+                    code: WEAK_PASSWORD
+                tooLong:
+                  value:
+                    error: That password is too long. Use at most 72 characters.
+                    code: WEAK_PASSWORD
+                repeated:
+                  value:
+                    error: Do not repeat one character. Mix letters and numbers.
+                    code: WEAK_PASSWORD
+                phoneNumber:
+                  value:
+                    error: Do not use your phone number as your password.
+                    code: WEAK_PASSWORD
+                hrPassword:
+                  value:
+                    error: Choose a new password, not the one HR gave you.
+                    code: SAME_AS_HR_PASSWORD
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            - `PORTAL_ACCOUNT`: a portal token. Portal passwords are not changed here.
+            - `CODE_REQUIRED`: neither case applies (more than 15 minutes after a code sign-in, or a password session on the person's own password). Sign in with a code first.
+            - `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`: as on every `/hr/my-attendance` endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                portalAccount:
+                  value:
+                    error: Your portal password is changed from your profile, not here.
+                    code: PORTAL_ACCOUNT
+                codeRequired:
+                  value:
+                    error: To set your password, sign in with a code first ("Get a code").
+                    code: CODE_REQUIRED
+                notActive:
+                  $ref: '#/components/examples/PunchNotActive'
+                noLogin:
+                  $ref: '#/components/examples/NoAttendanceLoginYet'
+                loginOff:
+                  $ref: '#/components/examples/NoAttendanceLoginOff'
+        '429':
+          $ref: '#/components/responses/SchedulerApiRateLimited'
+        '500':
+          description: '"Failed to set the password." (no code): an unexpected failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to set the password.
+        '503':
+          $ref: '#/components/responses/HrUnavailable'
+      x-notes:
+        - >-
+          Replace the stored token with the one in the reply before making any other call: the old one now answers 401 NOT_AUTHENTICATED "Your password was changed. Please sign in again.".
+        - >-
+          CODE_REQUIRED is checked before the session itself, so an old code session can get 403 CODE_REQUIRED rather than 401.
+        - >-
+          Only the 300-a-minute bucket applies here; there is no sign-in bucket.
+
+  # ═════════════════════ Scheduler: attendance ═════════════════════
+
+  /hr/my-attendance:
+    get:
+      operationId: getMyAttendance
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,199; middleware/punchAuth.js:21-34; controllers/hr/attendancePunchController.js:88-129,141-197,199-288; services/attendanceRules.js'
+      summary: The punch screen - today, the month, this phone and the rules
+      description: |
+        Either token kind. Three shapes, told apart by `linked` and `must_set_password`:
+        - `linked: false`: a portal login with no HR record linked. Hide punching and show `message`.
+        - `must_set_password: true`: a password session still on HR's first-time password. Show only "Choose your own password".
+        - Otherwise the full screen.
+
+        `month` (YYYY-MM) picks the month for `days`, `holidays` and `my_remarks`, and defaults to the current IST month. `today` is always today in IST, and `upcoming_holidays` always runs from today.
+      parameters:
+        - $ref: '#/components/parameters/Month'
+        - $ref: '#/components/parameters/DeviceCookie'
+      responses:
+        '200':
+          description: One of the three shapes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyAttendance'
+              examples:
+                punchedIn:
+                  summary: Punched in, on a shift, from the registered phone
+                  value:
+                    linked: true
+                    employee:
+                      id: 9b2f4c1e-5a3d-4e8f-9c21-7d6e5f4a3b2c
+                      full_name: Ravi Kumar
+                      employee_code: RVM-0142
+                      geofence_exempt: false
+                    branch:
+                      id: 1c7e9a2b-3d4f-4a5b-8c6d-0e1f2a3b4c5d
+                      name: Faridabad
+                      latitude: 28.4089
+                      longitude: 77.3178
+                      radius_m: 150
+                      configured: true
+                    shift:
+                      name: General
+                      start: '09:30'
+                      end: '18:30'
+                      grace_minutes: 15
+                    week_off_days: [0]
+                    holidays:
+                      - day: '2026-10-02'
+                        name: Gandhi Jayanti
+                    upcoming_holidays:
+                      - day: '2026-12-25'
+                        name: Christmas
+                    my_remarks:
+                      - day: '2026-10-14'
+                        remarks: The bus was late, so I reached at 10:05.
+                        updated_at: '2026-10-14T05:12:44.120931+00:00'
+                    today:
+                      day: '2026-10-16'
+                      punched_in: true
+                      done: false
+                      first_in: '2026-10-16T04:14:09.552103+00:00'
+                      last_out: null
+                      punches:
+                        - kind: in
+                          at: '2026-10-16T04:14:09.552103+00:00'
+                          distance_m: 38
+                      worked_minutes: 136
+                      kind: working
+                      holiday: null
+                      status: present
+                      late_minutes: null
+                      early_exit_minutes: null
+                      late_count: null
+                      late_half_day: false
+                      late_excused: false
+                    device:
+                      this_phone: own
+                      has_registered_phone: true
+                      registered_at: '2026-10-15T03:58:02.004219+00:00'
+                    rules:
+                      max_accuracy_m: 100
+                      mobile_only: true
+                    month: '2026-10'
+                    days:
+                      - day: '2026-10-15'
+                        status: present
+                        leave_type: null
+                        source: self_punch
+                        first_in: '2026-10-15T03:58:02.731+00:00'
+                        last_out: '2026-10-15T12:41:19.006+00:00'
+                        worked_minutes: 523
+                        late_minutes: null
+                        early_exit_minutes: 19
+                        late_count: null
+                        late_half_day: false
+                        late_excused: false
+                        shift_start: '09:30:00'
+                        shift_end: '18:30:00'
+                      - day: '2026-10-16'
+                        status: present
+                        leave_type: null
+                        source: self_punch
+                        first_in: '2026-10-16T04:14:09.552103+00:00'
+                        last_out: null
+                        worked_minutes: 0
+                        late_minutes: null
+                        early_exit_minutes: null
+                        late_count: null
+                        late_half_day: false
+                        late_excused: false
+                        shift_start: '09:30:00'
+                        shift_end: '18:30:00'
+                notLinked:
+                  summary: A portal login with no HR record linked
+                  value:
+                    linked: false
+                    message: Your login is not linked to an employee record yet. Ask HR or the tech team to link it.
+                mustSetPassword:
+                  summary: Signed in with the password HR gave
+                  value:
+                    linked: true
+                    must_set_password: true
+                    employee:
+                      id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                      full_name: Suresh Yadav
+                      employee_code: RVM-0217
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            - `NOT_ACTIVE`: the employee record is no longer active.
+            - `NO_ATTENDANCE_LOGIN`: an attendance session whose login is missing or switched off.
+
+            A portal login with no HR record is not refused here: it gets 200 with `linked: false`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notActive:
+                  $ref: '#/components/examples/PunchNotActive'
+                noLogin:
+                  $ref: '#/components/examples/NoAttendanceLoginYet'
+                loginOff:
+                  $ref: '#/components/examples/NoAttendanceLoginOff'
+        '429':
+          $ref: '#/components/responses/SchedulerApiRateLimited'
+        '500':
+          description: '"Failed to load your attendance." (no code): an unexpected failure, including a well-formed but impossible `month` such as 2026-13.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to load your attendance.
+        '503':
+          $ref: '#/components/responses/HrUnavailable'
+      x-notes:
+        - >-
+          There is no server_now field, and the Scheduler will not get one (ADR-0018). The HTTP Date header carries the server clock to the second, and GET /ess/health has server_time.
+        - >-
+          device.this_phone says whether this phone can punch, and it depends on the rvm_att_dev cookie, so the cookie jar must send it. own: the employee's registered phone. unknown: no cookie, or one nobody registered; the first accepted punch registers it when has_registered_phone is false, otherwise punches get 403 DEVICE_NOT_REGISTERED. other: another employee's phone. revoked: HR reset this phone.
+        - >-
+          Read rules.max_accuracy_m and rules.mobile_only from here; never hard-code them.
+        - >-
+          today.worked_minutes counts up to the moment of the request while punched in.
+        - >-
+          The day rows carry neither the day's note nor HR's remark, and my_remarks holds only the employee's own remarks. An ESS endpoint will serve the note and HR's remark (task B1, Wave 2), because the Scheduler is not changed (ADR-0018).
+        - >-
+          A month that does not match YYYY-MM is ignored and the current month is used; a well-formed impossible one (2026-13) answers 500.
+        - >-
+          week_off_days, shift and the late and early fields are null, or missing from the day rows, while migration 20261022000000 is not applied. Whether it is applied in production is still to be confirmed.
+
+  /hr/my-attendance/challenge:
+    get:
+      operationId: getPunchChallenge
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,200; controllers/hr/attendancePunchController.js:290-296; services/attendancePunch.js:98-141'
+      summary: Get the one-time challenge a punch must carry
+      description: |
+        Either token kind. A nonce signed by the server, bound to this employee and valid for 2 minutes. Ask for one when the person taps Punch, and send it with the punch.
+      responses:
+        '200':
+          description: The challenge.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PunchChallenge'
+              examples:
+                challenge:
+                  value:
+                    nonce: eyJlIjoiOWIyZjRjMWUtNWEzZCIsIngiOjE3OTI0fQ.c2lnbmF0dXJlLW9mLXRoZS1wYXlsb2Fk
+                    expires_at: '2026-10-16T04:16:09.552Z'
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            - `NOT_LINKED`: a portal login with no HR record linked (an error here, unlike `GET /hr/my-attendance`).
+            - `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`: as on every `/hr/my-attendance` endpoint.
+            - `PASSWORD_CHANGE_REQUIRED`: a password session still on HR's first-time password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notLinked:
+                  $ref: '#/components/examples/PunchNotLinked'
+                notActive:
+                  $ref: '#/components/examples/PunchNotActive'
+                noLogin:
+                  $ref: '#/components/examples/NoAttendanceLoginYet'
+                loginOff:
+                  $ref: '#/components/examples/NoAttendanceLoginOff'
+                passwordChange:
+                  $ref: '#/components/examples/PasswordChangeRequired'
+        '429':
+          $ref: '#/components/responses/SchedulerApiRateLimited'
+        '500':
+          description: '"Failed to start the punch." (no code): an unexpected failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to start the punch.
+        '503':
+          $ref: '#/components/responses/HrUnavailable'
+      x-notes:
+        - >-
+          Single use per accepted punch. A refused punch does not use it up, so after ACCURACY_LOW, for example, the same nonce can be sent again within its 2 minutes.
+        - >-
+          Never cache it or reuse it for the next punch (Cache-Control: no-store).
+        - >-
+          Issuing a challenge checks neither the User-Agent nor the phone; the punch does.
+
+  /hr/my-attendance/punch:
+    post:
+      operationId: punch
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,201; controllers/hr/attendancePunchController.js:68-86,141-175,298-485; services/attendancePunch.js:16-90,104-153'
+      summary: Punch in or out
+      description: |
+        Either token kind. Judged in this order; the first failure answers. Every refusal marked * is stored as a refused attempt, which HR sees, before the reply.
+        1. Who: 401, or 403 `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`.
+        2. 403 `PASSWORD_CHANGE_REQUIRED`: a password session still on HR's first-time password.
+        3. 400 `VALIDATION_FAILED`: `kind` is not "in" or "out".
+        4. 403 `NOT_MOBILE`*: the User-Agent is not a phone's.
+        5. The phone: 403 `DEVICE_OTHER_EMPLOYEE`* (registered to someone else), 403 `DEVICE_REVOKED`* (HR reset it), 403 `DEVICE_NOT_REGISTERED`* (no cookie, or an unknown one, while the employee already has a registered phone).
+        6. The challenge: 400 `CHALLENGE_MISSING`*, `CHALLENGE_INVALID`* (not genuine, or another employee's), `CHALLENGE_EXPIRED`*; 409 `CHALLENGE_REUSED`* (an accepted punch already used it).
+        7. The fix: 422 `LOCATION_MISSING`*; 422 `ACCURACY_LOW`* when `accuracy_m` is above `rules.max_accuracy_m` (100 unless the server says otherwise).
+        8. The radius, skipped for geofence-exempt staff: 422 `BRANCH_NOT_CONFIGURED`* (no branch, or no coordinates for it), 422 `OUTSIDE_GEOFENCE`*.
+        9. In and out alternate, one session a day: 409 `ALREADY_IN`*, 409 `DAY_DONE`* (already punched out today), 409 `NOT_IN`*.
+
+        Then a phone with no registration becomes the employee's phone (Set-Cookie on the reply), the punch is stored, and the day is rolled up into the daily record.
+
+        Flags are recorded and never refuse: `new_device`, `suspicious_accuracy` (accuracy exactly 0), `exempt_outside`, `off_network`, `possible_proxy`.
+      parameters:
+        - $ref: '#/components/parameters/DeviceCookie'
+        - $ref: '#/components/parameters/PhoneUserAgent'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PunchRequest'
+            examples:
+              punchIn:
+                value:
+                  kind: in
+                  nonce: eyJlIjoiOWIyZjRjMWUtNWEzZCIsIngiOjE3OTI0fQ.c2lnbmF0dXJlLW9mLXRoZS1wYXlsb2Fk
+                  latitude: 28.40912
+                  longitude: 77.31801
+                  accuracy_m: 12.5
+                  client_at: '2026-10-16T09:44:07.000+05:30'
+                  note: Bus was late
+      responses:
+        '201':
+          description: 'The punch is recorded. `Set-Cookie` is present only when this punch registered the phone (`device_registered: true`).'
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/DeviceCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PunchAccepted'
+              examples:
+                firstPunchIn:
+                  summary: First punch from a phone with no registration
+                  value:
+                    kind: in
+                    at: '2026-10-16T04:14:09.552103+00:00'
+                    distance_m: 38
+                    inside_geofence: true
+                    flags: [new_device]
+                    device_registered: true
+                    today:
+                      worked_minutes: 0
+                      punched_in: true
+                      status: present
+                      late_minutes: null
+                      early_exit_minutes: null
+                      late_count: null
+                      late_half_day: false
+                punchOut:
+                  summary: Punch-out
+                  value:
+                    kind: out
+                    at: '2026-10-16T12:41:19.006+00:00'
+                    distance_m: 41
+                    inside_geofence: true
+                    flags: []
+                    device_registered: false
+                    today:
+                      worked_minutes: 507
+                      punched_in: false
+                      status: present
+                      late_minutes: null
+                      early_exit_minutes: 19
+                      late_count: null
+                      late_half_day: false
+        '400':
+          description: |
+            - `VALIDATION_FAILED`: `kind` is missing or not "in" or "out" (not stored).
+            - `CHALLENGE_MISSING`*, `CHALLENGE_INVALID`*: get a new challenge and try again.
+            - `CHALLENGE_EXPIRED`*: more than 2 minutes old; get a new one.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                badKind:
+                  value:
+                    error: kind must be "in" or "out".
+                    code: VALIDATION_FAILED
+                challengeMissing:
+                  value:
+                    error: The punch could not be verified. Refresh the page and try again.
+                    code: CHALLENGE_MISSING
+                challengeInvalid:
+                  value:
+                    error: The punch could not be verified. Refresh the page and try again.
+                    code: CHALLENGE_INVALID
+                challengeExpired:
+                  value:
+                    error: That took too long. Tap punch again.
+                    code: CHALLENGE_EXPIRED
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            - `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`: who is punching (not stored).
+            - `PASSWORD_CHANGE_REQUIRED`: a password session still on HR's first-time password (not stored).
+            - `NOT_MOBILE`*: the User-Agent does not name a phone.
+            - `DEVICE_OTHER_EMPLOYEE`*: this phone is registered to another employee (flag `shared_device`).
+            - `DEVICE_REVOKED`*: HR reset this phone (flag `revoked_device`); it can never punch again.
+            - `DEVICE_NOT_REGISTERED`*: the employee already has a registered phone and this request does not carry its cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notLinked:
+                  $ref: '#/components/examples/PunchNotLinked'
+                notActive:
+                  $ref: '#/components/examples/PunchNotActive'
+                noLogin:
+                  $ref: '#/components/examples/NoAttendanceLoginYet'
+                loginOff:
+                  $ref: '#/components/examples/NoAttendanceLoginOff'
+                passwordChange:
+                  $ref: '#/components/examples/PasswordChangeRequired'
+                notMobile:
+                  value:
+                    error: Punch from your phone. Attendance cannot be marked from a computer.
+                    code: NOT_MOBILE
+                otherEmployee:
+                  value:
+                    error: This phone is registered to another employee. Each person punches from their own phone.
+                    code: DEVICE_OTHER_EMPLOYEE
+                revoked:
+                  value:
+                    error: HR has reset this phone, so it can no longer punch. Punch from your new phone, or ask HR.
+                    code: DEVICE_REVOKED
+                notRegistered:
+                  $ref: '#/components/examples/DeviceNotRegistered'
+        '404':
+          description: '`NOT_FOUND`: only on an unexpected database error (Postgres P0002); the message is the database''s.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                databaseNotFound:
+                  value:
+                    error: Not found
+                    code: NOT_FOUND
+        '409':
+          description: |
+            - `CHALLENGE_REUSED`*: an accepted punch already used this challenge, so **the punch is recorded**. Reload `GET /hr/my-attendance`; do not punch again.
+            - `ALREADY_IN`*: already punched in.
+            - `DAY_DONE`*: already punched out today; the next punch-in is after IST midnight.
+            - `NOT_IN`*: a punch-out with no punch-in today.
+            - `DEVICE_NOT_REGISTERED`*: two first punches from two phones raced, and the other phone was registered.
+            - `HR_RULE_VIOLATION`, `DUPLICATE`: only on an unexpected database error; the message is the database's.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                challengeReused:
+                  value:
+                    error: This punch was already submitted.
+                    code: CHALLENGE_REUSED
+                alreadyIn:
+                  value:
+                    error: You are already punched in.
+                    code: ALREADY_IN
+                dayDone:
+                  value:
+                    error: You have punched out for today. Punch in again after midnight.
+                    code: DAY_DONE
+                notIn:
+                  value:
+                    error: You have not punched in yet.
+                    code: NOT_IN
+                registrationRace:
+                  $ref: '#/components/examples/DeviceNotRegistered'
+                databaseRule:
+                  summary: Unexpected database error (Postgres 23514 or P0001); illustrative wording
+                  value:
+                    error: new row for relation "<table>" violates check constraint "<constraint>"
+                    code: HR_RULE_VIOLATION
+                databaseDuplicate:
+                  summary: Unexpected database error (Postgres 23505); illustrative wording
+                  value:
+                    error: duplicate key value violates unique constraint "<constraint>"
+                    code: DUPLICATE
+        '422':
+          description: |
+            - `LOCATION_MISSING`*: `latitude`, `longitude` or `accuracy_m` is missing, not a number, or out of range.
+            - `ACCURACY_LOW`*: the fix is vaguer than `rules.max_accuracy_m`; `accuracy_m` gives the reported accuracy, rounded.
+            - `BRANCH_NOT_CONFIGURED`*: the employee has no branch, or HR has not set the branch's location.
+            - `OUTSIDE_GEOFENCE`*: the fix is outside the branch radius; `distance_m` and `radius_m` say by how much.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                locationMissing:
+                  value:
+                    error: Location is required to punch. Allow location for this site and try again.
+                    code: LOCATION_MISSING
+                accuracyLow:
+                  value:
+                    error: Your location is not precise enough yet. Turn on GPS / precise location, step outside if you can, and try again.
+                    code: ACCURACY_LOW
+                    accuracy_m: 240
+                branchNotConfigured:
+                  value:
+                    error: Your branch location has not been set up yet. Ask HR to set it.
+                    code: BRANCH_NOT_CONFIGURED
+                outsideGeofence:
+                  value:
+                    error: You are not at your branch. Punch when you reach the office.
+                    code: OUTSIDE_GEOFENCE
+                    distance_m: 420
+                    radius_m: 150
+        '429':
+          $ref: '#/components/responses/SchedulerApiRateLimited'
+        '500':
+          description: |
+            "Failed to record the punch." (no code). This can come **after the punch was stored**, because the day is rolled up after the insert. Reload `GET /hr/my-attendance` before trying again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to record the punch.
+        '503':
+          $ref: '#/components/responses/HrUnavailable'
+      x-notes:
+        - >-
+          NOT_MOBILE: send a User-Agent that contains Android (or iPhone, iPad, iPod or Mobile) on every punch. Dart's default "Dart/3.x (dart:io)" is refused, and so is a missing header.
+        - >-
+          rvm_att_dev: the 201 of the first accepted punch from a phone with no registration sets the cookie rvm_att_dev (Path=/api/hr/my-attendance; Max-Age=157680000, five years; HttpOnly; SameSite=Strict; Secure). Keep it in a persistent cookie jar for scheduler.rvmcad.org, send it on every /api/hr/my-attendance request, and never clear it at sign-out, on an app update or on a new sign-in. Lose it and every later punch gets 403 DEVICE_NOT_REGISTERED until HR resets the phone. The token is never in the body; device_registered says whether it was set.
+        - >-
+          A phone registered from the browser holds that cookie in the browser, not in the app, so the app gets DEVICE_NOT_REGISTERED until HR resets the phone (decision 11: a bulk reset, branch by branch, at go-live). Wiping the app's data loses the cookie in the same way, and the next punch gets DEVICE_NOT_REGISTERED until HR resets the phone. A cookie HR has reset is refused for good (DEVICE_REVOKED).
+        - >-
+          CHALLENGE_REUSED means the punch was recorded. After a timeout, a lost reply or a 500, reload GET /hr/my-attendance first. If you must resend, resend the same body with the same nonce: CHALLENGE_REUSED then confirms the punch was stored, and a fresh challenge would risk a second punch.
+        - >-
+          The fields are latitude and longitude, not lat and lng; a body with lat and lng gets 422 LOCATION_MISSING. accuracy_m is required.
+        - >-
+          note is trimmed and cut to 200 characters without an error. client_at is kept beside the server time and never trusted; an unparseable value is stored as null, never refused. The punch time is always the server's (at).
+        - >-
+          OUTSIDE_GEOFENCE applies to punch-out too. Someone who leaves before punching out cannot punch out, and the day closes at midnight as "No punch-out".
+        - >-
+          The Scheduler cannot tell a mocked location from a real one, and will not be changed to (ADR-0018). The app refuses a mocked fix on the phone and does not send the punch; it reports the attempt to the ESS for HR instead (decision 6; that ESS endpoint comes in a later slice).
+        - >-
+          The only 429 is the 300-a-minute bucket, with no code.
+
+  /hr/my-attendance/ping:
+    post:
+      operationId: sendLocationPing
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,202; controllers/hr/attendancePunchController.js:590-612; services/attendancePunch.js:26,143-153'
+      summary: Send one location fix while punched in
+      description: |
+        Either token kind. The trail HR sees while someone is punched in. The app sends one fix every 2 minutes (the cadence is the app's); the server keeps at most one a minute by its own clock.
+
+        Checked in this order: who (401 or 403); 204 when the session is still on HR's first-time password; 204 unless this is the employee's registered phone; 204 unless the employee is punched in today; 400 `LOCATION_MISSING`; 204 when the last stored ping is under 60 seconds old; otherwise the fix is stored and the answer is 201.
+      parameters:
+        - $ref: '#/components/parameters/DeviceCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PingRequest'
+            examples:
+              fix:
+                value:
+                  latitude: 28.40917
+                  longitude: 77.31795
+                  accuracy_m: 9
+      responses:
+        '201':
+          description: The fix is stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingStored'
+              examples:
+                stored:
+                  value:
+                    ok: true
+        '204':
+          description: |
+            Accepted and dropped, with no body. Four reasons share it: the session is still on HR's first-time password; this is not the employee's registered phone (no cookie, an unknown one, someone else's, or one HR reset); the employee is not punched in today (never punched in, punched out, or it is past IST midnight); or the last stored ping is under 60 seconds old.
+        '400':
+          description: |
+            - `LOCATION_MISSING`: the fix is missing or unusable. Sent only after the 204 checks pass.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                locationMissing:
+                  value:
+                    error: Location is required to punch. Allow location for this site and try again.
+                    code: LOCATION_MISSING
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          $ref: '#/components/responses/PunchIdentityForbidden'
+        '429':
+          $ref: '#/components/responses/SchedulerApiRateLimited'
+        '500':
+          description: '"Failed to record location." (no code): an unexpected failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to record location.
+        '503':
+          $ref: '#/components/responses/HrUnavailable'
+      x-notes:
+        - >-
+          A 204 is never an error, and the phone, day and throttle cases never answer 403 or 429. When 204s keep coming, reload GET /hr/my-attendance (device.this_phone, today.punched_in) to decide whether to stop tracking.
+        - >-
+          Stop at the first of: punch-out, the end of the shift plus its grace period (shift.end and shift.grace_minutes in GET /hr/my-attendance), or IST midnight (decision 5).
+        - >-
+          One fix per request, with no batching and no phone timestamp; batching would need a Scheduler change, which is out of scope (ADR-0018). No User-Agent check and no accuracy limit apply, but latitude, longitude and accuracy_m are required.
+        - >-
+          The Scheduler stores a mocked fix like any other. What the app does with a mocked ping is still open (decision 6; the proposal is to report it to the ESS for HR).
+
+  /hr/my-attendance/remarks:
+    put:
+      operationId: saveMyRemark
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/hr.js:66-74,203; controllers/hr/attendancePunchController.js:556-588; services/attendanceRules.js:25-39'
+      summary: Add, change or remove your own remark on one of your days
+      description: |
+        Either token kind. One remark per day, for any day from the 1st of last month up to today (IST). Empty text removes it. The remark is the employee's own word beside the day: it changes nothing about the day, and HR reads it beside HR's remark.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemarkRequest'
+            examples:
+              save:
+                value:
+                  day: '2026-10-14'
+                  remarks: The bus was late, so I reached at 10:05.
+              remove:
+                value:
+                  day: '2026-10-14'
+                  remarks: ''
+      responses:
+        '200':
+          description: 'Saved, or removed (`remarks: null`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemarkSaved'
+              examples:
+                saved:
+                  value:
+                    day: '2026-10-14'
+                    remarks: The bus was late, so I reached at 10:05.
+                    updated_at: '2026-10-16T05:01:33.418227+00:00'
+                removed:
+                  value:
+                    day: '2026-10-14'
+                    remarks: null
+        '400':
+          description: |
+            - `VALIDATION_FAILED`: `day` is not YYYY-MM-DD, or the text is over 500 characters.
+            - `DAY_OUT_OF_RANGE`: the day is in the future or before the 1st of last month.
+            - An HTML page, not JSON: the body is not valid JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                badDay:
+                  value:
+                    error: day is required (YYYY-MM-DD).
+                    code: VALIDATION_FAILED
+                tooLong:
+                  value:
+                    error: Keep the remark to 500 characters.
+                    code: VALIDATION_FAILED
+                outOfRange:
+                  value:
+                    error: You can add a remark to a day of this month or last month, up to today.
+                    code: DAY_OUT_OF_RANGE
+            text/html:
+              schema:
+                $ref: '#/components/schemas/HtmlPage'
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          $ref: '#/components/responses/PunchIdentityForbidden'
+        '429':
+          $ref: '#/components/responses/SchedulerApiRateLimited'
+        '500':
+          description: '"Failed to save your remark." (no code): an unexpected failure, including a day that matches YYYY-MM-DD but does not exist, such as 2026-02-30.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                unexpected:
+                  value:
+                    error: Failed to save your remark.
+        '503':
+          description: |
+            - `MODULE_DISABLED`: the HR module is switched off.
+            - `MODULE_NOT_INSTALLED`: the remarks table is missing. This one names `20261022000000_hr_attendance_shifts.sql`, although the table comes from `20261023000000_hr_attendance_employee_remarks.sql` (a known defect).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                moduleDisabled:
+                  $ref: '#/components/examples/HrModuleDisabled'
+                rulesNotInstalled:
+                  $ref: '#/components/examples/RulesNotInstalled'
+                punchNotInstalled:
+                  $ref: '#/components/examples/PunchNotInstalled'
+      x-notes:
+        - >-
+          This works even for a session still on HR's first-time password, unlike the challenge, punch and ping. It is a known gap, and it stays: closing it would need a Scheduler change (ADR-0018). The app should send the person to "Choose your own password" first anyway.
+        - >-
+          The 500 characters are counted after trimming, as characters rather than bytes.
+
+components:
+
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        One header, `Authorization: Bearer <token>`, and two kinds of token, both issued by the Scheduler. The app stores whichever its sign-in returned.
+
+        | | Portal JWT | Attendance session |
+        | --- | --- | --- |
+        | Issued by | `POST /users/login`, or `/users/login/verify` when two-factor is on | `POST /hr/my-attendance/password-login`, `/otp/verify` or `/password` |
+        | Who has one | People with a portal login (a `users` row) | Staff with no portal login, on an attendance login HR created |
+        | Lifetime | 64 hours, no refresh | 30 days, no refresh |
+        | Signed with | HS256 over `JWT_SECRET`; no audience, no issuer | HS256 over a key derived from `JWT_SECRET`; audience `rvm-punch` |
+        | Claims | `userId`, `role`, `locationId`, `username`, `locationName`, `isSuperAdmin`; plus `id` (the faculty id) for faculty and HOD | `k: "punch"`, `e` (the hr_employees id), `m: "otp"` or `"pw"` |
+        | Works on | Every Scheduler route its role allows, `/hr/my-attendance/*` and the ESS | `/hr/my-attendance/*` and the ESS only |
+        | Ended by | Expiry, or the account being deleted. Neither a password change nor leaving the company ends it on the Scheduler | Expiry; a password set or reset (401); HR switching the login off (403 `NO_ATTENDANCE_LOGIN`) |
+
+        - An attendance session sent to any other Scheduler route is refused with 401 "Please authenticate", which the sign-out rule reads as "session over". Never send it outside `/hr/my-attendance/*` and the ESS.
+        - The ESS refuses a valid token that is not a staff login with 403 `NOT_AN_EMPLOYEE`: a student token (7 days, `role: "student"`), an admission-undertaking token (issuer `rvmcad-admission-undertaking`), or anything else signed with `JWT_SECRET`.
+        - The ESS is stricter about the header than the Scheduler: it takes only `Bearer <token>` exactly, and accepts HS256 only.
+        - Do not decide anything from the claims except `exp`. Ask `GET /ess/me` and `GET /ess/me/capabilities`.
+        - The refreshable session (task A3) will mint short access tokens in these same two formats, because the Scheduler cannot be changed to accept a new kind (ADR-0006, ADR-0018).
+
+  parameters:
+    DeviceCookie:
+      name: rvm_att_dev
+      in: cookie
+      required: false
+      description: |
+        The registered phone's device token, set by the Scheduler on the first accepted punch (see `POST /hr/my-attendance/punch`). Not set by the app: a persistent cookie jar sends it on every `/api/hr/my-attendance` request, because the cookie's path is `/api/hr/my-attendance`. A value that does not match the pattern is ignored, as if no cookie were sent.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_-]{20,200}$'
+    PhoneUserAgent:
+      name: User-Agent
+      in: header
+      required: false
+      description: |
+        While `ATTENDANCE_MOBILE_ONLY` is on (the default; `rules.mobile_only` in `GET /hr/my-attendance` says so) it must contain Android, iPhone, iPad, iPod or Mobile, in any case, or the punch is refused 403 `NOT_MOBILE`. A missing header, and Dart's default "Dart/3.x (dart:io)", are refused. Set it once on the HTTP client.
+      schema:
+        type: string
+        examples:
+          - TeamRVM/1.0.0 (Android 14; Mobile)
+    Month:
+      name: month
+      in: query
+      required: false
+      description: |
+        The month for `days`, `holidays` and `my_remarks`, as YYYY-MM. Defaults to the current IST month. A value that does not match YYYY-MM is ignored; a matching but impossible one (2026-13) answers 500.
+      schema:
+        type: string
+        pattern: '^\d{4}-\d{2}$'
+        examples:
+          - '2026-10'
+
+  headers:
+    RetryAfter:
+      description: Seconds until the bucket that refused this request resets.
+      schema:
+        type: integer
+        minimum: 0
+    RateLimitPolicy:
+      description: The bucket that counted the request last, as `<limit>;w=<window seconds>`, for example `300;w=60`.
+      schema:
+        type: string
+    RateLimitLimit:
+      description: That bucket's limit.
+      schema:
+        type: integer
+    RateLimitRemaining:
+      description: Requests left in that bucket's window.
+      schema:
+        type: integer
+    RateLimitReset:
+      description: Seconds until that bucket's window resets.
+      schema:
+        type: integer
+    DeviceCookie:
+      description: |
+        Only on the punch that registered this phone: `rvm_att_dev=<token>; Path=/api/hr/my-attendance; Max-Age=157680000; HttpOnly; SameSite=Strict; Secure`. Keep it in a persistent cookie jar and never clear it.
+      schema:
+        type: string
+    NoStore:
+      description: Always `no-store`; a challenge must never be cached.
+      schema:
+        type: string
+        const: no-store
+    WwwAuthenticate:
+      description: Always `Bearer` (RFC 6750), naming the scheme that would have worked.
+      schema:
+        type: string
+        const: Bearer
+
+  schemas:
+
+    # ───────────── errors ─────────────
+
+    Error:
+      type: object
+      description: |
+        Every ESS error. `error` is written for staff and is shown as it is; `code` is what the app branches on.
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: A message written for staff. Show it; never parse it.
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$'
+          description: UPPER_SNAKE. Branch on this.
+
+    SchedulerError:
+      type: object
+      description: |
+        A Scheduler error. `error` is written for staff. `code` is present on most errors but not all: each response says which have none. A few refusals add the fields below.
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: A message written for staff. Show it; never parse it.
+        code:
+          type: string
+          pattern: '^[A-Z0-9_]+$'
+          description: Usually UPPER_SNAKE. On the two-factor send failure it can be a database error code instead.
+        attempts_left:
+          type: integer
+          minimum: 1
+          description: With `WRONG_CODE` on `otp/verify`, and `WRONG_CREDENTIALS` after a wrong password, the tries left.
+        accuracy_m:
+          type: integer
+          description: With `ACCURACY_LOW`, the accuracy the phone reported, rounded to metres.
+        distance_m:
+          type: integer
+          description: With `OUTSIDE_GEOFENCE`, how far the fix was from the branch, in metres.
+        radius_m:
+          type: integer
+          description: With `OUTSIDE_GEOFENCE`, the branch radius in metres.
+        module:
+          type: string
+          description: With `MODULE_NOT_INSTALLED`, the module (HR).
+        migration:
+          type: string
+          description: With `MODULE_NOT_INSTALLED`, the migration file that creates what is missing.
+
+    HtmlPage:
+      type: string
+      description: |
+        An HTML page, not JSON: nginx while a process restarts, the Scheduler's catch-all for an unknown path, or Express's default error page for malformed JSON. Never treat it as success and never sign out on it.
+
+    # ───────────── ESS ─────────────
+
+    Semver:
+      type: [string, 'null']
+      pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+      description: A semantic version such as 1.4.2, or null when not set.
+
+    Health:
+      type: object
+      required: [ok, server_time, version, min_app_version, latest_app_version, db]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        server_time:
+          type: string
+          format: date-time
+          description: The server's clock when it answered.
+        version:
+          type: string
+          description: The ESS build that answered.
+        min_app_version:
+          $ref: '#/components/schemas/Semver'
+          description: Older apps must update before going on. Null when not set.
+        latest_app_version:
+          $ref: '#/components/schemas/Semver'
+          description: Older apps may offer an update. Null when not set.
+        db:
+          type: string
+          enum: [ok, unavailable]
+          description: The result of a cheap database read with a short timeout.
+
+    Me:
+      type: object
+      required: [employee, login]
+      properties:
+        employee:
+          $ref: '#/components/schemas/Employee'
+        login:
+          $ref: '#/components/schemas/Login'
+
+    Employee:
+      type: object
+      description: The caller's HR record (`hr_employees`). Never carries pay, a phone number or a document path.
+      required: [id, full_name, employee_code, designation, employment_status, branch, department, manager]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: hr_employees.id. The id every ESS record about this person uses.
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+        designation:
+          type: [string, 'null']
+        employment_status:
+          type: string
+          enum: [active, notice_period, probation, confirmed, resigned, fired, terminated]
+          description: |
+            As stored on the HR record. "exited" never appears, because an employee who has left gets 403 `NOT_ACTIVE`. "notice_period" means serving notice; the last working day is still active. probation, confirmed and resigned are legacy values that no current record carries.
+        branch:
+          type: [object, 'null']
+          description: The HR branch (`hr_branches`), not a Scheduler location.
+          required: [id, name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        department:
+          type: [object, 'null']
+          required: [id, name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        manager:
+          type: [object, 'null']
+          description: The reporting manager on the HR record (`manager_id`), who approves this person's requests. Null when none is recorded, in which case HR approves.
+          required: [id, full_name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: string
+
+    Login:
+      type: object
+      required: [kind, role, user_id]
+      properties:
+        kind:
+          type: string
+          enum: [portal, attendance]
+          description: Which token this request carried.
+        role:
+          type: [string, 'null']
+          enum: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, faculty, null]
+          description: The portal login's role (users.role) as it is now. Null for an attendance session.
+        user_id:
+          type: [string, 'null']
+          format: uuid
+          description: users.id of a portal login. Null for an attendance session.
+
+    Capabilities:
+      type: object
+      required: [tabs, sections, team, approvals, requests, wall, push, integrity]
+      properties:
+        tabs:
+          type: array
+          description: The bottom tabs, in display order. All five for every staff login.
+          items:
+            type: string
+            enum: [home, inbox, wall, me, team]
+        sections:
+          type: object
+          required: [time, helpdesk, documents, profile, work]
+          properties:
+            time:
+              type: boolean
+              description: Attendance, requests and leave. True for every staff login.
+            helpdesk:
+              type: boolean
+              description: True for every staff login.
+            documents:
+              type: boolean
+              description: True for every staff login.
+            profile:
+              type: boolean
+              description: True for every staff login.
+            work:
+              type: boolean
+              description: The teaching and leadership section. True for faculty, hod, hod_placement, hoo, super_admin and ceo; false for admin, admin_manager, accounts_admin, hr, hr_executive and attendance-only staff.
+        team:
+          type: object
+          required: [has_reports, direct_reports]
+          properties:
+            has_reports:
+              type: boolean
+              description: True when direct_reports is above 0.
+            direct_reports:
+              type: integer
+              minimum: 0
+              description: Active employees whose manager_id is the caller.
+        approvals:
+          type: object
+          required: [own_reports, any_request, request_types, hr_scope]
+          properties:
+            own_reports:
+              type: boolean
+              description: The caller decides their direct reports' requests (true when direct_reports is above 0).
+            any_request:
+              type: boolean
+              description: The caller may decide anyone's request, recorded as HR's decision. True for hr, ceo and super_admin only; never for hr_executive.
+            request_types:
+              type: array
+              description: The request types this person may decide. Every offered type when any_request or own_reports is true; otherwise empty.
+              items:
+                $ref: '#/components/schemas/RequestType'
+            hr_scope:
+              type: array
+              description: HR review queues. hr gets all four; hr_executive gets documents, profile_changes and helpdesk_hr; everyone else none.
+              items:
+                type: string
+                enum: [attendance, documents, profile_changes, helpdesk_hr]
+        requests:
+          type: object
+          required: [types, payroll_cutoff_day, reach_back_months]
+          properties:
+            types:
+              type: array
+              description: Every request type, offered or not, with its monthly limit. One entry per type.
+              items:
+                $ref: '#/components/schemas/RequestTypePolicy'
+            payroll_cutoff_day:
+              type: integer
+              minimum: 1
+              maximum: 28
+              description: The day of the current month (IST) on which requests for last month close; 5 (KP, 16 Oct). Whether the 5th itself is still open is to be confirmed with KP (docs/03-decisions.md).
+            reach_back_months:
+              type: integer
+              minimum: 0
+              description: How many months back a request may reach besides the current one. 1 (this month and last month).
+        wall:
+          type: object
+          required: [post, announce, moderate]
+          properties:
+            post:
+              type: boolean
+              description: Post, comment, react, praise and run polls. True for every staff login.
+            announce:
+              type: boolean
+              description: Post announcements. True for hr, ceo and super_admin.
+            moderate:
+              type: boolean
+              description: Hide anything, with a reason. True for hr.
+        push:
+          type: object
+          required: [enabled]
+          properties:
+            enabled:
+              type: boolean
+              description: True only when the server has its FIREBASE_* settings (ADR-0016). Until then notifications go to the server log instead.
+        integrity:
+          type: object
+          required: [required]
+          properties:
+            required:
+              type: boolean
+              description: Whether a Play Integrity token is required. False until a Play project exists (ADR-0016).
+
+    RequestType:
+      type: string
+      enum: [on_duty, fix_a_day, excuse_late, short_leave, leave_cl, leave_lwp, wfh]
+      description: |
+        on_duty: working away from the branch for the day. fix_a_day: correct a day's attendance. excuse_late: excuse a late arrival. short_leave: short leave, counted in minutes (Phase 2). leave_cl: casual leave. leave_lwp: leave without pay. wfh: work from home, not offered.
+
+    RequestTypePolicy:
+      type: object
+      description: |
+        One request type and its monthly limit, per employee per calendar month (KP, 16 Oct). Today: on_duty no limit; fix_a_day 3; excuse_late 3; short_leave 180 minutes (phase 2); leave_cl 1; leave_lwp no limit set (still open); wfh not offered, limit 0.
+      required: [type, offered, limit, unit, phase]
+      properties:
+        type:
+          $ref: '#/components/schemas/RequestType'
+        offered:
+          type: boolean
+          description: False means the type is hidden in the app.
+        limit:
+          type: [integer, 'null']
+          minimum: 0
+          description: The monthly limit in `unit`. Null means no limit.
+        unit:
+          type: string
+          enum: [count, minutes]
+        phase:
+          type: integer
+          enum: [1, 2]
+          description: The build phase that delivers this type (ADR-0013).
+
+    # ───────────── Scheduler: portal sign-in ─────────────
+
+    UserRole:
+      type: string
+      enum: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, faculty]
+      description: A Scheduler portal role (users.role) that can sign in. Students have their own token, and the connector account cannot sign in.
+
+    PortalLoginRequest:
+      type: object
+      required: [username, password, locationName]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: The username or the login phone number, matched exactly as stored. Not an email, not an employee code.
+        password:
+          type: string
+          minLength: 1
+        locationName:
+          type: string
+          minLength: 1
+          description: A branch name exactly as the Scheduler stores it (the web offers Faridabad, Pune, Ahmedabad and Lucknow). It decides between accounts that share an identifier, and goes into the token.
+
+    PortalSession:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: The portal JWT. 64 hours, no refresh.
+        user:
+          type: object
+          required: [userId, username, role, locationId, locationName]
+          properties:
+            userId:
+              type: string
+              format: uuid
+            username:
+              type: [string, 'null']
+              description: Null for an account that signs in by phone only.
+            role:
+              $ref: '#/components/schemas/UserRole'
+            locationId:
+              type: [integer, 'null']
+              description: The account's Scheduler branch; null for accounts with no branch.
+            locationName:
+              type: [string, 'null']
+              description: The branch name that was typed (sign-in) or echoed (verify), not checked against locationId.
+
+    TwoFactorChallenge:
+      type: object
+      required: [two_factor_required, challenge_id, sent_to, expires_at, location_name]
+      properties:
+        two_factor_required:
+          type: boolean
+          const: true
+        challenge_id:
+          type: string
+          format: uuid
+        sent_to:
+          type: string
+          description: The email the code went to, masked, for example ra•••@rvmcad.org.
+        expires_at:
+          type: string
+          format: date-time
+        location_name:
+          type: string
+          description: The branch name from the sign-in, to send back to `/users/login/verify`.
+
+    LoginVerifyRequest:
+      type: object
+      required: [challenge_id, code]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: '^\s*(\d\s*){6}$'
+          description: The six digits from the email; spaces are ignored.
+        location_name:
+          type: [string, 'null']
+          description: The challenge's location_name, sent back unchanged.
+
+    ForgotPasswordRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier:
+          type: string
+          description: A username or the account's email. A missing or unknown one still answers 200.
+
+    ForgotPasswordConfirmRequest:
+      type: object
+      required: [identifier, code, new_password]
+      properties:
+        identifier:
+          type: string
+          description: The same identifier as the request step.
+        code:
+          type: string
+          pattern: '^\s*(\d\s*){6}$'
+        new_password:
+          type: string
+          minLength: 8
+        confirm_password:
+          type: string
+          description: Optional. When present it must equal new_password.
+
+    OkMessage:
+      type: object
+      required: [ok, message]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        message:
+          type: string
+
+    MessageOnly:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    LegacyResetPasswordRequest:
+      type: object
+      description: The retired reset's body at `c28b9ca`. Never send it.
+      required: [username, phone_number, new_password]
+      properties:
+        username:
+          type: string
+        phone_number:
+          type: string
+        locationName:
+          type: string
+        new_password:
+          type: string
+
+    # ───────────── Scheduler: attendance sign-in ─────────────
+
+    AttendancePasswordLoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          description: The main phone on the HR record (+91, 91 or a leading 0 allowed), the email on it, or the employee code (any case).
+        password:
+          type: string
+          minLength: 1
+
+    AttendanceCodeRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          description: The main phone on the HR record (a ten-digit Indian mobile; +91, 91 or a leading 0 allowed), or the email on it.
+
+    AttendanceCodeSent:
+      type: object
+      required: [challenge_id, channel, sent_to, expires_at, ttl_minutes, sandbox]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [sms, email]
+        sent_to:
+          type: string
+          description: Where the code went, masked (••••••2345, or ra•••@rvmcad.org).
+        expires_at:
+          type: string
+          format: date-time
+        ttl_minutes:
+          type: integer
+          description: How long the code lives, in minutes. Always 10 at c28b9ca.
+        sandbox:
+          type: boolean
+          description: True when the server is in console mode and the code was logged, not delivered.
+
+    AttendanceCodeVerifyRequest:
+      type: object
+      required: [challenge_id, code]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: '^\s*(\d\s*){6}$'
+          description: The six digits; spaces are ignored.
+
+    AttendanceSession:
+      type: object
+      required: [token, expires_in_days, employee, password_set, temporary]
+      properties:
+        token:
+          type: string
+          description: The attendance session. Opens /hr/my-attendance/* and /ess/* only.
+        expires_in_days:
+          type: integer
+          description: How long the session lasts, in days. Always 30 at c28b9ca.
+        employee:
+          type: object
+          required: [full_name]
+          properties:
+            full_name:
+              type: string
+        password_set:
+          type: boolean
+          description: False when the login has no password at all; offer to set one.
+        temporary:
+          type: boolean
+          description: True while the password is still the one HR gave.
+
+    AttendanceSetPasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          description: At least 8 characters and at most 72 bytes; not one character repeated; not containing the main phone's ten digits; not HR's first-time password.
+
+    AttendancePasswordSet:
+      type: object
+      required: [token, password_set]
+      properties:
+        token:
+          type: string
+          description: A fresh 30-day attendance session. Every older session of this login no longer works.
+        password_set:
+          type: boolean
+          const: true
+
+    # ───────────── Scheduler: attendance ─────────────
+
+    MyAttendance:
+      oneOf:
+        - $ref: '#/components/schemas/MyAttendanceUnlinked'
+        - $ref: '#/components/schemas/MyAttendanceMustSetPassword'
+        - $ref: '#/components/schemas/MyAttendanceMonth'
+
+    MyAttendanceUnlinked:
+      type: object
+      description: A portal login with no HR record linked.
+      required: [linked, message]
+      properties:
+        linked:
+          type: boolean
+          const: false
+        message:
+          type: string
+
+    MyAttendanceMustSetPassword:
+      type: object
+      description: A password session still on HR's first-time password. Show only "Choose your own password".
+      required: [linked, must_set_password, employee]
+      properties:
+        linked:
+          type: boolean
+          const: true
+        must_set_password:
+          type: boolean
+          const: true
+        employee:
+          type: object
+          required: [id, full_name, employee_code]
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: string
+            employee_code:
+              type: [string, 'null']
+
+    MyAttendanceMonth:
+      type: object
+      required: [linked, employee, branch, shift, week_off_days, holidays, upcoming_holidays, my_remarks, today, device, rules, month, days]
+      properties:
+        linked:
+          type: boolean
+          const: true
+        employee:
+          type: object
+          required: [id, full_name, employee_code, geofence_exempt]
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: string
+            employee_code:
+              type: [string, 'null']
+            geofence_exempt:
+              type: boolean
+              description: Field staff. The radius is not enforced; the location is still recorded.
+        branch:
+          type: [object, 'null']
+          required: [id, name, latitude, longitude, radius_m, configured]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            latitude:
+              type: [number, 'null']
+            longitude:
+              type: [number, 'null']
+            radius_m:
+              type: integer
+              description: The geofence radius in metres (25 to 2000; 150 unless HR set it).
+            configured:
+              type: boolean
+              description: False until HR sets the branch's location; punches are then refused BRANCH_NOT_CONFIGURED unless geofence-exempt.
+        shift:
+          type: [object, 'null']
+          description: The employee's shift. Null when they are not on one (they are marked by hand) or before migration 20261022000000.
+          required: [name, start, end, grace_minutes]
+          properties:
+            name:
+              type: string
+            start:
+              type: string
+              pattern: '^\d{2}:\d{2}$'
+              description: HH:MM, IST.
+            end:
+              type: string
+              pattern: '^\d{2}:\d{2}$'
+              description: HH:MM, IST.
+            grace_minutes:
+              type: integer
+        week_off_days:
+          type: [array, 'null']
+          description: Weekly offs, 0 = Sunday to 6 = Saturday. Null before migration 20261022000000.
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+        holidays:
+          type: array
+          description: The month's holidays for the employee's branch or for every branch.
+          items:
+            $ref: '#/components/schemas/Holiday'
+        upcoming_holidays:
+          type: array
+          description: The next holidays from today, up to 120 days ahead and at most 12.
+          maxItems: 12
+          items:
+            $ref: '#/components/schemas/Holiday'
+        my_remarks:
+          type: array
+          description: The employee's own remarks on the month's days.
+          items:
+            type: object
+            required: [day, remarks, updated_at]
+            properties:
+              day:
+                type: string
+                format: date
+              remarks:
+                type: string
+              updated_at:
+                type: string
+                format: date-time
+        today:
+          $ref: '#/components/schemas/Today'
+        device:
+          type: object
+          required: [this_phone, has_registered_phone, registered_at]
+          properties:
+            this_phone:
+              type: string
+              enum: [own, other, revoked, unknown]
+              description: What the rvm_att_dev cookie on this request says about this phone.
+            has_registered_phone:
+              type: boolean
+              description: Whether the employee has an active registered phone, this one or another.
+            registered_at:
+              type: [string, 'null']
+              format: date-time
+        rules:
+          type: object
+          required: [max_accuracy_m, mobile_only]
+          properties:
+            max_accuracy_m:
+              type: number
+              description: A fix vaguer than this is refused ACCURACY_LOW.
+            mobile_only:
+              type: boolean
+              description: Whether a punch needs a phone User-Agent.
+        month:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        days:
+          type: array
+          description: The month's day rows, oldest first.
+          items:
+            $ref: '#/components/schemas/DayRow'
+
+    Holiday:
+      type: object
+      required: [day, name]
+      properties:
+        day:
+          type: string
+          format: date
+        name:
+          type: string
+
+    DayStatus:
+      type: string
+      enum: [present, absent, half_day, leave, week_off, holiday]
+
+    Today:
+      type: object
+      description: Today (IST), from today's accepted punches and today's day row.
+      required: [day, punched_in, done, first_in, last_out, punches, worked_minutes, kind, holiday, status, late_minutes, early_exit_minutes, late_count, late_half_day, late_excused]
+      properties:
+        day:
+          type: string
+          format: date
+        punched_in:
+          type: boolean
+          description: The last accepted punch today was an in.
+        done:
+          type: boolean
+          description: Punched out; no more punches until IST midnight (DAY_DONE).
+        first_in:
+          type: [string, 'null']
+          format: date-time
+        last_out:
+          type: [string, 'null']
+          format: date-time
+        punches:
+          type: array
+          items:
+            type: object
+            required: [kind, at, distance_m]
+            properties:
+              kind:
+                type: string
+                enum: [in, out]
+              at:
+                type: string
+                format: date-time
+              distance_m:
+                type: [number, 'null']
+        worked_minutes:
+          type: integer
+          minimum: 0
+          description: Counts up to the moment of the request while punched in.
+        kind:
+          type: string
+          enum: [no_shift, holiday, week_off, working]
+          description: What today is on the shift rules. no_shift means the employee is not on a shift and is marked by hand.
+        holiday:
+          type: [string, 'null']
+          description: Today's holiday name.
+        status:
+          oneOf:
+            - $ref: '#/components/schemas/DayStatus'
+            - type: 'null'
+        late_minutes:
+          type: [integer, 'null']
+        early_exit_minutes:
+          type: [integer, 'null']
+        late_count:
+          type: [integer, 'null']
+          description: Which late arrival of the month today is.
+        late_half_day:
+          type: boolean
+          description: Today became a half day as the month's third late arrival.
+        late_excused:
+          type: boolean
+
+    DayRow:
+      type: object
+      description: |
+        One day's record (hr_staff_attendance). The fields from late_minutes on arrive with migration 20261022000000 and are missing before it.
+      required: [day, status, leave_type, source, first_in, last_out, worked_minutes]
+      properties:
+        day:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/DayStatus'
+        leave_type:
+          type: [string, 'null']
+          description: cl, lwp, leave, or an older free-text type.
+        source:
+          type: string
+          enum: [manual, self_punch, override, auto]
+          description: Who wrote the row. override is HR's word on the day; auto is the nightly job.
+        first_in:
+          type: [string, 'null']
+          format: date-time
+        last_out:
+          type: [string, 'null']
+          format: date-time
+        worked_minutes:
+          type: [integer, 'null']
+        late_minutes:
+          type: [integer, 'null']
+        early_exit_minutes:
+          type: [integer, 'null']
+        late_count:
+          type: [integer, 'null']
+        late_half_day:
+          type: boolean
+        late_excused:
+          type: boolean
+        shift_start:
+          type: [string, 'null']
+          description: HH:MM:SS, the shift the day is judged by.
+        shift_end:
+          type: [string, 'null']
+          description: HH:MM:SS.
+
+    PunchChallenge:
+      type: object
+      required: [nonce, expires_at]
+      properties:
+        nonce:
+          type: string
+          description: Send it unchanged as the punch's nonce.
+        expires_at:
+          type: string
+          format: date-time
+          description: Two minutes after issue.
+
+    PunchRequest:
+      type: object
+      required: [kind, nonce, latitude, longitude, accuracy_m]
+      properties:
+        kind:
+          type: string
+          enum: [in, out]
+        nonce:
+          type: string
+          description: The nonce from GET /hr/my-attendance/challenge, unchanged.
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracy_m:
+          type: number
+          minimum: 0
+          description: The fix's horizontal accuracy in metres. Required.
+        client_at:
+          type: string
+          format: date-time
+          description: The phone's clock at the fix. Kept beside the server time and never trusted.
+        note:
+          type: string
+          description: The employee's own word on the punch, for HR. Trimmed and cut to 200 characters without an error; never changes how the punch is judged.
+
+    PunchAccepted:
+      type: object
+      required: [kind, at, distance_m, inside_geofence, flags, device_registered, today]
+      properties:
+        kind:
+          type: string
+          enum: [in, out]
+        at:
+          type: string
+          format: date-time
+          description: The server's time of the punch.
+        distance_m:
+          type: [integer, 'null']
+          description: Metres from the branch; null when the branch has no location (geofence-exempt staff).
+        inside_geofence:
+          type: [boolean, 'null']
+        flags:
+          type: array
+          items:
+            type: string
+            enum: [new_device, suspicious_accuracy, exempt_outside, off_network, possible_proxy]
+        device_registered:
+          type: boolean
+          description: True when this punch registered the phone and set the rvm_att_dev cookie.
+        today:
+          type: object
+          description: The day after this punch. The fields after punched_in are missing before migration 20261022000000 or when the day has no row.
+          required: [worked_minutes, punched_in]
+          properties:
+            worked_minutes:
+              type: integer
+              minimum: 0
+            punched_in:
+              type: boolean
+            status:
+              $ref: '#/components/schemas/DayStatus'
+            late_minutes:
+              type: [integer, 'null']
+            early_exit_minutes:
+              type: [integer, 'null']
+            late_count:
+              type: [integer, 'null']
+            late_half_day:
+              type: boolean
+
+    PingRequest:
+      type: object
+      required: [latitude, longitude, accuracy_m]
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracy_m:
+          type: number
+          minimum: 0
+
+    PingStored:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+
+    RemarkRequest:
+      type: object
+      required: [day]
+      properties:
+        day:
+          type: string
+          format: date
+          description: From the 1st of last month to today, IST.
+        remarks:
+          type: [string, 'null']
+          description: Up to 500 characters after trimming. Empty, null or missing removes the remark.
+
+    RemarkSaved:
+      type: object
+      required: [day, remarks]
+      properties:
+        day:
+          type: string
+          format: date
+        remarks:
+          type: [string, 'null']
+          description: Null when the remark was removed.
+        updated_at:
+          type: string
+          format: date-time
+          description: Present when the remark was saved.
+
+  examples:
+
+    # ───────────── ESS ─────────────
+
+    EssSignIn:
+      summary: No token
+      value:
+        error: Please sign in.
+        code: NOT_AUTHENTICATED
+    EssNotAuthenticated:
+      summary: An expired token
+      value:
+        error: Your sign-in has expired. Please sign in again.
+        code: NOT_AUTHENTICATED
+    EssSignInAgain:
+      summary: A forged or malformed token, or one whose account is gone
+      value:
+        error: Please sign in again.
+        code: NOT_AUTHENTICATED
+    EssPasswordChanged:
+      summary: An attendance session older than the last password change
+      value:
+        error: Your password was changed. Please sign in again.
+        code: NOT_AUTHENTICATED
+    EssNotAnEmployee:
+      summary: A valid token that is not a staff login
+      value:
+        error: Team RVM is for staff. Sign in with your staff login.
+        code: NOT_AN_EMPLOYEE
+    EssNotLinked:
+      summary: A portal login with no HR record linked
+      value:
+        error: Your login is not linked to an employee record yet. Ask HR or the tech team to link it.
+        code: NOT_LINKED
+    EssNotActive:
+      summary: The employee has left
+      value:
+        error: Your employee record is no longer active, so Team RVM is closed for this login. Ask HR if this is wrong.
+        code: NOT_ACTIVE
+    EssNoAttendanceLogin:
+      summary: The attendance login is missing
+      value:
+        error: You do not have an attendance login yet. Ask HR to create one for you.
+        code: NO_ATTENDANCE_LOGIN
+    EssAttendanceLoginOff:
+      summary: HR switched the attendance login off
+      value:
+        error: Your attendance login is turned off. Ask HR.
+        code: NO_ATTENDANCE_LOGIN
+    EssRateLimited:
+      value:
+        error: Too many requests. Wait a minute and try again.
+        code: RATE_LIMITED
+    EssUnavailable:
+      summary: The database could not be reached
+      value:
+        error: The server cannot reach the database right now. Try again in a minute.
+        code: UNAVAILABLE
+    EssModuleDisabled:
+      summary: ESS_ENABLED is "false"
+      value:
+        error: Team RVM is switched off on the server for now. Try again later.
+        code: MODULE_DISABLED
+    EssNotInstalled:
+      summary: The code is live before its migration
+      value:
+        error: Team RVM needs a database update that has not been applied yet (it cannot read hr_employees). Ask the tech team.
+        code: MODULE_NOT_INSTALLED
+
+    # ───────────── Scheduler ─────────────
+
+    NoTokenProvided:
+      summary: No Authorization header (no code)
+      value:
+        error: No token provided
+    PleaseAuthenticate:
+      summary: A rejected token, or a failed user lookup (no code)
+      value:
+        error: Please authenticate
+    PunchPleaseSignIn:
+      summary: No caller could be identified (defensive)
+      value:
+        error: Please sign in.
+        code: NOT_AUTHENTICATED
+    PunchSignInAgain:
+      summary: The attendance session's employee record is gone
+      value:
+        error: Please sign in again.
+        code: NOT_AUTHENTICATED
+    PunchPasswordChanged:
+      summary: The attendance session predates the last password change
+      value:
+        error: Your password was changed. Please sign in again.
+        code: NOT_AUTHENTICATED
+    PunchNotLinked:
+      value:
+        error: Your login is not linked to an employee record yet. Ask HR or the tech team to link it.
+        code: NOT_LINKED
+    PunchNotActive:
+      value:
+        error: Your employee record is not active, so punching is closed.
+        code: NOT_ACTIVE
+    NoAttendanceLoginYet:
+      value:
+        error: You do not have an attendance login yet. Ask HR to create one for you.
+        code: NO_ATTENDANCE_LOGIN
+    NoAttendanceLoginOff:
+      value:
+        error: Your attendance login is turned off. Ask HR.
+        code: NO_ATTENDANCE_LOGIN
+    HasPortalLogin:
+      value:
+        error: You have a portal login. Sign in to the portal and use the Punch button at the top.
+        code: HAS_PORTAL_LOGIN
+    NotMainPhone:
+      value:
+        error: This number is on your employee record as an extra number, not the main one. Ask HR to set it as your main phone number, or sign in with your email.
+        code: NOT_MAIN_PHONE
+    PasswordChangeRequired:
+      value:
+        error: Set your own password first. The password HR gave you only works once.
+        code: PASSWORD_CHANGE_REQUIRED
+    DeviceNotRegistered:
+      value:
+        error: Your attendance is registered to a different phone. Ask HR to reset your phone if you have changed it.
+        code: DEVICE_NOT_REGISTERED
+    HrModuleDisabled:
+      summary: HR_MODULE_ENABLED=false
+      value:
+        error: The HR module is currently disabled.
+        code: MODULE_DISABLED
+    PunchNotInstalled:
+      value:
+        error: Punch attendance is not installed yet. Apply migration 20261020000000_hr_attendance_punch.sql.
+        code: MODULE_NOT_INSTALLED
+        module: HR
+        migration: 20261020000000_hr_attendance_punch.sql
+    AccountsNotInstalled:
+      value:
+        error: Attendance logins are not installed yet. Apply migration 20261021000000_hr_attendance_accounts.sql.
+        code: MODULE_NOT_INSTALLED
+        module: HR
+        migration: 20261021000000_hr_attendance_accounts.sql
+    RulesNotInstalled:
+      value:
+        error: Shifts and late rules are not installed yet. Apply migration 20261022000000_hr_attendance_shifts.sql.
+        code: MODULE_NOT_INSTALLED
+        module: HR
+        migration: 20261022000000_hr_attendance_shifts.sql
+    ApiRateLimited:
+      summary: 300 a minute across /api (no code)
+      value:
+        error: Too many requests. Please slow down.
+    LoginRateLimited:
+      summary: 20 in 15 minutes per IP address (no code)
+      value:
+        error: Too many login attempts. Please try again in 15 minutes.
+    CodeRequestsRateLimited:
+      summary: 10 in 15 minutes per IP address (no code)
+      value:
+        error: Too many code requests. Wait fifteen minutes and try again.
+    AttendanceSignInRateLimited:
+      summary: 40 in 15 minutes per IP address
+      value:
+        error: Too many sign-in attempts from this network. Wait fifteen minutes and try again.
+        code: RATE_LIMITED
+    PortalBadCode:
+      value:
+        error: Enter the six-digit code from the email.
+        code: BAD_CODE
+    PortalNoLiveCode:
+      value:
+        error: No code is waiting. Request a new one.
+        code: NO_LIVE_CODE
+    PortalCodeExpired:
+      value:
+        error: That code has expired. Request a new one.
+        code: EXPIRED
+    PortalWrongCode:
+      value:
+        error: Wrong code. 4 attempts left.
+        code: WRONG_CODE
+    PortalAttemptsExhausted:
+      value:
+        error: Too many wrong codes. Request a new one.
+        code: ATTEMPTS_EXHAUSTED
+
+  responses:
+
+    # ───────────── ESS ─────────────
+
+    EssNotAuthenticated:
+      description: |
+        `NOT_AUTHENTICATED`: the token is absent or rejected. That means no token, a bad signature, an expired token, a wrong algorithm, an attendance session issued before its login's `sessions_valid_from`, or a token whose account no longer exists (including a teaching account whose faculty id no longer matches its token). **This is the only reply on which the app signs out.** The ESS never sends it for a database outage.
+      headers:
+        WWW-Authenticate:
+          $ref: '#/components/headers/WwwAuthenticate'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            noToken:
+              $ref: '#/components/examples/EssSignIn'
+            expired:
+              $ref: '#/components/examples/EssNotAuthenticated'
+            rejected:
+              $ref: '#/components/examples/EssSignInAgain'
+            passwordChanged:
+              $ref: '#/components/examples/EssPasswordChanged'
+
+    EssForbidden:
+      description: |
+        The token is good, but this person cannot use Team RVM as things stand. Show the message; do not sign out on its own.
+        - `NOT_AN_EMPLOYEE`: a valid token that is not a staff login (a student or admission-undertaking token), or a portal token whose account is not staff (the connector account).
+        - `NOT_LINKED`: a portal login with no linked HR record; HR links it.
+        - `NOT_ACTIVE`: the employee has left.
+        - `NO_ATTENDANCE_LOGIN`: an attendance session whose login is missing or switched off.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
+            attendanceLoginOff:
+              $ref: '#/components/examples/EssAttendanceLoginOff'
+
+    EssRateLimited:
+      description: |
+        `RATE_LIMITED`: more than 600 requests in a minute from this IP address (every path, counted before the token is checked), or more than 120 in a minute from this employee (after it). Wait for `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        RateLimit-Policy:
+          $ref: '#/components/headers/RateLimitPolicy'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/EssRateLimited'
+
+    EssUnavailable:
+      description: |
+        Not a reason to sign out; keep the session and try again later.
+        - `UNAVAILABLE`: the database could not be reached, or answered something the ESS could not use.
+        - `MODULE_DISABLED`: the ESS is switched off (`ESS_ENABLED=false`), checked before the token. The Scheduler's sign-in and punching still work.
+        - `MODULE_NOT_INSTALLED`: a table or column this needs is missing, in the window between a deploy and KP applying its migration (ADR-0021).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unavailable:
+              $ref: '#/components/examples/EssUnavailable'
+            moduleDisabled:
+              $ref: '#/components/examples/EssModuleDisabled'
+            notInstalled:
+              $ref: '#/components/examples/EssNotInstalled'
+
+    EssUnexpected:
+      description: |
+        Any other failure, in the same `{ error, code }` body. Today these are 404 `NOT_FOUND` for an address the ESS does not have, or a method it does not take there (OPTIONS included); 400 `INVALID_JSON` or `BAD_REQUEST`, 413 `PAYLOAD_TOO_LARGE` and 415 `UNSUPPORTED_MEDIA_TYPE` for a body it cannot read; and 500 `INTERNAL_ERROR` for a fault on the server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              value:
+                error: There is nothing at this address.
+                code: NOT_FOUND
+            internal:
+              value:
+                error: Something went wrong on the server. Try again, and tell the tech team if it keeps happening.
+                code: INTERNAL_ERROR
+
+    # ───────────── Scheduler ─────────────
+
+    PunchAuthRejected:
+      description: |
+        The session is over, or the token was never good. Sign out on each of these, after the one check that the info section describes for "Please authenticate":
+        - "No token provided" (no code): no `Authorization` header, or an empty one.
+        - "Please authenticate" (no code): the token is neither a valid attendance session nor a valid portal token (expired, a bad signature, malformed, or its account is gone). An expired attendance session lands here, not on `NOT_AUTHENTICATED`. **Also sent when the Scheduler's user lookup fails during a database outage**, which is why the check comes first.
+        - `NOT_AUTHENTICATED` "Please sign in again.": the attendance session's employee record no longer exists.
+        - `NOT_AUTHENTICATED` "Your password was changed. Please sign in again.": the attendance session predates the last password set or reset.
+        - `NOT_AUTHENTICATED` "Please sign in.": no caller could be identified (defensive; not expected).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SchedulerError'
+          examples:
+            noToken:
+              $ref: '#/components/examples/NoTokenProvided'
+            pleaseAuthenticate:
+              $ref: '#/components/examples/PleaseAuthenticate'
+            signInAgain:
+              $ref: '#/components/examples/PunchSignInAgain'
+            passwordChanged:
+              $ref: '#/components/examples/PunchPasswordChanged'
+            pleaseSignIn:
+              $ref: '#/components/examples/PunchPleaseSignIn'
+
+    PunchIdentityForbidden:
+      description: |
+        - `NOT_LINKED`: a portal login with no HR record linked.
+        - `NOT_ACTIVE`: the employee record is no longer active.
+        - `NO_ATTENDANCE_LOGIN`: an attendance session whose login is missing or switched off.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SchedulerError'
+          examples:
+            notLinked:
+              $ref: '#/components/examples/PunchNotLinked'
+            notActive:
+              $ref: '#/components/examples/PunchNotActive'
+            noLogin:
+              $ref: '#/components/examples/NoAttendanceLoginYet'
+            loginOff:
+              $ref: '#/components/examples/NoAttendanceLoginOff'
+
+    SchedulerApiRateLimited:
+      description: '"Too many requests. Please slow down." (no code): 300 requests in a minute from this IP address, across all of `/api`.'
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        RateLimit-Policy:
+          $ref: '#/components/headers/RateLimitPolicy'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SchedulerError'
+          examples:
+            apiBucket:
+              $ref: '#/components/examples/ApiRateLimited'
+
+    HrUnavailable:
+      description: |
+        Not a reason to sign out.
+        - `MODULE_DISABLED`: the HR module is switched off (`HR_MODULE_ENABLED=false`), which switches all of `/hr/my-attendance` off, sign-in included.
+        - `MODULE_NOT_INSTALLED`: a table, column or function this needs is missing, in the window between a deploy and KP applying its migration. `migration` names the file.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SchedulerError'
+          examples:
+            moduleDisabled:
+              $ref: '#/components/examples/HrModuleDisabled'
+            punchNotInstalled:
+              $ref: '#/components/examples/PunchNotInstalled'
+            accountsNotInstalled:
+              $ref: '#/components/examples/AccountsNotInstalled'
