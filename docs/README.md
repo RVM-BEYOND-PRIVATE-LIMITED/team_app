@@ -9,6 +9,7 @@ Read these before working on Team RVM, RVM CAD's Android employee app, which is 
 | [02-reconciliation.md](02-reconciliation.md) | Every gap-report task (A1–K6, plus the issue #70 list) checked against the current backend |
 | [03-decisions.md](03-decisions.md) | Product decisions: approvers, limits, visibility, sign-in |
 | [04-build-plan.md](04-build-plan.md) | The build (STEP 2): waves, branches, merge order, migrations, the decisions still owed, and risks |
+| [05-deploy.md](05-deploy.md) | Deploying the ESS: where the set-up stands, the server check, the first deploy, switching it off, every setting |
 | [adr/](adr/README.md) | Architecture decision records |
 | [inputs/](inputs/) | Copies of the brief, the gap report and the developer's prompt |
 

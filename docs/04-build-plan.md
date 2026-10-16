@@ -4,13 +4,13 @@ KP started the build on 16 Oct 2026 ("start the backend now"). The same day KP s
 
 - Everything below is built in team_app.
 - The Scheduler is used exactly as it is: its endpoints as a client, its database through the paths in [ADR-0020](adr/0020-approvals-through-the-override-function.md).
-- Nothing is pushed, merged or deployed without KP's OK.
+- Finished work is pushed to `main` as it passes its lint and tests (KP, 16 Oct). Turning on deploys (`ESS_DEPLOY_ENABLED`) and running migrations still wait for KP's OK.
 
 Task IDs refer to [02-reconciliation.md](02-reconciliation.md).
 
-## Wave 1: the foundation (in progress)
+## Wave 1: the foundation (on `main`, 16 Oct)
 
-**Branch:** `feat/ess-foundation` in team_app.
+**Branch:** `feat/ess-foundation` in team_app, pushed to `main`.
 
 | What | Tasks |
 | --- | --- |
@@ -20,17 +20,18 @@ Task IDs refer to [02-reconciliation.md](02-reconciliation.md).
 | `GET /api/ess/me` | |
 | `GET /api/ess/me/capabilities` | A4 |
 | The OpenAPI contract, including the Scheduler's existing sign-in and punch endpoints | |
-| CI on Node 20 and 24 | |
+| CI on Node 20 and 24, with the contract lint, shellcheck and the nginx cases | |
 | A deploy workflow behind `ESS_DEPLOY_ENABLED` | K3 (Firebase key checks) |
+| The ESS on `team-api.rvmcad.org`, with its own nginx file and certificate ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)) | K1 (its upload limit) |
+| A read-only server check, run by hand | |
 
-**Next in Wave 1:** the deploy serves the ESS on its own subdomain ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)).
-- It writes its own nginx file and gets a certificate with certbot.
-- It enables the file only after `nginx -t` passes.
-- It restarts only its own pm2 process.
+**Still to do for Wave 1:** KP runs the server check, then turns on `ESS_DEPLOY_ENABLED` for the first deploy ([05-deploy.md](05-deploy.md)).
 
 **Stopped and removed on 16 Oct:** four Scheduler security branches, a login-page change and an nginx route in the Scheduler's deploy. The holes they would have fixed are still open ([02-reconciliation.md](02-reconciliation.md)).
 
 ## Wave 2: identity and the attendance extras
+
+**A rule for every ESS endpoint that writes:** it refuses a session still on HR's first-time password with 403 `PASSWORD_CHANGE_REQUIRED`, as the Scheduler's punch does. The read-only endpoints of Wave 1 accept such a session, so the app can show who the person is before they choose their own password.
 
 | Work | How, with no Scheduler change | Tasks |
 | --- | --- | --- |
@@ -132,6 +133,7 @@ These were in the gap report or found in STEP 1. They stay as they are unless KP
 9. **Faculty marking.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open?
 10. **Infra register.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? That writes a Scheduler table.
 11. **The Scheduler's own holes and the committed dump.** These are outside this project, and KP's call.
+12. **An HR Executive who manages people.** Do they approve their own team's attendance and leave requests? [03-decisions.md](03-decisions.md) says an HR Executive never approves attendance or leave. `GET /api/ess/me/capabilities` currently gives every manager their reports' request types, HR Executive included. The approvals endpoints (Wave 3) follow KP's answer.
 
 ## Migrations, in run order
 

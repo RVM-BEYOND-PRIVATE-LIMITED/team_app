@@ -125,12 +125,11 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 
 ## Next steps
 
-1. **Finish Wave 1:** the ESS foundation, then its deploy on its own subdomain ([04-build-plan.md](04-build-plan.md)).
+1. **Finish Wave 1.** The ESS foundation and its deploy on `team-api.rvmcad.org` are on `main` (16 Oct), and the DNS record and the deploy secrets are in place. Left: KP runs the read-only server check, then turns on `ESS_DEPLOY_ENABLED` for the first deploy ([05-deploy.md](05-deploy.md)).
 2. **Waves 2 to 4:** identity and the attendance extras, then Phase 1, then Phase 2. All of it is built in team_app, with tests for every endpoint, including role-denied and wrong-owner cases.
 3. **Phase 0, from RVM, alongside the build:**
    - a Firebase project;
    - a Google Play organisation account (it needs a D-U-N-S number);
-   - the DNS record for the ESS subdomain;
    - every HOD and HoO on the right role, and logins linked to HR records;
    - HR data: joining dates now, plus the main phone and email checked for every employee, then personal details once the screen exists;
    - a privacy and location policy that names a grievance officer;
@@ -144,5 +143,6 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 | [02-reconciliation.md](02-reconciliation.md) | Every task checked against the code, with file:line evidence |
 | [03-decisions.md](03-decisions.md) | Product decisions and limits |
 | [04-build-plan.md](04-build-plan.md) | The build: waves, out-of-scope items, decisions owed, risks |
+| [05-deploy.md](05-deploy.md) | Deploying the ESS, step by step, and switching it off |
 | [adr/](adr/README.md) | Architecture decisions |
 | [inputs/](inputs/) | The original documents |

@@ -72,7 +72,7 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 ## What RVM must provide (Phase 0)
 
 - A Firebase project for push, and a Google Play organisation account for RVM Beyond Pvt Ltd. The Play account needs a D-U-N-S number.
-- A DNS record for the ESS's own subdomain (for example `team-api.rvmcad.org`), plus team_app's deploy secrets ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)).
+- The ESS's own subdomain, `team-api.rvmcad.org`, and team_app's deploy secrets: both done by KP on 16 Oct ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)). Next comes the read-only server check, then the first deploy ([05-deploy.md](05-deploy.md)).
 - From HR:
   - joining dates for imported employees, now (anniversary and new-joiner cards need them);
   - the main phone and email checked for every employee;
