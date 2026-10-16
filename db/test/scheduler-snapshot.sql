@@ -10,10 +10,14 @@
 -- is how it checks that no team_app migration or rollback alters a Scheduler table (ADR-0021).
 
 -- users: supabase/migrations/20251215134244_remote_schema.sql:854-863 (the table) and 1474-1475
--- (users_pkey). Referenced by hr_ess_audit.actor_user_id, hr_ess_data_requests.resolved_by_user_id
--- and hr_ess_personal_details.updated_by_user_id.
+-- (users_pkey). Referenced by hr_ess_audit.actor_user_id, hr_ess_data_requests.resolved_by_user_id,
+-- hr_ess_personal_details.updated_by_user_id and hr_ess_sessions.user_id. password_hash (:858) is
+-- read inside the database by hr_ess_sessions' password fingerprint, whose SQL function is checked
+-- against it as it is created. NOT NULL in the Scheduler; nullable here, so a check can make a
+-- users row with only an id.
 CREATE TABLE public.users (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
+  password_hash text,
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 

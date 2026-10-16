@@ -45,4 +45,47 @@ CREATE INDEX IF NOT EXISTS idx_hr_ess_data_requests_employee_created
 
 ALTER TABLE public.hr_ess_data_requests ENABLE ROW LEVEL SECURITY;
 
+/*
+ * At most five open requests per employee (apps/ess-api/src/routes/dataRequests.js
+ * MAX_OPEN_REQUESTS: more is a stuck button or a flood for HR). The ESS counts first and says so
+ * kindly, but a count and an insert are two requests, and requests sent in parallel would all
+ * count fewer than five. So the count is made again here, as the row goes in, under a lock per
+ * employee: a second insert for the same person waits for the first to commit, and its count (a
+ * new statement, so a new snapshot under READ COMMITTED) then sees the first row. The error names
+ * hr_ess_data_requests_open_limit, which the ESS answers as 409 TOO_MANY_OPEN_REQUESTS.
+ */
+CREATE OR REPLACE FUNCTION public.hr_ess_data_requests_open_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NEW.status = 'open' THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('hr_ess_data_requests:' || NEW.employee_id::text, 0));
+    IF (SELECT count(*) FROM public.hr_ess_data_requests r
+         WHERE r.employee_id = NEW.employee_id AND r.status = 'open') >= 5 THEN
+      RAISE EXCEPTION 'hr_ess_data_requests_open_limit: % already has 5 open requests', NEW.employee_id
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+
+-- CREATE OR REPLACE TRIGGER needs Postgres 14 or later; Supabase runs 15 and up.
+CREATE OR REPLACE TRIGGER hr_ess_data_requests_open_limit
+  BEFORE INSERT ON public.hr_ess_data_requests
+  FOR EACH ROW EXECUTE FUNCTION public.hr_ess_data_requests_open_limit();
+
+-- A trigger's function is never called directly; nobody needs EXECUTE on it.
+REVOKE EXECUTE ON FUNCTION public.hr_ess_data_requests_open_limit() FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE EXECUTE ON FUNCTION public.hr_ess_data_requests_open_limit() FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE EXECUTE ON FUNCTION public.hr_ess_data_requests_open_limit() FROM authenticated;
+  END IF;
+END $$;
+
 NOTIFY pgrst, 'reload schema';

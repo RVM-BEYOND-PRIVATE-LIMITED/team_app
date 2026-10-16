@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -10,9 +11,9 @@ const { execFileSync } = require('child_process');
  * only the keys the migration's foreign keys point at.
  *
  * It applies the file twice, as KP may in the SQL editor, checks what the ESS relies on (the
- * one-live-row-per-family key, the checks, row-level security, who may reach the table and the
- * functions), runs both functions as the service role, and then rolls back, twice, and applies
- * again. tests/helpers/fakeSupabase.js answers the functions the way this shows the SQL does.
+ * one-live-row-per-family key, the one-trade-per-sign-in key, the checks, row-level security, who
+ * may reach the table and the functions), runs the functions and the password trigger as the
+ * service role, and then rolls back, twice, and applies again. tests/helpers/fakeSupabase.js answers the functions the way this shows the SQL does.
  */
 
 const enabled = process.env.ESS_MIGRATION_TEST === 'docker';
@@ -25,17 +26,23 @@ const E1 = 'e0000000-0000-4000-8000-000000000001';
 const E2 = 'e0000000-0000-4000-8000-000000000002';
 const ROTATE = 'public.hr_ess_session_rotate(uuid, uuid, text, timestamptz, timestamptz)';
 const REVOKE = 'public.hr_ess_session_revoke(uuid, text, timestamptz, uuid)';
+const CURRENT = 'public.hr_ess_session_password_current(uuid)';
+const FINGERPRINT = 'public.hr_ess_password_fingerprint(text)';
+const U1_HASH = '$2b$10$stand.in.hash.of.the.hr.login';
 
 /** The Scheduler tables the foreign keys reach, and Supabase's three API roles with its default grants. */
 const SCHEDULER_STAND_INS = `
-  CREATE TABLE public.users (id uuid PRIMARY KEY, username text);
+  -- password_hash: read inside the database by the password fingerprint, never by the ESS.
+  CREATE TABLE public.users (id uuid PRIMARY KEY, username text, password_hash text NOT NULL DEFAULT '!');
   CREATE TABLE public.hr_employees (id uuid PRIMARY KEY, full_name text);
-  INSERT INTO public.users VALUES ('${U1}', 'hr.login');
+  INSERT INTO public.users VALUES ('${U1}', 'hr.login', '${U1_HASH}');
   INSERT INTO public.hr_employees VALUES ('${E1}', 'Test HR'), ('${E2}', 'Test Other');
   CREATE ROLE anon NOLOGIN;
   CREATE ROLE authenticated NOLOGIN;
   CREATE ROLE service_role NOLOGIN BYPASSRLS;
   GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+  -- Supabase's service role reads every table; these two predate the default grants below.
+  GRANT SELECT ON public.users, public.hr_employees TO service_role;
   -- What Supabase hands every new table and function in public; the migration takes it back.
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
@@ -44,17 +51,27 @@ const SCHEDULER_STAND_INS = `
 const literal = (v) => (v === null ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`);
 
 let rows = 0;
-/** An INSERT of one session row: a live portal sign-in of E1 unless told otherwise. */
+/**
+ * An INSERT of one session row: a live portal sign-in of E1 unless told otherwise, each signed in
+ * a second after the one before, since one Scheduler sign-in is kept once (hr_ess_sessions_sign_in_key).
+ * `signedIn` is that time as psql prints it.
+ */
 function insert(change = {}) {
   rows += 1;
   const id = `5a000000-0000-4000-8000-${String(rows).padStart(12, '0')}`;
+  const signedAt = new Date(Date.parse('2026-10-16T06:00:00Z') + rows * 1000).toISOString().replace('.000Z', 'Z');
   const row = {
     id, family_id: id, employee_id: E1, login_kind: 'portal', user_id: U1, location_name: 'Faridabad', method: null,
-    signed_in_at: '2026-10-16T06:29:00Z', install_id: 'install-0123456789abcdef', device_label: 'Test phone',
+    signed_in_at: signedAt, install_id: 'install-0123456789abcdef', device_label: 'Test phone',
     refresh_hash: String(rows).padStart(64, 'a'), created_at: '2026-10-16T06:30:00Z', last_used_at: '2026-10-16T06:30:00Z',
     expires_at: '2027-01-14T06:30:00Z', ...change,
   };
-  return { id: row.id, family: row.family_id, sql: `INSERT INTO public.hr_ess_sessions (${Object.keys(row).join(', ')}) VALUES (${Object.values(row).map(literal).join(', ')});` };
+  return {
+    id: row.id,
+    family: row.family_id,
+    signedIn: `${row.signed_in_at.slice(0, 10)} ${row.signed_in_at.slice(11, 19)}+00`,
+    sql: `INSERT INTO public.hr_ess_sessions (${Object.keys(row).join(', ')}) VALUES (${Object.values(row).map(literal).join(', ')});`,
+  };
 }
 
 describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres 17', { timeout: 60 * 1000 }, () => {
@@ -114,8 +131,9 @@ describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres
       for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
         expect(psql(`SELECT has_table_privilege('${role}', 'public.hr_ess_sessions', '${privilege}')`), `${role} ${privilege}`).toBe('f');
       }
-      expect(psql(`SELECT has_function_privilege('${role}', '${ROTATE}', 'EXECUTE')`)).toBe('f');
-      expect(psql(`SELECT has_function_privilege('${role}', '${REVOKE}', 'EXECUTE')`)).toBe('f');
+      for (const fn of [ROTATE, REVOKE, CURRENT, FINGERPRINT, 'public.hr_ess_sessions_bind_password()']) {
+        expect(psql(`SELECT has_function_privilege('${role}', '${fn}', 'EXECUTE')`), `${role} ${fn}`).toBe('f');
+      }
       expect(failure('SELECT count(*) FROM public.hr_ess_sessions;', { role })).toMatch(/permission denied/);
     }
     for (const privilege of ['SELECT', 'INSERT', 'UPDATE']) {
@@ -123,15 +141,19 @@ describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres
     }
     expect(psql(`SELECT has_function_privilege('service_role', '${ROTATE}', 'EXECUTE')`)).toBe('t');
     expect(psql(`SELECT has_function_privilege('service_role', '${REVOKE}', 'EXECUTE')`)).toBe('t');
+    expect(psql(`SELECT has_function_privilege('service_role', '${CURRENT}', 'EXECUTE')`)).toBe('t');
     expect(psql(`SELECT has_function_privilege('public', '${ROTATE}', 'EXECUTE')`)).toBe('f');
+    expect(psql(`SELECT has_function_privilege('public', '${CURRENT}', 'EXECUTE')`)).toBe('f');
   });
 
   it('has the indexes the ESS reads by', () => {
     const indexes = psql("SELECT indexname || ' ' || indexdef FROM pg_indexes WHERE tablename = 'hr_ess_sessions' ORDER BY indexname").split('\n');
     expect(indexes.map((i) => i.split(' ')[0])).toEqual([
       'hr_ess_sessions_family_idx', 'hr_ess_sessions_live_employee_idx', 'hr_ess_sessions_live_family_key', 'hr_ess_sessions_pkey',
-      'hr_ess_sessions_refresh_hash_key',
+      'hr_ess_sessions_refresh_hash_key', 'hr_ess_sessions_sign_in_key',
     ]);
+    expect(indexes.find((i) => i.startsWith('hr_ess_sessions_sign_in_key')))
+      .toMatch(/UNIQUE INDEX .*\(employee_id, login_kind, signed_in_at\) WHERE \(id = family_id\)/);
     expect(indexes.find((i) => i.startsWith('hr_ess_sessions_live_family_key'))).toMatch(/UNIQUE INDEX .*\(family_id\) WHERE \(revoked_at IS NULL\)/);
     expect(indexes.find((i) => i.startsWith('hr_ess_sessions_live_employee_idx'))).toMatch(/\(employee_id\) WHERE \(revoked_at IS NULL\)/);
   });
@@ -165,8 +187,22 @@ describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres
       ['a reason that is not one', { revoked_at: '2026-10-16T07:00:00Z', revoked_reason: 'forgot' }, /check constraint/],
       ['an expiry before it began', { expires_at: '2026-10-16T06:00:00Z' }, /hr_ess_sessions_lifetime/],
       ['an employee who does not exist', { employee_id: 'e0000000-0000-4000-8000-000000000999' }, /foreign key/],
+      ['a password fingerprint on an attendance sign-in', { login_kind: 'attendance', user_id: null, location_name: null, method: 'otp', password_fingerprint: 'a'.repeat(64) }, /hr_ess_sessions_password_fingerprint/],
     ])('%s', (_label, change, error) => {
       expect(failure(insert(change).sql)).toMatch(error);
+    });
+
+    it('a second trade of one Scheduler sign-in, ended or not, though a later turn of it is no trade', () => {
+      const first = insert();
+      psql(first.sql, { role: 'service_role' });
+      const signedAt = psql(`SELECT signed_in_at FROM public.hr_ess_sessions WHERE id = '${first.id}'`);
+      const again = insert({ signed_in_at: signedAt });
+      expect(failure(again.sql, { role: 'service_role' })).toMatch(/hr_ess_sessions_sign_in_key/);
+      psql(`SELECT public.hr_ess_session_revoke('${first.family}', 'signed_out', '2026-10-16T07:00:00Z');`, { role: 'service_role' });
+      expect(failure(insert({ signed_in_at: signedAt }).sql, { role: 'service_role' })).toMatch(/hr_ess_sessions_sign_in_key/);
+      // The same person and time as an attendance sign-in, and a row that is not a family's first.
+      expect(failure(insert({ signed_in_at: signedAt, login_kind: 'attendance', user_id: null, location_name: null, method: 'otp' }).sql)).toBeNull();
+      expect(failure(insert({ signed_in_at: signedAt, family_id: first.family, revoked_at: '2026-10-16T06:40:00Z', revoked_reason: 'rotated' }).sql)).toBeNull();
     });
 
     it('but takes a live attendance sign-in', () => {
@@ -188,7 +224,7 @@ describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres
       expect(psql(`SELECT revoked_reason || ' ' || replaced_by || ' ' || last_used_at FROM public.hr_ess_sessions WHERE id = '${row.id}'`))
         .toBe(`rotated ${next} 2026-10-16 07:30:00+00`);
       expect(psql(`SELECT family_id || ' ' || signed_in_at || ' ' || install_id || ' ' || coalesce(revoked_reason, 'live') FROM public.hr_ess_sessions WHERE id = '${next}'`))
-        .toBe(`${row.family} 2026-10-16 06:29:00+00 install-0123456789abcdef live`);
+        .toBe(`${row.family} ${row.signedIn} install-0123456789abcdef live`);
       // The same token again: no row, and nothing changes.
       expect(rotate(row.id, '5a000000-0000-4000-8000-0000000007a2', 'c'.repeat(64))).toBe('');
       expect(psql(`SELECT count(*) FROM public.hr_ess_sessions WHERE family_id = '${row.family}'`)).toBe('2');
@@ -211,6 +247,46 @@ describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres
       expect(failure(`SELECT * FROM public.hr_ess_session_rotate('${row.id}', '5a000000-0000-4000-8000-0000000007c1', '${taken}', '2026-10-16T07:30:00Z', '2027-01-14T07:30:00Z');`, { role: 'service_role' }))
         .toMatch(/refresh_hash_key/);
       expect(psql(`SELECT revoked_at IS NULL FROM public.hr_ess_sessions WHERE id = '${row.id}'`)).toBe('t');
+    });
+  });
+
+  describe('the portal password fingerprint', () => {
+    const fingerprintOf = (id) => psql(`SELECT coalesce(password_fingerprint, 'none') FROM public.hr_ess_sessions WHERE id = '${id}'`);
+    const current = (id) => psql(`SELECT coalesce(public.hr_ess_session_password_current('${id}')::text, 'null');`, { role: 'service_role' });
+    const sha256 = (text) => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+
+    it('is taken from users.password_hash as a portal sign-in goes in, whatever the insert says', () => {
+      const sent = insert({ password_fingerprint: 'f'.repeat(64) });
+      psql(sent.sql, { role: 'service_role' });
+      expect(fingerprintOf(sent.id)).toBe(sha256(U1_HASH));
+      const attendance = insert({ login_kind: 'attendance', user_id: null, location_name: null, method: 'pw' });
+      psql(attendance.sql, { role: 'service_role' });
+      expect(fingerprintOf(attendance.id)).toBe('none');
+    });
+
+    it('is copied to every turn of the sign-in, and says whether the password is still the same', () => {
+      const row = insert();
+      psql(row.sql, { role: 'service_role' });
+      expect(current(row.id)).toBe('true');
+      const next = '5a000000-0000-4000-8000-0000000007d1';
+      psql(`SELECT * FROM public.hr_ess_session_rotate('${row.id}', '${next}', '${'d'.repeat(63)}1', '2026-10-16T07:30:00Z', '2027-01-14T07:30:00Z');`, { role: 'service_role' });
+      expect(fingerprintOf(next)).toBe(sha256(U1_HASH));
+      expect(current(next)).toBe('true');
+      // An admin's reset in User Management writes password_hash and nothing else.
+      psql(`UPDATE public.users SET password_hash = '$2b$10$a.new.hash' WHERE id = '${U1}';`);
+      expect(current(next)).toBe('false');
+      // A rotation after the change still carries the fingerprint of the password it was kept with.
+      const after = '5a000000-0000-4000-8000-0000000007d2';
+      psql(`SELECT * FROM public.hr_ess_session_rotate('${next}', '${after}', '${'d'.repeat(63)}2', '2026-10-16T08:30:00Z', '2027-01-14T08:30:00Z');`, { role: 'service_role' });
+      expect(current(after)).toBe('false');
+      psql(`UPDATE public.users SET password_hash = '${U1_HASH}' WHERE id = '${U1}';`);
+    });
+
+    it('answers null for an attendance sign-in and for a session that does not exist', () => {
+      const attendance = insert({ login_kind: 'attendance', user_id: null, location_name: null, method: 'otp' });
+      psql(attendance.sql);
+      expect(current(attendance.id)).toBe('null');
+      expect(current('5a000000-0000-4000-8000-0000000007df')).toBe('null');
     });
   });
 
@@ -239,7 +315,7 @@ describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres
   });
 
   it('goes with the employee record and the login it belongs to', () => {
-    psql(`INSERT INTO public.users VALUES ('a0000000-0000-4000-8000-000000000002', 'gone.login');
+    psql(`INSERT INTO public.users VALUES ('a0000000-0000-4000-8000-000000000002', 'gone.login', '!');
           INSERT INTO public.hr_employees VALUES ('e0000000-0000-4000-8000-000000000003', 'Gone');`);
     const portal = insert({ employee_id: E2, user_id: 'a0000000-0000-4000-8000-000000000002' });
     const attendance = insert({ employee_id: 'e0000000-0000-4000-8000-000000000003', login_kind: 'attendance', user_id: null, location_name: null, method: 'pw' });
@@ -252,7 +328,7 @@ describe.skipIf(!enabled)('the hr_ess_sessions migration on a throwaway Postgres
     expect(failure(ROLLBACK)).toBeNull();
     expect(failure(ROLLBACK)).toBeNull();
     expect(psql("SELECT to_regclass('public.hr_ess_sessions') IS NULL")).toBe('t');
-    expect(psql("SELECT count(*) FROM pg_proc WHERE proname IN ('hr_ess_session_rotate', 'hr_ess_session_revoke')")).toBe('0');
+    expect(psql("SELECT count(*) FROM pg_proc WHERE proname IN ('hr_ess_session_rotate', 'hr_ess_session_revoke', 'hr_ess_session_password_current', 'hr_ess_sessions_bind_password', 'hr_ess_password_fingerprint')")).toBe('0');
     expect(psql('SELECT (SELECT count(*) FROM public.users) || \' \' || (SELECT count(*) FROM public.hr_employees)')).toBe('1 2');
     expect(failure(MIGRATION)).toBeNull();
     expect(psql("SELECT to_regclass('public.hr_ess_sessions') IS NOT NULL")).toBe('t');

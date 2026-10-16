@@ -22,6 +22,23 @@ const DEFAULT_DAYS = 30;
 /** The longest span one list covers. */
 const MAX_RANGE_DAYS = 366;
 
+/**
+ * The days a list may ask for. Postgres cannot take every day JavaScript can: year 0 and anything
+ * BC as a timestamptz (22008, 22007), and 9999-12-31 runs into year 10000 a day later, which
+ * JavaScript writes as +010000. Reports began in 2026, so these bounds lose nothing.
+ */
+const FIRST_LIST_DAY = '2000-01-01';
+const LAST_LIST_DAY = '2099-12-31';
+
+/**
+ * The phone clocks kept. JavaScript reads years 0 to 275760, and BC ones, that Postgres will not
+ * store (22008, 22007, 22009); a report must not be lost for its phone's clock. Anything outside
+ * these is stored as null, as an unreadable clock is. 1970 is kept: a phone whose clock was reset
+ * says so, and that is worth seeing.
+ */
+const FIRST_CLIENT_AT = Date.parse('1970-01-01T00:00:00Z');
+const END_CLIENT_AT = Date.parse('2100-01-01T00:00:00Z');
+
 /** A coordinate, or null when not sent; undefined when sent but unusable. */
 function coordinate(v, limit) {
   if (v === undefined || v === null) return null;
@@ -35,7 +52,8 @@ function coordinate(v, limit) {
  * The location is the mocked one the phone reported, kept because where a fake fix pretends to
  * be is itself evidence. client_at is the phone's clock: kept beside the server's reported_at and
  * never trusted, and an unreadable value is stored as null rather than refused, as the
- * Scheduler's punch does with its own client_at (attendancePunchController.js:331).
+ * Scheduler's punch does with its own client_at (attendancePunchController.js:331). Unlike there,
+ * a time Postgres cannot store counts as unreadable (FIRST_CLIENT_AT), so the report still goes in.
  */
 function reportMockLocation({ store }) {
   return asyncRoute(async (req, res) => {
@@ -59,8 +77,8 @@ function reportMockLocation({ store }) {
     const appVersion = short(body.app_version, 40);
     const installId = short(body.install_id, 128);
 
-    const clientAt = typeof body.client_at === 'string' && !Number.isNaN(Date.parse(body.client_at))
-      ? new Date(body.client_at).toISOString() : null;
+    const clientMs = typeof body.client_at === 'string' ? Date.parse(body.client_at) : NaN;
+    const clientAt = clientMs >= FIRST_CLIENT_AT && clientMs < END_CLIENT_AT ? new Date(clientMs).toISOString() : null;
 
     const { employee } = req.auth;
     const created = await store.createMockReport({
@@ -87,6 +105,7 @@ function dayRange(query, today) {
   const rawTo = oneQueryValue(query.to);
   for (const v of [rawFrom, rawTo]) {
     if (v !== undefined && (v === null || !isCalendarDay(v))) throw invalid(MESSAGES.DATE_FORMAT);
+    if (v !== undefined && (v < FIRST_LIST_DAY || v > LAST_LIST_DAY)) throw invalid(MESSAGES.DATE_OUT_OF_RANGE);
   }
   const to = rawTo ?? today;
   const from = rawFrom ?? addDays(to, -DEFAULT_DAYS);
@@ -138,4 +157,4 @@ function listMockLocationReports({ store, now }) {
   });
 }
 
-module.exports = { reportMockLocation, listMockLocationReports, dayRange, DEFAULT_DAYS, MAX_RANGE_DAYS };
+module.exports = { reportMockLocation, listMockLocationReports, dayRange, DEFAULT_DAYS, MAX_RANGE_DAYS, FIRST_LIST_DAY, LAST_LIST_DAY };

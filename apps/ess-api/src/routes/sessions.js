@@ -71,7 +71,8 @@ function sessionRoutes({ config, store, now }) {
    * Is the person behind this session still somebody employeeAuth would let in? The same checks in
    * the same order (middleware/employeeAuth.js, from the Scheduler's loadEmployee and
    * sessionProblem), answered as the reason the sign-in ends instead of as a refusal. Plus one the
-   * Scheduler lacks: a portal password changed since the sign-in (policy/sessions.js).
+   * Scheduler lacks: a portal password changed since the sign-in, by a path that stamps
+   * users.password_changed_at or by one that does not (policy/sessions.js passwordChangedSince).
    *
    * @returns {Promise<{ problem: string } | { user: object|null }>}
    */
@@ -98,6 +99,10 @@ function sessionRoutes({ config, store, now }) {
     const changed = P.passwordChangedSince(user.password_changed_at, signedInMs);
     if (changed === 'unreadable') throw unavailable();
     if (changed) return { problem: 'password_changed' };
+    // Three of the Scheduler's password writes leave password_changed_at alone, so the database
+    // also compares the hash with the one the sign-in was kept with. Anything but "the same" ends
+    // it: a sign-in the database cannot vouch for is not renewed.
+    if ((await store.isSessionPasswordCurrent(session.id)) !== true) return { problem: 'password_changed' };
     return { user };
   }
 
@@ -125,7 +130,9 @@ function sessionRoutes({ config, store, now }) {
       user = await store.getUserForToken(auth.userId);
       if (!user) throw notAuthenticated(MESSAGES.SIGN_IN_AGAIN);
       if (!isStaffRole(user.role)) throw new HttpError(403, 'NOT_AN_EMPLOYEE', MESSAGES.NOT_AN_EMPLOYEE);
-      // Signed in before the password last changed: that sign-in is over, kept or not.
+      // Signed in before the password last changed: that sign-in is over, kept or not. A change by
+      // a path that leaves password_changed_at alone, inside the ten minutes before the trade, is
+      // the one change the ESS cannot see: the fingerprint it keeps is of the new password.
       const changed = P.passwordChangedSince(user.password_changed_at, auth.issuedAt);
       if (changed === 'unreadable') throw unavailable();
       if (changed) throw notAuthenticated(MESSAGES.PASSWORD_CHANGED);
@@ -151,7 +158,9 @@ function sessionRoutes({ config, store, now }) {
       last_used_at: at.toISOString(),
       expires_at: new Date(nowMs + P.SESSION_MS).toISOString(),
     };
-    await store.createSession(session);
+    // One Scheduler sign-in is kept once. A second trade of the same token is somebody else with a
+    // copy of it, or the app retrying an exchange whose answer it lost; either way it signs in again.
+    if (!(await store.createSession(session))) throw new HttpError(409, 'ALREADY_EXCHANGED', MESSAGES.SIGN_IN_ALREADY_KEPT);
     res.status(201).json(sessionReply(session, refreshToken, user, nowMs));
   });
 

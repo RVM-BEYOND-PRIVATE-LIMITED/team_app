@@ -58,6 +58,29 @@ describe('POST /api/ess/attendance/mock-location', () => {
     expect(db.tables.hr_ess_mock_location_reports[0]).toMatchObject({ latitude: null, longitude: null, accuracy_m: null, client_at: null, provider: null });
   });
 
+  // JavaScript reads all of these; Postgres 17 stores none of them (22008, 22007, 22009).
+  it.each([
+    ['year 0', '0000-06-01T00:00:00Z'],
+    ['a BC date', '-000001-06-01T00:00:00Z'],
+    ['the last day JavaScript has', '+275760-09-13T00:00:00Z'],
+    ['year 10000', '+010000-01-01T00:00:00Z'],
+    ['before 1970', '1969-12-31T23:59:59Z'],
+    ['2100 or later', '2100-01-01T00:00:00Z'],
+  ])('keeps a phone clock at %s as null, and still takes the report', async (_label, clientAt) => {
+    const { app, db, people } = buildApp();
+    const res = await report(app, tokens.attendance(people.attendance), { kind: 'punch', client_at: clientAt });
+    expect(res.status).toBe(201);
+    expect(db.tables.hr_ess_mock_location_reports[0].client_at).toBeNull();
+  });
+
+  it('keeps a phone clock that is wrong but storable: the start of 1970, or years ahead', async () => {
+    const { app, db, people } = buildApp();
+    for (const clientAt of ['1970-01-01T00:00:00Z', '2099-12-31T23:59:59Z']) {
+      expect((await report(app, tokens.attendance(people.attendance), { kind: 'punch', client_at: clientAt })).status).toBe(201);
+    }
+    expect(db.tables.hr_ess_mock_location_reports.map((r) => r.client_at)).toEqual(['1970-01-01T00:00:00.000Z', '2099-12-31T23:59:59.000Z']);
+  });
+
   it('takes no employee or branch from the body, so nobody can report in somebody else\'s name', async () => {
     const { app, people } = buildApp();
     expectInvalid(await report(app, tokens.portal(people.faculty), { ...FIX, employee_id: people.hr.employee.id }), MESSAGES.UNKNOWN_FIELD);
@@ -195,6 +218,27 @@ describe('GET /api/ess/hr/mock-location-reports', () => {
   ])('refuses ?%s with 400', async (query, message) => {
     const { app, people } = buildApp();
     expectInvalid(await request(app).get(`${LIST}?${query}`).set(bearer(tokens.portal(people.hr))), message);
+  });
+
+  // Real calendar days that Postgres cannot take as a timestamptz, or that run past year 9999 a
+  // day later (Postgres 17: 22007, 22008), refused before anything is asked of the database.
+  it.each([
+    ['from=0000-01-01&to=0000-01-31'],
+    ['from=0001-01-01&to=0001-01-31'],
+    ['from=1999-12-01&to=1999-12-31'],
+    ['from=2099-12-01&to=2100-01-01'],
+    ['from=9999-12-01&to=9999-12-31'],
+    ['to=1999-12-31'],
+  ])('refuses ?%s, outside the years a report can have, with 400 and no database request', async (query) => {
+    const { app, db, people } = buildApp();
+    expectInvalid(await request(app).get(`${LIST}?${query}`).set(bearer(tokens.portal(people.hr))), MESSAGES.DATE_OUT_OF_RANGE);
+    expect(db.queries.filter((q) => q.table === 'hr_ess_mock_location_reports')).toEqual([]);
+  });
+
+  it('takes the first and last days it allows', async () => {
+    const { app, people } = buildApp();
+    expect((await request(app).get(`${LIST}?from=2000-01-01&to=2000-01-31`).set(bearer(tokens.portal(people.hr)))).status).toBe(200);
+    expect((await request(app).get(`${LIST}?from=2099-12-01&to=2099-12-31`).set(bearer(tokens.portal(people.hr)))).status).toBe(200);
   });
 
   it('answers 404 NOT_FOUND for a branch that is not there', async () => {

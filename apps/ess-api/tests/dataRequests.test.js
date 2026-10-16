@@ -82,6 +82,26 @@ describe('POST /api/ess/me/data-requests', () => {
     expect((await file(app, token, { kind: 'correct', details: 'Room for this one' })).status).toBe(201);
   });
 
+  it('holds the limit of five when requests arrive in parallel: the database counts, under a lock', async () => {
+    const spy = quietErrors();
+    const { app, db, people } = buildApp();
+    const realFrom = db.from;
+    db.from = (table) => {
+      const q = realFrom(table);
+      const run = q.run.bind(q);
+      q.run = async () => { await new Promise((r) => { setTimeout(r, 15); }); return run(); };
+      return q;
+    };
+    const token = tokens.portal(people.faculty);
+    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => file(app, token, { kind: 'correct', details: `Request number ${i}` })));
+    const open = db.tables.hr_ess_data_requests.filter((r) => r.employee_id === people.faculty.employee.id && r.status === 'open');
+    expect(results.filter((r) => r.status === 201)).toHaveLength(5);
+    for (const r of results.filter((x) => x.status !== 201)) expectRefusal(r, 409, 'TOO_MANY_OPEN_REQUESTS');
+    expect(open).toHaveLength(5);
+    // The database's refusal is an expected answer, not a failure to report.
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it('answers 503 MODULE_NOT_INSTALLED, naming the table, before the migration', async () => {
     quietErrors();
     const { app, db, people } = buildApp();

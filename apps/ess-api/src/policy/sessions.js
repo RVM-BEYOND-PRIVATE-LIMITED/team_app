@@ -74,12 +74,19 @@ const isFreshSignIn = (issuedAtMs, nowMs) =>
   issuedAtMs > 0 && nowMs - issuedAtMs <= FRESH_SIGN_IN_MS && issuedAtMs - nowMs <= CLOCK_SKEW_MS;
 
 /**
- * Has the portal password changed since this sign-in? users.password_changed_at is stamped by the
- * Scheduler's own password change and forgot-password reset (profileController.js:271-274,
- * authSecurityController.js:176-179). The Scheduler never checks it, so its 64-hour tokens outlive
- * a change; a kept sign-in renewed for 90 days must not, or a password somebody else learned would
- * stay good after its owner changed it. Whole seconds on both sides, as for the attendance cut-off
- * (services/attendanceAccounts.js:46-48): a token's iat is whole seconds.
+ * Has the portal password changed since this sign-in, by a path that says so? The Scheduler never
+ * checks, so its 64-hour tokens outlive a change; a kept sign-in renewed for 90 days must not, or
+ * a password somebody else learned would stay good after its owner changed it. Whole seconds on
+ * both sides, as for the attendance cut-off (services/attendanceAccounts.js:46-48): a token's iat
+ * is whole seconds.
+ *
+ * Only two of the Scheduler's five password writes stamp users.password_changed_at: the profile's
+ * password change and the forgot-password reset (profileController.js:271-274,
+ * authSecurityController.js:176-179). updateUser, resetPassword and changeOwnPassword
+ * (userController.js:1022-1031, 1231-1236, 1313-1318) write password_hash alone. So this is the
+ * first of two checks, and the only one possible before a sign-in is kept; once it is, every
+ * refresh also asks the database whether the hash is still the one it was kept with
+ * (hr_ess_session_password_current, in db/migrations/20261101000000_hr_ess_sessions.sql).
  *
  * @returns {boolean|'unreadable'}
  */

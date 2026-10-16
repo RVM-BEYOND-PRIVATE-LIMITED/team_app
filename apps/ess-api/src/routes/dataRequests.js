@@ -14,7 +14,10 @@ const KINDS = ['correct', 'delete'];
 const RESOLUTIONS = ['done', 'rejected'];
 const STATUS_FILTERS = ['open', 'done', 'rejected', 'all'];
 
-/** Enough open requests to cover a real need; more is a stuck button or a flood for HR. */
+/**
+ * Enough open requests to cover a real need; more is a stuck button or a flood for HR. The same
+ * number is in db/migrations/20261105000001_hr_ess_data_requests.sql, which enforces it: change both.
+ */
 const MAX_OPEN_REQUESTS = 5;
 
 /** The employee's own view: what they asked and HR's answer, without HR's account details. */
@@ -43,10 +46,13 @@ function createMyDataRequest({ store }) {
     if (!KINDS.includes(body.kind)) throw invalid(MESSAGES.DATA_REQUEST_KIND);
     const details = requiredText(body.details, { min: 5, max: 2000, message: MESSAGES.DATA_REQUEST_DETAILS });
     const { employee } = req.auth;
-    if (await store.countOpenDataRequests(employee.id) >= MAX_OPEN_REQUESTS) {
-      throw new HttpError(409, 'TOO_MANY_OPEN_REQUESTS', MESSAGES.TOO_MANY_OPEN_REQUESTS);
-    }
+    const tooMany = () => new HttpError(409, 'TOO_MANY_OPEN_REQUESTS', MESSAGES.TOO_MANY_OPEN_REQUESTS);
+    if (await store.countOpenDataRequests(employee.id) >= MAX_OPEN_REQUESTS) throw tooMany();
+    // The count above is a courtesy: requests sent in parallel all pass it. The database counts
+    // again as the row goes in, under a lock per employee (hr_ess_data_requests_open_limit), and
+    // that count is the one that holds.
     const created = await store.createDataRequest({ employee_id: employee.id, kind: body.kind, details });
+    if (!created) throw tooMany();
     res.status(201).json({ request: ownView(created) });
   });
 }

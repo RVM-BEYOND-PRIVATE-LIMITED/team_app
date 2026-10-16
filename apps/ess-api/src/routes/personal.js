@@ -89,8 +89,13 @@ const view = (row) => ({
 const card = (e) => ({ id: e.id, full_name: e.full_name, employee_code: e.employee_code ?? null });
 
 /**
- * The fields of `body` (already checked to be among `allowed`), parsed, merged over the stored
- * row, and checked as a whole. Returns the full row to store and the names that changed.
+ * The fields of `body` (already checked to be among `allowed`), parsed, and checked against the
+ * stored row as a whole. Returns only the parsed fields, which are all that is written, and the
+ * names that changed.
+ *
+ * Only what was sent is written (store.savePersonalDetails), never the merged row: between this
+ * read and the write somebody else may save the same record, and writing back the fields as read
+ * would undo their change, an employee's save undoing HR's date of birth among them.
  */
 function merge(body, stored, today) {
   const sent = Object.keys(body);
@@ -98,12 +103,13 @@ function merge(body, stored, today) {
   const parsed = Object.fromEntries(sent.map((f) => [f, PARSERS[f](body[f], today)]));
   const before = { ...EMPTY, ...(stored ? Object.fromEntries(ALL_FIELDS.map((f) => [f, stored[f] ?? null])) : {}) };
   const after = { ...before, ...parsed };
-  // A name with no number reaches nobody, and a number with no name tells HR nothing.
+  // A name with no number reaches nobody, and a number with no name tells HR nothing. Checked on
+  // the record as read; hr_ess_personal_details_emergency_chk holds it on the row as written.
   if (Boolean(after.emergency_name) !== Boolean(after.emergency_phone) || (after.emergency_relation && !after.emergency_name)) {
     throw invalid(MESSAGES.EMERGENCY_INCOMPLETE);
   }
   const changed = ALL_FIELDS.filter((f) => after[f] !== before[f]);
-  return { after, changed };
+  return { fields: parsed, changed };
 }
 
 /** The row to store, stamped with who wrote it. */
@@ -114,6 +120,17 @@ const stamped = (employeeId, fields, req, now) => ({
   updated_by_user_id: req.auth.userId ?? null,
   updated_by_name: req.auth.employee.full_name,
 });
+
+/**
+ * Writes the row, or 409 RECORD_CHANGED when somebody else's save since the read leaves the
+ * emergency contact half there with this one (the database's own check refuses it): the person
+ * opens the record again and sees what is there now.
+ */
+async function save(store, row) {
+  const saved = await store.savePersonalDetails(row);
+  if (!saved) throw new HttpError(409, 'RECORD_CHANGED', MESSAGES.RECORD_CHANGED);
+  return saved;
+}
 
 /** GET /api/ess/me/personal */
 function getMyPersonal({ store }) {
@@ -132,8 +149,8 @@ function putMyPersonal({ store, now }) {
     }
     const employeeId = req.auth.employee.id;
     const stored = await store.getPersonalDetails(employeeId);
-    const { after } = merge(body, stored, istDay(now()));
-    const saved = await store.savePersonalDetails(stamped(employeeId, after, req, now));
+    const { fields } = merge(body, stored, istDay(now()));
+    const saved = await save(store, stamped(employeeId, fields, req, now));
     res.json({ personal: view(saved) });
   });
 }
@@ -170,8 +187,8 @@ function putEmployeePersonal({ store, now }) {
     const body = bodyWith(req, ALL_FIELDS);
     if (employee.id === req.auth.employee.id) throw new HttpError(409, 'OWN_RECORD', MESSAGES.OWN_RECORD);
     const stored = await store.getPersonalDetails(employee.id);
-    const { after, changed } = merge(body, stored, istDay(now()));
-    const saved = await store.savePersonalDetails(stamped(employee.id, after, req, now));
+    const { fields, changed } = merge(body, stored, istDay(now()));
+    const saved = await save(store, stamped(employee.id, fields, req, now));
     // The names of the fields that changed, never their values (lib/audit.js).
     await recordAfter(store, req, { action: 'personal_details.updated', targetEmployeeId: employee.id, details: { fields: changed } });
     res.json({ employee: card(employee), personal: view(saved) });

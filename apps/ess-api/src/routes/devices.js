@@ -110,14 +110,25 @@ function resetDevices({ store, now }) {
 
     // The Scheduler's own reset names the actor by username (attendanceAdminController.js:18,287).
     const login = await store.getUserLogin(req.auth.userId);
-    const reset = await store.revokeActiveDevices(employeeIds, {
-      revoked_at: now().toISOString(),
-      revoked_by: req.auth.userId,
-      revoked_by_name: (login && login.username) || 'unknown',
-      revoke_reason: reason,
-    });
+    // Collected slice by slice: the reset is several updates with no transaction around them, so
+    // if a later one fails, the phones the earlier ones reset are still recorded, with HR's reason,
+    // before the failure is answered. A retry then resets and records the rest.
+    const reset = [];
+    let failure = null;
+    try {
+      await store.revokeActiveDevices(employeeIds, {
+        revoked_at: now().toISOString(),
+        revoked_by: req.auth.userId,
+        revoked_by_name: (login && login.username) || 'unknown',
+        revoke_reason: reason,
+      }, (slice) => reset.push(...slice));
+    } catch (e) {
+      failure = e;
+    }
     const deviceIds = reset.map((d) => d.id);
 
+    // Recorded on a failure too, even one on the first slice: an update whose answer was lost may
+    // still have been made, and the entry keeps HR's reason and how many people were asked.
     await recordAfter(store, req, {
       action: 'devices.reset',
       details: {
@@ -127,8 +138,11 @@ function resetDevices({ store, now }) {
         device_ids: deviceIds,
         employee_ids: [...new Set(reset.map((d) => d.employee_id))],
         reason,
+        // The reset stopped part-way: the phones listed were reset, and the rest may not have been.
+        ...(failure ? { incomplete: true } : {}),
       },
     });
+    if (failure) throw failure;
     res.json({ reset: deviceIds.length, device_ids: deviceIds });
   });
 }

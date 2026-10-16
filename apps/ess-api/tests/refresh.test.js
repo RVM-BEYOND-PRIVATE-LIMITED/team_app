@@ -3,6 +3,7 @@ const { buildApp, tokens, bearer } = require('./helpers/app');
 const { NOW, SIGNED_AT, TEST_JWT_SECRET, TEST_ENV } = require('./helpers/constants');
 const { INSTALL_ID, OTHER_INSTALL_ID } = require('./helpers/fixtures');
 const H = require('./helpers/sessions');
+const G = require('./helpers/schedulerGuards');
 const { refreshTokenHash } = require('../src/lib/accessTokens');
 const { createApp } = require('../src/app');
 const { loadConfig } = require('../src/config');
@@ -292,6 +293,67 @@ describe('ends the sign-in when employeeAuth would no longer let the person in',
     db.tables.hr_attendance_accounts.find((a) => a.employee_id === person.employee.id).sessions_valid_from = new Date(SIGNED_AT.getTime() + 999).toISOString();
     clock.advance(HOUR);
     expect((await H.refresh(app, kept.refresh_token)).status).toBe(200);
+  });
+
+  describe('a portal password changed by a Scheduler path that does not stamp password_changed_at', () => {
+    // Scheduler_Backend c28b9ca: updateUser (userController.js:1022-1031), resetPassword
+    // (:1231-1236) and changeOwnPassword (:1313-1318) write password_hash only.
+    it.each([
+      ['an admin resets it in User Management (PATCH /api/users/update/:id)'],
+      ['the public legacy reset (POST /api/users/reset-password)'],
+      ['the person changes it (POST /api/users/change-password)'],
+    ])('%s: the next refresh ends the sign-in', async () => {
+      const { app, clock, kept, db, person } = await keptSignIn({ who: 'hr' });
+      clock.advance(30 * MINUTE);
+      db.tables.users.find((u) => u.id === person.user.id).password_hash = '$2b$10$new.password.hash.set.by.scheduler';
+      clock.advance(HOUR);
+      const res = await H.refresh(app, kept.refresh_token);
+      if (res.status === 200) {
+        // What would happen otherwise: the Scheduler takes what this refresh minted as the same user.
+        process.env.JWT_SECRET = TEST_JWT_SECRET;
+        G.useRows({ users: db.tables.users });
+        vi.useFakeTimers({ toFake: ['Date'], now: clock.ms });
+        try {
+          const scheduler = await G.runAuth(res.body.access_token);
+          expect(scheduler.passed).toBe(true);
+          expect(scheduler.req.user.id).toBe(person.user.id);
+        } finally { vi.useRealTimers(); }
+      }
+      expectRefused(res, 'password_changed');
+      expect(H.familyRows(db, kept.session.id).find((r) => r.revoked_reason !== 'rotated')).toMatchObject({ revoked_reason: 'password_changed' });
+      expectRefused(await H.refresh(app, kept.refresh_token), 'password_changed');
+    });
+
+    it('also after the sign-in has been renewed: every turn keeps the password it was kept with', async () => {
+      const { app, clock, kept, db, person } = await keptSignIn({ who: 'hr' });
+      clock.advance(HOUR);
+      const first = await H.refresh(app, kept.refresh_token);
+      expect(first.status).toBe(200);
+      db.tables.users.find((u) => u.id === person.user.id).password_hash = '$2b$10$another.hash.set.by.the.scheduler';
+      clock.advance(HOUR);
+      expectRefused(await H.refresh(app, first.body.refresh_token), 'password_changed');
+    });
+
+    it('lets the sign-in on while the password is the one it was kept with', async () => {
+      const { app, clock, kept } = await keptSignIn({ who: 'hr' });
+      let latest = kept.refresh_token;
+      for (let i = 0; i < 3; i += 1) {
+        clock.advance(HOUR);
+        const res = await H.refresh(app, latest);
+        expect(res.status).toBe(200);
+        latest = res.body.refresh_token;
+      }
+    });
+
+    it('never sends the password hash, or anything made from it, to the ESS', async () => {
+      const { app, clock, kept, db } = await keptSignIn({ who: 'hr' });
+      clock.advance(HOUR);
+      expect((await H.refresh(app, kept.refresh_token)).status).toBe(200);
+      for (const q of db.queries) {
+        expect(q.columns || [], `${q.op} ${q.table}`).not.toContain('password_hash');
+        expect(q.columns || [], `${q.op} ${q.table}`).not.toContain('password_fingerprint');
+      }
+    });
   });
 
   it('lets a portal sign-in on when the password changed before it', async () => {

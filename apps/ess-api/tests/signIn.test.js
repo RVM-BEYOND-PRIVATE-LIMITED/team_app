@@ -19,6 +19,8 @@ const Scheduler = require('./helpers/schedulerSignIn');
 
 const ALL_BRANCHES = ['Faridabad', 'Pune', 'Ahmedabad', 'Lucknow'];
 const UNKNOWN = { kind: 'unknown' };
+/** Every portal login found as typed: send it as typed, at a branch the person chooses. */
+const PORTAL_AS_TYPED = { kind: 'portal', login_with: 'as_typed', location_names: ALL_BRANCHES };
 
 const resolve = (app, identifier, from) => {
   const req = request(app).post('/api/ess/sign-in/resolve');
@@ -47,19 +49,19 @@ const giveAttendanceLogin = (w, key, extra = {}) => w.tables.hr_attendance_accou
 });
 
 describe('a portal login, found as the Scheduler\'s portal login finds it', () => {
-  it('by its username: sign in with what was typed, at its own branch', async () => {
+  it('by its username: sign in with what was typed, at a branch the person chooses', async () => {
     const world = buildApp();
-    expect(await answer(world.app, 'faculty.login', world)).toEqual({ kind: 'portal', login_with: 'as_typed', location_name: 'Faridabad' });
+    expect(await answer(world.app, 'faculty.login', world)).toEqual(PORTAL_AS_TYPED);
   });
 
   it('by its login phone, exactly as stored', async () => {
     const world = buildApp();
-    expect(await answer(world.app, '9810000011', world)).toEqual({ kind: 'portal', login_with: 'as_typed', location_name: 'Faridabad' });
+    expect(await answer(world.app, '9810000011', world)).toEqual(PORTAL_AS_TYPED);
   });
 
-  it('at whichever branch the account is', async () => {
+  it('not saying which branch the account is at', async () => {
     const world = buildApp({ setup: (w) => { w.people.admin.user.location_id = 2; } });
-    expect(await answer(world.app, 'admin.login', world)).toEqual({ kind: 'portal', login_with: 'as_typed', location_name: 'Pune' });
+    expect(await answer(world.app, 'admin.login', world)).toEqual(PORTAL_AS_TYPED);
   });
 
   it.each(['ceo', 'super_admin', 'accounts_admin', 'hr', 'hr_executive'])(
@@ -67,7 +69,7 @@ describe('a portal login, found as the Scheduler\'s portal login finds it', () =
     async (key) => {
       for (const locationId of [1, null]) {
         const world = buildApp({ setup: (w) => { w.people[key].user.location_id = locationId; } });
-        expect(await answer(world.app, `${key}.login`, world)).toEqual({ kind: 'portal', login_with: 'as_typed', location_names: ALL_BRANCHES });
+        expect(await answer(world.app, `${key}.login`, world)).toEqual(PORTAL_AS_TYPED);
       }
     },
   );
@@ -75,7 +77,7 @@ describe('a portal login, found as the Scheduler\'s portal login finds it', () =
   it('with every branch, too, for an account whose branch is missing or unknown', async () => {
     for (const locationId of [null, 99]) {
       const world = buildApp({ setup: (w) => { w.people.faculty.user.location_id = locationId; } });
-      expect(await answer(world.app, 'faculty.login', world)).toEqual({ kind: 'portal', login_with: 'as_typed', location_names: ALL_BRANCHES });
+      expect(await answer(world.app, 'faculty.login', world)).toEqual(PORTAL_AS_TYPED);
     }
   });
 
@@ -110,8 +112,33 @@ describe('a portal login, found as the Scheduler\'s portal login finds it', () =
   it('when the person has an attendance login as well: the portal login, which carries their role', async () => {
     const world = buildApp({ setup: (w) => giveAttendanceLogin(w, 'faculty') });
     expect(await answer(world.app, 'RVM-011', world)).toEqual({ kind: 'portal', login_with: 'username_or_phone' });
-    expect(await answer(world.app, 'faculty.login', world)).toEqual({ kind: 'portal', login_with: 'as_typed', location_name: 'Faridabad' });
+    expect(await answer(world.app, 'faculty.login', world)).toEqual(PORTAL_AS_TYPED);
   });
+});
+
+describe('a portal login answers in one shape whatever its role or branch', () => {
+  // The Scheduler's login reveals neither (it answers 404, 401 or 409, and the web offers every
+  // branch), so an answer that differed by role would single out the CEO's and super admins' logins.
+  const AS_TYPED = { kind: 'portal', login_with: 'as_typed', location_names: ALL_BRANCHES };
+
+  it("answers a CEO's login phone exactly as a branch admin's", async () => {
+    const world = buildApp();
+    const ceo = await answer(world.app, world.people.ceo.user.phone_number, world);
+    const admin = await answer(world.app, world.people.admin.user.phone_number, world);
+    expect(ceo).toEqual(admin);
+  });
+
+  it.each(['ceo', 'super_admin', 'accounts_admin', 'hr', 'hr_executive', 'faculty', 'hod', 'admin', 'hoo', 'admin_manager', 'hod_placement'])(
+    'answers %s, at a branch, at another branch or at none, with every branch',
+    async (key) => {
+      for (const locationId of [1, 2, null, 99]) {
+        const world = buildApp({ setup: (w) => { w.people[key].user.location_id = locationId; } });
+        const body = await answer(world.app, `${key}.login`, world);
+        expect(body).toEqual(AS_TYPED);
+        expect(body).not.toHaveProperty('location_name');
+      }
+    },
+  );
 });
 
 describe('an attendance login, found as the Scheduler\'s attendance sign-in finds it', () => {
@@ -221,7 +248,7 @@ describe('nobody, or more than one person: { kind: "unknown" }', () => {
     const world = buildApp({
       setup: (w) => w.tables.users.push({ ...w.people.desk.user, id: 'a0000000-0000-4000-8000-000000000092', username: 'faculty.login', location_id: 2 }),
     });
-    expect(await answer(world.app, 'faculty.login', world)).toEqual({ kind: 'portal', login_with: 'as_typed', location_name: 'Faridabad' });
+    expect(await answer(world.app, 'faculty.login', world)).toEqual(PORTAL_AS_TYPED);
   });
 
   it('in the same shape and after the same database requests, whatever the reason', async () => {
@@ -396,23 +423,27 @@ describe('the branch it answers, against resolveLoginCandidate', () => {
   };
 
   it.each(['faculty', 'hod', 'admin', 'hoo', 'admin_manager', 'hod_placement', 'ceo', 'hr', 'hr_executive', 'super_admin', 'accounts_admin'])(
-    'signs %s in to their own account at the branch, or at every branch offered',
+    'signs %s in to their own account at every branch offered',
     async (key) => {
       const world = buildApp();
       const body = await answer(world.app, `${key}.login`, world);
-      for (const name of body.location_names || [body.location_name]) {
+      for (const name of body.location_names) {
         expect((await signsIn(world.db.tables.users, `${key}.login`, name)).id).toBe(world.people[key].user.id);
       }
     },
   );
 
-  it('signs the linked person in when an unlinked account at another branch shares the username', async () => {
+  it("offers the linked person's own branch when an unlinked account at another branch shares the username", async () => {
     const world = buildApp({
       setup: (w) => w.tables.users.push({ ...w.people.desk.user, id: 'a0000000-0000-4000-8000-000000000093', username: 'faculty.login', location_id: 2 }),
     });
     const body = await answer(world.app, 'faculty.login', world);
-    expect(body.location_name).toBe('Faridabad');
-    expect((await signsIn(world.db.tables.users, 'faculty.login', body.location_name)).id).toBe(world.people.faculty.user.id);
+    expect(body).toEqual(PORTAL_AS_TYPED);
+    // At their own branch the login settles on them. At the desk login's, it settles on that one,
+    // and the Scheduler then tries the password on the other accounts, which only theirs matches
+    // (userController.js:426-436): the same as on the web, where every branch is offered too.
+    expect((await signsIn(world.db.tables.users, 'faculty.login', 'Faridabad')).id).toBe(world.people.faculty.user.id);
+    expect((await signsIn(world.db.tables.users, 'faculty.login', 'Pune')).id).toBe('a0000000-0000-4000-8000-000000000093');
   });
 });
 

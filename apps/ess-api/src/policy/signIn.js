@@ -1,4 +1,3 @@
-const { NO_BRANCH_ROLES } = require('./roles');
 const { isActive } = require('./employment');
 const { isStaffRole } = require('./staff');
 
@@ -12,8 +11,8 @@ const { isStaffRole } = require('./staff');
  *
  *   portal login     an account the Scheduler's portal login would find for it, exactly as that
  *                    login finds one: users.username or users.phone_number, as typed
- *                    (controllers/userController.js:271-279), answered `as_typed` with the branch
- *                    to send. Also an account found by users.email, or through an employee code,
+ *                    (controllers/userController.js:271-279), answered `as_typed` with every
+ *                    branch for the person to choose from, as the web's dropdown offers. Also an account found by users.email, or through an employee code,
  *                    email or main phone on the HR record that is linked to it
  *                    (hr_employees.user_id), answered `username_or_phone`: the portal login takes
  *                    only those two, so the app asks for one.
@@ -29,7 +28,7 @@ const { isStaffRole } = require('./staff');
  * person has left: none of them is a person here. Nobody, or more than one person, is `unknown`,
  * in the same shape and after the same database requests (routes/signIn.js) whatever the reason,
  * so this tells a caller no more than the Scheduler's own sign-ins already do. Nothing identifying
- * goes back: no user id, username, phone or email.
+ * goes back: no user id, username, phone, email, role or branch (branchChoice).
  */
 
 /* ── the Scheduler's own comparisons, mirrored line for line ──
@@ -121,17 +120,18 @@ function employeesOwning(employees, typed, today) {
 }
 
 /**
- * Which branch the app sends with the portal login. An account at a branch: that branch's name,
- * so its token carries the right one. A role that may have no branch (config/roles.js
- * NO_BRANCH_ROLES), or an account whose branch is not on the list: every branch, for the app to
- * offer as the web's dropdown does. The login finds a lone account from any branch name
- * (userController.js:296-305).
+ * The branches the app offers with the portal login: every one, in the web's order, for every
+ * account, so the person chooses as they do on the web.
+ *
+ * Never the account's own branch, and never a reply that differs by role. The question needs no
+ * token, and an answer shaped by the account would say which logins are the CEO's, super admins'
+ * and HR's (the roles that may have no branch, config/roles.js NO_BRANCH_ROLES) and which branch
+ * everybody else is at: neither of which the Scheduler's own login tells anybody. The login still
+ * finds the right account from any branch: a lone account from any name, and one that shares its
+ * identifier by the branch, then by the password (resolveLoginCandidate and the password
+ * fallback, userController.js:296-305, 376-382, 426-436).
  */
-function branchChoice(user, locations) {
-  if (!NO_BRANCH_ROLES.has(user.role)) {
-    const own = locations.find((l) => l.id === user.location_id);
-    if (own) return { location_name: own.name };
-  }
+function branchChoice(locations) {
   return { location_names: [...locations].sort((a, b) => Number(a.id) - Number(b.id)).map((l) => l.name) };
 }
 
@@ -177,7 +177,7 @@ function resolveSignIn({ asTyped, byEmail, owning, linkedUsers, employees, login
 
   if (user) {
     return typedAsIs
-      ? { kind: 'portal', login_with: 'as_typed', ...branchChoice(user, locations) }
+      ? { kind: 'portal', login_with: 'as_typed', ...branchChoice(locations) }
       : { kind: 'portal', login_with: 'username_or_phone' };
   }
 

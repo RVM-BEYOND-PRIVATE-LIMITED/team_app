@@ -5,6 +5,7 @@ const { INSTALL_ID, OTHER_INSTALL_ID, sessionRow } = require('./helpers/fixtures
 const H = require('./helpers/sessions');
 const S = require('./helpers/schedulerTokens');
 const { refreshTokenHash, mintAttendanceToken, mintPortalToken } = require('../src/lib/accessTokens');
+const { passwordFingerprint } = require('./helpers/fakeSupabase');
 
 /**
  * Keeping a sign-in (task A3): POST /api/ess/session, GET /api/ess/sessions,
@@ -22,6 +23,12 @@ const expectRefusal = (res, status, code) => {
 };
 
 const quiet = () => vi.spyOn(console, 'error').mockImplementation(() => {});
+
+/**
+ * The person's nth separate portal sign-in, n seconds before the usual one: still fresh, and a
+ * sign-in of its own, since one Scheduler sign-in is kept only once.
+ */
+const nthSignIn = (person, n) => tokens.portal(person, new Date(SIGNED_AT.getTime() - n * 1000));
 
 describe('POST /api/ess/session', () => {
   describe('trades a fresh sign-in for a kept one', () => {
@@ -48,6 +55,8 @@ describe('POST /api/ess/session', () => {
         install_id: INSTALL_ID,
         device_label: 'Test phone',
         refresh_hash: refreshTokenHash(res.body.refresh_token, TEST_JWT_SECRET),
+        // Put there by the database, never sent by the ESS (hr_ess_sessions_bind_password).
+        password_fingerprint: passwordFingerprint(people.faculty.user.password_hash),
         created_at: NOW.toISOString(),
         last_used_at: NOW.toISOString(),
         expires_at: res.body.session.expires_at,
@@ -117,10 +126,10 @@ describe('POST /api/ess/session', () => {
       expect(db.tables.hr_ess_sessions[1].location_name).toBeNull();
     });
 
-    it('starting a new sign-in every time, with its own refresh token', async () => {
+    it('starting a new kept sign-in for every Scheduler sign-in, with its own refresh token', async () => {
       const { app, db, people } = buildApp();
-      const a = await H.keep(app, tokens.portal(people.hr));
-      const b = await H.keep(app, tokens.portal(people.hr));
+      const a = await H.keep(app, nthSignIn(people.hr, 0));
+      const b = await H.keep(app, nthSignIn(people.hr, 1));
       expect(a.body.session.id).not.toBe(b.body.session.id);
       expect(a.body.refresh_token).not.toBe(b.body.refresh_token);
       expect(db.tables.hr_ess_sessions).toHaveLength(2);
@@ -167,6 +176,38 @@ describe('POST /api/ess/session', () => {
     });
   });
 
+  describe('trades one Scheduler sign-in once', () => {
+    it.each([
+      ['portal', (people) => tokens.portal(people.hr)],
+      ['attendance', (people) => tokens.attendance(people.attendance)],
+    ])('refuses a second trade of the same %s token with 409 ALREADY_EXCHANGED, and starts no second sign-in', async (_kind, tokenOf) => {
+      const { app, db, people } = buildApp();
+      const token = tokenOf(people);
+      expect((await H.keep(app, token)).status).toBe(201);
+      const second = await H.keep(app, token, { install_id: OTHER_INSTALL_ID, device_label: 'Pixel 7' });
+      expectRefusal(second, 409, 'ALREADY_EXCHANGED');
+      expect(second.body.error).toMatch(/sign in again/i);
+      const families = new Set(db.tables.hr_ess_sessions.filter((r) => r.revoked_at == null).map((r) => r.family_id));
+      expect(families.size).toBe(1);
+    });
+
+    it('still refuses it once the first sign-in has ended', async () => {
+      const { app, db, people } = buildApp();
+      const token = tokens.portal(people.hr);
+      const kept = await H.keep(app, token);
+      expect((await H.signOut(app, { refreshToken: kept.body.refresh_token })).status).toBe(204);
+      expectRefusal(await H.keep(app, token), 409, 'ALREADY_EXCHANGED');
+      expect(db.tables.hr_ess_sessions).toHaveLength(1);
+    });
+
+    it('takes a new sign-in of the same person a second later, on another phone', async () => {
+      const { app, people } = buildApp();
+      expect((await H.keep(app, tokens.portal(people.hr))).status).toBe(201);
+      const again = await H.keep(app, tokens.portal(people.hr, new Date(SIGNED_AT.getTime() + 1000)), { install_id: OTHER_INSTALL_ID });
+      expect(again.status).toBe(201);
+    });
+  });
+
   it('refuses a token it minted itself with 409 ALREADY_EXCHANGED', async () => {
     const { app, db, people } = buildApp();
     const kept = await H.keep(app, tokens.attendance(people.attendance));
@@ -190,8 +231,8 @@ describe('POST /api/ess/session', () => {
 
     it('takes install ids of 16 and of 128 letters, digits, dots, dashes and underscores', async () => {
       const { app, db, people } = buildApp();
-      for (const install of ['A.b-c_0123456789', `${'x'.repeat(127)}.`]) {
-        expect((await H.keep(app, tokens.portal(people.hr), { install_id: install })).status).toBe(201);
+      for (const [n, install] of ['A.b-c_0123456789', `${'x'.repeat(127)}.`].entries()) {
+        expect((await H.keep(app, nthSignIn(people.hr, n), { install_id: install })).status).toBe(201);
       }
       expect(db.tables.hr_ess_sessions.map((r) => r.install_id)).toEqual(['A.b-c_0123456789', `${'x'.repeat(127)}.`]);
     });
@@ -209,8 +250,8 @@ describe('POST /api/ess/session', () => {
     it('takes no name, a blank one, and one of 80 characters, trimmed', async () => {
       const { app, db, people } = buildApp();
       const eighty = `${'é'.repeat(79)}7`;
-      for (const deviceLabel of [undefined, null, '   ', `  ${eighty}  `]) {
-        expect((await H.keep(app, tokens.portal(people.hr), { install_id: INSTALL_ID, device_label: deviceLabel })).status).toBe(201);
+      for (const [n, deviceLabel] of [undefined, null, '   ', `  ${eighty}  `].entries()) {
+        expect((await H.keep(app, nthSignIn(people.hr, n), { install_id: INSTALL_ID, device_label: deviceLabel })).status).toBe(201);
       }
       expect(db.tables.hr_ess_sessions.map((r) => r.device_label)).toEqual([null, null, null, eighty]);
     });
@@ -291,9 +332,9 @@ describe('POST /api/ess/session', () => {
 
   it('allows one employee only so many in a window: 429 RATE_LIMITED', async () => {
     const { app, people } = buildApp({ limits: { exchangePerEmployee: { windowMs: 60 * 1000, limit: 2 } } });
-    expect((await H.keep(app, tokens.portal(people.hr))).status).toBe(201);
-    expect((await H.keep(app, tokens.portal(people.hr))).status).toBe(201);
-    expectRefusal(await H.keep(app, tokens.portal(people.hr)), 429, 'RATE_LIMITED');
+    expect((await H.keep(app, nthSignIn(people.hr, 0))).status).toBe(201);
+    expect((await H.keep(app, nthSignIn(people.hr, 1))).status).toBe(201);
+    expectRefusal(await H.keep(app, nthSignIn(people.hr, 2)), 429, 'RATE_LIMITED');
     // Somebody else at the same address is not held back.
     expect((await H.keep(app, tokens.portal(people.ceo))).status).toBe(201);
   });
@@ -387,9 +428,9 @@ describe('GET /api/ess/sessions', () => {
   it('lists my live sign-ins, newest use first, with the one I am using marked', async () => {
     const clock = H.clockAt(NOW);
     const { app, people } = buildApp({ now: clock.now });
-    const phone = await H.keep(app, tokens.portal(people.hr), { install_id: INSTALL_ID, device_label: 'Pixel 7' });
+    const phone = await H.keep(app, nthSignIn(people.hr, 0), { install_id: INSTALL_ID, device_label: 'Pixel 7' });
     clock.advance(MINUTE);
-    const tablet = await H.keep(app, tokens.portal(people.hr), { install_id: OTHER_INSTALL_ID });
+    const tablet = await H.keep(app, nthSignIn(people.hr, 1), { install_id: OTHER_INSTALL_ID });
     const res = await H.listSessions(app, phone.body.access_token);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -462,8 +503,8 @@ describe('GET /api/ess/sessions', () => {
 describe('DELETE /api/ess/sessions/:id', () => {
   it('ends one of my sign-ins: 204, and its tokens stop working', async () => {
     const { app, db, people } = buildApp();
-    const phone = await H.keep(app, tokens.portal(people.hr));
-    const tablet = await H.keep(app, tokens.portal(people.hr), { install_id: OTHER_INSTALL_ID });
+    const phone = await H.keep(app, nthSignIn(people.hr, 0));
+    const tablet = await H.keep(app, nthSignIn(people.hr, 1), { install_id: OTHER_INSTALL_ID });
     const res = await H.endSession(app, phone.body.access_token, tablet.body.session.id);
     expect(res.status).toBe(204);
     expect(res.text).toBe('');
@@ -493,8 +534,8 @@ describe('DELETE /api/ess/sessions/:id', () => {
 
   it('answers the same 404 for an id that does not exist, one that is not an id, and one already ended', async () => {
     const { app, people } = buildApp();
-    const mine = await H.keep(app, tokens.portal(people.hr));
-    const other = await H.keep(app, tokens.portal(people.hr), { install_id: OTHER_INSTALL_ID });
+    const mine = await H.keep(app, nthSignIn(people.hr, 0));
+    const other = await H.keep(app, nthSignIn(people.hr, 1), { install_id: OTHER_INSTALL_ID });
     await H.endSession(app, mine.body.access_token, other.body.session.id);
     const answers = [];
     for (const id of ['5a000000-0000-4000-8000-000000000999', 'not-an-id', '1', other.body.session.id]) {

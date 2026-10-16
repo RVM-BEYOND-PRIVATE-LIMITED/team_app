@@ -38,6 +38,7 @@ const MESSAGES = Object.freeze({
   // Staying signed in (task A3).
   SIGN_IN_NOT_FRESH: 'To stay signed in on this phone, sign in again and keep the sign-in within 10 minutes.',
   ALREADY_EXCHANGED: 'This phone is already signed in. There is nothing more to do.',
+  SIGN_IN_ALREADY_KEPT: 'That sign-in has already been used to stay signed in. Please sign in again.',
   REFRESH_IN_PROGRESS: 'Your sign-in is being renewed. Try again in a moment.',
   SIGNED_OUT: 'You have signed out. Please sign in again.',
   SIGNED_OUT_FOR_SAFETY: 'For your safety you have been signed out. Please sign in again.',
@@ -69,6 +70,7 @@ const MESSAGES = Object.freeze({
   INVALID_ID: 'That is not a valid id.',
   DATE_FORMAT: 'Dates must be real days written YYYY-MM-DD.',
   DATE_RANGE: 'from must be on or before to, and at most 366 days before it.',
+  DATE_OUT_OF_RANGE: 'Dates must be from 2000-01-01 to 2099-12-31.',
   BRANCH_ID: 'branch_id must be a branch id.',
   BRANCH_NOT_FOUND: 'That branch was not found.',
   EMPLOYEE_NOT_FOUND: 'That employee was not found.',
@@ -97,6 +99,7 @@ const MESSAGES = Object.freeze({
   EMERGENCY_PHONE: 'The emergency contact phone must be a 10-digit Indian mobile number.',
   EMERGENCY_INCOMPLETE: 'An emergency contact needs both a name and a phone number, and a relation needs a name.',
   OWN_RECORD: 'You cannot change your own date of birth or address here. Ask another HR person.',
+  RECORD_CHANGED: 'Somebody else changed this record while you were saving. Open it again and try once more.',
 
   // B14: mocked-location reports.
   MOCK_KIND: 'Only mocked punches are reported (kind "punch").',

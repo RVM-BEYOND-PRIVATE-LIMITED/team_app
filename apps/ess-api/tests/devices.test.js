@@ -181,6 +181,60 @@ describe('POST /api/ess/hr/devices/reset', () => {
     expect(db.writes().filter((w) => w.table === 'hr_attendance_devices')).toHaveLength(2);
   });
 
+  describe('when a later slice fails, after earlier ones have reset phones', () => {
+    const bulkPune = (w) => {
+      for (let i = 0; i < 160; i++) {
+        const id = `e1000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+        w.tables.hr_employees.push({ id, full_name: `Bulk ${i}`, employee_code: `B-${i}`, branch_id: BRANCH_PUNE_ID, is_archived: false, employment_status: 'active' });
+        w.tables.hr_attendance_devices.push({ id: `71000000-0000-4000-8000-${String(i).padStart(12, '0')}`, employee_id: id, token_hash: `h${i}`, status: 'active', bound_at: '2026-10-05T04:00:00+00:00' });
+      }
+    };
+    const failSecondUpdate = (db) => {
+      let updates = 0;
+      db.failWhen = (q) => (q.table === 'hr_attendance_devices' && q.op === 'update' && ++updates === 2 ? 'error' : null);
+    };
+
+    it('answers 503 and records every phone it did reset, marked incomplete, with HR\'s reason', async () => {
+      quietErrors();
+      const { app, db, people } = buildApp({ setup: bulkPune });
+      failSecondUpdate(db);
+      const res = await reset(app, tokens.portal(people.hr), { branch_id: BRANCH_PUNE_ID, reason: 'Go-live, Pune' });
+      expectRefusal(res, 503, 'UNAVAILABLE');
+      const revoked = db.tables.hr_attendance_devices.filter((d) => d.status === 'revoked' && d.revoke_reason === 'Go-live, Pune');
+      expect(revoked).toHaveLength(150);
+      expect(db.tables.hr_ess_audit).toHaveLength(1);
+      const [row] = db.tables.hr_ess_audit;
+      expect(row).toMatchObject({ action: 'devices.reset', actor_user_id: people.hr.user.id });
+      expect(row.details).toMatchObject({ branch_id: BRANCH_PUNE_ID, employees_asked: 161, reset: 150, incomplete: true, reason: 'Go-live, Pune' });
+      expect([...row.details.device_ids].sort()).toEqual(revoked.map((d) => d.id).sort());
+    });
+
+    it('puts the same entry in the log when the audit row cannot be written either', async () => {
+      const spy = quietErrors();
+      const { app, db, people } = buildApp({ setup: bulkPune });
+      failSecondUpdate(db);
+      db.dropTable('hr_ess_audit');
+      expectRefusal(await reset(app, tokens.portal(people.hr), { branch_id: BRANCH_PUNE_ID, reason: 'Go-live, Pune' }), 503, 'UNAVAILABLE');
+      const logged = spy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const revoked = db.tables.hr_attendance_devices.filter((d) => d.status === 'revoked' && d.revoke_reason === 'Go-live, Pune');
+      expect(revoked).toHaveLength(150);
+      for (const d of revoked) expect(logged).toContain(d.id);
+      expect(logged).toMatch(/AUDIT NOT WRITTEN.*"incomplete":true/);
+    });
+
+    it('a retry resets the rest and records them as a complete reset', async () => {
+      quietErrors();
+      const { app, db, people } = buildApp({ setup: bulkPune });
+      failSecondUpdate(db);
+      await reset(app, tokens.portal(people.hr), { branch_id: BRANCH_PUNE_ID, reason: 'Go-live, Pune' });
+      db.failWhen = null;
+      const res = await reset(app, tokens.portal(people.hr), { branch_id: BRANCH_PUNE_ID, reason: 'Go-live, Pune' });
+      expect(res.status).toBe(200);
+      expect(res.body.reset).toBe(11);
+      expect(db.tables.hr_ess_audit[1].details).not.toHaveProperty('incomplete');
+    });
+  });
+
   it.each(CALLERS)('%s', async (who, token) => {
     const { app, db, people } = buildApp();
     const res = await reset(app, token(people), { branch_id: BRANCH_ID, reason: 'Moving to the app' });

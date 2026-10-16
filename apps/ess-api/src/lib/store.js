@@ -61,7 +61,8 @@ const COLUMNS = Object.freeze({
   // whether the person chose their own password is all the first-time check needs.
   attendanceAccount: 'id, employee_id, status, sessions_valid_from, password_set_at',
   attendanceLogin: 'employee_id, status',
-  // Every column but refresh_hash: a session is found by its hash and never hands it back.
+  // Every column but refresh_hash and password_fingerprint: a session is found by its hash and
+  // never hands it back, and the fingerprint is compared inside the database only.
   session: 'id, family_id, employee_id, login_kind, user_id, location_name, method, signed_in_at, install_id, device_label, created_at, last_used_at, expires_at, revoked_at, revoked_reason',
   sessionStart: 'id, created_at',
   // Never token_hash: it is what a phone's cookie is checked against. Neither user_agent nor
@@ -91,8 +92,29 @@ const COLUMNS = Object.freeze({
  */
 const NOT_INSTALLED_CODES = new Set(['PGRST205', 'PGRST204', 'PGRST202', '42P01', '42703', '42883']);
 
-/** The functions db/migrations/20261101000000_hr_ess_sessions.sql creates. */
-const SESSION_FUNCTIONS = Object.freeze({ rotate: 'hr_ess_session_rotate', revoke: 'hr_ess_session_revoke' });
+/** The functions db/migrations/20261101000000_hr_ess_sessions.sql creates for the ESS to call. */
+const SESSION_FUNCTIONS = Object.freeze({
+  rotate: 'hr_ess_session_rotate',
+  revoke: 'hr_ess_session_revoke',
+  passwordCurrent: 'hr_ess_session_password_current',
+});
+
+/**
+ * Refusals the database gives on purpose, which the routes answer as a 409 rather than as a
+ * failure: the name of the key or rule is in Postgres's message, which PostgREST passes on.
+ *   SIGN_IN_KEPT  a Scheduler sign-in already traded (hr_ess_sessions_sign_in_key, 23505)
+ *   OPEN_LIMIT    a sixth open data request (the hr_ess_data_requests_open_limit trigger, 23514)
+ *   EMERGENCY_HALF  personal details left with half an emergency contact by two saves made at
+ *                   once (hr_ess_personal_details_emergency_chk, 23514)
+ */
+const REFUSALS = Object.freeze({
+  SIGN_IN_KEPT: { code: '23505', name: 'hr_ess_sessions_sign_in_key' },
+  OPEN_LIMIT: { code: '23514', name: 'hr_ess_data_requests_open_limit' },
+  EMERGENCY_HALF: { code: '23514', name: 'hr_ess_personal_details_emergency_chk' },
+});
+
+const isRefusal = (error, { code, name }) =>
+  Boolean(error && error.code === code && String(error.message || '').includes(name));
 
 /**
  * Matches nothing, so the sign-in resolver can make the same request whatever it found
@@ -157,6 +179,9 @@ function storeError(table, error) {
   return new HttpError(503, 'UNAVAILABLE', MESSAGES.UNAVAILABLE);
 }
 
+/** What run() answers in place of data for a refusal the caller asked to hear about. */
+const REFUSED = Symbol('refused');
+
 const chunks = (list, size = IN_CHUNK) => {
   const out = [];
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
@@ -180,7 +205,7 @@ function createSupabaseStore(config, { client } = {}) {
    * One database request. Only the table, the code and PostgREST's message are logged, never the
    * values asked with: those include refresh-token hashes and whatever was typed at sign-in.
    */
-  async function run(verb, table, request) {
+  async function run(verb, table, request, refusal = null) {
     let result;
     try {
       result = await request();
@@ -188,6 +213,8 @@ function createSupabaseStore(config, { client } = {}) {
       console.error(`[ess] ${verb} ${table} failed: ${e && e.message ? e.message : e}`);
       throw storeError(table, e);
     }
+    // An answer the caller asked for (REFUSALS), not a failure: nothing to log.
+    if (result.error && refusal && isRefusal(result.error, refusal)) return REFUSED;
     if (result.error) {
       console.error(`[ess] ${verb} ${table} failed: ${result.error.code || '-'} ${result.error.message || ''}`.trim());
       throw storeError(table, result.error);
@@ -196,7 +223,7 @@ function createSupabaseStore(config, { client } = {}) {
   }
 
   const read = (table, build) => run('reading', table, () => build(db.from(table)));
-  const write = (table, build) => run('writing', table, () => build(db.from(table)));
+  const write = (table, build, refusal) => run('writing', table, () => build(db.from(table)), refusal);
   // The session functions read and write hr_ess_sessions, and arrive with it in one migration.
   const call = (fn, args) => run('writing', 'hr_ess_sessions', () => db.rpc(fn, args));
 
@@ -283,8 +310,20 @@ function createSupabaseStore(config, { client } = {}) {
     /** A family's id is its first row's, so this is when each sign-in began. */
     listSessionStarts: (familyIds) => list('hr_ess_sessions', (q) => q.select(COLUMNS.sessionStart).in('id', familyIds)),
 
-    createSession: async (row) => {
-      await write('hr_ess_sessions', (q) => q.insert(row));
+    /**
+     * false when this Scheduler sign-in has been kept before (hr_ess_sessions_sign_in_key): one
+     * token is traded once. The database adds the portal password's fingerprint as the row goes in.
+     */
+    createSession: async (row) => (await write('hr_ess_sessions', (q) => q.insert(row), REFUSALS.SIGN_IN_KEPT)) !== REFUSED,
+
+    /**
+     * Is this portal session's password still the one it was kept with (hr_ess_session_password_current)?
+     * true, false, or null for a row that is not a portal session or whose account is gone. The
+     * hash and its fingerprint stay in the database.
+     */
+    isSessionPasswordCurrent: async (sessionId) => {
+      const answer = await call(SESSION_FUNCTIONS.passwordCurrent, { p_session_id: sessionId });
+      return typeof answer === 'boolean' ? answer : null;
     },
 
     /**
@@ -347,13 +386,17 @@ function createSupabaseStore(config, { client } = {}) {
      * revoked_by, revoked_by_name and revoke_reason, only where the status is still 'active'.
      * A phone reset in the meantime is left alone, as there.
      *
+     * One request per slice and no transaction around them, so a failure part-way leaves the
+     * earlier slices reset. `onReset` hears of each slice's phones as soon as they are reset, so
+     * the caller can record them whatever happens to the next slice.
+     *
      * @returns the reset phones, { id, employee_id }
      */
-    revokeActiveDevices: async (employeeIds, patch) => {
+    revokeActiveDevices: async (employeeIds, patch, onReset = () => {}) => {
       const unique = [...new Set(employeeIds.filter(Boolean))];
       const out = [];
       for (const part of chunks(unique)) {
-        out.push(...((await write('hr_attendance_devices', (q) => q
+        const reset = (await write('hr_attendance_devices', (q) => q
           .update({
             status: 'revoked',
             revoked_at: patch.revoked_at,
@@ -363,15 +406,20 @@ function createSupabaseStore(config, { client } = {}) {
           })
           .in('employee_id', part)
           .eq('status', 'active')
-          .select(COLUMNS.revokedDevice))) || []));
+          .select(COLUMNS.revokedDevice))) || [];
+        out.push(...reset);
+        onReset(reset);
       }
       return out;
     },
 
     /* ── A8: requests to correct or delete my data ── */
 
-    createDataRequest: (row) =>
-      write('hr_ess_data_requests', (q) => q.insert([row]).select(COLUMNS.dataRequest).single()),
+    /** The new request, or null when the person already has five open (the database's own count). */
+    createDataRequest: async (row) => {
+      const created = await write('hr_ess_data_requests', (q) => q.insert([row]).select(COLUMNS.dataRequest).single(), REFUSALS.OPEN_LIMIT);
+      return created === REFUSED ? null : created;
+    },
     countOpenDataRequests: async (employeeId) =>
       ((await read('hr_ess_data_requests', (q) => q.select('id').eq('employee_id', employeeId).eq('status', 'open'))) || []).length,
     listMyDataRequests: async (employeeId) =>
@@ -396,9 +444,17 @@ function createSupabaseStore(config, { client } = {}) {
     /* ── E9: personal details ── */
 
     getPersonalDetails: (employeeId) => one('hr_ess_personal_details', COLUMNS.personal, 'employee_id', employeeId),
-    /** One row per employee (its primary key), written whole. */
-    savePersonalDetails: (row) =>
-      write('hr_ess_personal_details', (q) => q.upsert([row], { onConflict: 'employee_id' }).select(COLUMNS.personal).single()),
+    /**
+     * One row per employee (its primary key). Only the columns in `row` are written: PostgREST's
+     * upsert sets just those on a conflict, so a save cannot put back a field somebody else
+     * changed since it read the row. Answers the whole row as it now stands, or null when the
+     * row would be left with half an emergency contact by a save made in between.
+     */
+    savePersonalDetails: async (row) => {
+      const saved = await write('hr_ess_personal_details', (q) => q.upsert([row], { onConflict: 'employee_id' }).select(COLUMNS.personal).single(),
+        REFUSALS.EMERGENCY_HALF);
+      return saved === REFUSED ? null : saved;
+    },
 
     /* ── B14: mocked-location reports ── */
 
@@ -438,6 +494,7 @@ module.exports = {
   COLUMNS,
   NOT_INSTALLED_CODES,
   SESSION_FUNCTIONS,
+  REFUSALS,
   NIL_UUID,
   DB_REQUEST_TIMEOUT_MS,
   IN_CHUNK,

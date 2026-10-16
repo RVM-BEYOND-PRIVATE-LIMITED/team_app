@@ -272,6 +272,12 @@ const WAVE_2 = {
       return H.keep(app, tokens.attendance(people.attendance, 'pw'));
     }],
     ['409 ALREADY_EXCHANGED', async () => { const k = await kept(); return H.keep(k.app, k.session.access_token); }],
+    ['409 ALREADY_EXCHANGED, a Scheduler sign-in traded twice', async () => {
+      const { app, people } = buildApp();
+      const token = tokens.portal(people.hr);
+      await H.keep(app, token);
+      return H.keep(app, token, { install_id: OTHER_INSTALL_ID });
+    }],
     ['429 RATE_LIMITED', async () => {
       const { app, people } = buildApp({ limits: { exchangePerEmployee: { windowMs: 60 * 1000, limit: 1 } } });
       await H.keep(app, tokens.portal(people.hr));
@@ -291,6 +297,9 @@ const WAVE_2 = {
     // By refresh token: an hour on, the access token has run out, and signing out with it is a 401.
     ['401 signed_out', refreshAfter({}, (k) => H.signOut(k.app, { refreshToken: k.session.refresh_token }))],
     ['401 password_changed', refreshAfter({}, (k) => { accountOf(k).sessions_valid_from = NOW.toISOString(); })],
+    ['401 password_changed, a portal password reset in User Management', refreshAfter({ who: 'hr' }, (k) => {
+      k.db.tables.users.find((u) => u.id === k.person.user.id).password_hash = '$2b$10$a.hash.an.admin.set';
+    })],
     ['401 login_off', refreshAfter({}, (k) => { accountOf(k).status = 'disabled'; })],
     ['401 left', refreshAfter({}, (k) => { k.db.tables.hr_employees.find((e) => e.id === k.person.employee.id).is_archived = true; })],
     ['401 unlinked', refreshAfter({ who: 'hr' }, (k) => { k.db.tables.hr_employees.find((e) => e.id === k.person.employee.id).user_id = null; })],
@@ -462,6 +471,30 @@ const FIX = {
 const fails = (table, how = 'error') => (w) => { w.db.failWhen = (q) => (q.table === table ? how : null); };
 const drop = (table) => (w) => w.db.dropTable(table);
 
+/** Reads of `table` answer what `rows()` gives, as if made before a change the table now holds. */
+const staleReads = (table, rows) => (w) => {
+  const realFrom = w.db.from;
+  w.db.from = (t) => {
+    const q = realFrom(t);
+    if (t !== table) return q;
+    const run = q.run.bind(q);
+    q.run = async () => {
+      if (q.op !== 'select') return run();
+      const out = await run();
+      return { ...out, data: q.expect ? (rows()[0] || null) : rows() };
+    };
+    return q;
+  };
+};
+
+/** The save reads the emergency contact withPersonal records, which somebody has removed since. */
+const contactRemovedMeanwhile = (w) => {
+  const row = w.db.tables.hr_ess_personal_details[0];
+  const asRead = { ...row };
+  Object.assign(row, { emergency_name: null, emergency_relation: null, emergency_phone: null });
+  staleReads('hr_ess_personal_details', () => [asRead])(w);
+};
+
 Object.assign(WAVE_2, {
   'POST /api/ess/me/data-requests': [
     ['201, a portal login', call('faculty', post(MY_DATA, A_REQUEST))],
@@ -477,6 +510,8 @@ Object.assign(WAVE_2, {
       setup: (w) => { w.people.attendance.account.password_set_at = null; },
     })],
     ['409 TOO_MANY_OPEN_REQUESTS', call('faculty', post(MY_DATA, A_REQUEST), { setup: fiveOpen })],
+    // The count read before the insert saw fewer (requests sent at once); the database's own count refuses.
+    ['409 TOO_MANY_OPEN_REQUESTS, counted by the database', call('faculty', post(MY_DATA, A_REQUEST), { setup: fiveOpen, prepare: staleReads('hr_ess_data_requests', () => []) })],
     ['413 PAYLOAD_TOO_LARGE', call('faculty', post(MY_DATA, { kind: 'correct', details: 'x'.repeat(20 * 1024) }))],
     ['429 RATE_LIMITED', async () => {
       const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
@@ -555,6 +590,7 @@ Object.assign(WAVE_2, {
     ['401, no token', call('faculty', (app) => request(app).put(MY_PERSONAL).send({ blood_group: 'B+' }))],
     ['403 SENSITIVE_FIELD', call('faculty', put(MY_PERSONAL, { date_of_birth: '1994-05-21' }))],
     ['403 NOT_ACTIVE', call('faculty', put(MY_PERSONAL, { blood_group: 'B+' }), { setup: (w) => { w.people.faculty.employee.is_archived = true; } })],
+    ['409 RECORD_CHANGED', call('attendance', put(MY_PERSONAL, { emergency_relation: 'Sister' }), { setup: withPersonal, prepare: contactRemovedMeanwhile })],
     ['429 RATE_LIMITED', async () => {
       const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
       await put(MY_PERSONAL, { blood_group: 'B+' })(app, tokens.portal(people.faculty));
@@ -588,6 +624,7 @@ Object.assign(WAVE_2, {
     ['403 PORTAL_LOGIN_REQUIRED', call('attendance', put(theirPersonal(ATTENDANCE_EMPLOYEE), { city: 'Pune' }))],
     ['404 NOT_FOUND', call('hr', put(theirPersonal(NOBODY), { city: 'Pune' }))],
     ['409 OWN_RECORD', call('hr', put(theirPersonal(HR_EMPLOYEE), { city: 'Pune' }))],
+    ['409 RECORD_CHANGED', call('hr', put(theirPersonal(ATTENDANCE_EMPLOYEE), { emergency_relation: 'Sister' }), { setup: withPersonal, prepare: contactRemovedMeanwhile })],
     ['429 RATE_LIMITED', async () => {
       const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
       await put(theirPersonal(ATTENDANCE_EMPLOYEE), { city: 'Pune' })(app, tokens.portal(people.hr));
@@ -614,6 +651,7 @@ Object.assign(WAVE_2, {
   'POST /api/ess/attendance/mock-location': [
     ['201', call('attendance', post(MOCK, FIX))],
     ['201, no location and an unreadable phone clock', call('faculty', post(MOCK, { kind: 'punch', client_at: 'yesterday' }))],
+    ['201, a phone clock in year 0', call('faculty', post(MOCK, { kind: 'punch', client_at: '0000-06-01T00:00:00Z' }))],
     ['400 VALIDATION_FAILED, a ping', call('attendance', post(MOCK, { ...FIX, kind: 'ping' }))],
     ['400 VALIDATION_FAILED, half a location', call('attendance', post(MOCK, { kind: 'punch', latitude: 28.4 }))],
     ['400 VALIDATION_FAILED, somebody else\'s employee id', call('attendance', post(MOCK, { ...FIX, employee_id: HR_EMPLOYEE }))],
@@ -632,6 +670,7 @@ Object.assign(WAVE_2, {
     ['200, a super admin, a range with nothing', call('super_admin', get(`${MOCK_LIST}?from=2026-01-01&to=2026-01-31`), { setup: withMockReports })],
     ['400 VALIDATION_FAILED, a range the wrong way round', call('hr', get(`${MOCK_LIST}?from=2026-10-16&to=2026-10-01`))],
     ['400 VALIDATION_FAILED, a branch that is not an id', call('hr', get(`${MOCK_LIST}?branch_id=1`))],
+    ['400 VALIDATION_FAILED, a year Postgres cannot take', call('hr', get(`${MOCK_LIST}?from=0000-01-01&to=0000-01-31`))],
     ['401, no token', call('hr', (app) => request(app).get(MOCK_LIST))],
     ['403 ATTENDANCE_OVERRIDE_DENIED, an HR Executive', call('hr_executive', get(MOCK_LIST))],
     ['403 PORTAL_LOGIN_REQUIRED', call('attendance', get(MOCK_LIST))],
@@ -678,6 +717,9 @@ Object.assign(WAVE_2, {
       return post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' })(app, tokens.portal(people.hr));
     }],
     ['503 UNAVAILABLE', call('hr', post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' }), { prepare: fails('hr_attendance_devices') })],
+    ['503 UNAVAILABLE, part-way through', call('hr', post(RESET, { employee_ids: Array.from({ length: 151 }, (_, i) => uuid('e', i + 1)), reason: 'Go-live' }), {
+      prepare: (w) => { let n = 0; w.db.failWhen = (q) => (q.table === 'hr_attendance_devices' && q.op === 'update' && ++n === 2 ? 'error' : null); },
+    })],
     ['503 MODULE_NOT_INSTALLED', call('hr', post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' }), { prepare: drop('hr_attendance_devices') })],
   ],
 });

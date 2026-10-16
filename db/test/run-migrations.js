@@ -144,6 +144,7 @@ const REFUSALS = [
   refusal('a closed data request with no time or resolver', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details, status) VALUES (e, 'delete', 'Please delete it', 'done')"),
   refusal('an open data request that says it was resolved', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details, resolved_at, resolved_by_name) VALUES (e, 'delete', 'Please delete it', now(), 'HR')"),
   refusal('a data request in an unknown status', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details, status, resolved_at, resolved_by_name) VALUES (e, 'delete', 'Please delete it', 'lost', now(), 'HR')"),
+  refusal('a sixth open data request for one person', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details) SELECT e, 'correct', 'Request ' || g FROM generate_series(1, 5) g; INSERT INTO public.hr_ess_data_requests (employee_id, kind, details) VALUES (e, 'correct', 'One too many')"),
   refusal('a resolution note over 1000 characters', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details, status, resolved_at, resolved_by_name, resolution_note) VALUES (e, 'delete', 'Please delete it', 'done', now(), 'HR', repeat('x', 1001))"),
   refusal('a mocked-location report for a ping', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind) VALUES (e, 'ping')"),
   refusal('a mocked-location report with a latitude and no longitude', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, latitude) VALUES (e, 'punch', 28.4)"),
@@ -152,6 +153,9 @@ const REFUSALS = [
   refusal('an install id over 128 characters', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, install_id) VALUES (e, 'punch', repeat('x', 129))"),
   refusal('a mocked-location report at a branch that is not there', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, branch_id) VALUES (e, 'punch', gen_random_uuid())", 'foreign_key_violation'),
   refusal('a mocked-location report for nobody', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind) VALUES (gen_random_uuid(), 'punch')", 'foreign_key_violation'),
+  refusal('a second trade of one Scheduler sign-in', `INSERT INTO public.hr_ess_sessions (id, family_id, employee_id, login_kind, user_id, signed_in_at, install_id, refresh_hash, expires_at)
+      VALUES ('5b000000-0000-4000-8000-000000000001', '5b000000-0000-4000-8000-000000000001', e, 'portal', u, '2026-10-16T06:29:00Z', 'install-0123456789abcdef', repeat('a', 64), now() + interval '90 days'),
+             ('5b000000-0000-4000-8000-000000000002', '5b000000-0000-4000-8000-000000000002', e, 'portal', u, '2026-10-16T06:29:00Z', 'install-fedcba9876543210', repeat('b', 64), now() + interval '90 days')`, 'unique_violation'),
   refusal('audit details that are not an object', "INSERT INTO public.hr_ess_audit (actor_name, action, details) VALUES ('HR', 'devices.reset', '[]'::jsonb)"),
   refusal('an audit action that is not a dotted name', "INSERT INTO public.hr_ess_audit (actor_name, action) VALUES ('HR', 'Reset Devices')"),
   refusal('an audit row with no actor name', "INSERT INTO public.hr_ess_audit (action) VALUES ('devices.reset')", 'not_null_violation'),
@@ -178,6 +182,8 @@ BEGIN
   IF r.status <> 'open' OR r.created_at IS NULL OR r.id IS NULL THEN RAISE EXCEPTION 'data request defaults'; END IF;
   UPDATE public.hr_ess_data_requests SET status = 'done', resolved_at = now(), resolved_by_user_id = u,
       resolved_by_name = 'Test HR', resolution_note = 'Corrected.' WHERE employee_id = e;
+  -- Five open at once is the limit, and a resolved one does not count towards it.
+  INSERT INTO public.hr_ess_data_requests (employee_id, kind, details) SELECT e, 'delete', 'Request ' || g FROM generate_series(1, 5) g;
   INSERT INTO public.hr_ess_mock_location_reports (employee_id, branch_id, kind, latitude, longitude, accuracy_m, provider, app_version, install_id, client_at)
     VALUES (e, b, 'punch', 28.4089, 77.3178, 3, 'gps', '1.0.0+1', 'install-1', now());
   INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind) VALUES (e, 'punch');

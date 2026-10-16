@@ -343,3 +343,96 @@ describe('PUT /api/ess/hr/employees/:id/personal', () => {
     expectRefusal(await putTheirs(app, tokens.portal(people.hr), people.pune.employee.id, { city: 'Pune' }), 503, 'MODULE_NOT_INSTALLED');
   });
 });
+
+describe('two saves of one record at the same moment', () => {
+  /**
+   * Holds the first save's write until the second save has written, after the first has read:
+   * the interleaving in which a save that writes back the whole row it read undoes the other.
+   */
+  function interleave(db) {
+    let firstRead;
+    const firstHasRead = new Promise((resolve) => { firstRead = resolve; });
+    let secondWrote;
+    const secondHasWritten = new Promise((resolve) => { secondWrote = resolve; });
+    let reads = 0;
+    let writes = 0;
+    const realFrom = db.from;
+    db.from = (table) => {
+      const q = realFrom(table);
+      if (table !== 'hr_ess_personal_details') return q;
+      const run = q.run.bind(q);
+      q.run = async () => {
+        if (q.op === 'select') {
+          const out = await run();
+          reads += 1;
+          if (reads === 1) firstRead();
+          return out;
+        }
+        writes += 1;
+        if (writes === 1) {
+          // Whichever write comes first belongs to the save that read first, which waits.
+          await secondHasWritten;
+          return run();
+        }
+        const out = await run();
+        secondWrote();
+        return out;
+      };
+      return q;
+    };
+    return { firstHasRead };
+  }
+
+  it("does not let an employee's own save undo HR's change to their date of birth", async () => {
+    const { app, db, people } = buildApp({
+      setup: (w) => { w.tables.hr_ess_personal_details = [{ employee_id: w.people.faculty.employee.id, date_of_birth: '1990-01-01', updated_at: '2026-10-01T00:00:00.000Z' }]; },
+    });
+    const { firstHasRead } = interleave(db);
+    const target = people.faculty.employee.id;
+    const mine = putMine(app, tokens.portal(people.faculty), { blood_group: 'O+' }).then((r) => r);
+    await firstHasRead;
+    const hr = putTheirs(app, tokens.portal(people.hr), target, { date_of_birth: '1985-05-05' }).then((r) => r);
+    const [a, b] = await Promise.all([mine, hr]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    const row = db.tables.hr_ess_personal_details.find((r) => r.employee_id === target);
+    expect(db.tables.hr_ess_audit.some((x) => x.action === 'personal_details.updated' && x.details.fields.includes('date_of_birth'))).toBe(true);
+    expect(row.date_of_birth).toBe('1985-05-05');
+    expect(row.blood_group).toBe('O+');
+    // The employee is answered the record as it now stands, HR's change included.
+    expect(a.body.personal).toMatchObject({ date_of_birth: '1985-05-05', blood_group: 'O+' });
+  });
+
+  it('keeps both of two HR people\'s changes to different fields', async () => {
+    const { app, db, people } = buildApp(withStored());
+    const { firstHasRead } = interleave(db);
+    const target = people.attendance.employee.id;
+    const first = putTheirs(app, tokens.portal(people.hr), target, { city: 'Gurugram' }).then((r) => r);
+    await firstHasRead;
+    const second = putTheirs(app, tokens.portal(people.super_admin), target, { pincode: '122001' }).then((r) => r);
+    const [a, b] = await Promise.all([first, second]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(db.tables.hr_ess_personal_details.find((r) => r.employee_id === target)).toMatchObject({ city: 'Gurugram', pincode: '122001', state: 'Haryana' });
+  });
+
+  it('answers 409 RECORD_CHANGED, and changes nothing, when the other save leaves half an emergency contact with this one', async () => {
+    const { app, db, people } = buildApp(withStored());
+    const { firstHasRead } = interleave(db);
+    const target = people.attendance.employee.id;
+    // The employee adds a relation to the contact they see; HR, meanwhile, removes the contact.
+    const mine = putMine(app, tokens.attendance(people.attendance), { emergency_relation: 'Sister' }).then((r) => r);
+    await firstHasRead;
+    const hr = putTheirs(app, tokens.portal(people.hr), target, { emergency_name: null, emergency_phone: null, emergency_relation: null }).then((r) => r);
+    const [a, b] = await Promise.all([mine, hr]);
+    expect(b.status).toBe(200);
+    expectRefusal(a, 409, 'RECORD_CHANGED');
+    expect(db.tables.hr_ess_personal_details.find((r) => r.employee_id === target))
+      .toMatchObject({ emergency_name: null, emergency_phone: null, emergency_relation: null });
+  });
+
+  it('writes only the fields sent, the employee id and the stamp', async () => {
+    const { app, db, people } = buildApp(withStored());
+    expect((await putMine(app, tokens.attendance(people.attendance), { blood_group: 'O+' })).status).toBe(200);
+    const write = db.writes().find((w) => w.table === 'hr_ess_personal_details');
+    expect(Object.keys(write.values[0]).sort()).toEqual(['blood_group', 'employee_id', 'updated_at', 'updated_by_name', 'updated_by_user_id']);
+  });
+});

@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.2.0
+  version: 0.2.1
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -26,7 +26,7 @@ info:
 
     ## Staying signed in
 
-    Straight after a Scheduler sign-in, the app trades the token it got for a kept sign-in (`POST /ess/session`): a one-hour access token in the same format, which works on both hosts, and a refresh token. Before the access token runs out (`access_expires_at`), or when either host answers it with a 401, the app trades the refresh token for the next pair (`POST /ess/session/refresh`). A kept sign-in lasts 90 days from its last refresh, and ends at once when the person signs out, changes or is given a new attendance password, has their attendance login switched off, or leaves. Signing out is `POST /ess/session/sign-out` with the refresh token.
+    Straight after a Scheduler sign-in, the app trades the token it got for a kept sign-in (`POST /ess/session`): a one-hour access token in the same format, which works on both hosts, and a refresh token. Before the access token runs out (`access_expires_at`), or when either host answers it with a 401, the app trades the refresh token for the next pair (`POST /ess/session/refresh`). A kept sign-in lasts 90 days from its last refresh, and ends at once when the person signs out, changes or is given a new attendance password, has their portal password changed or reset (by any of the Scheduler's ways, an admin's reset in User Management included), has their attendance login switched off, or leaves. One Scheduler sign-in is kept once: trade each token straight away, and only once. Signing out is `POST /ess/session/sign-out` with the refresh token.
 
     ## When to sign out
 
@@ -418,12 +418,12 @@ paths:
         Trades the token a Scheduler sign-in just returned for a kept sign-in: a one-hour access token in the same format as the token sent, and a refresh token for the next one. Send the token as the bearer, straight after `POST /users/login` (or `/users/login/verify`), `POST /hr/my-attendance/password-login`, `/otp/verify` or `/password`.
 
         Every check of `GET /ess/me` applies first, with the same answers (401, 403 `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`). Then:
-        1. A token the ESS minted itself (an access token from here) is never traded: 409 `ALREADY_EXCHANGED`.
+        1. A token the ESS minted itself (an access token from here) is never traded: 409 `ALREADY_EXCHANGED`. Nor is a Scheduler token traded twice, whether or not the first sign-in has ended: 409 `ALREADY_EXCHANGED`, with the words of the `signInAlreadyKept` example. Sign in again for a new one.
         2. The sign-in must be fresh: the token was issued in the last 10 minutes (and not more than a minute in the future), else 403 `SIGN_IN_NOT_FRESH`. A token found days later, or a 30-day attendance session, cannot become a 90-day sign-in.
         3. `install_id` is required: 16 to 128 of `A-Z a-z 0-9 . _ -`, made once per install and kept with the tokens (400 `BAD_INSTALL_ID`). `device_label` is optional: the phone's name for the session list, at most 80 characters, no control characters (400 `BAD_DEVICE_LABEL`).
         4. A portal sign-in made before the account's password last changed (`users.password_changed_at`) is over: 401 `NOT_AUTHENTICATED` "Your password was changed. Please sign in again."
 
-        Every call starts a new sign-in (a new `session.id`).
+        Every kept sign-in is new (a new `session.id`), one per Scheduler sign-in.
 
         The access token works wherever the token it came from worked: on the Scheduler (the portal routes, or `/hr/my-attendance/*`) and on the ESS. It carries one more claim, `sid`, the session it belongs to, and its `iat` is the original sign-in's, never the moment it was minted, so the Scheduler's 15-minute "set your password after a code" window and its password-change cut-off keep working. It lasts an hour; `access_expires_at` says when.
 
@@ -480,7 +480,10 @@ paths:
                 passwordChangeRequired:
                   $ref: '#/components/examples/EssPasswordChangeRequired'
         '409':
-          description: '`ALREADY_EXCHANGED`: the bearer is an access token the ESS minted. The phone is already signed in; keep using it.'
+          description: |
+            `ALREADY_EXCHANGED`, not a reason to sign out of a kept sign-in the app already holds:
+            - the bearer is an access token the ESS minted (`alreadyExchanged`). The phone is already signed in; keep using it.
+            - the bearer is a Scheduler token already traded once (`signInAlreadyKept`), by this app or by anybody else holding a copy. If the app holds no kept sign-in from it (an exchange whose answer was lost), sign in again.
           content:
             application/json:
               schema:
@@ -488,6 +491,10 @@ paths:
               examples:
                 alreadyExchanged:
                   $ref: '#/components/examples/EssAlreadyExchanged'
+                signInAlreadyKept:
+                  value:
+                    error: That sign-in has already been used to stay signed in. Please sign in again.
+                    code: ALREADY_EXCHANGED
         '429':
           $ref: '#/components/responses/EssSessionRateLimited'
         '503':
@@ -517,7 +524,7 @@ paths:
           - `expired`: unused for 90 days.
           - `signed_out`: signed out, here or from the session list.
           - `reuse`: this refresh token was presented again after it had been traded in (more than a minute later, or from another install), or by another install. The whole sign-in ends, its newest tokens with it.
-          - `password_changed`: the attendance password was set or reset since the sign-in (`sessions_valid_from`), the login is back on a password HR gave, or the portal password changed since the sign-in.
+          - `password_changed`: the attendance password was set or reset since the sign-in (`sessions_valid_from`), the login is back on a password HR gave, or the portal password is no longer the one the sign-in was kept with, however it was changed: on the profile page, by forgot-password, by an admin in User Management, by `POST /users/change-password` or by `POST /users/reset-password`.
           - `login_off`: HR switched the attendance login off, or removed it.
           - `left`: the employee has left.
           - `unlinked`: the portal login is no longer linked to this person's HR record, or is no longer a staff account.
@@ -755,12 +762,12 @@ paths:
       description: |
         No token. The one field takes a phone number, email, employee code or username (decision 4). This says which of the Scheduler's two sign-ins to use; the password or code itself still goes to the Scheduler.
 
-        - `{ kind: portal, login_with: as_typed }`: a portal login whose username or login phone is exactly what was typed. Send it, exactly as sent here, as `username` to `POST /users/login`, with `location_name` as `locationName`; or, with `location_names` (an account with no branch of its own: HR, the CEO and the like), let the person choose one, as the web's dropdown does.
+        - `{ kind: portal, login_with: as_typed, location_names }`: a portal login whose username or login phone is exactly what was typed. Send it, exactly as sent here, as `username` to `POST /users/login`, with the branch the person chooses from `location_names` as `locationName`, as the web's dropdown offers them. Every portal login gets every branch, whatever its role or branch, so the answer says nothing about either; the app may remember the person's last choice on the phone.
         - `{ kind: portal, login_with: username_or_phone }`: a portal login found by its email, or by the employee code, main phone or email on the person's HR record. The portal login takes only a username or login phone: ask for one, then ask here again.
         - `{ kind: attendance, methods }`: an attendance login found by the employee code, main phone or email on the HR record, compared as the attendance sign-in compares them. `code`: a sign-in code can be sent (`POST /hr/my-attendance/otp/request`, with the main phone or the email); `password`: a password exists, the person's own or one HR gave (`POST /hr/my-attendance/password-login`). No methods: the login is switched off or not made yet; send the person to HR.
         - `{ kind: unknown }`: nobody, or more than one person. The same answer, after the same database reads, whatever the reason.
 
-        A person with both kinds of login is answered portal. A login that is not a staff account (the connector identity), not linked to anybody's HR record (a desk login), or belongs to somebody who has left, is not offered. Nothing identifying comes back: no ids, usernames, phones or emails.
+        A person with both kinds of login is answered portal. A login that is not a staff account (the connector identity), not linked to anybody's HR record (a desk login), or belongs to somebody who has left, is not offered. Nothing identifying comes back: no ids, usernames, phones, emails, roles or branches.
 
         Limited per address (40 in 15 minutes, as the Scheduler's attendance sign-in) and per identifier from any address (10 in 15 minutes; every spelling of one mobile number is one identifier).
       security: []
@@ -783,8 +790,6 @@ paths:
                 $ref: '#/components/schemas/SignInResolution'
               examples:
                 portalAsTyped:
-                  value: { kind: portal, login_with: as_typed, location_name: Faridabad }
-                portalAnyBranch:
                   value: { kind: portal, login_with: as_typed, location_names: [Faridabad, Pune, Ahmedabad, Lucknow] }
                 portalUsernameOrPhone:
                   value: { kind: portal, login_with: username_or_phone }
@@ -834,7 +839,7 @@ paths:
 
         - `kind`: `correct` or `delete`. `details`: what should change, 5 to 2,000 characters after trimming (counted as characters, so an emoji is one).
         - The body takes these two fields and no others: an unknown field is refused, never ignored. There is no employee id: a request is always about the caller.
-        - At most 5 open requests per person: a sixth is 409 `TOO_MANY_OPEN_REQUESTS` until HR answers one.
+        - At most 5 open requests per person: a sixth is 409 `TOO_MANY_OPEN_REQUESTS` until HR answers one. The database counts as each request goes in, so requests sent at the same moment cannot pass the limit together.
       requestBody:
         required: true
         content:
@@ -1192,7 +1197,8 @@ paths:
         - `blood_group`: A+, A-, B+, B-, AB+, AB-, O+ or O-, in any case and spacing (stored as written here).
         - `emergency_phone`: an Indian mobile number; +91, a leading 0, spaces and dashes are taken and removed, and the 10 digits are stored.
         - The contact as a whole: a name and a phone together or neither, and a relation only with a name.
-        - The answer is the record as stored, stamped with who wrote it.
+        - Only the fields sent are written, so a save never puts back a field somebody else changed meanwhile. If a save made in between leaves the contact half there with this one, nothing is written: 409 `RECORD_CHANGED`; read the record again.
+        - The answer is the record as stored, stamped with who wrote it, with any change made meanwhile.
       requestBody:
         required: true
         content:
@@ -1238,6 +1244,15 @@ paths:
                   $ref: '#/components/examples/EssNoAttendanceLogin'
                 passwordChangeRequired:
                   $ref: '#/components/examples/EssPasswordChangeRequired'
+        '409':
+          description: '`RECORD_CHANGED`: somebody else saved this record between this save''s read and its write, and the two together would leave half an emergency contact. Nothing was written: read the record again and retry.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                changed:
+                  value: { error: Somebody else changed this record while you were saving. Open it again and try once more., code: RECORD_CHANGED }
         '429':
           $ref: '#/components/responses/EssRateLimited'
         '503':
@@ -1323,6 +1338,7 @@ paths:
         - `date_of_birth`: a real day, YYYY-MM-DD, from 1940-01-01 to the day 16 years before today (IST). Somebody born on 29 February turns 16 on the 28th.
         - `address_line1`, `address_line2`: up to 200 characters; `city`, `state`: up to 80; `pincode`: 6 digits, not starting with 0.
         - Not on one's own record: 409 `OWN_RECORD`. Another HR person changes it.
+        - Only the fields sent are written; a save that would leave half an emergency contact with one made meanwhile is 409 `RECORD_CHANGED`, as for `PUT /ess/me/personal`.
         - Recorded in `hr_ess_audit` after the change, naming the fields that changed and never their values. If that row cannot be written the change still stands and the entry goes to the server log.
       parameters:
         - $ref: '#/components/parameters/EmployeeId'
@@ -1351,7 +1367,9 @@ paths:
         '404':
           $ref: '#/components/responses/EssEmployeeNotFound'
         '409':
-          description: '`OWN_RECORD`: the caller''s own record.'
+          description: |
+            - `OWN_RECORD`: the caller's own record.
+            - `RECORD_CHANGED`: as for `PUT /ess/me/personal`. Nothing was written.
           content:
             application/json:
               schema:
@@ -1359,6 +1377,8 @@ paths:
               examples:
                 own:
                   value: { error: You cannot change your own date of birth or address here. Ask another HR person., code: OWN_RECORD }
+                changed:
+                  value: { error: Somebody else changed this record while you were saving. Open it again and try once more., code: RECORD_CHANGED }
         '429':
           $ref: '#/components/responses/EssRateLimited'
         '503':
@@ -1478,7 +1498,7 @@ paths:
         Either token kind, with the checks of `GET /ess/me`. The app refuses a punch whose location the phone says is mocked (decision 6) and reports it here for HR, because the Scheduler's punch cannot take a mock flag. Punches only: `kind` is `punch`; whether mocked pings are reported too is still to be decided.
 
         - `latitude` and `longitude`: the mocked fix the phone reported, both or neither, in range. `accuracy_m`: metres, 0 to 1,000,000, or null.
-        - `client_at`: the phone's clock, kept beside the server's `reported_at` and never trusted; an unreadable value is stored as null, not refused.
+        - `client_at`: the phone's clock, kept beside the server's `reported_at` and never trusted; an unreadable value, or one before 1970 or from 2100 on, is stored as null, not refused.
         - `provider` (up to 80 characters), `app_version` (40) and `install_id` (128): optional text.
         - The body takes these fields and no others. There is no employee or branch: the report is the caller's, at the branch on their HR record now.
         - 30 reports a day per person (429 `RATE_LIMITED`, with its own message), counted apart from the ESS-wide limits.
@@ -1588,7 +1608,7 @@ paths:
       description: |
         A portal login whose role is `hr`, `ceo` or `super_admin` (the Scheduler's `ATTENDANCE_OVERRIDE_ROLES`, who also see the location trail), after the checks of `GET /ess/me`. An attendance session is 403 `PORTAL_LOGIN_REQUIRED`; any other role, `hr_executive` included, 403 `ATTENDANCE_OVERRIDE_DENIED`.
 
-        - `from` and `to`: IST days, YYYY-MM-DD, both included. `to` defaults to today and `from` to 30 days before `to`; `from` must not be after `to`, nor more than 366 days before it.
+        - `from` and `to`: IST days, YYYY-MM-DD, both included, from 2000-01-01 to 2099-12-31. `to` defaults to today and `from` to 30 days before `to`; `from` must not be after `to`, nor more than 366 days before it.
         - `branch_id`: only reports made at that branch (the branch on the person's HR record when they reported). Not a uuid is 400; no such branch is 404.
         - Newest first, at most 500; `truncated` says more were left out.
       parameters:
@@ -1755,6 +1775,7 @@ paths:
         - `reason`: 3 to 200 characters, shown in the phone list and the Scheduler's.
         - The body may be up to 32 kB, for a list of 500 ids.
         - Recorded in `hr_ess_audit`: who, the branch, how many people were asked about, which phones were reset and the reason. If that row cannot be written the reset still stands and the entry goes to the server log.
+        - The phones are reset 150 people at a time. If the database fails part-way the answer is 503, the phones already reset stay reset, and they are recorded all the same, marked incomplete. Send the same request again: it resets the rest, and skips those already done.
       requestBody:
         required: true
         content:
@@ -4368,13 +4389,6 @@ components:
     SignInResolution:
       oneOf:
         - type: object
-          title: Portal, as typed, at its branch
-          required: [kind, login_with, location_name]
-          properties:
-            kind: { type: string, const: portal }
-            login_with: { type: string, const: as_typed }
-            location_name: { type: string, description: The branch to send as locationName. }
-        - type: object
           title: Portal, as typed, at a branch the person chooses
           required: [kind, login_with, location_names]
           properties:
@@ -4382,7 +4396,7 @@ components:
             login_with: { type: string, const: as_typed }
             location_names:
               type: array
-              description: Every branch, in the web's order. Any of them signs this account in.
+              description: Every branch, in the web's order, the same for every account. Any of them signs this account in.
               items: { type: string }
         - type: object
           title: Portal, with the username or login phone
@@ -6047,7 +6061,7 @@ components:
 
     EssBadHrListQuery:
       description: |
-        `VALIDATION_FAILED`: a query value the message names (a status that is not offered, a day that is not real, a range the wrong way round or over 366 days, a branch_id that is not a uuid), or one given more than once.
+        `VALIDATION_FAILED`: a query value the message names (a status that is not offered, a day that is not real, a day outside 2000 to 2099, a range the wrong way round or over 366 days, a branch_id that is not a uuid), or one given more than once.
       content:
         application/json:
           schema:
@@ -6057,6 +6071,8 @@ components:
               $ref: '#/components/examples/EssDateFormat'
             range:
               value: { error: 'from must be on or before to, and at most 366 days before it.', code: VALIDATION_FAILED }
+            outOfRange:
+              value: { error: Dates must be from 2000-01-01 to 2099-12-31., code: VALIDATION_FAILED }
             branch:
               $ref: '#/components/examples/EssBranchId'
             status:
