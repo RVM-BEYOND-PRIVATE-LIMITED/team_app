@@ -133,6 +133,9 @@ const REFUSALS = [
   refusal('an emergency phone that is not an Indian mobile', "INSERT INTO public.hr_ess_personal_details (employee_id, emergency_phone) VALUES (e, '5123456789')"),
   refusal('an emergency phone with +91 still on it', "INSERT INTO public.hr_ess_personal_details (employee_id, emergency_phone) VALUES (e, '+919812345678')"),
   refusal('a date of birth before 1940', "INSERT INTO public.hr_ess_personal_details (employee_id, date_of_birth) VALUES (e, DATE '1939-12-31')"),
+  refusal('an emergency contact name with no phone', "INSERT INTO public.hr_ess_personal_details (employee_id, emergency_name) VALUES (e, 'Asha Devi')"),
+  refusal('an emergency phone with no name', "INSERT INTO public.hr_ess_personal_details (employee_id, emergency_phone) VALUES (e, '9812345678')"),
+  refusal('an emergency relation with no name', "INSERT INTO public.hr_ess_personal_details (employee_id, emergency_relation) VALUES (e, 'Mother')"),
   refusal('a second personal-details row for one employee', "INSERT INTO public.hr_ess_personal_details (employee_id) VALUES (e), (e)", 'unique_violation'),
   refusal('personal details for nobody', 'INSERT INTO public.hr_ess_personal_details (employee_id) VALUES (gen_random_uuid())', 'foreign_key_violation'),
   refusal('a data request of an unknown kind', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details) VALUES (e, 'erase', 'Please erase it')"),
@@ -147,6 +150,7 @@ const REFUSALS = [
   refusal('a mocked-location report off the globe', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, latitude, longitude) VALUES (e, 'punch', 91, 77)"),
   refusal('a negative accuracy', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, accuracy_m) VALUES (e, 'punch', -1)"),
   refusal('an install id over 128 characters', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, install_id) VALUES (e, 'punch', repeat('x', 129))"),
+  refusal('a mocked-location report at a branch that is not there', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, branch_id) VALUES (e, 'punch', gen_random_uuid())", 'foreign_key_violation'),
   refusal('a mocked-location report for nobody', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind) VALUES (gen_random_uuid(), 'punch')", 'foreign_key_violation'),
   refusal('audit details that are not an object', "INSERT INTO public.hr_ess_audit (actor_name, action, details) VALUES ('HR', 'devices.reset', '[]'::jsonb)"),
   refusal('an audit action that is not a dotted name', "INSERT INTO public.hr_ess_audit (actor_name, action) VALUES ('HR', 'Reset Devices')"),
@@ -159,10 +163,12 @@ DECLARE
   e uuid := gen_random_uuid();
   hr uuid := gen_random_uuid();
   u uuid := gen_random_uuid();
+  b uuid := gen_random_uuid();
   r record;
 BEGIN
   INSERT INTO public.hr_employees (id) VALUES (e), (hr);
   INSERT INTO public.users (id) VALUES (u);
+  INSERT INTO public.hr_branches (id) VALUES (b);
 
   INSERT INTO public.hr_ess_personal_details (employee_id, date_of_birth, blood_group, address_line1, city, state, pincode,
       emergency_name, emergency_relation, emergency_phone, updated_by_user_id, updated_by_name)
@@ -172,8 +178,8 @@ BEGIN
   IF r.status <> 'open' OR r.created_at IS NULL OR r.id IS NULL THEN RAISE EXCEPTION 'data request defaults'; END IF;
   UPDATE public.hr_ess_data_requests SET status = 'done', resolved_at = now(), resolved_by_user_id = u,
       resolved_by_name = 'Test HR', resolution_note = 'Corrected.' WHERE employee_id = e;
-  INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, latitude, longitude, accuracy_m, provider, app_version, install_id, client_at)
-    VALUES (e, 'punch', 28.4089, 77.3178, 3, 'gps', '1.0.0+1', 'install-1', now());
+  INSERT INTO public.hr_ess_mock_location_reports (employee_id, branch_id, kind, latitude, longitude, accuracy_m, provider, app_version, install_id, client_at)
+    VALUES (e, b, 'punch', 28.4089, 77.3178, 3, 'gps', '1.0.0+1', 'install-1', now());
   INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind) VALUES (e, 'punch');
   INSERT INTO public.hr_ess_audit (actor_user_id, actor_employee_id, actor_name, action, target_employee_id, details)
     VALUES (u, hr, 'Test HR', 'personal_details.read', e, '{"found": true}');
@@ -188,6 +194,11 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.hr_ess_data_requests WHERE employee_id = e) THEN RAISE EXCEPTION 'data requests kept'; END IF;
   IF EXISTS (SELECT 1 FROM public.hr_ess_mock_location_reports WHERE employee_id = e) THEN RAISE EXCEPTION 'reports kept'; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.hr_ess_audit WHERE target_employee_id = e) THEN RAISE EXCEPTION 'audit lost the target'; END IF;
+
+  -- A report keeps its place in the list when its branch goes: the branch goes null.
+  INSERT INTO public.hr_ess_mock_location_reports (employee_id, branch_id, kind) VALUES (hr, b, 'punch');
+  DELETE FROM public.hr_branches WHERE id = b;
+  IF NOT EXISTS (SELECT 1 FROM public.hr_ess_mock_location_reports WHERE employee_id = hr AND branch_id IS NULL) THEN RAISE EXCEPTION 'report lost with its branch'; END IF;
 
   -- The actor's ids go null and the name stays.
   DELETE FROM public.hr_employees WHERE id = hr;

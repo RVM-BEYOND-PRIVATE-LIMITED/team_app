@@ -22,3 +22,9 @@ CREATE TABLE public.users (
 CREATE TABLE public.hr_employees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid()
 );
+
+-- hr_branches: supabase/migrations/20260826000001_hrms_tables.sql:39-48. Referenced by
+-- hr_ess_mock_location_reports.branch_id.
+CREATE TABLE public.hr_branches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+);

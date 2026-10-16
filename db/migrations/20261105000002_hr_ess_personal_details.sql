@@ -5,9 +5,12 @@
 -- tables are not altered (ADR-0018, ADR-0021), so they live here, one row per employee, keyed to
 -- hr_employees.id. The ESS never writes hr_employees.
 --
--- The employee fills them in from the app (Me). HR, HR Executive, the CEO and super admins (the
--- Scheduler's HR_ROLES, config/hrPolicy.js:25-30) can read them, and each such read is recorded
--- in hr_ess_audit. Nobody else reads them, managers included.
+-- The employee reads all of theirs from the app (Me) and changes only the blood group and the
+-- emergency contact: a date of birth or an address changes through HR (the brief: sensitive edits
+-- need HR's approval). HR, HR Executive and super admins (apps/ess-api/src/policy/hrAccess.js
+-- HR_RECORD_ROLES: the Scheduler's HR_ROLES, config/hrPolicy.js:25-30, without the CEO) read and
+-- change anybody else's, and each such read and change is recorded in hr_ess_audit. Nobody else
+-- reads them, managers included.
 --
 -- The CHECKs repeat what the ESS validates, as a backstop. The one rule a CHECK cannot hold is the
 -- upper bound on the date of birth (16 years before today, IST), because it moves with the date;
@@ -34,7 +37,12 @@ CREATE TABLE IF NOT EXISTS public.hr_ess_personal_details (
   emergency_phone    text CHECK (emergency_phone IS NULL OR emergency_phone ~ '^[6-9][0-9]{9}$'),
   updated_at         timestamptz NOT NULL DEFAULT now(),
   updated_by_user_id uuid REFERENCES public.users(id) ON DELETE SET NULL,
-  updated_by_name    text
+  updated_by_name    text,
+  -- A name with no number reaches nobody, and a relation needs somebody to be related to.
+  CONSTRAINT hr_ess_personal_details_emergency_chk CHECK (
+    (emergency_name IS NULL) = (emergency_phone IS NULL)
+    AND (emergency_relation IS NULL OR emergency_name IS NOT NULL)
+  )
 );
 
 ALTER TABLE public.hr_ess_personal_details ENABLE ROW LEVEL SECURITY;

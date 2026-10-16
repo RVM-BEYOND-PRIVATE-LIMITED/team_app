@@ -1,11 +1,13 @@
 -- Team RVM (ESS): a record of the HR actions that reach into somebody else's data.
 --
--- Wave 2 (KP, 16 Oct 2026). Three actions leave a row here:
---   devices.reset           HR's bulk phone reset (task B8)
---   data_request.resolved   HR closing a request to correct or delete somebody's data (task A8)
---   personal_details.read   HR opening somebody's personal details (task E9). This is the DPDP
---                           question "who looked at whose personal data", which nothing in the
---                           Scheduler records.
+-- Wave 2 (KP, 16 Oct 2026). Four actions leave a row here:
+--   devices.reset             HR's bulk phone reset (task B8)
+--   data_request.resolved     HR closing a request to correct or delete somebody's data (task A8)
+--   personal_details.read     HR opening somebody's personal details (task E9). This is the DPDP
+--                             question "who looked at whose personal data", which nothing in the
+--                             Scheduler records.
+--   personal_details.updated  HR changing somebody's personal details (task E9); details names
+--                             the fields that changed, never their values.
 --
 -- Append-only by use: the ESS inserts rows and never updates or deletes them, and no endpoint
 -- reads them yet. `details` carries ids, counts and reasons, never the personal data itself, so

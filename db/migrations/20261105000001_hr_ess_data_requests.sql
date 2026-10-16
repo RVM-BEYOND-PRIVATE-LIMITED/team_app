@@ -1,8 +1,9 @@
 -- Team RVM (ESS): an employee's request to correct or delete their data, and HR's answer.
 --
 -- Task A8 (the brief's "Request correction or deletion of my data", in Me). The employee raises
--- it from the app with either sign-in; HR, HR Executive, the CEO and super admins (the
--- Scheduler's HR_ROLES, config/hrPolicy.js:25-30) see the open ones and close each as done or
+-- it from the app with either sign-in; HR, HR Executive and super admins
+-- (apps/ess-api/src/policy/hrAccess.js HR_RECORD_ROLES: the Scheduler's HR_ROLES,
+-- config/hrPolicy.js:25-30, without the CEO) see the open ones and close each as done or
 -- rejected, with a note. Nobody closes their own (the ESS answers 409 OWN_REQUEST).
 --
 -- A row is either open, with nothing about its resolution filled in, or closed, with when and
