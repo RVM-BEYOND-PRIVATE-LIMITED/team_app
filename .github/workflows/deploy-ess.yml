@@ -309,6 +309,30 @@ jobs:
             fi
           fi
 
+          # pm2's saved list (~/.pm2/dump.pm2) is what `pm2 resurrect` and pm2's boot unit restore,
+          # and it holds the Scheduler and the server's other apps. If pm2 is not running every app
+          # in it, pm2 has lost them (a reboot without resurrect, a killed daemon). Starting the ESS
+          # then would let the daemon dump a list holding only the ESS when it next stops, so the
+          # deploy stops here, before anything in pm2 changes. Only the apps' names are read:
+          # the saved list also holds every app's environment, secrets included.
+          dump="${PM2_HOME:-$HOME/.pm2}/dump.pm2"
+          missing=""
+          while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            pm2 describe "$name" > /dev/null 2>&1 || missing="${missing} ${name}"
+          done < <(
+            {
+              echo scheduler-backend
+              if [ -f "$dump" ]; then
+                node -e 'try { for (const a of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))) if (a && a.name && a.name !== "team-rvm-ess") console.log(a.name) } catch (e) {}' "$dump"
+              fi
+            } | sort -u
+          )
+          if [ -n "$missing" ]; then
+            echo "::error::pm2 is not running${missing}, which its saved list holds. Nothing in pm2 was changed. Bring them back first (pm2 resurrect, or pm2 save if they were removed on purpose), then deploy again."
+            exit 1
+          fi
+
           # --ignore-scripts: none of the ESS's dependencies needs an install script, and none
           # should get to run code on the production server while it installs.
           echo "Installing the ESS's production dependencies..."

@@ -21,7 +21,7 @@ The ESS is the new employee self-service API in `apps/ess-api`. It runs on the S
 | --- | --- |
 | `/home/ubuntu/team_app/` | Yes: the code, and `apps/ess-api/.env` (mode 600) |
 | pm2 process `team-rvm-ess` (port 3740, listening on 127.0.0.1 only) | Yes: started or reloaded by name |
-| `~/.pm2/dump.pm2`, the list `pm2 resurrect` restores after a reboot, which holds the Scheduler's process too | Yes: `pm2 save` after each deploy, but only while `scheduler-backend` is online. Saving while it is missing or stopped would make pm2 forget it, or bring it back stopped after a reboot, so the deploy skips the save then and says so |
+| `~/.pm2/dump.pm2`, the list `pm2 resurrect` restores after a reboot, which holds the Scheduler and the server's other apps too | Yes: `pm2 save` after each deploy, with two guards. Before touching pm2 at all, the deploy checks that pm2 is running every app in that list; if pm2 has lost any (a reboot without resurrect, a killed daemon), it stops with nothing changed and names them, because starting the ESS then would let the list shrink to the ESS alone. And it saves only while `scheduler-backend` is online, so a Scheduler stopped by hand is never saved as stopped |
 | `/etc/nginx/sites-available/team-rvm` and its link in `sites-enabled` | Yes |
 | `/var/www/team-rvm-acme/` | Yes: certbot's challenge directory |
 | The certbot certificate named `team-api.rvmcad.org` | Yes |
