@@ -29,6 +29,8 @@ const MESSAGES = Object.freeze({
   NOT_ACTIVE: 'Your employee record is no longer active, so Team RVM is closed for this login. Ask HR if this is wrong.',
   NO_ATTENDANCE_LOGIN: 'You do not have an attendance login yet. Ask HR to create one for you.',
   ATTENDANCE_LOGIN_OFF: 'Your attendance login is turned off. Ask HR.',
+  // The Scheduler's wording (attendancePunchController.js:196-197).
+  PASSWORD_CHANGE_REQUIRED: 'Set your own password first. The password HR gave you only works once.',
   RATE_LIMITED: 'Too many requests. Wait a minute and try again.',
   UNAVAILABLE: 'The server cannot reach the database right now. Try again in a minute.',
   MODULE_DISABLED: 'Team RVM is switched off on the server for now. Try again later.',

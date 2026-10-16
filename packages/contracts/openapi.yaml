@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.1.0
+  version: 0.1.1
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -149,10 +149,11 @@ paths:
         2. **The HR record.** A portal login is matched to its HR record through `hr_employees.user_id`; none linked is 403 `NOT_LINKED`. Before that, its account must be a staff one: the connector account (role `bot_readonly`) is 403 `NOT_AN_EMPLOYEE`. An attendance session names its employee directly.
         3. **Still employed.** Archived, `employment_status` "exited", or a `date_of_exit` before today (IST): 403 `NOT_ACTIVE`. This is the Scheduler's punch rule (`controllers/hr/attendancePunchController.js:88-129`): someone on notice stays active up to and including their last working day.
         4. **Attendance session only.** The attendance login is missing or switched off: 403 `NO_ATTENDANCE_LOGIN`. The session was issued before the login's `sessions_valid_from`, because a password was set or reset since: 401 `NOT_AUTHENTICATED`. The switch-off is checked first, so a switched-off login answers 403 even though its old sessions also predate the cut-off (`services/attendanceAccounts.js:39-53`).
+        5. **Attendance session only.** A session signed in with the password HR gave, before the person chose their own: 403 `PASSWORD_CHANGE_REQUIRED`. HR can give a batch one first-time password, so such a session proves nothing about who holds the phone. The Scheduler holds it back the same way (`passwordChangeDue`, `controllers/hr/attendancePunchController.js:190-197`). Send the person to "Choose your own password" (`POST /hr/my-attendance/password`), then sign in again. A code session (`m` 'otp') is never held back by this.
 
         A token whose account has since been deleted (the `users` row, or the attendance session's employee row) counts as rejected: 401 `NOT_AUTHENTICATED`, as on the Scheduler.
 
-        Before any of this, every request passes the per-IP limit (429 `RATE_LIMITED`) and the ESS switch (503 `MODULE_DISABLED`); the per-employee limit comes after step 4.
+        Before any of this, every request passes the per-IP limit (429 `RATE_LIMITED`) and the ESS switch (503 `MODULE_DISABLED`); the per-employee limit comes after step 5.
 
         Everything is read again on every request, so an exit, a new manager or a new role shows on the next call, without signing in again.
       responses:
@@ -808,7 +809,7 @@ paths:
         - >-
           A phone number is not accepted here: use the username or the email. Someone with no verified email cannot reset this way; send them to HR or an admin.
         - >-
-          This is the code-based reset that replaces the retired POST /users/reset-password.
+          This is the code-based reset to use instead of POST /users/reset-password, which is still live at c28b9ca and must never be called.
 
   /users/forgot-password/confirm:
     post:
@@ -2917,7 +2918,7 @@ components:
 
     LegacyResetPasswordRequest:
       type: object
-      description: The retired reset's body at `c28b9ca`. Never send it.
+      description: The legacy reset's body at `c28b9ca`; the endpoint is still live. Never send it.
       required: [username, phone_number, new_password]
       properties:
         username:
@@ -3502,6 +3503,11 @@ components:
       value:
         error: Your attendance login is turned off. Ask HR.
         code: NO_ATTENDANCE_LOGIN
+    EssPasswordChangeRequired:
+      summary: Signed in with HR's first-time password, not yet replaced
+      value:
+        error: Set your own password first. The password HR gave you only works once.
+        code: PASSWORD_CHANGE_REQUIRED
     EssRateLimited:
       value:
         error: Too many requests. Wait a minute and try again.
@@ -3671,6 +3677,7 @@ components:
         - `NOT_LINKED`: a portal login with no linked HR record; HR links it.
         - `NOT_ACTIVE`: the employee has left.
         - `NO_ATTENDANCE_LOGIN`: an attendance session whose login is missing or switched off.
+        - `PASSWORD_CHANGE_REQUIRED`: an attendance session signed in with HR's first-time password, before the person chose their own. Send them to "Choose your own password".
       content:
         application/json:
           schema:
@@ -3686,6 +3693,8 @@ components:
               $ref: '#/components/examples/EssNoAttendanceLogin'
             attendanceLoginOff:
               $ref: '#/components/examples/EssAttendanceLoginOff'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
 
     EssRateLimited:
       description: |

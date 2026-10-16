@@ -115,6 +115,10 @@ const SHARED = [
     world: buildApp({ setup: (w) => { w.people.attendance.account.status = 'disabled'; } }),
     token: (p) => tokens.attendance(p.attendance),
   })],
+  ['403 PASSWORD_CHANGE_REQUIRED, still on HR\'s first-time password', () => ({
+    world: buildApp({ setup: (w) => { w.people.attendance.account.password_set_at = null; } }),
+    token: (p) => tokens.attendance(p.attendance, 'pw'),
+  })],
   ['503 UNAVAILABLE', () => {
     const world = buildApp();
     world.db.outage = 'error';

@@ -124,6 +124,40 @@ describe('an attendance session', () => {
     expect(res.body.employee.id).toBe(people.attendance.employee.id);
   });
 
+  describe('signed in with the password HR gave, before the person chose their own', () => {
+    // HR can give a whole batch one first-time password, and the employee code is on the ID
+    // card, so such a session proves nothing about who holds the phone (passwordChangeDue,
+    // attendancePunchController.js:190-197).
+    const firstTime = (w) => { w.people.attendance.account.password_set_at = null; };
+
+    it.each([['/api/ess/me'], ['/api/ess/me/capabilities']])('is refused with 403 PASSWORD_CHANGE_REQUIRED on %s', async (path) => {
+      const { app, people } = buildApp({ setup: firstTime });
+      const res = await request(app).get(path).set(bearer(tokens.attendance(people.attendance, 'pw')));
+      expectRefusal(res, 403, 'PASSWORD_CHANGE_REQUIRED');
+      expect(res.body.error).toBe('Set your own password first. The password HR gave you only works once.');
+    });
+
+    it('is let in once the person has chosen their own password', async () => {
+      const { app, people } = buildApp({ setup: (w) => { w.people.attendance.account.password_set_at = '2026-10-16T05:00:00+00:00'; } });
+      expect((await me(app, bearer(tokens.attendance(people.attendance, 'pw')))).status).toBe(200);
+    });
+
+    it('does not hold back a code session: a code proves the person holds the phone', async () => {
+      const { app, people } = buildApp({ setup: firstTime });
+      expect((await me(app, bearer(tokens.attendance(people.attendance, 'otp')))).status).toBe(200);
+    });
+
+    it('comes after the leaver, login and cut-off checks, as in the Scheduler', async () => {
+      const left = buildApp({ setup: (w) => { firstTime(w); w.people.attendance.employee.employment_status = 'exited'; } });
+      expectRefusal(await me(left.app, bearer(tokens.attendance(left.people.attendance, 'pw'))), 403, 'NOT_ACTIVE');
+      const off = buildApp({ setup: (w) => { firstTime(w); w.people.attendance.account.status = 'disabled'; } });
+      expectRefusal(await me(off.app, bearer(tokens.attendance(off.people.attendance, 'pw'))), 403, 'NO_ATTENDANCE_LOGIN');
+      const signed = new Date('2026-10-16T05:00:00.000Z');
+      const old = buildApp({ setup: (w) => { firstTime(w); w.people.attendance.account.sessions_valid_from = '2026-10-16T06:00:00+00:00'; } });
+      expectRefusal(await me(old.app, bearer(tokens.attendance(old.people.attendance, 'pw', signed))), 401, 'NOT_AUTHENTICATED');
+    });
+  });
+
   it('is refused with 401 once its employee has been deleted', async () => {
     const { app, db, people } = buildApp();
     const token = tokens.attendance(people.attendance);

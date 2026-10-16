@@ -17,7 +17,9 @@ const { ROLES } = require('../policy/roles');
  *
  *   attendance session  employee deleted -> 401; left -> 403 NOT_ACTIVE; attendance login
  *                       missing or switched off -> 403 NO_ATTENDANCE_LOGIN; issued before the
- *                       login's sessions_valid_from -> 401 NOT_AUTHENTICATED
+ *                       login's sessions_valid_from -> 401 NOT_AUTHENTICATED; signed in with
+ *                       HR's first-time password, not yet replaced -> 403
+ *                       PASSWORD_CHANGE_REQUIRED (passwordChangeDue, attendancePunchController.js:190-197)
  *   portal token        account deleted -> 401; not a staff login -> 403 NOT_AN_EMPLOYEE; no
  *                       HR record -> 403 NOT_LINKED; left -> 403 NOT_ACTIVE
  *
@@ -52,13 +54,28 @@ function sessionProblem(session, account) {
   return null;
 }
 
+/**
+ * passwordChangeDue (controllers/hr/attendancePunchController.js:190-197): a session signed in
+ * with the password HR gave, before the person chose their own, may only choose one. HR can give
+ * a whole batch one shared first-time password, and the employee code that goes with it is on
+ * the ID card, so such a session proves nothing about who is holding the phone. The Scheduler
+ * shows it only the "choose your password" screen and refuses the challenge, punch and ping; the
+ * ESS refuses it everywhere. The Scheduler also checks that a hash exists; the ESS never reads
+ * the hash, and a 'pw' session already proves there was one.
+ */
+const passwordChangeDue = (session, account) => session.method === 'pw' && !account.password_set_at;
+
 async function fromAttendanceSession(session, store, today) {
   const employee = await store.getEmployeeById(session.employeeId);
   // A session whose employee has since been deleted is a stale sign-in, not "unlinked".
   if (!employee) throw notAuthenticated(MESSAGES.SIGN_IN_AGAIN);
   if (!isActive(employee, today)) throw notActive();
-  const problem = sessionProblem(session, await store.getAttendanceAccount(employee.id));
+  const account = await store.getAttendanceAccount(employee.id);
+  const problem = sessionProblem(session, account);
   if (problem) throw problem;
+  if (passwordChangeDue(session, account)) {
+    throw new HttpError(403, 'PASSWORD_CHANGE_REQUIRED', MESSAGES.PASSWORD_CHANGE_REQUIRED);
+  }
   return { kind: 'attendance', userId: null, role: null, employee };
 }
 

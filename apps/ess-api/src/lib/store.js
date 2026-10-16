@@ -25,7 +25,9 @@ const COLUMNS = Object.freeze({
   employeeName: 'id, full_name',
   branch: 'id, name',
   department: 'id, name',
-  attendanceAccount: 'id, employee_id, status, sessions_valid_from',
+  // password_set_at, and never password_hash: a 'pw' session already proves a hash existed, so
+  // whether the person chose their own password is all the first-time check needs.
+  attendanceAccount: 'id, employee_id, status, sessions_valid_from, password_set_at',
 });
 
 /**

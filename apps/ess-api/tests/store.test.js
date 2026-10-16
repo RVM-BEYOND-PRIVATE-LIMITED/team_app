@@ -40,7 +40,7 @@ describe('the reads', () => {
     const user = await store.getUser(people.hr.user.id);
     expect(user).toEqual({ id: people.hr.user.id, role: 'hr', faculty_id: null });
     const account = await store.getAttendanceAccount(people.attendance.employee.id);
-    expect(Object.keys(account).sort()).toEqual(['employee_id', 'id', 'sessions_valid_from', 'status']);
+    expect(Object.keys(account).sort()).toEqual(['employee_id', 'id', 'password_set_at', 'sessions_valid_from', 'status']);
     const employee = await store.getEmployeeByUserId(people.faculty.user.id);
     expect(Object.keys(employee).sort()).toEqual(COLUMNS.employee.split(', ').sort());
     expect(employee).not.toHaveProperty('phone');
