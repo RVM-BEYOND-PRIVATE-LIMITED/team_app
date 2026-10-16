@@ -6,8 +6,8 @@ The Team RVM API contract ([ADR-0010](../../docs/adr/0010-openapi-contract-first
 
 Read it in this order:
 
-1. **`info.description`.** The rules that hold everywhere: who owns what, the error shape, IST days, when to sign out, replies that are not JSON, and the rate limits.
-2. **`components.securitySchemes.bearer`.** The two kinds of token (the portal JWT and the attendance session), how long each lasts, and where each one works.
+1. **`info.description`.** The rules that hold everywhere: who owns what, the error shape, IST days, staying signed in and when to sign out, replies that are not JSON, and the rate limits.
+2. **`components.securitySchemes.bearer`.** The two kinds of token (the portal JWT and the attendance session), how long each lasts, where each one works, and the one-hour access tokens the ESS mints in the same two formats for a kept sign-in.
 3. **The operations, by tag.** Each operation carries:
    - `summary` and `description`: what it does, and the order in which it checks things;
    - `x-owner`: which service answers it (`ess` or `scheduler`);

@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.1.1
+  version: 0.2.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -24,9 +24,14 @@ info:
     - **Days** are IST (`Asia/Kolkata`) dates, `YYYY-MM-DD`, and turn over at IST midnight. **Instants** are ISO 8601 with an offset (the Scheduler often sends `+00:00`); always parse the offset.
     - **Requests** send `Content-Type: application/json` and `Authorization: Bearer <token>`, spelt exactly so: the Scheduler removes only `Bearer ` with a capital B and one space.
 
+    ## Staying signed in
+
+    Straight after a Scheduler sign-in, the app trades the token it got for a kept sign-in (`POST /ess/session`): a one-hour access token in the same format, which works on both hosts, and a refresh token. Before the access token runs out (`access_expires_at`), or when either host answers it with a 401, the app trades the refresh token for the next pair (`POST /ess/session/refresh`). A kept sign-in lasts 90 days from its last refresh, and ends at once when the person signs out, changes or is given a new attendance password, has their attendance login switched off, or leaves. Signing out is `POST /ess/session/sign-out` with the refresh token.
+
     ## When to sign out
 
-    Sign out only when a reply says the token itself is finished:
+    Sign out only when a reply says the sign-in itself is finished:
+    - **With a kept sign-in:** a 401 from `POST /ess/session/refresh` (code `NOT_AUTHENTICATED`, with a `reason`). Any other 401, from either host, on the access token means "refresh first": refresh once, retry with the new access token, and sign out only if the refresh itself answers 401. 409 `REFRESH_IN_PROGRESS` from the refresh is not a sign-out: retry with the newest refresh token the app holds.
     - **ESS:** 401 with code `NOT_AUTHENTICATED`. The ESS answers 401 for nothing else, and never for a database outage (that is 503 `UNAVAILABLE`).
     - **Scheduler:** 401 whose `error` is exactly "No token provided" or "Please authenticate" (these two carry no code), or 401 with code `NOT_AUTHENTICATED`.
 
@@ -45,7 +50,7 @@ info:
     ## Rate limits
 
     - **Scheduler:** counted per IP address, so a whole office on one Wi-Fi shares every bucket. All of `/api` allows 300 requests a minute; the sign-in routes have tighter buckets, listed on each operation. Its 429 bodies carry no code, except the attendance sign-in bucket's `RATE_LIMITED` and the refusals each operation names. Replies carry `RateLimit-Policy`, `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (IETF draft 6) from the last bucket that counted the request, and a 429 carries `Retry-After` in seconds. The buckets live in memory, so they also reset when the Scheduler restarts.
-    - **ESS:** 600 requests a minute per IP address on every path, counted before the token is checked, and 120 a minute per employee after it. A 429 has code `RATE_LIMITED`, with the same draft-6 headers and `Retry-After`.
+    - **ESS:** 600 requests a minute per IP address on every path, counted before the token is checked, and 120 a minute per employee after it. Tighter buckets on a few paths, each listed on its operation: refresh and sign-out by refresh token 120 in 15 minutes per address; keeping a sign-in 10 in 15 minutes per employee; the sign-in resolver 40 in 15 minutes per address and 10 per identifier; mocked-location reports 30 a day per employee. A 429 has code `RATE_LIMITED`, with the same draft-6 headers and `Retry-After`. The buckets live in memory and reset when the ESS restarts.
   license:
     name: MIT
     identifier: MIT
@@ -393,6 +398,1424 @@ paths:
           Fetch it after every sign-in and when the app comes back to the foreground: a new role, a new report or an exit changes it without a new token.
         - >-
           Hide a request type whose offered is false (work from home today). The limits are per employee per calendar month; null means no limit.
+
+  # ─────────── ESS, Wave 2: kept sign-ins and the one-field sign-in ───────────
+
+  /ess/session:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: keepSignIn
+      tags: [ESS]
+      x-owner: ess
+      summary: Keep a fresh Scheduler sign-in on this phone (task A3)
+      description: |
+        Trades the token a Scheduler sign-in just returned for a kept sign-in: a one-hour access token in the same format as the token sent, and a refresh token for the next one. Send the token as the bearer, straight after `POST /users/login` (or `/users/login/verify`), `POST /hr/my-attendance/password-login`, `/otp/verify` or `/password`.
+
+        Every check of `GET /ess/me` applies first, with the same answers (401, 403 `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`). Then:
+        1. A token the ESS minted itself (an access token from here) is never traded: 409 `ALREADY_EXCHANGED`.
+        2. The sign-in must be fresh: the token was issued in the last 10 minutes (and not more than a minute in the future), else 403 `SIGN_IN_NOT_FRESH`. A token found days later, or a 30-day attendance session, cannot become a 90-day sign-in.
+        3. `install_id` is required: 16 to 128 of `A-Z a-z 0-9 . _ -`, made once per install and kept with the tokens (400 `BAD_INSTALL_ID`). `device_label` is optional: the phone's name for the session list, at most 80 characters, no control characters (400 `BAD_DEVICE_LABEL`).
+        4. A portal sign-in made before the account's password last changed (`users.password_changed_at`) is over: 401 `NOT_AUTHENTICATED` "Your password was changed. Please sign in again."
+
+        Every call starts a new sign-in (a new `session.id`).
+
+        The access token works wherever the token it came from worked: on the Scheduler (the portal routes, or `/hr/my-attendance/*`) and on the ESS. It carries one more claim, `sid`, the session it belongs to, and its `iat` is the original sign-in's, never the moment it was minted, so the Scheduler's 15-minute "set your password after a code" window and its password-change cut-off keep working. It lasts an hour; `access_expires_at` says when.
+
+        The sign-in lasts 90 days from its last refresh (`session.expires_at`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeepSignInRequest'
+            examples:
+              keep:
+                value:
+                  install_id: 7f3c2a9e-1b4d-4c8a-9e2f-5d6a7b8c9d0e
+                  device_label: Pixel 7
+      responses:
+        '201':
+          description: Kept. Store the refresh token securely with the install id, and use the access token as the bearer on both hosts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokens'
+              examples:
+                portal:
+                  $ref: '#/components/examples/SessionTokensPortal'
+                attendance:
+                  $ref: '#/components/examples/SessionTokensAttendance'
+        '400':
+          $ref: '#/components/responses/EssBadSessionRequest'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          description: |
+            Not a reason to sign out.
+            - `SIGN_IN_NOT_FRESH`: the sign-in is more than 10 minutes old. Sign in again, then send the new token at once.
+            - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFresh:
+                  $ref: '#/components/examples/EssSignInNotFresh'
+                notAnEmployee:
+                  $ref: '#/components/examples/EssNotAnEmployee'
+                notLinked:
+                  $ref: '#/components/examples/EssNotLinked'
+                notActive:
+                  $ref: '#/components/examples/EssNotActive'
+                noAttendanceLogin:
+                  $ref: '#/components/examples/EssNoAttendanceLogin'
+                attendanceLoginOff:
+                  $ref: '#/components/examples/EssAttendanceLoginOff'
+                passwordChangeRequired:
+                  $ref: '#/components/examples/EssPasswordChangeRequired'
+        '409':
+          description: '`ALREADY_EXCHANGED`: the bearer is an access token the ESS minted. The phone is already signed in; keep using it.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                alreadyExchanged:
+                  $ref: '#/components/examples/EssAlreadyExchanged'
+        '429':
+          $ref: '#/components/responses/EssSessionRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/session/refresh:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: refreshSession
+      tags: [ESS]
+      x-owner: ess
+      summary: Trade the refresh token for the next access and refresh token
+      description: |
+        No bearer. Send the newest refresh token and the install id it was issued to. On success the old refresh token is spent: store the new one before using the new access token.
+
+        Answers, in the order they are decided:
+        - **401 `NOT_AUTHENTICATED`**, with `reason`: the sign-in is over. Sign out, show `error`, and sign in again.
+          - `unknown`: not a refresh token the ESS issued (or none, or a malformed one).
+          - `expired`: unused for 90 days.
+          - `signed_out`: signed out, here or from the session list.
+          - `reuse`: this refresh token was presented again after it had been traded in (more than a minute later, or from another install), or by another install. The whole sign-in ends, its newest tokens with it.
+          - `password_changed`: the attendance password was set or reset since the sign-in (`sessions_valid_from`), the login is back on a password HR gave, or the portal password changed since the sign-in.
+          - `login_off`: HR switched the attendance login off, or removed it.
+          - `left`: the employee has left.
+          - `unlinked`: the portal login is no longer linked to this person's HR record, or is no longer a staff account.
+        - **409 `REFRESH_IN_PROGRESS`**: this refresh token was traded in less than a minute ago by this same install, or another refresh with it is running now. Nothing ends: retry with the newest refresh token the app holds.
+        - **400 `BAD_INSTALL_ID`**: no install id, or a malformed one. Nothing ends.
+        - **503**: the database could not be reached. Nothing ends; try again.
+
+        The person is checked as `GET /ess/me` checks them, and the next access token is built from the account as it is now, so a new role or branch shows within the hour. Its `iat` stays the original sign-in's.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshSessionRequest'
+            examples:
+              refresh:
+                value:
+                  refresh_token: 3q2-7wAAAAB1rXkTl0dS9vNc_8yGhH4Jm0bQe1fPzKs
+                  install_id: 7f3c2a9e-1b4d-4c8a-9e2f-5d6a7b8c9d0e
+      responses:
+        '200':
+          description: The next tokens, in the same sign-in, which now lasts 90 days from now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokens'
+              examples:
+                attendance:
+                  $ref: '#/components/examples/SessionTokensAttendance'
+        '400':
+          $ref: '#/components/responses/EssBadSessionRequest'
+        '401':
+          description: |
+            `NOT_AUTHENTICATED`, with `reason` (see the description): the sign-in is over. **Sign out.**
+          headers:
+            WWW-Authenticate:
+              $ref: '#/components/headers/WwwAuthenticate'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshRefused'
+              examples:
+                unknown:
+                  value: { error: Please sign in again., code: NOT_AUTHENTICATED, reason: unknown }
+                expired:
+                  value: { error: Your sign-in has expired. Please sign in again., code: NOT_AUTHENTICATED, reason: expired }
+                signedOut:
+                  value: { error: You have signed out. Please sign in again., code: NOT_AUTHENTICATED, reason: signed_out }
+                reuse:
+                  value: { error: For your safety you have been signed out. Please sign in again., code: NOT_AUTHENTICATED, reason: reuse }
+                passwordChanged:
+                  value: { error: Your password was changed. Please sign in again., code: NOT_AUTHENTICATED, reason: password_changed }
+                loginOff:
+                  value: { error: Your attendance login is turned off. Ask HR., code: NOT_AUTHENTICATED, reason: login_off }
+                left:
+                  value: { error: 'Your employee record is no longer active, so Team RVM is closed for this login. Ask HR if this is wrong.', code: NOT_AUTHENTICATED, reason: left }
+                unlinked:
+                  value: { error: Your login is no longer linked to your employee record. Ask HR or the tech team., code: NOT_AUTHENTICATED, reason: unlinked }
+        '409':
+          description: '`REFRESH_IN_PROGRESS`: retry with the newest refresh token the app holds. Nothing ended.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                inProgress:
+                  $ref: '#/components/examples/EssRefreshInProgress'
+        '429':
+          $ref: '#/components/responses/EssSessionRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+      x-notes:
+        - >-
+          Refresh when the access token is about to expire (access_expires_at), or on a 401 from either host; never on a timer from several screens at once. Two refreshes with one token are answered 200 and 409.
+        - >-
+          A lost reply is not recoverable: the token it spent is reuse a minute later, and the sign-in ends. Keep the refresh token and the install id together, and never restore them from a backup.
+
+  /ess/session/sign-out:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: signOutSession
+      tags: [ESS]
+      x-owner: ess
+      summary: Sign out on this phone
+      description: |
+        Ends the kept sign-in, and every token it issued stops working on the ESS at once (on the Scheduler, an access token lasts out its hour).
+
+        - With `refresh_token` in the body, that token's sign-in ends. No bearer is needed, so this works after the access token has run out. Always 204, known token or not.
+        - Without one, the bearer's sign-in ends: an access token from here. A token the Scheduler issued has no sign-in the ESS can end: 204 all the same. Every check of `GET /ess/me` applies to the bearer.
+
+        Forget both tokens afterwards whatever the answer.
+      security:
+        - bearer: []
+        - {}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignOutRequest'
+            examples:
+              byRefreshToken:
+                value:
+                  refresh_token: 3q2-7wAAAAB1rXkTl0dS9vNc_8yGhH4Jm0bQe1fPzKs
+      responses:
+        '204':
+          description: Signed out (or nothing to sign out).
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssSessionRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/sessions:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listMySessions
+      tags: [ESS]
+      x-owner: ess
+      summary: The phones I am signed in on
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. The caller's live kept sign-ins (portal and attendance alike: both are theirs), most recently used first. `current` marks the one the bearer belongs to; a token the Scheduler issued belongs to none. Never another person's.
+      responses:
+        '200':
+          description: My sign-ins.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionList'
+              examples:
+                two:
+                  value:
+                    sessions:
+                      - id: 0c9d8e7f-6a5b-4c3d-9e2f-1a0b9c8d7e6f
+                        device_label: Pixel 7
+                        created_at: '2026-10-16T04:30:00.000Z'
+                        last_used_at: '2026-10-16T09:31:00.000Z'
+                        expires_at: '2027-01-14T09:31:00.000Z'
+                        current: true
+                      - id: 5e4d3c2b-1a09-4f8e-8d7c-6b5a4f3e2d1c
+                        device_label: null
+                        created_at: '2026-10-02T03:00:00.000Z'
+                        last_used_at: '2026-10-03T08:00:00.000Z'
+                        expires_at: '2027-01-01T08:00:00.000Z'
+                        current: false
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/sessions/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    delete:
+      operationId: endMySession
+      tags: [ESS]
+      x-owner: ess
+      summary: Sign out one of my phones
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. Ends one of the caller's own sign-ins (an `id` from `GET /ess/sessions`), the current one included. Somebody else's, an id that does not exist, one that is not an id and one already ended all answer the same 404 `NOT_FOUND`, never 403.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: A sign-in's `id` from `GET /ess/sessions`.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Ended.
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          description: '`NOT_FOUND`: not one of the caller''s live sign-ins.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/EssSessionNotFound'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/sign-in/resolve:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: resolveSignIn
+      tags: [ESS]
+      x-owner: ess
+      summary: Which sign-in the one sign-in field holds (task A5)
+      description: |
+        No token. The one field takes a phone number, email, employee code or username (decision 4). This says which of the Scheduler's two sign-ins to use; the password or code itself still goes to the Scheduler.
+
+        - `{ kind: portal, login_with: as_typed }`: a portal login whose username or login phone is exactly what was typed. Send it, exactly as sent here, as `username` to `POST /users/login`, with `location_name` as `locationName`; or, with `location_names` (an account with no branch of its own: HR, the CEO and the like), let the person choose one, as the web's dropdown does.
+        - `{ kind: portal, login_with: username_or_phone }`: a portal login found by its email, or by the employee code, main phone or email on the person's HR record. The portal login takes only a username or login phone: ask for one, then ask here again.
+        - `{ kind: attendance, methods }`: an attendance login found by the employee code, main phone or email on the HR record, compared as the attendance sign-in compares them. `code`: a sign-in code can be sent (`POST /hr/my-attendance/otp/request`, with the main phone or the email); `password`: a password exists, the person's own or one HR gave (`POST /hr/my-attendance/password-login`). No methods: the login is switched off or not made yet; send the person to HR.
+        - `{ kind: unknown }`: nobody, or more than one person. The same answer, after the same database reads, whatever the reason.
+
+        A person with both kinds of login is answered portal. A login that is not a staff account (the connector identity), not linked to anybody's HR record (a desk login), or belongs to somebody who has left, is not offered. Nothing identifying comes back: no ids, usernames, phones or emails.
+
+        Limited per address (40 in 15 minutes, as the Scheduler's attendance sign-in) and per identifier from any address (10 in 15 minutes; every spelling of one mobile number is one identifier).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInResolveRequest'
+            examples:
+              employeeCode:
+                value:
+                  identifier: RVM-0217
+      responses:
+        '200':
+          description: Which sign-in to use.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignInResolution'
+              examples:
+                portalAsTyped:
+                  value: { kind: portal, login_with: as_typed, location_name: Faridabad }
+                portalAnyBranch:
+                  value: { kind: portal, login_with: as_typed, location_names: [Faridabad, Pune, Ahmedabad, Lucknow] }
+                portalUsernameOrPhone:
+                  value: { kind: portal, login_with: username_or_phone }
+                attendance:
+                  value: { kind: attendance, methods: [code, password] }
+                attendanceNoLogin:
+                  value: { kind: attendance, methods: [] }
+                unknown:
+                  value: { kind: unknown }
+        '400':
+          description: |
+            - `BAD_IDENTIFIER`: no identifier, an empty one, or one longer than 254 characters.
+            - `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                badIdentifier:
+                  $ref: '#/components/examples/EssBadIdentifier'
+                invalidJson:
+                  $ref: '#/components/examples/EssInvalidJson'
+        '429':
+          $ref: '#/components/responses/EssSignInRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  # ─────────── ESS, Wave 2: my data, my day, and HR's tools ───────────
+
+  /ess/me/data-requests:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: createMyDataRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Ask HR to correct or delete my data (task A8)
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. Files a request about the caller's own data, which HR answers in `PATCH /ess/hr/data-requests/{id}`. The request only records what was asked and HR's answer: HR makes the change itself, in the Scheduler's HR tools.
+
+        - `kind`: `correct` or `delete`. `details`: what should change, 5 to 2,000 characters after trimming (counted as characters, so an emoji is one).
+        - The body takes these two fields and no others: an unknown field is refused, never ignored. There is no employee id: a request is always about the caller.
+        - At most 5 open requests per person: a sixth is 409 `TOO_MANY_OPEN_REQUESTS` until HR answers one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataRequestCreate'
+            examples:
+              correct:
+                value:
+                  kind: correct
+                  details: My date of joining is 1 June 2025, not 1 July.
+      responses:
+        '201':
+          description: Filed. It is open until HR answers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/DataRequest'
+              examples:
+                filed:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      kind: correct
+                      details: My date of joining is 1 June 2025, not 1 July.
+                      status: open
+                      created_at: '2026-10-16T06:30:00+00:00'
+                      resolved_at: null
+                      resolution_note: null
+        '400':
+          description: |
+            `VALIDATION_FAILED`: the message says which rule. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                kind:
+                  value: { error: 'Choose what you are asking for: correct or delete.', code: VALIDATION_FAILED }
+                details:
+                  value: { error: 'Say what should be corrected or deleted, in 5 to 2,000 characters.', code: VALIDATION_FAILED }
+                unknownField:
+                  $ref: '#/components/examples/EssUnknownField'
+                notObject:
+                  $ref: '#/components/examples/EssBodyNotObject'
+                invalidJson:
+                  $ref: '#/components/examples/EssInvalidJson'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '409':
+          description: '`TOO_MANY_OPEN_REQUESTS`: 5 requests are already waiting for HR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                tooMany:
+                  value: { error: You already have 5 requests waiting for HR. Wait for HR to answer them first., code: TOO_MANY_OPEN_REQUESTS }
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    get:
+      operationId: listMyDataRequests
+      tags: [ESS]
+      x-owner: ess
+      summary: My requests to correct or delete my data
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. The caller's own requests, newest first, at most 100. Never anybody else's, and never which HR account answered.
+      responses:
+        '200':
+          description: My requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests]
+                properties:
+                  requests:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: '#/components/schemas/DataRequest'
+              examples:
+                answered:
+                  value:
+                    requests:
+                      - id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                        kind: delete
+                        details: Please remove my old personal email from my record.
+                        status: rejected
+                        created_at: '2026-10-10T06:30:00+00:00'
+                        resolved_at: '2026-10-11T05:00:00+00:00'
+                        resolution_note: That address is still the one on your offer letter. Send a new one and we will change it.
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/data-requests:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listDataRequests
+      tags: [ESS]
+      x-owner: ess
+      summary: HR's queue of requests to correct or delete data
+      description: |
+        A portal login whose role is `hr`, `hr_executive` or `super_admin` (`HR_RECORD_ROLES`, `src/policy/hrAccess.js`), after the checks of `GET /ess/me`. Everybody else is 403: an attendance session `PORTAL_LOGIN_REQUIRED`, any other role `HR_ACCESS_DENIED`.
+
+        `status` is `open` (the default), `done`, `rejected` or `all`, given once. Newest first, at most 500; `truncated` says more were left out.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, done, rejected, all]
+            default: open
+      responses:
+        '200':
+          description: The requests, with whose each is.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests, truncated]
+                properties:
+                  requests:
+                    type: array
+                    maxItems: 500
+                    items:
+                      $ref: '#/components/schemas/HrDataRequest'
+                  truncated:
+                    type: boolean
+              examples:
+                open:
+                  value:
+                    requests:
+                      - id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                        kind: correct
+                        details: My date of joining is 1 June 2025, not 1 July.
+                        status: open
+                        created_at: '2026-10-16T06:30:00+00:00'
+                        resolved_at: null
+                        resolution_note: null
+                        resolved_by_name: null
+                        employee:
+                          id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                          full_name: Suresh Yadav
+                          employee_code: RVM-0217
+                    truncated: false
+        '400':
+          description: '`VALIDATION_FAILED`: a `status` that is not one of the four, or given more than once.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                status:
+                  value: { error: 'status must be open, done, rejected or all.', code: VALIDATION_FAILED }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/data-requests/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    patch:
+      operationId: resolveDataRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Mark a request done or rejected
+      description: |
+        The roles of `GET /ess/hr/data-requests`. Answers an open request:
+
+        - `status`: `done` or `rejected`. `note`: up to 1,000 characters; required for a rejection (at least 3), because the employee is owed the reason. The employee sees the note.
+        - Nobody resolves a request about their own data: 409 `OWN_REQUEST`. Another HR person does.
+        - A request already answered, including by somebody else a moment ago, is 409 `ALREADY_RESOLVED`.
+        - The resolution is recorded in the ESS's audit trail (`hr_ess_audit`): who, which request, which kind and the outcome, never the details. If that row cannot be written the resolution still stands and the entry goes to the server log.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The request's `id`. Not a uuid is 400 `VALIDATION_FAILED`.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataRequestResolve'
+            examples:
+              done:
+                value: { status: done, note: Corrected in the HR record. }
+      responses:
+        '200':
+          description: Resolved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/HrDataRequest'
+              examples:
+                done:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      kind: correct
+                      details: My date of joining is 1 June 2025, not 1 July.
+                      status: done
+                      created_at: '2026-10-16T06:30:00+00:00'
+                      resolved_at: '2026-10-16T07:00:00.000Z'
+                      resolution_note: Corrected in the HR record.
+                      resolved_by_name: Priya Sharma
+                      employee:
+                        id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                        full_name: Suresh Yadav
+                        employee_code: RVM-0217
+        '400':
+          description: |
+            `VALIDATION_FAILED`: an id that is not a uuid, or a body the message names. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                id:
+                  $ref: '#/components/examples/EssInvalidId'
+                status:
+                  value: { error: Mark the request done or rejected., code: VALIDATION_FAILED }
+                note:
+                  value: { error: 'Keep the note to 1,000 characters.', code: VALIDATION_FAILED }
+                rejectNote:
+                  value: { error: 'Say why the request is rejected, in at least 3 characters. The employee sees it.', code: VALIDATION_FAILED }
+                unknownField:
+                  $ref: '#/components/examples/EssUnknownField'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          description: '`NOT_FOUND`: no request has this id.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  value: { error: That request was not found., code: NOT_FOUND }
+        '409':
+          description: |
+            - `OWN_REQUEST`: the request is about the caller's own data.
+            - `ALREADY_RESOLVED`: it has been answered already.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                own:
+                  value: { error: You cannot resolve your own request. Ask another HR person., code: OWN_REQUEST }
+                resolved:
+                  value: { error: That request has already been resolved., code: ALREADY_RESOLVED }
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/personal:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyPersonal
+      tags: [ESS]
+      x-owner: ess
+      summary: My date of birth, blood group, address and emergency contact (task E9)
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. Every field, null where nothing is recorded (all of them, before anything is). These live in the ESS's own table (`hr_ess_personal_details`), not on the HR record.
+      responses:
+        '200':
+          description: My personal details.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [personal]
+                properties:
+                  personal:
+                    $ref: '#/components/schemas/PersonalDetails'
+              examples:
+                recorded:
+                  $ref: '#/components/examples/MyPersonalDetails'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    put:
+      operationId: updateMyPersonal
+      tags: [ESS]
+      x-owner: ess
+      summary: Change my blood group or emergency contact
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. The employee changes four fields: `blood_group`, `emergency_name`, `emergency_relation` and `emergency_phone`. Sending any of `date_of_birth`, `address_line1`, `address_line2`, `city`, `state` or `pincode`, even as null, is 403 `SENSITIVE_FIELD`: HR changes those.
+
+        - Fields not sent stay as they are; null or an empty string clears one. At least one field is needed (400 `VALIDATION_FAILED`).
+        - `blood_group`: A+, A-, B+, B-, AB+, AB-, O+ or O-, in any case and spacing (stored as written here).
+        - `emergency_phone`: an Indian mobile number; +91, a leading 0, spaces and dashes are taken and removed, and the 10 digits are stored.
+        - The contact as a whole: a name and a phone together or neither, and a relation only with a name.
+        - The answer is the record as stored, stamped with who wrote it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MyPersonalUpdate'
+            examples:
+              contact:
+                value: { blood_group: b+, emergency_name: Sunita Yadav, emergency_relation: Mother, emergency_phone: '+91 98765 43210' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [personal]
+                properties:
+                  personal:
+                    $ref: '#/components/schemas/PersonalDetails'
+        '400':
+          $ref: '#/components/responses/EssBadPersonalDetails'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          description: |
+            - `SENSITIVE_FIELD`: a date of birth or an address field was sent. Ask HR.
+            - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                sensitive:
+                  value: { error: Ask HR to change your date of birth or address., code: SENSITIVE_FIELD }
+                notAnEmployee:
+                  $ref: '#/components/examples/EssNotAnEmployee'
+                notLinked:
+                  $ref: '#/components/examples/EssNotLinked'
+                notActive:
+                  $ref: '#/components/examples/EssNotActive'
+                noAttendanceLogin:
+                  $ref: '#/components/examples/EssNoAttendanceLogin'
+                passwordChangeRequired:
+                  $ref: '#/components/examples/EssPasswordChangeRequired'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/employees/{id}/personal:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getEmployeePersonal
+      tags: [ESS]
+      x-owner: ess
+      summary: An employee's personal details, for HR
+      description: |
+        The roles of `GET /ess/hr/data-requests` (`hr`, `hr_executive`, `super_admin`, from a portal login). Managers do not see these.
+
+        Every read is recorded in the ESS's audit trail (`hr_ess_audit`: who looked at whose record, never the values) **before** the answer is sent. If that row cannot be written the read is refused with 503, so nobody sees personal details unrecorded.
+      parameters:
+        - $ref: '#/components/parameters/EmployeeId'
+      responses:
+        '200':
+          description: The employee and their personal details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePersonal'
+              examples:
+                recorded:
+                  value:
+                    employee:
+                      id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                      full_name: Suresh Yadav
+                      employee_code: RVM-0217
+                    personal:
+                      date_of_birth: '1994-05-21'
+                      blood_group: B+
+                      address_line1: House 12, Sector 15
+                      address_line2: null
+                      city: Faridabad
+                      state: Haryana
+                      pincode: '121007'
+                      emergency_name: Sunita Yadav
+                      emergency_relation: Mother
+                      emergency_phone: '9876543210'
+                      updated_at: '2026-10-16T06:30:00+00:00'
+                      updated_by_name: Priya Sharma
+        '400':
+          description: '`VALIDATION_FAILED`: the id is not a uuid.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                id:
+                  $ref: '#/components/examples/EssInvalidId'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssEmployeeNotFound'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    put:
+      operationId: updateEmployeePersonal
+      tags: [ESS]
+      x-owner: ess
+      summary: Change an employee's personal details, for HR
+      description: |
+        The roles of `GET` on this path. Any of the ten fields, with the rules of `PUT /ess/me/personal`, plus:
+
+        - `date_of_birth`: a real day, YYYY-MM-DD, from 1940-01-01 to the day 16 years before today (IST). Somebody born on 29 February turns 16 on the 28th.
+        - `address_line1`, `address_line2`: up to 200 characters; `city`, `state`: up to 80; `pincode`: 6 digits, not starting with 0.
+        - Not on one's own record: 409 `OWN_RECORD`. Another HR person changes it.
+        - Recorded in `hr_ess_audit` after the change, naming the fields that changed and never their values. If that row cannot be written the change still stands and the entry goes to the server log.
+      parameters:
+        - $ref: '#/components/parameters/EmployeeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalDetailsUpdate'
+            examples:
+              address:
+                value: { address_line1: 'House 12, Sector 15', city: Faridabad, state: Haryana, pincode: '121007' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePersonal'
+        '400':
+          $ref: '#/components/responses/EssBadPersonalDetails'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssEmployeeNotFound'
+        '409':
+          description: '`OWN_RECORD`: the caller''s own record.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                own:
+                  value: { error: You cannot change your own date of birth or address here. Ask another HR person., code: OWN_RECORD }
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/attendance/day:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyAttendanceDay
+      tags: [ESS]
+      x-owner: ess
+      summary: One of my days, with the server's clock, the day's note and HR's remark (task B1)
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. What the Scheduler's `GET /hr/my-attendance` does not send: the server's clock, the note on the day (an override's reason, "No punch", a holiday's name), HR's remark on the day, and the person's own remarks. Always the caller's own day: there is no employee parameter.
+
+        - `date`: YYYY-MM-DD, given once; today (IST) when left out. Any day from the 1st of last month to the last day of this month (IST): the window the person can write a remark in, to the month's end. Outside it: 400 `DAY_OUT_OF_RANGE`. Not a real day: 400 `VALIDATION_FAILED`.
+        - `day` is the stored row as the Scheduler keeps it, or null when nothing is recorded for the day yet.
+        - `server_now`: the moment of the answer, to tell how far off the phone's clock is.
+        - The tables come with the Scheduler's migrations 20261015000004 to 20261023000000; a missing table or column is 503 `MODULE_NOT_INSTALLED`, never a day that looks empty.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            examples:
+              - '2026-10-15'
+      responses:
+        '200':
+          description: The day.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttendanceDay'
+              examples:
+                lateDay:
+                  value:
+                    server_now: '2026-10-16T06:30:00.000Z'
+                    date: '2026-10-15'
+                    day:
+                      status: present
+                      leave_type: null
+                      source: self_punch
+                      first_in: '2026-10-15T04:20:00+00:00'
+                      last_out: '2026-10-15T12:40:00+00:00'
+                      worked_minutes: 500
+                      late_minutes: 20
+                      early_exit_minutes: 20
+                      late_count: 1
+                      late_half_day: false
+                      late_excused: false
+                      shift_start: '09:30:00'
+                      shift_end: '18:30:00'
+                    note: Bus was late
+                    hr_remark:
+                      remarks: Spoke to him about the bus.
+                      updated_at: '2026-10-15T09:00:00+00:00'
+                    my_remarks:
+                      - day: '2026-10-15'
+                        remarks: The bus broke down.
+                        updated_at: '2026-10-15T05:00:00+00:00'
+                nothingYet:
+                  value:
+                    server_now: '2026-10-16T06:30:00.000Z'
+                    date: '2026-10-16'
+                    day: null
+                    note: null
+                    hr_remark: null
+                    my_remarks: []
+        '400':
+          description: |
+            - `DAY_OUT_OF_RANGE`: a day before the 1st of last month or after the end of this month.
+            - `VALIDATION_FAILED`: `date` is not a real day written YYYY-MM-DD, or is given more than once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                outOfRange:
+                  value: { error: You can look at a day of this month or last month., code: DAY_OUT_OF_RANGE }
+                format:
+                  $ref: '#/components/examples/EssDateFormat'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/attendance/mock-location:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: reportMockLocation
+      tags: [ESS]
+      x-owner: ess
+      summary: Report a punch the phone refused for a mocked location (task B14)
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. The app refuses a punch whose location the phone says is mocked (decision 6) and reports it here for HR, because the Scheduler's punch cannot take a mock flag. Punches only: `kind` is `punch`; whether mocked pings are reported too is still to be decided.
+
+        - `latitude` and `longitude`: the mocked fix the phone reported, both or neither, in range. `accuracy_m`: metres, 0 to 1,000,000, or null.
+        - `client_at`: the phone's clock, kept beside the server's `reported_at` and never trusted; an unreadable value is stored as null, not refused.
+        - `provider` (up to 80 characters), `app_version` (40) and `install_id` (128): optional text.
+        - The body takes these fields and no others. There is no employee or branch: the report is the caller's, at the branch on their HR record now.
+        - 30 reports a day per person (429 `RATE_LIMITED`, with its own message), counted apart from the ESS-wide limits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MockLocationReportRequest'
+            examples:
+              mocked:
+                value:
+                  kind: punch
+                  latitude: 28.4089
+                  longitude: 77.3178
+                  accuracy_m: 3.5
+                  client_at: '2026-10-16T09:29:58+05:30'
+                  provider: fused
+                  app_version: 1.0.0+3
+                  install_id: 7f3c2a9e-1b4d-4c8a-9e2f-5d6a7b8c9d0e
+      responses:
+        '201':
+          description: Reported.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [report]
+                properties:
+                  report:
+                    type: object
+                    required: [id, reported_at]
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      reported_at:
+                        type: string
+                        format: date-time
+                        description: The server's clock.
+              examples:
+                reported:
+                  value:
+                    report:
+                      id: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                      reported_at: '2026-10-16T04:00:00+00:00'
+        '400':
+          description: '`VALIDATION_FAILED`: the message says which rule. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                kind:
+                  value: { error: 'Only mocked punches are reported (kind "punch").', code: VALIDATION_FAILED }
+                location:
+                  value: { error: 'latitude and longitude must both be valid coordinates or both be left out, and accuracy_m must be a number of metres.', code: VALIDATION_FAILED }
+                text:
+                  value: { error: 'provider can be up to 80 characters, app_version up to 40 and install_id up to 128.', code: VALIDATION_FAILED }
+                unknownField:
+                  $ref: '#/components/examples/EssUnknownField'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          description: |
+            `RATE_LIMITED`: 30 reports from this person in 24 hours ("Too many reports from this phone today"), or the ESS-wide limits. Wait for `Retry-After` seconds; do not retry in a loop.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            RateLimit-Policy:
+              $ref: '#/components/headers/RateLimitPolicy'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                reports:
+                  value: { error: Too many reports from this phone today. Try again tomorrow., code: RATE_LIMITED }
+                rateLimited:
+                  $ref: '#/components/examples/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/mock-location-reports:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listMockLocationReports
+      tags: [ESS]
+      x-owner: ess
+      summary: The mocked-location reports, for HR
+      description: |
+        A portal login whose role is `hr`, `ceo` or `super_admin` (the Scheduler's `ATTENDANCE_OVERRIDE_ROLES`, who also see the location trail), after the checks of `GET /ess/me`. An attendance session is 403 `PORTAL_LOGIN_REQUIRED`; any other role, `hr_executive` included, 403 `ATTENDANCE_OVERRIDE_DENIED`.
+
+        - `from` and `to`: IST days, YYYY-MM-DD, both included. `to` defaults to today and `from` to 30 days before `to`; `from` must not be after `to`, nor more than 366 days before it.
+        - `branch_id`: only reports made at that branch (the branch on the person's HR record when they reported). Not a uuid is 400; no such branch is 404.
+        - Newest first, at most 500; `truncated` says more were left out.
+      parameters:
+        - $ref: '#/components/parameters/FromDay'
+        - $ref: '#/components/parameters/ToDay'
+        - $ref: '#/components/parameters/BranchFilter'
+      responses:
+        '200':
+          description: The reports, with whose each is.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, reports, truncated]
+                properties:
+                  from:
+                    type: string
+                    format: date
+                  to:
+                    type: string
+                    format: date
+                  reports:
+                    type: array
+                    maxItems: 500
+                    items:
+                      $ref: '#/components/schemas/MockLocationReport'
+                  truncated:
+                    type: boolean
+              examples:
+                one:
+                  value:
+                    from: '2026-09-16'
+                    to: '2026-10-16'
+                    reports:
+                      - id: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                        reported_at: '2026-10-16T04:00:00+00:00'
+                        client_at: '2026-10-16T03:59:58+00:00'
+                        kind: punch
+                        latitude: 28.4089
+                        longitude: 77.3178
+                        accuracy_m: 3.5
+                        provider: fused
+                        app_version: 1.0.0+3
+                        install_id: 7f3c2a9e-1b4d-4c8a-9e2f-5d6a7b8c9d0e
+                        employee:
+                          id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                          full_name: Suresh Yadav
+                          employee_code: RVM-0217
+                        branch:
+                          id: 1c7e9a2b-3d4f-4a5b-8c6d-0e1f2a3b4c5d
+                          name: Faridabad
+                    truncated: false
+        '400':
+          $ref: '#/components/responses/EssBadHrListQuery'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssBranchNotFound'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/devices:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listDevices
+      tags: [ESS]
+      x-owner: ess
+      summary: Registered phones, for HR (task B8)
+      description: |
+        The roles of `GET /ess/hr/mock-location-reports` (`hr`, `ceo`, `super_admin`, from a portal login). The phones the Scheduler's punch has registered (`hr_attendance_devices`), newest registration first, at most 1,000; `truncated` says more were left out. Never a phone's token hash, network address or user agent.
+
+        - `status`: `active` (the default), `revoked` or `all`, given once.
+        - `branch_id`: only the phones of people whose HR record is at that branch now. Not a uuid is 400; no such branch is 404.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked, all]
+            default: active
+        - $ref: '#/components/parameters/BranchFilter'
+      responses:
+        '200':
+          description: The phones, with whose each is and their branch.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices, truncated]
+                properties:
+                  devices:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      $ref: '#/components/schemas/RegisteredPhone'
+                  truncated:
+                    type: boolean
+              examples:
+                two:
+                  value:
+                    devices:
+                      - id: 6f5e4d3c-2b1a-4098-8f7e-6d5c4b3a2f1e
+                        status: active
+                        bound_at: '2026-10-02T04:00:00+00:00'
+                        last_seen_at: '2026-10-16T04:10:00+00:00'
+                        revoked_at: null
+                        revoked_by_name: null
+                        revoke_reason: null
+                        employee:
+                          id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                          full_name: Suresh Yadav
+                          employee_code: RVM-0217
+                        branch:
+                          id: 1c7e9a2b-3d4f-4a5b-8c6d-0e1f2a3b4c5d
+                          name: Faridabad
+                    truncated: false
+        '400':
+          $ref: '#/components/responses/EssBadHrListQuery'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssBranchNotFound'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/devices/reset:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: resetDevices
+      tags: [ESS]
+      x-owner: ess
+      summary: Reset the registered phones of a branch or of a list of people (task B8)
+      description: |
+        The roles of `GET /ess/hr/devices` (`hr`, `ceo`, `super_admin`, from a portal login: the reset records the `users.id` that made it). Moves people to a new phone at go-live, branch by branch (decision 11).
+
+        Every **active** phone of the people named gets exactly the update the Scheduler's own reset makes (`POST /hr/attendance-admin/devices/{id}/revoke`): status `revoked`, `revoked_at`, `revoked_by`, `revoked_by_name` (the caller's username, or "unknown") and `revoke_reason`. A phone already reset is left as it is. After the reset the person's next accepted punch registers whichever phone they punch from; the reset phone can never punch again. It is the one write the ESS makes to a Scheduler table.
+
+        - Exactly one of `branch_id` (everybody whose HR record is at that branch, leavers included) or `employee_ids` (1 to 500 uuids; repeats and ids nobody has are skipped). Not both, not neither.
+        - `reason`: 3 to 200 characters, shown in the phone list and the Scheduler's.
+        - The body may be up to 32 kB, for a list of 500 ids.
+        - Recorded in `hr_ess_audit`: who, the branch, how many people were asked about, which phones were reset and the reason. If that row cannot be written the reset still stands and the entry goes to the server log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceResetRequest'
+            examples:
+              branch:
+                value: { branch_id: 1c7e9a2b-3d4f-4a5b-8c6d-0e1f2a3b4c5d, reason: Moving Faridabad to the Team RVM app }
+              people:
+                value: { employee_ids: [2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e], reason: New phone }
+      responses:
+        '200':
+          description: How many phones were reset, and which. 0 when nobody had an active phone.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reset, device_ids]
+                properties:
+                  reset:
+                    type: integer
+                    minimum: 0
+                  device_ids:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+              examples:
+                two:
+                  value:
+                    reset: 2
+                    device_ids: [6f5e4d3c-2b1a-4098-8f7e-6d5c4b3a2f1e, 7a6b5c4d-3e2f-4a1b-9c0d-8e7f6a5b4c3d]
+        '400':
+          description: |
+            `VALIDATION_FAILED`: the message says which rule. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                target:
+                  value: { error: 'Send either branch_id or employee_ids (1 to 500 employee ids), not both.', code: VALIDATION_FAILED }
+                reason:
+                  value: { error: 'Say why the phones are being reset, in 3 to 200 characters.', code: VALIDATION_FAILED }
+                branch:
+                  $ref: '#/components/examples/EssBranchId'
+                unknownField:
+                  $ref: '#/components/examples/EssUnknownField'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssBranchNotFound'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
 
   # ═══════════════════ Scheduler: portal sign-in ═══════════════════
 
@@ -2402,7 +3825,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        One header, `Authorization: Bearer <token>`, and two kinds of token, both issued by the Scheduler. The app stores whichever its sign-in returned.
+        One header, `Authorization: Bearer <token>`, and two kinds of token, both in the Scheduler's formats. The Scheduler issues them at sign-in; the ESS mints short ones in the same formats for a kept sign-in (below). The app stores whichever it was given last.
 
         | | Portal JWT | Attendance session |
         | --- | --- | --- |
@@ -2418,7 +3841,7 @@ components:
         - The ESS refuses a valid token that is not a staff login with 403 `NOT_AN_EMPLOYEE`: a student token (7 days, `role: "student"`), an admission-undertaking token (issuer `rvmcad-admission-undertaking`), or anything else signed with `JWT_SECRET`.
         - The ESS is stricter about the header than the Scheduler: it takes only `Bearer <token>` exactly, and accepts HS256 only.
         - Do not decide anything from the claims except `exp`. Ask `GET /ess/me` and `GET /ess/me/capabilities`.
-        - The refreshable session (task A3) will mint short access tokens in these same two formats, because the Scheduler cannot be changed to accept a new kind (ADR-0006, ADR-0018).
+        - **Access tokens of a kept sign-in** (`POST /ess/session`, `/ess/session/refresh`) are minted by the ESS in these same two formats and signed the same way, because the Scheduler cannot be changed to accept a new kind (ADR-0006, ADR-0018). They last one hour, carry one more claim, `sid` (the kept sign-in), and keep the original sign-in's `iat`. The Scheduler ignores `sid` and takes them as its own until they expire. The ESS also checks `sid`: once the kept sign-in has ended (signed out, ended from the session list, or refused at a refresh) its access tokens answer 401 `NOT_AUTHENTICATED` on the ESS at once, while on the Scheduler they last out their hour.
 
   parameters:
     DeviceCookie:
@@ -2452,6 +3875,38 @@ components:
         examples:
           - '2026-10'
 
+    EmployeeId:
+      name: id
+      in: path
+      required: true
+      description: The employee's `id` (hr_employees). Not a uuid is 400 `VALIDATION_FAILED`.
+      schema:
+        type: string
+        format: uuid
+    FromDay:
+      name: from
+      in: query
+      required: false
+      description: The first IST day, YYYY-MM-DD.
+      schema:
+        type: string
+        format: date
+    ToDay:
+      name: to
+      in: query
+      required: false
+      description: The last IST day, YYYY-MM-DD.
+      schema:
+        type: string
+        format: date
+    BranchFilter:
+      name: branch_id
+      in: query
+      required: false
+      description: An HR branch's `id` (hr_branches).
+      schema:
+        type: string
+        format: uuid
   headers:
     RetryAfter:
       description: Seconds until the bucket that refused this request resets.
@@ -2789,6 +4244,583 @@ components:
           type: integer
           enum: [1, 2]
           description: The build phase that delivers this type (ADR-0013).
+
+    KeepSignInRequest:
+      type: object
+      required: [install_id]
+      properties:
+        install_id:
+          $ref: '#/components/schemas/InstallId'
+        device_label:
+          type: [string, 'null']
+          maxLength: 80
+          description: The phone's name for the session list. Blank means none.
+
+    InstallId:
+      type: string
+      pattern: '^[A-Za-z0-9._-]{16,128}$'
+      description: Random, made once per install (a uuid will do), kept with the tokens, never shown.
+
+    RefreshToken:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+      description: Opaque, 32 random bytes in base64url. Store it like a password; the ESS keeps only its hash.
+
+    RefreshSessionRequest:
+      type: object
+      required: [refresh_token, install_id]
+      properties:
+        refresh_token:
+          $ref: '#/components/schemas/RefreshToken'
+        install_id:
+          $ref: '#/components/schemas/InstallId'
+
+    SignOutRequest:
+      type: object
+      properties:
+        refresh_token:
+          $ref: '#/components/schemas/RefreshToken'
+
+    SessionTokens:
+      type: object
+      required: [session, access_token, access_expires_at, refresh_token, login]
+      properties:
+        session:
+          type: object
+          required: [id, expires_at]
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: The kept sign-in, as GET /ess/sessions lists it. The same at every refresh.
+            expires_at:
+              type: string
+              format: date-time
+              description: 90 days from this answer, unless a refresh moves it on.
+        access_token:
+          type: string
+          description: A Scheduler-format token (the portal JWT, or the attendance session) for both hosts, valid for an hour. Read its exp, never anything else from it.
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_token:
+          $ref: '#/components/schemas/RefreshToken'
+        login:
+          $ref: '#/components/schemas/Login'
+
+    RefreshRefused:
+      type: object
+      required: [error, code, reason]
+      properties:
+        error:
+          type: string
+          description: A message written for staff. Show it; never parse it.
+        code:
+          type: string
+          const: NOT_AUTHENTICATED
+        reason:
+          type: string
+          enum: [unknown, expired, signed_out, reuse, password_changed, login_off, left, unlinked]
+
+    SessionList:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionSummary'
+
+    SessionSummary:
+      type: object
+      required: [id, device_label, created_at, last_used_at, expires_at, current]
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_label:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+          description: When this phone was signed in.
+        last_used_at:
+          type: string
+          format: date-time
+          description: The last refresh.
+        expires_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+          description: The sign-in the request's own token belongs to.
+
+    SignInResolveRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          maxLength: 254
+          description: What the person typed. Matched exactly for a portal username or login phone, so send it as it will be sent to POST /users/login.
+
+    SignInResolution:
+      oneOf:
+        - type: object
+          title: Portal, as typed, at its branch
+          required: [kind, login_with, location_name]
+          properties:
+            kind: { type: string, const: portal }
+            login_with: { type: string, const: as_typed }
+            location_name: { type: string, description: The branch to send as locationName. }
+        - type: object
+          title: Portal, as typed, at a branch the person chooses
+          required: [kind, login_with, location_names]
+          properties:
+            kind: { type: string, const: portal }
+            login_with: { type: string, const: as_typed }
+            location_names:
+              type: array
+              description: Every branch, in the web's order. Any of them signs this account in.
+              items: { type: string }
+        - type: object
+          title: Portal, with the username or login phone
+          required: [kind, login_with]
+          properties:
+            kind: { type: string, const: portal }
+            login_with: { type: string, const: username_or_phone }
+        - type: object
+          title: Attendance
+          required: [kind, methods]
+          properties:
+            kind: { type: string, const: attendance }
+            methods:
+              type: array
+              items: { type: string, enum: [code, password] }
+        - type: object
+          title: Nobody, or more than one person
+          required: [kind]
+          properties:
+            kind: { type: string, const: unknown }
+
+    EmployeeCard:
+      type: object
+      description: Who a row is about, as HR's lists show a person, and nothing else from their record.
+      required: [id, full_name, employee_code]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+
+    BranchRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    DataRequestCreate:
+      type: object
+      required: [kind, details]
+      properties:
+        kind:
+          type: string
+          enum: [correct, delete]
+        details:
+          type: string
+          minLength: 5
+          maxLength: 2000
+          description: 5 to 2,000 characters after trimming.
+
+    DataRequestResolve:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [done, rejected]
+        note:
+          type: [string, 'null']
+          maxLength: 1000
+          description: Required for a rejection, at least 3 characters. The employee sees it.
+
+    DataRequest:
+      type: object
+      description: A request to correct or delete one's data, as its owner sees it.
+      required: [id, kind, details, status, created_at, resolved_at, resolution_note]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [correct, delete]
+        details:
+          type: string
+        status:
+          type: string
+          enum: [open, done, rejected]
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+        resolution_note:
+          type: [string, 'null']
+          description: HR's answer.
+
+    HrDataRequest:
+      type: object
+      description: A request as HR sees it, with whose it is and who answered it.
+      required: [id, kind, details, status, created_at, resolved_at, resolution_note, resolved_by_name, employee]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [correct, delete]
+        details:
+          type: string
+        status:
+          type: string
+          enum: [open, done, rejected]
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+        resolution_note:
+          type: [string, 'null']
+        resolved_by_name:
+          type: [string, 'null']
+          description: The HR person who answered, by name.
+        employee:
+          oneOf:
+            - $ref: '#/components/schemas/EmployeeCard'
+            - type: 'null'
+          description: Null only if the record can no longer be read.
+
+    PersonalDetails:
+      type: object
+      description: Every field, null when not recorded.
+      required: [date_of_birth, blood_group, address_line1, address_line2, city, state, pincode, emergency_name, emergency_relation, emergency_phone, updated_at, updated_by_name]
+      properties:
+        date_of_birth:
+          type: [string, 'null']
+          format: date
+        blood_group:
+          type: [string, 'null']
+          enum: [A+, A-, B+, B-, AB+, AB-, O+, O-, null]
+        address_line1:
+          type: [string, 'null']
+          maxLength: 200
+        address_line2:
+          type: [string, 'null']
+          maxLength: 200
+        city:
+          type: [string, 'null']
+          maxLength: 80
+        state:
+          type: [string, 'null']
+          maxLength: 80
+        pincode:
+          type: [string, 'null']
+          pattern: '^[1-9][0-9]{5}$'
+        emergency_name:
+          type: [string, 'null']
+          maxLength: 100
+        emergency_relation:
+          type: [string, 'null']
+          maxLength: 50
+        emergency_phone:
+          type: [string, 'null']
+          pattern: '^[6-9][0-9]{9}$'
+          description: 10 digits, as stored.
+        updated_at:
+          type: [string, 'null']
+          format: date-time
+        updated_by_name:
+          type: [string, 'null']
+          description: Who last wrote the record, by name.
+
+    MyPersonalUpdate:
+      type: object
+      description: The fields the employee changes. Any of date_of_birth, address_line1, address_line2, city, state or pincode is 403 SENSITIVE_FIELD; any other field is 400.
+      minProperties: 1
+      properties:
+        blood_group:
+          type: [string, 'null']
+        emergency_name:
+          type: [string, 'null']
+          maxLength: 100
+        emergency_relation:
+          type: [string, 'null']
+          maxLength: 50
+        emergency_phone:
+          type: [string, 'null']
+          description: An Indian mobile number, with or without +91, a leading 0, spaces or dashes.
+
+    PersonalDetailsUpdate:
+      type: object
+      description: Any of the ten fields, for HR. Null or an empty string clears one.
+      minProperties: 1
+      properties:
+        date_of_birth:
+          type: [string, 'null']
+          format: date
+        blood_group:
+          type: [string, 'null']
+        address_line1:
+          type: [string, 'null']
+          maxLength: 200
+        address_line2:
+          type: [string, 'null']
+          maxLength: 200
+        city:
+          type: [string, 'null']
+          maxLength: 80
+        state:
+          type: [string, 'null']
+          maxLength: 80
+        pincode:
+          type: [string, 'null']
+        emergency_name:
+          type: [string, 'null']
+          maxLength: 100
+        emergency_relation:
+          type: [string, 'null']
+          maxLength: 50
+        emergency_phone:
+          type: [string, 'null']
+
+    EmployeePersonal:
+      type: object
+      required: [employee, personal]
+      properties:
+        employee:
+          $ref: '#/components/schemas/EmployeeCard'
+        personal:
+          $ref: '#/components/schemas/PersonalDetails'
+
+    AttendanceDay:
+      type: object
+      required: [server_now, date, day, note, hr_remark, my_remarks]
+      properties:
+        server_now:
+          type: string
+          format: date-time
+          description: The server's clock when it answered.
+        date:
+          type: string
+          format: date
+        day:
+          oneOf:
+            - $ref: '#/components/schemas/StoredDay'
+            - type: 'null'
+          description: Null when nothing is recorded for the day yet.
+        note:
+          type: [string, 'null']
+          description: The note on the day's row (hr_staff_attendance.note).
+        hr_remark:
+          oneOf:
+            - type: object
+              required: [remarks, updated_at]
+              properties:
+                remarks:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+            - type: 'null'
+          description: HR's remark on the day (hr_attendance_remarks).
+        my_remarks:
+          type: array
+          description: The person's own remarks on the day (hr_attendance_employee_remarks); at most one today.
+          items:
+            type: object
+            required: [day, remarks, updated_at]
+            properties:
+              day:
+                type: string
+                format: date
+              remarks:
+                type: string
+              updated_at:
+                type: string
+                format: date-time
+
+    StoredDay:
+      type: object
+      description: The day's row as the Scheduler stores it (hr_staff_attendance), without its note.
+      required: [status, leave_type, source, first_in, last_out, worked_minutes, late_minutes, early_exit_minutes, late_count, late_half_day, late_excused, shift_start, shift_end]
+      properties:
+        status:
+          $ref: '#/components/schemas/DayStatus'
+        leave_type:
+          type: [string, 'null']
+          description: cl, lwp, leave, or an older free-text type.
+        source:
+          type: [string, 'null']
+          enum: [manual, self_punch, override, auto, null]
+        first_in:
+          type: [string, 'null']
+          format: date-time
+        last_out:
+          type: [string, 'null']
+          format: date-time
+        worked_minutes:
+          type: [integer, 'null']
+        late_minutes:
+          type: [integer, 'null']
+        early_exit_minutes:
+          type: [integer, 'null']
+        late_count:
+          type: [integer, 'null']
+        late_half_day:
+          type: boolean
+        late_excused:
+          type: boolean
+        shift_start:
+          type: [string, 'null']
+          description: HH:MM:SS.
+        shift_end:
+          type: [string, 'null']
+          description: HH:MM:SS.
+
+    MockLocationReportRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          const: punch
+        latitude:
+          type: [number, 'null']
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: [number, 'null']
+          minimum: -180
+          maximum: 180
+        accuracy_m:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1000000
+        client_at:
+          type: [string, 'null']
+          description: The phone's clock, ISO 8601. Unreadable is stored as null.
+        provider:
+          type: [string, 'null']
+          maxLength: 80
+        app_version:
+          type: [string, 'null']
+          maxLength: 40
+        install_id:
+          type: [string, 'null']
+          maxLength: 128
+
+    MockLocationReport:
+      type: object
+      required: [id, reported_at, client_at, kind, latitude, longitude, accuracy_m, provider, app_version, install_id, employee, branch]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reported_at:
+          type: string
+          format: date-time
+        client_at:
+          type: [string, 'null']
+          format: date-time
+        kind:
+          type: string
+          const: punch
+        latitude:
+          type: [number, 'null']
+        longitude:
+          type: [number, 'null']
+        accuracy_m:
+          type: [number, 'null']
+        provider:
+          type: [string, 'null']
+        app_version:
+          type: [string, 'null']
+        install_id:
+          type: [string, 'null']
+        employee:
+          oneOf:
+            - $ref: '#/components/schemas/EmployeeCard'
+            - type: 'null'
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+          description: Where the person was on their HR record when they reported.
+
+    RegisteredPhone:
+      type: object
+      required: [id, status, bound_at, last_seen_at, revoked_at, revoked_by_name, revoke_reason, employee, branch]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, revoked]
+        bound_at:
+          type: string
+          format: date-time
+          description: When its first accepted punch registered it.
+        last_seen_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_by_name:
+          type: [string, 'null']
+          description: The username of whoever reset it.
+        revoke_reason:
+          type: [string, 'null']
+        employee:
+          oneOf:
+            - $ref: '#/components/schemas/EmployeeCard'
+            - type: 'null'
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+          description: The person's branch on their HR record now.
+
+    DeviceResetRequest:
+      type: object
+      required: [reason]
+      properties:
+        branch_id:
+          type: string
+          format: uuid
+        employee_ids:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: string
+            format: uuid
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 200
 
     # ───────────── Scheduler: portal sign-in ─────────────
 
@@ -3528,6 +5560,117 @@ components:
         error: Team RVM needs a database update that has not been applied yet (it cannot read hr_employees). Ask the tech team.
         code: MODULE_NOT_INSTALLED
 
+    SessionTokensPortal:
+      summary: A portal login kept
+      value:
+        session:
+          id: 0c9d8e7f-6a5b-4c3d-9e2f-1a0b9c8d7e6f
+          expires_at: '2027-01-14T04:30:00.000Z'
+        access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PAYLOAD.SIGNATURE
+        access_expires_at: '2026-10-16T05:30:00.000Z'
+        refresh_token: 3q2-7wAAAAB1rXkTl0dS9vNc_8yGhH4Jm0bQe1fPzKs
+        login:
+          kind: portal
+          role: faculty
+          user_id: 6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a
+    SessionTokensAttendance:
+      summary: An attendance session kept, or refreshed
+      value:
+        session:
+          id: 5e4d3c2b-1a09-4f8e-8d7c-6b5a4f3e2d1c
+          expires_at: '2027-01-14T04:30:00.000Z'
+        access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PAYLOAD.SIGNATURE
+        access_expires_at: '2026-10-16T05:30:00.000Z'
+        refresh_token: Xk9_2bLmQ0aZ7rT4yWc1vN8sE3uI5oP6dF0gH2jK4lM
+        login:
+          kind: attendance
+          role: null
+          user_id: null
+    EssSignInNotFresh:
+      summary: The sign-in is more than 10 minutes old
+      value:
+        error: To stay signed in on this phone, sign in again and keep the sign-in within 10 minutes.
+        code: SIGN_IN_NOT_FRESH
+    EssAlreadyExchanged:
+      value:
+        error: This phone is already signed in. There is nothing more to do.
+        code: ALREADY_EXCHANGED
+    EssRefreshInProgress:
+      value:
+        error: Your sign-in is being renewed. Try again in a moment.
+        code: REFRESH_IN_PROGRESS
+    EssSessionNotFound:
+      value:
+        error: That sign-in is not one of yours, or it has already ended.
+        code: NOT_FOUND
+    EssBadInstallId:
+      value:
+        error: The app did not identify this phone correctly. Update the app and try again.
+        code: BAD_INSTALL_ID
+    EssBadDeviceLabel:
+      value:
+        error: The app sent a phone name the server cannot keep. Update the app and try again.
+        code: BAD_DEVICE_LABEL
+    EssBadIdentifier:
+      value:
+        error: Enter your phone number, email, employee code or username.
+        code: BAD_IDENTIFIER
+    EssInvalidJson:
+      value:
+        error: The request body is not valid JSON.
+        code: INVALID_JSON
+    MyPersonalDetails:
+      summary: Everything recorded
+      value:
+        personal:
+          date_of_birth: '1994-05-21'
+          blood_group: B+
+          address_line1: House 12, Sector 15
+          address_line2: null
+          city: Faridabad
+          state: Haryana
+          pincode: '121007'
+          emergency_name: Sunita Yadav
+          emergency_relation: Mother
+          emergency_phone: '9876543210'
+          updated_at: '2026-10-16T06:30:00+00:00'
+          updated_by_name: Suresh Yadav
+    EssUnknownField:
+      value:
+        error: The request has a field the server does not take.
+        code: VALIDATION_FAILED
+    EssBodyNotObject:
+      value:
+        error: The request body must be a JSON object.
+        code: VALIDATION_FAILED
+    EssInvalidId:
+      value:
+        error: That is not a valid id.
+        code: VALIDATION_FAILED
+    EssDateFormat:
+      value:
+        error: Dates must be real days written YYYY-MM-DD.
+        code: VALIDATION_FAILED
+    EssBranchId:
+      value:
+        error: branch_id must be a branch id.
+        code: VALIDATION_FAILED
+    EssHrAccessDenied:
+      summary: A portal role outside HR
+      value:
+        error: Only HR and super admins can open this.
+        code: HR_ACCESS_DENIED
+    EssAttendanceOverrideDenied:
+      summary: A portal role outside HR, the CEO and super admins
+      value:
+        error: Only HR, the CEO and super admins can do this.
+        code: ATTENDANCE_OVERRIDE_DENIED
+    EssPortalLoginRequired:
+      summary: HR signed in on an attendance session
+      value:
+        error: HR tools need your portal login. Sign in with your username or login phone.
+        code: PORTAL_LOGIN_REQUIRED
+
     # ───────────── Scheduler ─────────────
 
     NoTokenProvided:
@@ -3652,7 +5795,7 @@ components:
 
     EssNotAuthenticated:
       description: |
-        `NOT_AUTHENTICATED`: the token is absent or rejected. That means no token, a bad signature, an expired token, a wrong algorithm, an attendance session issued before its login's `sessions_valid_from`, or a token whose account no longer exists (including a teaching account whose faculty id no longer matches its token). **This is the only reply on which the app signs out.** The ESS never sends it for a database outage.
+        `NOT_AUTHENTICATED`: the token is absent or rejected. That means no token, a bad signature, an expired token, a wrong algorithm, an attendance session issued before its login's `sessions_valid_from`, a token whose account no longer exists (including a teaching account whose faculty id no longer matches its token), or an access token whose kept sign-in has ended (its `sid` names no live sign-in of the same person). **This is the only reply on which the app signs out**; with a kept sign-in, it refreshes once first and signs out only if the refresh answers 401. The ESS never sends it for a database outage.
       headers:
         WWW-Authenticate:
           $ref: '#/components/headers/WwwAuthenticate'
@@ -3699,6 +5842,8 @@ components:
     EssRateLimited:
       description: |
         `RATE_LIMITED`: more than 600 requests in a minute from this IP address (every path, counted before the token is checked), or more than 120 in a minute from this employee (after it). Wait for `Retry-After` seconds.
+
+        The few paths with a tighter bucket of their own say so on the operation.
       headers:
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
@@ -3723,7 +5868,7 @@ components:
         Not a reason to sign out; keep the session and try again later.
         - `UNAVAILABLE`: the database could not be reached, or answered something the ESS could not use.
         - `MODULE_DISABLED`: the ESS is switched off (`ESS_ENABLED=false`), checked before the token. The Scheduler's sign-in and punching still work.
-        - `MODULE_NOT_INSTALLED`: a table or column this needs is missing, in the window between a deploy and KP applying its migration (ADR-0021).
+        - `MODULE_NOT_INSTALLED`: a table, column or function this needs is missing, in the window between a deploy and KP applying its migration (ADR-0021). An access token of a kept sign-in answers it too while `hr_ess_sessions` is missing (before its migration, or after a rollback); sign in again with the Scheduler.
       content:
         application/json:
           schema:
@@ -3752,6 +5897,190 @@ components:
               value:
                 error: Something went wrong on the server. Try again, and tell the tech team if it keeps happening.
                 code: INTERNAL_ERROR
+
+    EssBadSessionRequest:
+      description: |
+        Nothing is kept or ended.
+        - `BAD_INSTALL_ID`: no install id, or not 16 to 128 of `A-Z a-z 0-9 . _ -`.
+        - `BAD_DEVICE_LABEL`: a phone name over 80 characters, with a control character, or not a string.
+        - `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            badInstallId:
+              $ref: '#/components/examples/EssBadInstallId'
+            badDeviceLabel:
+              $ref: '#/components/examples/EssBadDeviceLabel'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssSessionRateLimited:
+      description: |
+        `RATE_LIMITED`: refresh and sign-out by refresh token allow 120 in 15 minutes from one address; keeping a sign-in allows one employee 10 in 15 minutes; and the ESS-wide limits apply as everywhere. Wait for `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        RateLimit-Policy:
+          $ref: '#/components/headers/RateLimitPolicy'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/EssRateLimited'
+
+    EssSignInRateLimited:
+      description: |
+        `RATE_LIMITED`: 40 in 15 minutes from one address, or 10 in 15 minutes for one identifier from any address. Wait for `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        RateLimit-Policy:
+          $ref: '#/components/headers/RateLimitPolicy'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rateLimited:
+              $ref: '#/components/examples/EssRateLimited'
+
+    EssHrForbidden:
+      description: |
+        Not a reason to sign out.
+        - `PORTAL_LOGIN_REQUIRED`: an attendance session. HR's tools need the portal login.
+        - `HR_ACCESS_DENIED`: a portal role other than `hr`, `hr_executive` or `super_admin`.
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            hrAccessDenied:
+              $ref: '#/components/examples/EssHrAccessDenied'
+            portalLoginRequired:
+              $ref: '#/components/examples/EssPortalLoginRequired'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssAttendanceHrForbidden:
+      description: |
+        Not a reason to sign out.
+        - `PORTAL_LOGIN_REQUIRED`: an attendance session. These tools need the portal login.
+        - `ATTENDANCE_OVERRIDE_DENIED`: a portal role other than `hr`, `ceo` or `super_admin` (an `hr_executive` included).
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            attendanceOverrideDenied:
+              $ref: '#/components/examples/EssAttendanceOverrideDenied'
+            portalLoginRequired:
+              $ref: '#/components/examples/EssPortalLoginRequired'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssBadPersonalDetails:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule (the body, a field's format, or an incomplete emergency contact). `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            nothing:
+              value: { error: Send at least one field to change., code: VALIDATION_FAILED }
+            dateOfBirth:
+              value: { error: 'Date of birth must be a real date (YYYY-MM-DD) from 1940 on, at least 16 years ago.', code: VALIDATION_FAILED }
+            bloodGroup:
+              value: { error: 'Blood group must be one of A+, A-, B+, B-, AB+, AB-, O+ or O-.', code: VALIDATION_FAILED }
+            address:
+              value: { error: 'Each address line can be up to 200 characters, and the city and state up to 80.', code: VALIDATION_FAILED }
+            pincode:
+              value: { error: The PIN code must be 6 digits., code: VALIDATION_FAILED }
+            emergencyName:
+              value: { error: The emergency contact name can be up to 100 characters., code: VALIDATION_FAILED }
+            emergencyRelation:
+              value: { error: The relation can be up to 50 characters., code: VALIDATION_FAILED }
+            emergencyPhone:
+              value: { error: The emergency contact phone must be a 10-digit Indian mobile number., code: VALIDATION_FAILED }
+            incomplete:
+              value: { error: 'An emergency contact needs both a name and a phone number, and a relation needs a name.', code: VALIDATION_FAILED }
+            id:
+              $ref: '#/components/examples/EssInvalidId'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            notObject:
+              $ref: '#/components/examples/EssBodyNotObject'
+
+    EssBadHrListQuery:
+      description: |
+        `VALIDATION_FAILED`: a query value the message names (a status that is not offered, a day that is not real, a range the wrong way round or over 366 days, a branch_id that is not a uuid), or one given more than once.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            date:
+              $ref: '#/components/examples/EssDateFormat'
+            range:
+              value: { error: 'from must be on or before to, and at most 366 days before it.', code: VALIDATION_FAILED }
+            branch:
+              $ref: '#/components/examples/EssBranchId'
+            status:
+              value: { error: 'status must be active, revoked or all.', code: VALIDATION_FAILED }
+
+    EssBranchNotFound:
+      description: '`NOT_FOUND`: no branch has this `branch_id`.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              value: { error: That branch was not found., code: NOT_FOUND }
+
+    EssEmployeeNotFound:
+      description: '`NOT_FOUND`: no employee has this id.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              value: { error: That employee was not found., code: NOT_FOUND }
 
     # ───────────── Scheduler ─────────────
 

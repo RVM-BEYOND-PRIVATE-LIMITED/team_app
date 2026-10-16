@@ -7,7 +7,7 @@ const { TABS, capabilitiesFor } = require('../src/policy/capabilities');
 const { REQUEST_TYPES } = require('../src/policy/requestLimits');
 const { buildApp, tokens, bearer } = require('./helpers/app');
 const { NOW, SIGNED_AT, TEST_ENV } = require('./helpers/constants');
-const { PORTAL_PEOPLE, INSTALL_ID, OTHER_INSTALL_ID } = require('./helpers/fixtures');
+const { PORTAL_PEOPLE, INSTALL_ID, OTHER_INSTALL_ID, BRANCH_ID, BRANCH_PUNE_ID, uuid } = require('./helpers/fixtures');
 const C = require('./helpers/contract');
 const H = require('./helpers/sessions');
 
@@ -27,33 +27,12 @@ const expectContract = (op, res) => expect(C.contractProblems(op, res), `${op.me
 const quietErrors = () => vi.spyOn(console, 'error').mockImplementation(() => {});
 
 /**
- * Routes the ESS serves whose contract is still to be written: Wave 2's kept sign-ins (task A3)
- * and one-field sign-in (task A5). The contract is written in packages/contracts by whoever
- * integrates the wave; each route leaves this list in the change that documents it. The test
- * below fails while a documented route is still listed, and while a served route is in neither.
- * Their replies are held against the contract further down, as soon as it documents them.
+ * Routes the ESS serves whose contract is still to be written. Empty: every route of Waves 1 and 2
+ * is documented. A route built before its contract entry goes here, and leaves in the change
+ * that documents it; the test below fails while a documented route is still listed, and while a
+ * served route is in neither.
  */
-const AWAITING_CONTRACT = [
-  'DELETE /api/ess/sessions/{id}',
-  'GET /api/ess/attendance/day',
-  'GET /api/ess/hr/data-requests',
-  'GET /api/ess/hr/devices',
-  'GET /api/ess/hr/employees/{id}/personal',
-  'GET /api/ess/hr/mock-location-reports',
-  'GET /api/ess/me/data-requests',
-  'GET /api/ess/me/personal',
-  'GET /api/ess/sessions',
-  'PATCH /api/ess/hr/data-requests/{id}',
-  'POST /api/ess/attendance/mock-location',
-  'POST /api/ess/hr/devices/reset',
-  'POST /api/ess/me/data-requests',
-  'POST /api/ess/session',
-  'POST /api/ess/session/refresh',
-  'POST /api/ess/session/sign-out',
-  'POST /api/ess/sign-in/resolve',
-  'PUT /api/ess/hr/employees/{id}/personal',
-  'PUT /api/ess/me/personal',
-];
+const AWAITING_CONTRACT = [];
 
 describe('the routes', () => {
   it('are exactly the ESS operations in the contract, and those awaiting it', () => {
@@ -309,7 +288,8 @@ const WAVE_2 = {
     ['401 unknown', async () => { const { app } = buildApp(); return H.refresh(app, 'A'.repeat(43)); }],
     ['401 expired', async () => { const k = await kept(); k.clock.advance(91 * H.DAY); return H.refresh(k.app, k.session.refresh_token); }],
     ['401 reuse', async () => { const k = await kept(); return H.refresh(k.app, k.session.refresh_token, OTHER_INSTALL_ID); }],
-    ['401 signed_out', refreshAfter({}, (k) => H.signOut(k.app, { token: k.session.access_token }))],
+    // By refresh token: an hour on, the access token has run out, and signing out with it is a 401.
+    ['401 signed_out', refreshAfter({}, (k) => H.signOut(k.app, { refreshToken: k.session.refresh_token }))],
     ['401 password_changed', refreshAfter({}, (k) => { accountOf(k).sessions_valid_from = NOW.toISOString(); })],
     ['401 login_off', refreshAfter({}, (k) => { accountOf(k).status = 'disabled'; })],
     ['401 left', refreshAfter({}, (k) => { k.db.tables.hr_employees.find((e) => e.id === k.person.employee.id).is_archived = true; })],
@@ -346,6 +326,11 @@ const WAVE_2 = {
     ['200, none', async () => { const { app, people } = buildApp(); return H.listSessions(app, tokens.portal(people.hr)); }],
     ['401', async () => { const { app } = buildApp(); return request(app).get('/api/ess/sessions'); }],
     ['403 NOT_AN_EMPLOYEE', async () => { const { app } = buildApp(); return H.listSessions(app, tokens.student()); }],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await H.listSessions(app, tokens.portal(people.hr));
+      return H.listSessions(app, tokens.portal(people.hr));
+    }],
     ['503 MODULE_NOT_INSTALLED', async () => { const { app, db, people } = buildApp(); db.dropTable('hr_ess_sessions'); return H.listSessions(app, tokens.portal(people.hr)); }],
   ],
   'DELETE /api/ess/sessions/{id}': [
@@ -353,6 +338,11 @@ const WAVE_2 = {
     ['404 NOT_FOUND', async () => { const k = await kept(); return H.endSession(k.app, tokens.portal(k.people.hr), k.session.session.id); }],
     ['401', async () => { const { app } = buildApp(); return request(app).delete('/api/ess/sessions/5a000000-0000-4000-8000-000000000001'); }],
     ['403 NOT_AN_EMPLOYEE', async () => { const { app } = buildApp(); return H.endSession(app, tokens.student(), '5a000000-0000-4000-8000-000000000001'); }],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await H.endSession(app, tokens.portal(people.hr), '5a000000-0000-4000-8000-000000000001');
+      return H.endSession(app, tokens.portal(people.hr), '5a000000-0000-4000-8000-000000000001');
+    }],
     ['503 UNAVAILABLE', async () => { const k = await kept(); k.db.failWhen = (q) => (q.op === 'rpc' ? 'error' : null); return H.endSession(k.app, k.session.access_token, k.session.session.id); }],
   ],
   'POST /api/ess/sign-in/resolve': [
@@ -374,14 +364,348 @@ const WAVE_2 = {
   ],
 };
 
+/* ── Wave 2: my data (A8, E9), my day (B1), mocked locations (B14) and the phone reset (B8) ── */
+
+/** A token for `who`: a fixture person's key, or 'attendance' for the attendance-only employee's session. */
+const as = (people, who) => (who === 'attendance' ? tokens.attendance(people.attendance) : tokens.portal(people[who]));
+
+/**
+ * One request in a world built with `options` (buildApp's), after `prepare` has changed it:
+ * `send(app, token, world)` makes the request with `who`'s token.
+ */
+const call = (who, send, { prepare, ...options } = {}) => async () => {
+  const world = buildApp(options);
+  if (prepare) prepare(world);
+  return send(world.app, as(world.people, who), world);
+};
+
+const get = (path) => (app, token) => request(app).get(path).set(bearer(token));
+const post = (path, body) => (app, token) => request(app).post(path).set(bearer(token)).send(body);
+const put = (path, body) => (app, token) => request(app).put(path).set(bearer(token)).send(body);
+const patch = (path, body) => (app, token) => request(app).patch(path).set(bearer(token)).send(body);
+
+const REQUEST_ID = (n) => `51000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+/** A data request as HR's queue holds it. */
+const dataRequestRow = (employeeId, n, change = {}) => ({
+  id: REQUEST_ID(n),
+  employee_id: employeeId,
+  kind: 'correct',
+  details: 'My employee code is wrong.',
+  status: 'open',
+  created_at: `2026-10-1${n % 6}T05:00:00+00:00`,
+  resolved_at: null,
+  resolved_by_user_id: null,
+  resolved_by_name: null,
+  resolution_note: null,
+  ...change,
+});
+
+/** One open request from the attendance employee (1), one from HR (2), and one HR has answered (3). */
+const withDataRequests = (w) => {
+  w.tables.hr_ess_data_requests = [
+    dataRequestRow(w.people.attendance.employee.id, 1),
+    dataRequestRow(w.people.hr.employee.id, 2, { kind: 'delete', details: 'Delete my old address.' }),
+    dataRequestRow(w.people.faculty.employee.id, 3, {
+      status: 'rejected', resolved_at: '2026-10-15T06:00:00+00:00', resolved_by_user_id: w.people.hr.user.id,
+      resolved_by_name: 'Test HR Manager', resolution_note: 'That is how it is spelt on your offer letter.',
+    }),
+  ];
+};
+const fiveOpen = (w) => {
+  w.tables.hr_ess_data_requests = [1, 2, 3, 4, 5].map((n) => dataRequestRow(w.people.faculty.employee.id, n));
+};
+
+/** The attendance employee's personal details, as HR recorded them. */
+const withPersonal = (w) => {
+  w.tables.hr_ess_personal_details = [{
+    employee_id: w.people.attendance.employee.id,
+    date_of_birth: '1994-05-21', blood_group: 'B+', address_line1: 'House 12, Sector 15', address_line2: null,
+    city: 'Faridabad', state: 'Haryana', pincode: '121007',
+    emergency_name: 'Sunita Yadav', emergency_relation: 'Mother', emergency_phone: '9876543210',
+    updated_at: '2026-10-10T05:00:00+00:00', updated_by_user_id: w.people.hr.user.id, updated_by_name: 'Test HR Manager',
+  }];
+};
+
+const NOBODY = uuid('e', 999);
+
+/** Mocked-location reports at both branches, and one whose employee record has gone. */
+const withMockReports = (w) => {
+  const row = (employeeId, branchId, reportedAt, n, change = {}) => ({
+    id: `60000000-0000-4000-8000-${String(n).padStart(12, '0')}`, employee_id: employeeId, branch_id: branchId,
+    reported_at: reportedAt, client_at: null, kind: 'punch', latitude: 28.4, longitude: 77.3, accuracy_m: 0,
+    provider: 'gps', app_version: '1.0.0', install_id: `install-${n}`, ...change,
+  });
+  w.tables.hr_ess_mock_location_reports = [
+    row(w.people.attendance.employee.id, BRANCH_ID, '2026-10-16T05:00:00+00:00', 1, { client_at: '2026-10-16T04:59:58+00:00' }),
+    row(w.people.pune.employee.id, BRANCH_PUNE_ID, '2026-10-10T05:00:00+00:00', 2, { latitude: null, longitude: null, accuracy_m: null, provider: null }),
+    row(NOBODY, null, '2026-10-09T05:00:00+00:00', 3),
+  ];
+};
+
+const MY_DATA = '/api/ess/me/data-requests';
+const HR_DATA = '/api/ess/hr/data-requests';
+const MY_PERSONAL = '/api/ess/me/personal';
+const theirPersonal = (id) => `/api/ess/hr/employees/${id}/personal`;
+const DAY = '/api/ess/attendance/day';
+const MOCK = '/api/ess/attendance/mock-location';
+const MOCK_LIST = '/api/ess/hr/mock-location-reports';
+const DEVICES = '/api/ess/hr/devices';
+const RESET = '/api/ess/hr/devices/reset';
+const ATTENDANCE_EMPLOYEE = uuid('e', 50);
+const HR_EMPLOYEE = uuid('e', 9);
+const A_REQUEST = { kind: 'correct', details: 'My employee code is wrong.' };
+const FIX = {
+  kind: 'punch', latitude: 28.40912, longitude: 77.31801, accuracy_m: 0,
+  client_at: '2026-10-16T11:59:00.000+05:30', provider: 'gps', app_version: '1.0.0+3', install_id: 'install-3f9a',
+};
+const fails = (table, how = 'error') => (w) => { w.db.failWhen = (q) => (q.table === table ? how : null); };
+const drop = (table) => (w) => w.db.dropTable(table);
+
+Object.assign(WAVE_2, {
+  'POST /api/ess/me/data-requests': [
+    ['201, a portal login', call('faculty', post(MY_DATA, A_REQUEST))],
+    ['201, an attendance session', call('attendance', post(MY_DATA, { kind: 'delete', details: 'Please delete my second phone number.' }))],
+    ['400 VALIDATION_FAILED, a kind not offered', call('faculty', post(MY_DATA, { kind: 'export', details: 'Everything about me.' }))],
+    ['400 VALIDATION_FAILED, details too short', call('faculty', post(MY_DATA, { kind: 'correct', details: 'fix' }))],
+    ['400 VALIDATION_FAILED, somebody else\'s employee id', call('faculty', post(MY_DATA, { ...A_REQUEST, employee_id: HR_EMPLOYEE }))],
+    ['400 VALIDATION_FAILED, not an object', call('faculty', post(MY_DATA, ['correct']))],
+    ['400 INVALID_JSON', call('faculty', (app, token) => request(app).post(MY_DATA).set(bearer(token)).set('Content-Type', 'application/json').send('{"kind": '))],
+    ['401, no token', call('faculty', (app) => request(app).post(MY_DATA).send(A_REQUEST))],
+    ['403 NOT_LINKED', call('desk', post(MY_DATA, A_REQUEST))],
+    ['403 PASSWORD_CHANGE_REQUIRED', call('attendance', (app, _token, w) => post(MY_DATA, A_REQUEST)(app, tokens.attendance(w.people.attendance, 'pw')), {
+      setup: (w) => { w.people.attendance.account.password_set_at = null; },
+    })],
+    ['409 TOO_MANY_OPEN_REQUESTS', call('faculty', post(MY_DATA, A_REQUEST), { setup: fiveOpen })],
+    ['413 PAYLOAD_TOO_LARGE', call('faculty', post(MY_DATA, { kind: 'correct', details: 'x'.repeat(20 * 1024) }))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(MY_DATA, A_REQUEST)(app, tokens.portal(people.faculty));
+      return post(MY_DATA, A_REQUEST)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', post(MY_DATA, A_REQUEST), { prepare: drop('hr_ess_data_requests') })],
+    ['503 UNAVAILABLE', call('faculty', post(MY_DATA, A_REQUEST), { prepare: fails('hr_ess_data_requests') })],
+    ['503 MODULE_DISABLED', call('faculty', post(MY_DATA, A_REQUEST), { env: { ESS_ENABLED: 'false' } })],
+  ],
+  'GET /api/ess/me/data-requests': [
+    ['200, one answered', call('faculty', get(MY_DATA), { setup: withDataRequests })],
+    ['200, none', call('ceo', get(MY_DATA), { setup: withDataRequests })],
+    ['401, no token', call('faculty', (app) => request(app).get(MY_DATA))],
+    ['403 NOT_ACTIVE', call('faculty', get(MY_DATA), { setup: (w) => { w.people.faculty.employee.employment_status = 'exited'; } })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(MY_DATA)(app, tokens.portal(people.faculty));
+      return get(MY_DATA)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', get(MY_DATA), { prepare: drop('hr_ess_data_requests') })],
+  ],
+  'GET /api/ess/hr/data-requests': [
+    ['200, the open queue for HR', call('hr', get(HR_DATA), { setup: withDataRequests })],
+    ['200, every request for an HR Executive', call('hr_executive', get(`${HR_DATA}?status=all`), { setup: withDataRequests })],
+    ['200, the rejected ones for a super admin', call('super_admin', get(`${HR_DATA}?status=rejected`), { setup: withDataRequests })],
+    ['400 VALIDATION_FAILED', call('hr', get(`${HR_DATA}?status=closed`))],
+    ['401, no token', call('hr', (app) => request(app).get(HR_DATA))],
+    ['403 HR_ACCESS_DENIED, the CEO', call('ceo', get(HR_DATA))],
+    ['403 HR_ACCESS_DENIED, a manager', call('hod', get(HR_DATA))],
+    ['403 PORTAL_LOGIN_REQUIRED', call('attendance', get(HR_DATA))],
+    ['403 NOT_LINKED', call('desk', get(HR_DATA))],
+    ['429 RATE_LIMITED', async () => {
+      const { app } = buildApp({ limits: { perIp: { windowMs: 60 * 1000, limit: 1 } } });
+      await request(app).get(HR_DATA);
+      return request(app).get(HR_DATA);
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', get(HR_DATA), { prepare: drop('hr_ess_data_requests') })],
+  ],
+  'PATCH /api/ess/hr/data-requests/{id}': [
+    ['200, done', call('hr', patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'done', note: 'Corrected in the HR record.' }), { setup: withDataRequests })],
+    ['200, rejected', call('hr_executive', patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'rejected', note: 'The code is right.' }), { setup: withDataRequests })],
+    ['400 VALIDATION_FAILED, not an id', call('hr', patch(`${HR_DATA}/42`, { status: 'done' }))],
+    ['400 VALIDATION_FAILED, a rejection with no reason', call('hr', patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'rejected' }), { setup: withDataRequests })],
+    ['401, no token', call('hr', (app) => request(app).patch(`${HR_DATA}/${REQUEST_ID(1)}`).send({ status: 'done' }))],
+    ['403 HR_ACCESS_DENIED', call('faculty', patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'done' }), { setup: withDataRequests })],
+    ['403 PORTAL_LOGIN_REQUIRED', call('attendance', patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'done' }), { setup: withDataRequests })],
+    ['404 NOT_FOUND', call('hr', patch(`${HR_DATA}/${REQUEST_ID(9)}`, { status: 'done' }), { setup: withDataRequests })],
+    ['409 OWN_REQUEST', call('hr', patch(`${HR_DATA}/${REQUEST_ID(2)}`, { status: 'done' }), { setup: withDataRequests })],
+    ['409 ALREADY_RESOLVED', call('hr', patch(`${HR_DATA}/${REQUEST_ID(3)}`, { status: 'done' }), { setup: withDataRequests })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ setup: withDataRequests, limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'done' })(app, tokens.portal(people.hr));
+      return patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'done' })(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', patch(`${HR_DATA}/${REQUEST_ID(1)}`, { status: 'done' }), { prepare: drop('hr_ess_data_requests') })],
+  ],
+  'GET /api/ess/me/personal': [
+    ['200, recorded', call('attendance', get(MY_PERSONAL), { setup: withPersonal })],
+    ['200, nothing recorded', call('faculty', get(MY_PERSONAL), { setup: withPersonal })],
+    ['401, no token', call('faculty', (app) => request(app).get(MY_PERSONAL))],
+    ['403 NOT_LINKED', call('desk', get(MY_PERSONAL))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(MY_PERSONAL)(app, tokens.portal(people.faculty));
+      return get(MY_PERSONAL)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', get(MY_PERSONAL), { prepare: drop('hr_ess_personal_details') })],
+  ],
+  'PUT /api/ess/me/personal': [
+    ['200', call('faculty', put(MY_PERSONAL, { blood_group: 'o +', emergency_name: 'Sunita Yadav', emergency_relation: 'Mother', emergency_phone: '+91 98765 43210' }))],
+    ['200, the contact cleared', call('attendance', put(MY_PERSONAL, { emergency_name: null, emergency_relation: '', emergency_phone: null }), { setup: withPersonal })],
+    ['400 VALIDATION_FAILED, a blood group', call('faculty', put(MY_PERSONAL, { blood_group: 'Z' }))],
+    ['400 VALIDATION_FAILED, nothing to change', call('faculty', put(MY_PERSONAL, {}))],
+    ['400 VALIDATION_FAILED, half a contact', call('faculty', put(MY_PERSONAL, { emergency_name: 'Sunita Yadav' }))],
+    ['401, no token', call('faculty', (app) => request(app).put(MY_PERSONAL).send({ blood_group: 'B+' }))],
+    ['403 SENSITIVE_FIELD', call('faculty', put(MY_PERSONAL, { date_of_birth: '1994-05-21' }))],
+    ['403 NOT_ACTIVE', call('faculty', put(MY_PERSONAL, { blood_group: 'B+' }), { setup: (w) => { w.people.faculty.employee.is_archived = true; } })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await put(MY_PERSONAL, { blood_group: 'B+' })(app, tokens.portal(people.faculty));
+      return put(MY_PERSONAL, { blood_group: 'B+' })(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', put(MY_PERSONAL, { blood_group: 'B+' }), { prepare: drop('hr_ess_personal_details') })],
+  ],
+  'GET /api/ess/hr/employees/{id}/personal': [
+    ['200, recorded', call('hr', get(theirPersonal(ATTENDANCE_EMPLOYEE)), { setup: withPersonal })],
+    ['200, nothing recorded', call('super_admin', get(theirPersonal(uuid('e', 11))))],
+    ['400 VALIDATION_FAILED', call('hr', get(theirPersonal('not-an-id')))],
+    ['401, no token', call('hr', (app) => request(app).get(theirPersonal(ATTENDANCE_EMPLOYEE)))],
+    ['403 HR_ACCESS_DENIED, the employee\'s own manager', call('admin_manager', get(theirPersonal(ATTENDANCE_EMPLOYEE)), { setup: withPersonal })],
+    ['403 PORTAL_LOGIN_REQUIRED', call('attendance', get(theirPersonal(ATTENDANCE_EMPLOYEE)))],
+    ['404 NOT_FOUND', call('hr', get(theirPersonal(NOBODY)))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(theirPersonal(ATTENDANCE_EMPLOYEE))(app, tokens.portal(people.hr));
+      return get(theirPersonal(ATTENDANCE_EMPLOYEE))(app, tokens.portal(people.hr));
+    }],
+    ['503 UNAVAILABLE, the audit row cannot be written', call('hr', get(theirPersonal(ATTENDANCE_EMPLOYEE)), { setup: withPersonal, prepare: fails('hr_ess_audit') })],
+    ['503 MODULE_NOT_INSTALLED', call('hr', get(theirPersonal(ATTENDANCE_EMPLOYEE)), { prepare: drop('hr_ess_personal_details') })],
+  ],
+  'PUT /api/ess/hr/employees/{id}/personal': [
+    ['200', call('hr', put(theirPersonal(ATTENDANCE_EMPLOYEE), { date_of_birth: '1994-05-21', address_line1: 'House 12, Sector 15', city: 'Faridabad', state: 'Haryana', pincode: '121007' }))],
+    ['200, a change over what is recorded', call('hr_executive', put(theirPersonal(ATTENDANCE_EMPLOYEE), { address_line2: 'Near the market' }), { setup: withPersonal })],
+    ['400 VALIDATION_FAILED, too young', call('hr', put(theirPersonal(ATTENDANCE_EMPLOYEE), { date_of_birth: '2015-01-01' }))],
+    ['400 VALIDATION_FAILED, a PIN code', call('hr', put(theirPersonal(ATTENDANCE_EMPLOYEE), { pincode: '012345' }))],
+    ['401, no token', call('hr', (app) => request(app).put(theirPersonal(ATTENDANCE_EMPLOYEE)).send({ city: 'Pune' }))],
+    ['403 HR_ACCESS_DENIED', call('ceo', put(theirPersonal(ATTENDANCE_EMPLOYEE), { city: 'Pune' }))],
+    ['403 PORTAL_LOGIN_REQUIRED', call('attendance', put(theirPersonal(ATTENDANCE_EMPLOYEE), { city: 'Pune' }))],
+    ['404 NOT_FOUND', call('hr', put(theirPersonal(NOBODY), { city: 'Pune' }))],
+    ['409 OWN_RECORD', call('hr', put(theirPersonal(HR_EMPLOYEE), { city: 'Pune' }))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await put(theirPersonal(ATTENDANCE_EMPLOYEE), { city: 'Pune' })(app, tokens.portal(people.hr));
+      return put(theirPersonal(ATTENDANCE_EMPLOYEE), { city: 'Pune' })(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', put(theirPersonal(ATTENDANCE_EMPLOYEE), { city: 'Pune' }), { prepare: drop('hr_ess_personal_details') })],
+  ],
+  'GET /api/ess/attendance/day': [
+    ['200, a late day with its note and both remarks', call('attendance', get(`${DAY}?date=2026-10-15`))],
+    ['200, an override from last month', call('attendance', get(`${DAY}?date=2026-09-20`))],
+    ['200, today with nothing recorded', call('faculty', get(DAY))],
+    ['400 DAY_OUT_OF_RANGE', call('attendance', get(`${DAY}?date=2026-08-31`))],
+    ['400 VALIDATION_FAILED', call('attendance', get(`${DAY}?date=2026-02-30`))],
+    ['401, no token', call('attendance', (app) => request(app).get(DAY))],
+    ['403 NO_ATTENDANCE_LOGIN', call('attendance', get(DAY), { setup: (w) => { w.people.attendance.account.status = 'disabled'; } })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(DAY)(app, tokens.attendance(people.attendance));
+      return get(DAY)(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', get(DAY), { prepare: (w) => w.db.dropColumn('hr_staff_attendance', 'late_minutes') })],
+    ['503 UNAVAILABLE', call('attendance', get(DAY), { prepare: fails('hr_attendance_remarks', 'throw') })],
+  ],
+  'POST /api/ess/attendance/mock-location': [
+    ['201', call('attendance', post(MOCK, FIX))],
+    ['201, no location and an unreadable phone clock', call('faculty', post(MOCK, { kind: 'punch', client_at: 'yesterday' }))],
+    ['400 VALIDATION_FAILED, a ping', call('attendance', post(MOCK, { ...FIX, kind: 'ping' }))],
+    ['400 VALIDATION_FAILED, half a location', call('attendance', post(MOCK, { kind: 'punch', latitude: 28.4 }))],
+    ['400 VALIDATION_FAILED, somebody else\'s employee id', call('attendance', post(MOCK, { ...FIX, employee_id: HR_EMPLOYEE }))],
+    ['401, no token', call('attendance', (app) => request(app).post(MOCK).send(FIX))],
+    ['403 NOT_LINKED', call('desk', post(MOCK, FIX))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { mockReports: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(MOCK, FIX)(app, tokens.attendance(people.attendance));
+      return post(MOCK, FIX)(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', post(MOCK, FIX), { prepare: drop('hr_ess_mock_location_reports') })],
+  ],
+  'GET /api/ess/hr/mock-location-reports': [
+    ['200, HR', call('hr', get(MOCK_LIST), { setup: withMockReports })],
+    ['200, the CEO, one branch', call('ceo', get(`${MOCK_LIST}?branch_id=${BRANCH_PUNE_ID}`), { setup: withMockReports })],
+    ['200, a super admin, a range with nothing', call('super_admin', get(`${MOCK_LIST}?from=2026-01-01&to=2026-01-31`), { setup: withMockReports })],
+    ['400 VALIDATION_FAILED, a range the wrong way round', call('hr', get(`${MOCK_LIST}?from=2026-10-16&to=2026-10-01`))],
+    ['400 VALIDATION_FAILED, a branch that is not an id', call('hr', get(`${MOCK_LIST}?branch_id=1`))],
+    ['401, no token', call('hr', (app) => request(app).get(MOCK_LIST))],
+    ['403 ATTENDANCE_OVERRIDE_DENIED, an HR Executive', call('hr_executive', get(MOCK_LIST))],
+    ['403 PORTAL_LOGIN_REQUIRED', call('attendance', get(MOCK_LIST))],
+    ['404 NOT_FOUND', call('hr', get(`${MOCK_LIST}?branch_id=${uuid('b', 9)}`))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(MOCK_LIST)(app, tokens.portal(people.hr));
+      return get(MOCK_LIST)(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', get(MOCK_LIST), { prepare: drop('hr_ess_mock_location_reports') })],
+  ],
+  'GET /api/ess/hr/devices': [
+    ['200, the active phones', call('hr', get(DEVICES))],
+    ['200, every phone at one branch', call('ceo', get(`${DEVICES}?status=all&branch_id=${BRANCH_ID}`))],
+    ['200, a phone whose employee record has gone', call('super_admin', get(`${DEVICES}?status=revoked`), {
+      setup: (w) => { w.tables.hr_attendance_devices[2].employee_id = NOBODY; },
+    })],
+    ['400 VALIDATION_FAILED', call('hr', get(`${DEVICES}?status=lost`))],
+    ['401, no token', call('hr', (app) => request(app).get(DEVICES))],
+    ['403 ATTENDANCE_OVERRIDE_DENIED', call('admin_manager', get(DEVICES))],
+    ['403 PORTAL_LOGIN_REQUIRED', call('attendance', get(DEVICES))],
+    ['404 NOT_FOUND', call('hr', get(`${DEVICES}?branch_id=${uuid('b', 9)}`))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(DEVICES)(app, tokens.portal(people.hr));
+      return get(DEVICES)(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', get(DEVICES), { prepare: drop('hr_attendance_devices') })],
+  ],
+  'POST /api/ess/hr/devices/reset': [
+    ['200, a branch', call('hr', post(RESET, { branch_id: BRANCH_ID, reason: 'Moving Faridabad to the app' }))],
+    ['200, a list of people', call('super_admin', post(RESET, { employee_ids: [ATTENDANCE_EMPLOYEE, NOBODY], reason: 'New phone' }))],
+    ['200, nothing left to reset', call('ceo', post(RESET, { employee_ids: [NOBODY], reason: 'New phone' }))],
+    ['400 VALIDATION_FAILED, both targets', call('hr', post(RESET, { branch_id: BRANCH_ID, employee_ids: [ATTENDANCE_EMPLOYEE], reason: 'New phone' }))],
+    ['400 VALIDATION_FAILED, no reason', call('hr', post(RESET, { employee_ids: [ATTENDANCE_EMPLOYEE] }))],
+    ['401, no token', call('hr', (app) => request(app).post(RESET).send({ branch_id: BRANCH_ID, reason: 'Go-live' }))],
+    ['403 ATTENDANCE_OVERRIDE_DENIED, an HR Executive', call('hr_executive', post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' }))],
+    ['403 PORTAL_LOGIN_REQUIRED', call('attendance', post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' }))],
+    ['404 NOT_FOUND', call('hr', post(RESET, { branch_id: uuid('b', 9), reason: 'Go-live' }))],
+    ['413 PAYLOAD_TOO_LARGE', call('hr', post(RESET, { employee_ids: [ATTENDANCE_EMPLOYEE], reason: 'Go-live', padding: 'x'.repeat(40 * 1024) }))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' })(app, tokens.portal(people.hr));
+      return post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' })(app, tokens.portal(people.hr));
+    }],
+    ['503 UNAVAILABLE', call('hr', post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' }), { prepare: fails('hr_attendance_devices') })],
+    ['503 MODULE_NOT_INSTALLED', call('hr', post(RESET, { branch_id: BRANCH_ID, reason: 'Go-live' }), { prepare: drop('hr_attendance_devices') })],
+  ],
+});
+
+describe('the scenario tables', () => {
+  it('cover every route Wave 2 added', () => {
+    const wave1 = ['GET /api/ess/health', 'GET /api/ess/me', 'GET /api/ess/me/capabilities'];
+    const served = C.essRoutes(buildApp().app).filter((route) => !wave1.includes(route));
+    expect(Object.keys(WAVE_2).sort()).toEqual(served);
+  });
+
+  it.each(Object.entries(WAVE_2))('provoke every status %s documents', (route, scenarios) => {
+    const [method, path] = route.split(' ');
+    const documented = Object.keys(C.operation(method, path).operation.responses).filter((s) => s !== 'default');
+    const provoked = new Set(scenarios.map(([label]) => label.slice(0, 3)));
+    for (const status of documented) expect(provoked, `${route} ${status}`).toContain(status);
+  });
+});
+
 describe.each(Object.entries(WAVE_2))('%s', (route, scenarios) => {
   const [method, path] = route.split(' ');
-  // Skipped until the contract documents the route (AWAITING_CONTRACT above), then held to it.
-  describe.skipIf(!C.documents(method, path))('answers as documented', () => {
-    it.each(scenarios)('%s', async (_label, provoke) => {
-      quietErrors();
-      expectContract(C.operation(method, path), await provoke());
-    });
+  it.each(scenarios)('%s', async (label, provoke) => {
+    quietErrors();
+    const res = await provoke();
+    // Each label starts with the status it provokes, so a scenario that drifts to another
+    // documented status fails here rather than passing as a different reply.
+    expect(res.status, JSON.stringify(res.body)).toBe(Number(label.slice(0, 3)));
+    expectContract(C.operation(method, path), res);
   });
 });
 
