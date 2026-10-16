@@ -1,0 +1,14 @@
+# Team RVM docs
+
+Read these before working on Team RVM, RVM CAD's Android employee app, which is modelled on the Keka employee app. This folder records what the app must do, what the backend has today, and what has been decided.
+
+| File | What it covers |
+| --- | --- |
+| [00-summary.md](00-summary.md) | The whole project on one page: scope, current state, how the work is split, next steps |
+| [01-inputs.md](01-inputs.md) | The three input documents: what each says and what is out of date in each |
+| [02-reconciliation.md](02-reconciliation.md) | Every gap-report task (A1–K6, plus the issue #70 list) checked against the current backend |
+| [03-decisions.md](03-decisions.md) | Product decisions: approvers, limits, visibility, sign-in |
+| [adr/](adr/README.md) | Architecture decision records |
+| [inputs/](inputs/) | Copies of the brief, the gap report and the developer's prompt |
+
+Last updated 16 Oct 2026.
