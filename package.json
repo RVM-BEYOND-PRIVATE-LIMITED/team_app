@@ -11,6 +11,7 @@
   },
   "scripts": {
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm test --workspaces --if-present"
+    "test": "npm test --workspaces --if-present",
+    "test:migrations": "node db/test/run-migrations.js"
   }
 }
