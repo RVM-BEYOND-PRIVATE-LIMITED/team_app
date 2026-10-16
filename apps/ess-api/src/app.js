@@ -60,7 +60,8 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   // needs to see the process answer, while everything else is switched off.
   api.get('/health', healthRoute({ config, store, now, timeoutMs: limits.healthDbTimeoutMs || HEALTH_DB_TIMEOUT_MS }));
 
-  // ESS_ENABLED=false and a restart switch the ESS off with no deploy and no database change:
+  // ESS_ENABLED=false and a restart (the deploy writes the setting and restarts the ESS) switch it
+  // off with no code change and no database change:
   // the fastest rollback there is. 503 and not 404, so the app can tell "switched off" from
   // "wrong address"; the Scheduler's HR switch does the same (routes/hr.js:57-74).
   api.use((_req, res, next) => (config.essEnabled

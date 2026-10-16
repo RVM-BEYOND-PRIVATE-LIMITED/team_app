@@ -31,16 +31,18 @@ ESS_HOST="${ESS_HOST:-}"
 ESS_HOST="$(printf '%s' "$ESS_HOST" | tr '[:upper:]' '[:lower:]')"
 ESS_PORT="${ESS_PORT:-}"
 
-# The port goes into the nginx file too: digits only, and never a port the
-# server's other services hold by convention (3000 is the Scheduler).
-if ! printf '%s' "$ESS_PORT" | grep -Eq '^[1-9][0-9]{3,4}$' || [ "$ESS_PORT" -gt 65535 ] || [ "$ESS_PORT" = 3000 ]; then
+# Both values go into the nginx file, and the host name into a certbot command
+# too, so the WHOLE value must match: grep would pass a value with a line break
+# if any one of its lines matched.
+
+# The port: digits only, and never the Scheduler's 3000.
+if ! [[ $ESS_PORT =~ ^[1-9][0-9]{3,4}$ ]] || [ "$ESS_PORT" -gt 65535 ] || [ "$ESS_PORT" = 3000 ]; then
   echo "::error::ESS_PORT '${ESS_PORT}' is not a usable port (1000 to 65535, and not the Scheduler's 3000)."
   exit 1
 fi
 
-# The name goes into an nginx file and a certbot command, so only a plain
-# host name is accepted.
-if ! printf '%s' "$ESS_HOST" | grep -Eq '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'; then
+# The host: a plain host name.
+if ! [[ $ESS_HOST =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]]; then
   echo "::error::ESS_HOST '${ESS_HOST}' is not a host name. Set the repository variable ESS_HOST, for example team-api.rvmcad.org."
   exit 1
 fi

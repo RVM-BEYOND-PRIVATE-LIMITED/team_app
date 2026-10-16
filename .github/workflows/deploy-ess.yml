@@ -102,12 +102,13 @@ jobs:
           cache: npm
 
       # The name goes into an nginx file and a certbot command on the server, so only a plain
-      # host name is accepted, and never one of the Scheduler's (ADR-0019).
+      # host name is accepted, and never one of the Scheduler's (ADR-0019). The whole value must
+      # match: grep would pass a value with a line break if any one line matched.
       # configure-nginx.sh checks it again on the server.
       - name: Check the host name
         run: |
           host=$(printf '%s' "$ESS_HOST" | tr '[:upper:]' '[:lower:]')
-          if ! printf '%s' "$host" | grep -Eq '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'; then
+          if ! [[ $host =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]]; then
             echo "::error::The repository variable ESS_HOST is missing or is not a host name. Set it to the ESS's own host name, for example team-api.rvmcad.org."
             exit 1
           fi
@@ -231,8 +232,10 @@ jobs:
             console.log('The ESS settings are valid.');
           "
 
-      # SSH_KNOWN_HOSTS, when set, pins the server's host key. Without it the key is fetched on
-      # each run, as the Scheduler's deploy does, and its fingerprint is printed so it can be pinned.
+      # SSH_KNOWN_HOSTS, when set, pins the server's host key: known_hosts lines, which the server
+      # check prints, never the fingerprints (those match no host, and every deploy would then fail
+      # with "Host key verification failed"). Without it the key is fetched on each run, as the
+      # Scheduler's deploy does.
       - name: Set up SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -251,8 +254,7 @@ jobs:
             echo "Using the pinned host key from SSH_KNOWN_HOSTS."
           else
             ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2> /dev/null
-            echo "::notice::SSH_KNOWN_HOSTS is not set, so the server's host key was fetched now. Its fingerprints:"
-            ssh-keygen -lf ~/.ssh/known_hosts
+            echo "::notice::SSH_KNOWN_HOSTS is not set, so the server's host key was fetched now. The server check prints the lines to pin."
           fi
 
       # node_modules is installed on the server for its own platform, and .git and the docs stay
@@ -314,7 +316,17 @@ jobs:
 
           echo "Starting or reloading team-rvm-ess (no other pm2 process is touched)..."
           pm2 startOrReload apps/ess-api/ecosystem.config.cjs --update-env
-          pm2 save
+
+          # pm2 save rewrites the one list pm2 resurrect brings back after a reboot, and that list
+          # holds the Scheduler too. Saving while scheduler-backend is missing or stopped would make
+          # pm2 forget it, or bring it back stopped, so save only while it is online. Only its
+          # status is read: jlist carries every process's environment, so nothing else is printed.
+          sched=$(pm2 jlist 2> /dev/null | node -e "let s='';process.stdin.on('data',(d)=>{s+=d}).on('end',()=>{try{const p=JSON.parse(s).find((x)=>x.name==='scheduler-backend');process.stdout.write(p?String(p.pm2_env&&p.pm2_env.status):'missing')}catch(e){process.stdout.write('unknown')}})")
+          if [ "$sched" = online ]; then
+            pm2 save
+          else
+            echo "::warning::scheduler-backend is ${sched} in pm2, so pm2 save was skipped to keep the Scheduler's saved entry. The ESS is running; after a reboot it will need a deploy, or pm2 save by hand once the Scheduler is back online."
+          fi
 
           # /api/ess/health reports APP_VERSION, else the GIT_SHA this deploy wrote (src/config.js),
           # so the wait ends only when the process started by this deploy answers, not an older one.
@@ -345,12 +357,17 @@ jobs:
           ENDSSH
 
       # From outside, through DNS, nginx and the certificate. On a first deploy the DNS record or
-      # the certificate may not be ready yet, so this warns rather than fails.
+      # the certificate may not be ready yet, so no answer only warns. An answer that is not this
+      # deploy's ESS fails: nginx would be sending people's tokens to something else.
       - name: Check the ESS from outside
         run: |
           host=$(printf '%s' "$ESS_HOST" | tr '[:upper:]' '[:lower:]')
           if body=$(curl -fsS --max-time 15 "https://${host}/api/ess/health"); then
             echo "https://${host}/api/ess/health: ${body}"
+            case "$body" in
+              *"\"version\":\"${GITHUB_SHA}\""*) echo "It is the ESS this deploy started." ;;
+              *) echo "::error::https://${host}/api/ess/health answers, but not as the ESS at ${GITHUB_SHA}. Check the nginx file's proxy_pass port against ecosystem.config.cjs."; exit 1 ;;
+            esac
           else
             echo "::warning::https://${host}/api/ess/health does not answer yet. On a first deploy, check the DNS record and the certbot lines above."
           fi

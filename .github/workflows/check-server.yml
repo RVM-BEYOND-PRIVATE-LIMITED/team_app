@@ -83,8 +83,11 @@ jobs:
             echo "Using the pinned host key from SSH_KNOWN_HOSTS."
           else
             ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2> /dev/null
-            echo "SSH_KNOWN_HOSTS is not set. The server's host key fingerprints, to pin it later:"
+            echo "SSH_KNOWN_HOSTS is not set. The server's host key fingerprints, to compare with the server's own (not to paste):"
             ssh-keygen -lf ~/.ssh/known_hosts
+            # Public keys with hashed host names: nothing secret, and HOST does not appear.
+            echo "To pin the host key, store these lines, exactly, as the SSH_KNOWN_HOSTS secret:"
+            cat ~/.ssh/known_hosts
           fi
 
       # Every command below only reads. pm2 is asked for its table, never for
@@ -141,6 +144,12 @@ jobs:
           for f in /etc/letsencrypt/options-ssl-nginx.conf /etc/letsencrypt/ssl-dhparams.pem; do
             if sudo -n test -f "$f"; then ok "$f exists"; else fail "$f is missing; the HTTPS file includes it."; fi
           done
+          # configure-nginx.sh runs certbot non-interactively with no --email and no --account.
+          # That works only with exactly one Let's Encrypt account on the server: with none,
+          # certbot asks for an email; with two or more, it asks which one.
+          accounts=$(sudo -n find /etc/letsencrypt/accounts/acme-v02.api.letsencrypt.org/directory -mindepth 1 -maxdepth 1 -type d 2> /dev/null | wc -l)
+          if [ "$accounts" -eq 1 ]; then ok "one Let's Encrypt account, so certbot can run unattended"
+          else fail "${accounts} Let's Encrypt accounts on the server; certbot needs exactly one to issue the ESS certificate unattended."; fi
 
           if [ -d "$HOME/team_app" ]; then ok "$HOME/team_app exists (an earlier deploy)"; else ok "$HOME/team_app does not exist yet (first deploy)"; fi
           echo "  free disk in ~: $(df -h ~ | awk 'NR==2 {print $4}')"

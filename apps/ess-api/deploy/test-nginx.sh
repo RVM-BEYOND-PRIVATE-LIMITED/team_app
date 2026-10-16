@@ -148,6 +148,19 @@ if [ "$rc" = 0 ] && [ ! -f /tmp/certbot.calls ] && grep -q 'listen 443 ssl' /etc
   pass "re-run: certificate kept, no certbot call"
 else fail "re-run (rc=$rc)"; cat /tmp/out.txt; fi
 
+# 2b. The certificate disappears while the HTTPS file is enabled (for example a
+#     `certbot delete` before the host was taken off nginx). Every nginx -t on
+#     the server then fails, the Scheduler's deploy included, which is why the
+#     runbook takes the host off nginx first. The next ESS deploy must repair it:
+#     back to the HTTP stage, and nginx valid again.
+rm -rf /etc/letsencrypt/live/team-api.example.org
+if nginx -t 2>/dev/null; then fail "a missing certificate should break nginx -t while the HTTPS file is enabled"
+else pass "a deleted certificate breaks nginx -t for every site (the runbook rule)"; fi
+rc=$(FAIL_CERTBOT=1 run team-api.example.org)
+if [ "$rc" = 0 ] && nginx -t 2>/dev/null && grep -q 'return 503' /etc/nginx/sites-available/team-rvm; then
+  pass "the next deploy repairs it: HTTP stage, nginx valid again"
+else fail "repair after a deleted certificate (rc=$rc)"; cat /tmp/out.txt; fi
+
 # 3. Fresh server, certbot fails: HTTP set-up page stays, deploy not failed.
 reset_state
 rc=$(FAIL_CERTBOT=1 run team-api.example.org)
@@ -195,7 +208,11 @@ else fail "another site broken (rc=$rc)"; cat /tmp/out.txt; fi
 nginx -t 2>/dev/null || fail "baseline not restored after scenario 6"
 
 # 7. Names refused before anything is written.
-for bad in "" "not a host" "team-api.example.org;evil" "../etc" "scheduler.rvmcad.org" "STUDENT.rvmcad.org"; do
+# A value with a line break whose first line is a good name must be refused too.
+# (A trailing line break alone is dropped when the name is lower-cased, so the
+# name used is still exactly the good one.)
+for bad in "" "not a host" "team-api.example.org;evil" "../etc" "scheduler.rvmcad.org" "STUDENT.rvmcad.org" \
+    $'team-api.example.org\nevil.example.org' $'evil.example.org\nteam-api.example.org'; do
   reset_state
   rc=$(run "$bad")
   if [ "$rc" != 0 ] && [ ! -e /etc/nginx/sites-available/team-rvm ]; then
@@ -226,7 +243,7 @@ rm -f /etc/nginx/sites-enabled/other /etc/nginx/sites-available/other
 
 # 9. Ports refused before anything is written: empty, not digits, the
 #    Scheduler's 3000, below 1000, above 65535, and an attempt to inject text.
-for bad in "" "abc" "3000" "80" "70000" "3740;evil" "3740 x"; do
+for bad in "" "abc" "3000" "80" "70000" "3740;evil" "3740 x" $'3740\n1' $'3740\n'; do
   reset_state
   rc=$(run team-api.example.org "$bad")
   if [ "$rc" != 0 ] && [ ! -e /etc/nginx/sites-available/team-rvm ]; then

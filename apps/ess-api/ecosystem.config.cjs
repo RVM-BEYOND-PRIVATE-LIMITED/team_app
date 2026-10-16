@@ -25,6 +25,9 @@ module.exports = {
       exec_mode: 'fork',
       instances: 1,
       autorestart: true,
+      // A crash loop backs off (up to 15 s between restarts, reset after 30 s up) instead of
+      // restarting forever at full speed and taking CPU from the Scheduler on the same server.
+      exp_backoff_restart_delay: 100,
       // Restart the ESS before it can starve the Scheduler on the same server of memory.
       max_memory_restart: '300M',
       time: true,
