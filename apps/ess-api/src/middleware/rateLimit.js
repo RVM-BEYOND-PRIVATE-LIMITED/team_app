@@ -1,8 +1,10 @@
+const crypto = require('crypto');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { MESSAGES } = require('../lib/errors');
+const { signInKey } = require('../policy/signIn');
 
 /**
- * Two limits, because a whole branch shares one office address (task A6).
+ * Two limits on everything, because a whole branch shares one office address (task A6).
  *
  *   per address, before sign-in   bounds what one network can send, including requests with no
  *                                 token or a forged one. Generous, because everybody at a branch
@@ -12,12 +14,30 @@ const { MESSAGES } = require('../lib/errors');
  *   per employee, after sign-in   the real per-person cap, so one person's misbehaving phone
  *                                 cannot use up the office's allowance for everybody else.
  *
- * Both count in this process's memory, as the Scheduler's limiters do: there is exactly one
+ * And tighter ones on the endpoints that take no token or create a sign-in:
+ *
+ *   sessionPerIp         refresh, and sign-out by refresh token: about one refresh an hour per
+ *                        phone, so 120 in 15 minutes still lets a whole branch open the app at
+ *                        nine on one office address.
+ *   exchangePerEmployee  trading a fresh sign-in for a kept one: once per sign-in.
+ *   signInPerIp          the one-field resolver: as many as the Scheduler's own attendance
+ *                        sign-in allows one address (middleware/punchCodeLimiter.js:19-26), so
+ *                        it is no faster a way to try identifiers than the sign-in itself.
+ *   signInPerIdentifier  the resolver again, per identifier from any address, so asking about one
+ *                        person from many addresses gets no further.
+ *
+ * All count in this process's memory, as the Scheduler's limiters do: there is exactly one
  * ESS instance (ADR-0005), and a restart starting the counts again is acceptable.
  */
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+
 const DEFAULT_LIMITS = Object.freeze({
   perIp: Object.freeze({ windowMs: 60 * 1000, limit: 600 }),
   perEmployee: Object.freeze({ windowMs: 60 * 1000, limit: 120 }),
+  sessionPerIp: Object.freeze({ windowMs: FIFTEEN_MINUTES, limit: 120 }),
+  exchangePerEmployee: Object.freeze({ windowMs: FIFTEEN_MINUTES, limit: 10 }),
+  signInPerIp: Object.freeze({ windowMs: FIFTEEN_MINUTES, limit: 40 }),
+  signInPerIdentifier: Object.freeze({ windowMs: FIFTEEN_MINUTES, limit: 10 }),
 });
 
 const refuse = (_req, res) => res.status(429).json({ error: MESSAGES.RATE_LIMITED, code: 'RATE_LIMITED' });
@@ -49,4 +69,19 @@ function createEmployeeLimiter(limits = DEFAULT_LIMITS.perEmployee) {
   });
 }
 
-module.exports = { DEFAULT_LIMITS, createIpLimiter, createEmployeeLimiter };
+/**
+ * Per identifier typed at the one-field sign-in, whatever the address. The key is the identifier
+ * in the form the Scheduler compares it (policy/signIn.js signInKey: any spelling of one phone
+ * number is one bucket), hashed, so the limiter's memory holds no phone numbers or addresses.
+ */
+function createIdentifierLimiter(limits = DEFAULT_LIMITS.signInPerIdentifier) {
+  return rateLimit({
+    ...common(limits),
+    keyGenerator: (req) => {
+      const typed = req.body && typeof req.body.identifier === 'string' ? req.body.identifier : '';
+      return `identifier:${crypto.createHash('sha256').update(signInKey(typed)).digest('hex')}`;
+    },
+  });
+}
+
+module.exports = { DEFAULT_LIMITS, createIpLimiter, createEmployeeLimiter, createIdentifierLimiter };

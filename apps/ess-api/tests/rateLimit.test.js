@@ -90,6 +90,23 @@ describe('the production limits', () => {
     expect(DEFAULT_LIMITS.perEmployee).toEqual({ windowMs: 60 * 1000, limit: 120 });
   });
 
+  it('hold the endpoints that take no token, or start a sign-in, much tighter', () => {
+    const fifteenMinutes = 15 * 60 * 1000;
+    expect(DEFAULT_LIMITS.sessionPerIp).toEqual({ windowMs: fifteenMinutes, limit: 120 });
+    expect(DEFAULT_LIMITS.exchangePerEmployee).toEqual({ windowMs: fifteenMinutes, limit: 10 });
+    // The Scheduler's own attendance sign-in allows one address 40 in 15 minutes (punchCodeLimiter.js:19-26).
+    expect(DEFAULT_LIMITS.signInPerIp).toEqual({ windowMs: fifteenMinutes, limit: 40 });
+    expect(DEFAULT_LIMITS.signInPerIdentifier).toEqual({ windowMs: fifteenMinutes, limit: 10 });
+  });
+
+  it('apply to the session and sign-in endpoints when no limits are passed in', async () => {
+    const { app } = buildApp();
+    const refresh = await request(app).post('/api/ess/session/refresh').send({});
+    expect(refresh.headers['ratelimit-limit']).toBe('120');
+    const resolve = await request(app).post('/api/ess/sign-in/resolve').send({ identifier: 'RVM-050' });
+    expect(resolve.headers['ratelimit-limit']).toBe('10');
+  });
+
   it('apply when no limits are passed in', async () => {
     const { app } = buildApp();
     const res = await request(app).get('/api/ess/health');

@@ -25,6 +25,8 @@ describe('the role copy', () => {
     expect(roles.roleSatisfies('hr', 'admin')).toBe(false);
     expect(roles.rolesSatisfying('admin').sort()).toEqual(['accounts_admin', 'admin', 'admin_manager', 'ceo', 'hoo', 'super_admin']);
     expect([...roles.TEACHING_ROLES].sort()).toEqual(['faculty', 'hod']);
+    // The sign-in resolver offers these every branch, as the web's dropdown does.
+    expect([...roles.NO_BRANCH_ROLES].sort()).toEqual(['accounts_admin', 'bot_readonly', 'ceo', 'hr', 'hr_executive', 'super_admin']);
   });
 
   it('names every role the database enum has', () => {
@@ -51,9 +53,10 @@ describe('the role copy', () => {
       }
     });
 
-    it('has the same teaching and all-centre roles', () => {
+    it('has the same teaching, all-centre and no-branch roles', () => {
       expect([...roles.TEACHING_ROLES].sort()).toEqual([...scheduler.TEACHING_ROLES].sort());
       expect([...roles.SEES_ALL_LOCATIONS].sort()).toEqual([...scheduler.SEES_ALL_LOCATIONS].sort());
+      expect([...roles.NO_BRANCH_ROLES].sort()).toEqual([...scheduler.NO_BRANCH_ROLES].sort());
     });
   });
 });

@@ -7,8 +7,9 @@ const { TABS, capabilitiesFor } = require('../src/policy/capabilities');
 const { REQUEST_TYPES } = require('../src/policy/requestLimits');
 const { buildApp, tokens, bearer } = require('./helpers/app');
 const { NOW, SIGNED_AT, TEST_ENV } = require('./helpers/constants');
-const { PORTAL_PEOPLE } = require('./helpers/fixtures');
+const { PORTAL_PEOPLE, INSTALL_ID, OTHER_INSTALL_ID } = require('./helpers/fixtures');
 const C = require('./helpers/contract');
+const H = require('./helpers/sessions');
 
 /**
  * The ESS against packages/contracts/openapi.yaml (ADR-0010): the routes it serves are the ESS
@@ -25,13 +26,33 @@ const expectContract = (op, res) => expect(C.contractProblems(op, res), `${op.me
 
 const quietErrors = () => vi.spyOn(console, 'error').mockImplementation(() => {});
 
+/**
+ * Routes the ESS serves whose contract is still to be written: Wave 2's kept sign-ins (task A3)
+ * and one-field sign-in (task A5). The contract is written in packages/contracts by whoever
+ * integrates the wave; each route leaves this list in the change that documents it. The test
+ * below fails while a documented route is still listed, and while a served route is in neither.
+ * Their replies are held against the contract further down, as soon as it documents them.
+ */
+const AWAITING_CONTRACT = [
+  'DELETE /api/ess/sessions/{id}',
+  'GET /api/ess/sessions',
+  'POST /api/ess/session',
+  'POST /api/ess/session/refresh',
+  'POST /api/ess/session/sign-out',
+  'POST /api/ess/sign-in/resolve',
+];
+
 describe('the routes', () => {
-  it('are exactly the ESS operations in the contract', () => {
+  it('are exactly the ESS operations in the contract, and those awaiting it', () => {
     const { app } = buildApp();
     const served = C.essRoutes(app);
     expect(served.length).toBeGreaterThan(0);
     const documented = C.operations().filter((op) => op.owner === 'ess').map((op) => `${op.method} ${op.path}`).sort();
-    expect(served).toEqual(documented);
+    expect(served.filter((route) => !AWAITING_CONTRACT.includes(route))).toEqual(documented.filter((route) => !AWAITING_CONTRACT.includes(route)));
+    for (const route of AWAITING_CONTRACT) {
+      expect(served, `${route} is listed as awaiting the contract but is not served`).toContain(route);
+      expect(documented, `${route} is in the contract now: take it off AWAITING_CONTRACT`).not.toContain(route);
+    }
   });
 
   it('are all documented as ESS operations on the ESS host', () => {
@@ -199,6 +220,155 @@ describe('GET /api/ess/me/capabilities, role by role', () => {
     expect(res.body.push.enabled).toBe(true);
     expect(res.body.team.direct_reports).toBeGreaterThan(0);
     expectContract(caps, res);
+  });
+});
+
+/* ── Wave 2: kept sign-ins (A3) and the one-field sign-in (A5) ── */
+
+/** A sign-in kept at NOW on a clock the scenario can move, and the world it lives in. */
+async function kept({ who = 'attendance', setup, env, limits } = {}) {
+  const clock = H.clockAt(NOW);
+  const world = buildApp({ now: clock.now, setup, env, limits });
+  const person = world.people[who];
+  const res = await H.keep(world.app, who === 'attendance' ? tokens.attendance(person) : tokens.portal(person));
+  return { ...world, clock, person, session: res.body };
+}
+
+/** A refresh an hour after the sign-in, after `change` has been made to the world. */
+const refreshAfter = (options, change) => async () => {
+  const k = await kept(options);
+  k.clock.advance(H.HOUR);
+  if (change) await change(k);
+  return H.refresh(k.app, k.session.refresh_token);
+};
+
+const resolveIn = (setup, identifier, options = {}) => async () => {
+  const { app, db } = buildApp({ setup, ...options });
+  if (options.outage) db.outage = options.outage;
+  if (options.drop) db.dropTable(options.drop);
+  return request(app).post('/api/ess/sign-in/resolve').send(identifier === undefined ? {} : { identifier });
+};
+
+const accountOf = (k) => k.db.tables.hr_attendance_accounts.find((a) => a.employee_id === k.person.employee.id);
+
+/** Every kind of reply the Wave 2 tests provoke, operation by operation. */
+const WAVE_2 = {
+  'POST /api/ess/session': [
+    ['201, a portal login', async () => { const { app, people } = buildApp(); return H.keep(app, tokens.portal(people.hr)); }],
+    ['201, an attendance session', async () => { const { app, people } = buildApp(); return H.keep(app, tokens.attendance(people.attendance)); }],
+    ['400 BAD_INSTALL_ID', async () => { const { app, people } = buildApp(); return H.keep(app, tokens.portal(people.hr), {}); }],
+    ['400 BAD_DEVICE_LABEL', async () => { const { app, people } = buildApp(); return H.keep(app, tokens.portal(people.hr), { install_id: INSTALL_ID, device_label: 'x'.repeat(81) }); }],
+    ['400 INVALID_JSON', async () => { const { app, people } = buildApp(); return request(app).post('/api/ess/session').set(bearer(tokens.portal(people.hr))).set('Content-Type', 'application/json').send('{"install_id": '); }],
+    ['401, no token', async () => { const { app } = buildApp(); return request(app).post('/api/ess/session').send({ install_id: INSTALL_ID }); }],
+    ['401, a password changed since the sign-in', async () => {
+      const { app, people } = buildApp({ setup: (w) => { w.people.hr.user.password_changed_at = NOW.toISOString(); } });
+      return H.keep(app, tokens.portal(people.hr));
+    }],
+    ['403 SIGN_IN_NOT_FRESH', async () => { const { app, people } = buildApp(); return H.keep(app, tokens.portal(people.hr, new Date(NOW.getTime() - H.DAY))); }],
+    ['403 NOT_AN_EMPLOYEE', async () => { const { app } = buildApp(); return H.keep(app, tokens.student()); }],
+    ['403 NOT_LINKED', async () => { const { app, people } = buildApp(); return H.keep(app, tokens.portal(people.desk)); }],
+    ['403 NOT_ACTIVE', async () => {
+      const { app, people } = buildApp({ setup: (w) => { w.people.hr.employee.employment_status = 'exited'; } });
+      return H.keep(app, tokens.portal(people.hr));
+    }],
+    ['403 NO_ATTENDANCE_LOGIN', async () => {
+      const { app, people } = buildApp({ setup: (w) => { w.people.attendance.account.status = 'disabled'; } });
+      return H.keep(app, tokens.attendance(people.attendance));
+    }],
+    ['403 PASSWORD_CHANGE_REQUIRED', async () => {
+      const { app, people } = buildApp({ setup: (w) => { w.people.attendance.account.password_set_at = null; } });
+      return H.keep(app, tokens.attendance(people.attendance, 'pw'));
+    }],
+    ['409 ALREADY_EXCHANGED', async () => { const k = await kept(); return H.keep(k.app, k.session.access_token); }],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { exchangePerEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await H.keep(app, tokens.portal(people.hr));
+      return H.keep(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', async () => { const { app, db, people } = buildApp(); db.dropTable('hr_ess_sessions'); return H.keep(app, tokens.portal(people.hr)); }],
+    ['503 UNAVAILABLE', async () => { const { app, db, people } = buildApp(); db.failWhen = (q) => (q.op === 'insert' ? 'error' : null); return H.keep(app, tokens.portal(people.hr)); }],
+    ['503 MODULE_DISABLED', async () => { const { app, people } = buildApp({ env: { ESS_ENABLED: 'false' } }); return H.keep(app, tokens.portal(people.hr)); }],
+  ],
+  'POST /api/ess/session/refresh': [
+    ['200, an attendance session', refreshAfter()],
+    ['200, a portal login', refreshAfter({ who: 'faculty' })],
+    ['400 BAD_INSTALL_ID', async () => { const k = await kept(); return request(k.app).post('/api/ess/session/refresh').send({ refresh_token: k.session.refresh_token }); }],
+    ['401 unknown', async () => { const { app } = buildApp(); return H.refresh(app, 'A'.repeat(43)); }],
+    ['401 expired', async () => { const k = await kept(); k.clock.advance(91 * H.DAY); return H.refresh(k.app, k.session.refresh_token); }],
+    ['401 reuse', async () => { const k = await kept(); return H.refresh(k.app, k.session.refresh_token, OTHER_INSTALL_ID); }],
+    ['401 signed_out', refreshAfter({}, (k) => H.signOut(k.app, { token: k.session.access_token }))],
+    ['401 password_changed', refreshAfter({}, (k) => { accountOf(k).sessions_valid_from = NOW.toISOString(); })],
+    ['401 login_off', refreshAfter({}, (k) => { accountOf(k).status = 'disabled'; })],
+    ['401 left', refreshAfter({}, (k) => { k.db.tables.hr_employees.find((e) => e.id === k.person.employee.id).is_archived = true; })],
+    ['401 unlinked', refreshAfter({ who: 'hr' }, (k) => { k.db.tables.hr_employees.find((e) => e.id === k.person.employee.id).user_id = null; })],
+    ['409 REFRESH_IN_PROGRESS', async () => {
+      const k = await kept();
+      k.clock.advance(H.HOUR);
+      await H.refresh(k.app, k.session.refresh_token);
+      return H.refresh(k.app, k.session.refresh_token);
+    }],
+    ['429 RATE_LIMITED', async () => {
+      const { app } = buildApp({ limits: { sessionPerIp: { windowMs: 60 * 1000, limit: 1 } } });
+      await H.refresh(app, 'A'.repeat(43));
+      return H.refresh(app, 'A'.repeat(43));
+    }],
+    ['503 UNAVAILABLE', refreshAfter({}, (k) => { k.db.outage = 'error'; })],
+    ['503 MODULE_NOT_INSTALLED', refreshAfter({}, (k) => { k.db.dropTable('hr_ess_sessions'); })],
+    ['503 MODULE_DISABLED', async () => { const { app } = buildApp({ env: { ESS_ENABLED: 'false' } }); return H.refresh(app, 'A'.repeat(43)); }],
+  ],
+  'POST /api/ess/session/sign-out': [
+    ['204, with the access token', async () => { const k = await kept(); return H.signOut(k.app, { token: k.session.access_token }); }],
+    ['204, with the refresh token', async () => { const k = await kept(); return H.signOut(k.app, { refreshToken: k.session.refresh_token }); }],
+    ['401, neither', async () => { const { app } = buildApp(); return H.signOut(app); }],
+    ['403 NOT_AN_EMPLOYEE', async () => { const { app } = buildApp(); return H.signOut(app, { token: tokens.student() }); }],
+    ['429 RATE_LIMITED', async () => {
+      const { app } = buildApp({ limits: { sessionPerIp: { windowMs: 60 * 1000, limit: 1 } } });
+      await H.signOut(app);
+      return H.signOut(app);
+    }],
+    ['503 UNAVAILABLE', async () => { const k = await kept(); k.db.failWhen = (q) => (q.op === 'rpc' ? 'error' : null); return H.signOut(k.app, { token: k.session.access_token }); }],
+  ],
+  'GET /api/ess/sessions': [
+    ['200', async () => { const k = await kept({ who: 'hr' }); await H.keep(k.app, tokens.portal(k.person), { install_id: OTHER_INSTALL_ID }); return H.listSessions(k.app, k.session.access_token); }],
+    ['200, none', async () => { const { app, people } = buildApp(); return H.listSessions(app, tokens.portal(people.hr)); }],
+    ['401', async () => { const { app } = buildApp(); return request(app).get('/api/ess/sessions'); }],
+    ['403 NOT_AN_EMPLOYEE', async () => { const { app } = buildApp(); return H.listSessions(app, tokens.student()); }],
+    ['503 MODULE_NOT_INSTALLED', async () => { const { app, db, people } = buildApp(); db.dropTable('hr_ess_sessions'); return H.listSessions(app, tokens.portal(people.hr)); }],
+  ],
+  'DELETE /api/ess/sessions/{id}': [
+    ['204', async () => { const k = await kept(); return H.endSession(k.app, k.session.access_token, k.session.session.id); }],
+    ['404 NOT_FOUND', async () => { const k = await kept(); return H.endSession(k.app, tokens.portal(k.people.hr), k.session.session.id); }],
+    ['401', async () => { const { app } = buildApp(); return request(app).delete('/api/ess/sessions/5a000000-0000-4000-8000-000000000001'); }],
+    ['403 NOT_AN_EMPLOYEE', async () => { const { app } = buildApp(); return H.endSession(app, tokens.student(), '5a000000-0000-4000-8000-000000000001'); }],
+    ['503 UNAVAILABLE', async () => { const k = await kept(); k.db.failWhen = (q) => (q.op === 'rpc' ? 'error' : null); return H.endSession(k.app, k.session.access_token, k.session.session.id); }],
+  ],
+  'POST /api/ess/sign-in/resolve': [
+    ['200, portal as typed', resolveIn(undefined, 'faculty.login')],
+    ['200, portal at any branch', resolveIn(undefined, 'hr.login')],
+    ['200, portal by username or phone', resolveIn(undefined, 'RVM-011')],
+    ['200, attendance', resolveIn(undefined, 'RVM-050')],
+    ['200, attendance with no methods', resolveIn((w) => { w.people.attendance.account.status = 'disabled'; }, 'RVM-050')],
+    ['200, unknown', resolveIn(undefined, 'nobody.here')],
+    ['400 BAD_IDENTIFIER', resolveIn(undefined, '')],
+    ['429 RATE_LIMITED', async () => {
+      const { app } = buildApp({ limits: { signInPerIdentifier: { windowMs: 60 * 1000, limit: 1 } } });
+      await request(app).post('/api/ess/sign-in/resolve').send({ identifier: 'RVM-050' });
+      return request(app).post('/api/ess/sign-in/resolve').send({ identifier: 'RVM-050' });
+    }],
+    ['503 UNAVAILABLE', resolveIn(undefined, 'RVM-050', { outage: 'error' })],
+    ['503 MODULE_NOT_INSTALLED', resolveIn(undefined, 'RVM-050', { drop: 'hr_attendance_accounts' })],
+    ['503 MODULE_DISABLED', resolveIn(undefined, 'RVM-050', { env: { ESS_ENABLED: 'false' } })],
+  ],
+};
+
+describe.each(Object.entries(WAVE_2))('%s', (route, scenarios) => {
+  const [method, path] = route.split(' ');
+  // Skipped until the contract documents the route (AWAITING_CONTRACT above), then held to it.
+  describe.skipIf(!C.documents(method, path))('answers as documented', () => {
+    it.each(scenarios)('%s', async (_label, provoke) => {
+      quietErrors();
+      expectContract(C.operation(method, path), await provoke());
+    });
   });
 });
 

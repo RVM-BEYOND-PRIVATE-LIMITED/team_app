@@ -2,7 +2,7 @@ const { readToken, bearerToken } = require('../lib/tokens');
 const { HttpError, MESSAGES, notAuthenticated } = require('../lib/errors');
 const { istDay } = require('../lib/time');
 const { isActive } = require('../policy/employment');
-const { ROLES } = require('../policy/roles');
+const { NOT_STAFF_ROLES } = require('../policy/staff');
 
 /**
  * employeeAuth (task A1): who is calling, as an employee.
@@ -27,11 +27,15 @@ const { ROLES } = require('../policy/roles');
  * signs out on a 401 alone, and a database outage must not sign the whole company out
  * (ADR-0006). The Scheduler's auth.js answers 401 in that case; this is where the two differ.
  *
- * On success: req.auth = { kind: 'portal'|'attendance', userId, role, employee }.
+ * A token the ESS minted for a kept sign-in (task A3, lib/accessTokens.js) carries `sid`. Before
+ * anything else, that session must still be live: not signed out, not revoked, not expired, and
+ * the token's own person's. Otherwise 401, so signing out or a revocation ends every token of
+ * that sign-in at once on the ESS, not only when its hour runs out. The Scheduler cannot know
+ * this, which is why the tokens it accepts last an hour and no longer.
+ *
+ * On success: req.auth = { kind: 'portal'|'attendance', userId, role, employee, sessionId,
+ * issuedAt, method, locationName }, the last four for the session endpoints (routes/sessions.js).
  */
-
-/** Never staff, whatever else is true of them. The connector identity cannot sign in at all. */
-const NOT_STAFF_ROLES = new Set([ROLES.STUDENT, ROLES.BOT_READONLY]);
 
 const notAnEmployee = () => new HttpError(403, 'NOT_AN_EMPLOYEE', MESSAGES.NOT_AN_EMPLOYEE);
 const notActive = () => new HttpError(403, 'NOT_ACTIVE', MESSAGES.NOT_ACTIVE);
@@ -97,6 +101,19 @@ async function fromPortalToken(claims, store, today) {
 }
 
 /**
+ * A minted token's session must be live and its own: the same person and the same kind of
+ * sign-in it was minted for. Only the ESS can sign a sid in, so a mismatch means a broken or
+ * forged token, and it is refused the same way.
+ */
+async function requireLiveSession(found, store, at) {
+  const live = await store.getLiveSession(found.sessionId);
+  const own = live && live.login_kind === found.kind && (found.kind === 'attendance'
+    ? live.employee_id === found.employeeId
+    : live.user_id === found.userId);
+  if (!own || !(Date.parse(live.expires_at) > at.getTime())) throw notAuthenticated(MESSAGES.SIGN_IN_AGAIN);
+}
+
+/**
  * @param {{ config: { jwtSecret: string }, store: object, now: () => Date }} deps
  */
 function createEmployeeAuth({ config, store, now }) {
@@ -109,10 +126,18 @@ function createEmployeeAuth({ config, store, now }) {
       throw notAuthenticated(found.reason === 'expired' ? MESSAGES.SESSION_EXPIRED : MESSAGES.SIGN_IN_AGAIN);
     }
     if (found.kind === 'not_staff') throw notAnEmployee();
+    if (found.sessionId) await requireLiveSession(found, store, at);
     const today = istDay(at);
-    return found.kind === 'attendance'
-      ? fromAttendanceSession(found, store, today)
-      : fromPortalToken(found, store, today);
+    const auth = found.kind === 'attendance'
+      ? await fromAttendanceSession(found, store, today)
+      : await fromPortalToken(found, store, today);
+    return {
+      ...auth,
+      sessionId: found.sessionId,
+      issuedAt: found.issuedAt,
+      method: found.kind === 'attendance' ? found.method : null,
+      locationName: found.kind === 'portal' ? found.locationName : null,
+    };
   }
 
   return function employeeAuth(req, _res, next) {
@@ -123,4 +148,4 @@ function createEmployeeAuth({ config, store, now }) {
   };
 }
 
-module.exports = { createEmployeeAuth, sessionProblem };
+module.exports = { createEmployeeAuth, sessionProblem, passwordChangeDue };

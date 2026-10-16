@@ -26,6 +26,8 @@ SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test
 
 Without it those checks are skipped, and that includes CI, which cannot read the private Scheduler repository. Run them by hand whenever the Scheduler changes.
 
+Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. CI does not run it yet.
+
 ## Settings
 
 `src/config.js` checks these at start-up. A missing or malformed value stops the process with a list of what is wrong, naming each variable and never printing its value. `.env.example` lists them with placeholders.
@@ -52,8 +54,24 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `GET /api/ess/health` | none | `{ ok, server_time, version, min_app_version, latest_app_version, db: "ok" \| "unavailable" }`. Always 200 while the process is up, even with the database unreachable. It stays up when `ESS_ENABLED=false` |
 | `GET /api/ess/me` | portal JWT or attendance session | `{ employee: { id, full_name, employee_code, designation, employment_status, branch, department, manager }, login: { kind, role, user_id } }` |
 | `GET /api/ess/me/capabilities` | portal JWT or attendance session | Tabs, sections, team, approvals, the request types with their monthly limits, Wall rights, push and integrity |
+| `POST /api/ess/session` | a Scheduler token from a sign-in made in the last 10 minutes | Keeps the sign-in (task A3). Body `{ install_id, device_label? }`. 201 `{ session: { id, expires_at }, access_token, access_expires_at, refresh_token, login }` |
+| `POST /api/ess/session/refresh` | none: `{ refresh_token, install_id }` | 200, the same shape: the next access and refresh token. A refusal is 401 `NOT_AUTHENTICATED` with `reason` |
+| `POST /api/ess/session/sign-out` | the access token, or `{ refresh_token }` with no bearer | 204. Ends that sign-in |
+| `GET /api/ess/sessions` | portal JWT or attendance session, or an access token from here | `{ sessions: [{ id, device_label, created_at, last_used_at, expires_at, current }] }`, the caller's own |
+| `DELETE /api/ess/sessions/:id` | as above | 204, ending one of the caller's own; 404 for anything else |
+| `POST /api/ess/sign-in/resolve` | none: `{ identifier }` | Which sign-in the one field holds (task A5): `{ kind: "portal", login_with: "as_typed", location_name \| location_names }`, `{ kind: "portal", login_with: "username_or_phone" }`, `{ kind: "attendance", methods }` or `{ kind: "unknown" }` |
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)); the six Wave 2 routes are listed in `tests/contract.test.js` as awaiting it, and their replies are checked against it once it documents them.
+
+### Staying signed in (task A3)
+
+The app trades a fresh Scheduler sign-in for a kept one, and from then on holds a one-hour access token and a refresh token ([docs/04-build-plan.md](../../docs/04-build-plan.md), Wave 2; KP, 16 Oct 2026). The access tokens are minted in the Scheduler's own two formats (`src/lib/accessTokens.js`), so the Scheduler's punch path and portal routes take them unchanged, with one more claim, `sid`, naming the ESS session. **Their `iat` is always the original sign-in's**: the Scheduler lets a code sign-in set the attendance password for 15 minutes after its `iat`, and ends every session older than a password change, so a fresh `iat` would defeat both. `tests/accessTokens.test.js` holds the minted tokens against verbatim copies of the Scheduler's `auth.js`, `punchAuth.js`, `readPunchSession` and the password gate.
+
+A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, keeping only an HMAC-SHA256 of the token under a key derived from `JWT_SECRET`, so rotating the secret ends kept sign-ins too. A refresh retires its row and adds the next one in one transaction (`hr_ess_session_rotate`), and a refresh token presented again is reuse, which ends the family, unless it comes from the same install within a minute (409 `REFRESH_IN_PROGRESS`). Every refresh re-checks the person as `employeeAuth` would. The sign-in ends, with the `reason` the refusal gives, on: sign-out (`signed_out`), reuse or another install (`reuse`), 90 days unused (`expired`), an attendance password set or reset, or a portal password change, since the sign-in (`password_changed`), HR switching the attendance login off (`login_off`), the employee leaving (`left`), and the login no longer linked or no longer staff (`unlinked`). A token carrying `sid` is refused by `employeeAuth` (401) as soon as its family has ended.
+
+### One-field sign-in (task A5)
+
+`src/policy/signIn.js` finds an identifier the way each of the Scheduler's sign-ins would (`tests/signIn.test.js` checks it against verbatim copies of both lookups), and answers only for logins the app can use: never the connector identity, a login linked to nobody, or somebody who has left. Nobody, or more than one person, is `{ kind: "unknown" }`, after the same database reads whatever the reason. Nothing identifying is returned.
 
 ### How sign-in is checked
 
@@ -65,15 +83,20 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 
 | Status | Code | When |
 | --- | --- | --- |
-| 401 | `NOT_AUTHENTICATED` | No token; a bad signature; expired; the wrong algorithm; a deleted account or employee; an attendance session issued before its login's `sessions_valid_from`. Sent with `WWW-Authenticate: Bearer` |
+| 401 | `NOT_AUTHENTICATED` | No token; a bad signature; expired; the wrong algorithm; a deleted account or employee; an attendance session issued before its login's `sessions_valid_from`; a token the ESS minted whose sign-in has ended; a portal sign-in kept from before the password last changed. A refused refresh adds `reason`. Sent with `WWW-Authenticate: Bearer` |
 | 403 | `NOT_AN_EMPLOYEE` | A valid token that is not a staff login: a student token, an admission-undertaking token, any other token signed with `JWT_SECRET`, or the connector account |
 | 403 | `NOT_LINKED` | A portal login with no HR record (`hr_employees.user_id`) |
 | 403 | `NOT_ACTIVE` | The employee has left: archived, exited, or past the last working day (IST) |
 | 403 | `NO_ATTENDANCE_LOGIN` | An attendance session whose login is missing or switched off |
-| 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included) |
+| 403 | `PASSWORD_CHANGE_REQUIRED` | An attendance session signed in with HR's first-time password, before the person chose their own |
+| 403 | `SIGN_IN_NOT_FRESH` | Keeping a sign-in made more than 10 minutes ago |
+| 409 | `ALREADY_EXCHANGED` | Keeping a token the ESS minted itself |
+| 409 | `REFRESH_IN_PROGRESS` | A refresh token traded in less than a minute ago, presented again by the same install: retry with the newest one |
+| 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included); a session that is not one of the caller's |
 | 400 | `INVALID_JSON` | A request body that is not valid JSON |
+| 400 | `BAD_INSTALL_ID`, `BAD_DEVICE_LABEL`, `BAD_IDENTIFIER` | A missing or malformed install id, phone name or sign-in identifier |
 | 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB |
-| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Sent with `Retry-After` |
+| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
 | 503 | `UNAVAILABLE` | The database could not be reached. Never a 401 |
 | 503 | `MODULE_NOT_INSTALLED` | A table or column the ESS reads is missing: the code is live before its migration ([ADR-0021](../../docs/adr/0021-migrations-new-tables-only.md)) |
 | 503 | `MODULE_DISABLED` | `ESS_ENABLED=false` |

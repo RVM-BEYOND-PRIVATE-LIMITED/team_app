@@ -1,10 +1,12 @@
 const express = require('express');
 const { HttpError, MESSAGES, sendError } = require('./lib/errors');
 const { createEmployeeAuth } = require('./middleware/employeeAuth');
-const { DEFAULT_LIMITS, createIpLimiter, createEmployeeLimiter } = require('./middleware/rateLimit');
+const { DEFAULT_LIMITS, createIpLimiter, createEmployeeLimiter, createIdentifierLimiter } = require('./middleware/rateLimit');
 const { healthRoute } = require('./routes/health');
 const { meRoute } = require('./routes/me');
 const { capabilitiesRoute } = require('./routes/capabilities');
+const { sessionRoutes } = require('./routes/sessions');
+const { signInResolveRoute } = require('./routes/signIn');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
@@ -72,12 +74,32 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
 
   // Sign-in and the per-person limit are attached route by route, not with api.use, so that an
   // unknown address answers 404 whether or not a token came with it.
+  const limit = (name) => limits[name] || DEFAULT_LIMITS[name];
   const asEmployee = [
     createEmployeeAuth({ config, store, now }),
-    createEmployeeLimiter(limits.perEmployee || DEFAULT_LIMITS.perEmployee),
+    createEmployeeLimiter(limit('perEmployee')),
   ];
   api.get('/me', asEmployee, meRoute({ store }));
   api.get('/me/capabilities', asEmployee, capabilitiesRoute({ config, store, now }));
+
+  // Staying signed in (task A3). Refresh and sign-out by refresh token take no bearer, so they
+  // share a strict per-address limit instead; a sign-out with no refresh token falls through to
+  // the bearer.
+  const sessions = sessionRoutes({ config, store, now });
+  const sessionLimiter = createIpLimiter(limit('sessionPerIp'));
+  api.post('/session', asEmployee, createEmployeeLimiter(limit('exchangePerEmployee')), sessions.exchange);
+  api.post('/session/refresh', sessionLimiter, sessions.refresh);
+  api.post('/session/sign-out', sessionLimiter, sessions.signOutWithRefreshToken, asEmployee, sessions.signOut);
+  api.get('/sessions', asEmployee, sessions.list);
+  api.delete('/sessions/:id', asEmployee, sessions.end);
+
+  // The one-field sign-in (task A5): no token, so limited per address and per identifier.
+  api.post(
+    '/sign-in/resolve',
+    createIpLimiter(limit('signInPerIp')),
+    createIdentifierLimiter(limit('signInPerIdentifier')),
+    signInResolveRoute({ store, now }),
+  );
 
   app.use('/api/ess', api);
 
@@ -99,7 +121,7 @@ function errorHandler(err, req, res, next) {
   if (err instanceof HttpError) {
     // RFC 6750: a 401 says which scheme would have worked.
     if (err.status === 401) res.set('WWW-Authenticate', 'Bearer');
-    return sendError(res, err.status, err.code, err.message);
+    return sendError(res, err.status, err.code, err.message, err.extra);
   }
   if (err && err.type === 'entity.parse.failed') return sendError(res, 400, 'INVALID_JSON', MESSAGES.INVALID_JSON);
   const status = err && (err.status || err.statusCode);

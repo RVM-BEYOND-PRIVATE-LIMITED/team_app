@@ -8,13 +8,17 @@
  * 401 means one thing only: the token is absent or no longer good, and the app signs out on
  * it. Everything else that stops a request is a 403, 404, 429 or 503, so a database outage or
  * a missing HR link never signs anybody out (ADR-0006, J8 in docs/02-reconciliation.md).
+ *
+ * `extra` adds fields beside error and code, as the Scheduler's refuse() does
+ * (controllers/hr/attendanceOtpController.js:77-90): a refused refresh says why, in `reason`.
  */
 class HttpError extends Error {
-  constructor(status, code, message) {
+  constructor(status, code, message, extra = null) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
     this.code = code;
+    this.extra = extra;
   }
 }
 
@@ -31,6 +35,18 @@ const MESSAGES = Object.freeze({
   ATTENDANCE_LOGIN_OFF: 'Your attendance login is turned off. Ask HR.',
   // The Scheduler's wording (attendancePunchController.js:196-197).
   PASSWORD_CHANGE_REQUIRED: 'Set your own password first. The password HR gave you only works once.',
+  // Staying signed in (task A3).
+  SIGN_IN_NOT_FRESH: 'To stay signed in on this phone, sign in again and keep the sign-in within 10 minutes.',
+  ALREADY_EXCHANGED: 'This phone is already signed in. There is nothing more to do.',
+  REFRESH_IN_PROGRESS: 'Your sign-in is being renewed. Try again in a moment.',
+  SIGNED_OUT: 'You have signed out. Please sign in again.',
+  SIGNED_OUT_FOR_SAFETY: 'For your safety you have been signed out. Please sign in again.',
+  SESSION_UNLINKED: 'Your login is no longer linked to your employee record. Ask HR or the tech team.',
+  SESSION_NOT_FOUND: 'That sign-in is not one of yours, or it has already ended.',
+  BAD_INSTALL_ID: 'The app did not identify this phone correctly. Update the app and try again.',
+  BAD_DEVICE_LABEL: 'The app sent a phone name the server cannot keep. Update the app and try again.',
+  // One-field sign-in (task A5).
+  BAD_IDENTIFIER: 'Enter your phone number, email, employee code or username.',
   RATE_LIMITED: 'Too many requests. Wait a minute and try again.',
   UNAVAILABLE: 'The server cannot reach the database right now. Try again in a minute.',
   MODULE_DISABLED: 'Team RVM is switched off on the server for now. Try again later.',
@@ -42,7 +58,12 @@ const MESSAGES = Object.freeze({
   INTERNAL_ERROR: 'Something went wrong on the server. Try again, and tell the tech team if it keeps happening.',
 });
 
-const sendError = (res, status, code, message) => res.status(status).json({ error: message, code });
+/** error and code first, and an extra field can never replace either of them. */
+function sendError(res, status, code, message, extra = null) {
+  const body = { error: message, code };
+  for (const [key, value] of Object.entries(extra || {})) if (!(key in body)) body[key] = value;
+  return res.status(status).json(body);
+}
 
 const notAuthenticated = (message = MESSAGES.SIGN_IN) => new HttpError(401, 'NOT_AUTHENTICATED', message);
 

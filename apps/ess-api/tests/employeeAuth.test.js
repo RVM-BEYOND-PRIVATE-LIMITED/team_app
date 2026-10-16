@@ -242,6 +242,13 @@ describe('tokens that are absent or no good: 401, before any database read', () 
     ['an attendance session whose employee id is not a UUID', () => bearer(jwt.sign(
       { k: 'punch', e: 'emp-1', m: 'otp' }, S.punchSessionKey(), { algorithm: 'HS256', audience: 'rvm-punch', expiresIn: '30d' },
     ))],
+    // Only the ESS signs a sid in (lib/accessTokens.js), and always a uuid.
+    ['an attendance session whose sid is not a UUID', (p) => bearer(S.signedAt(SIGNED_AT, () => jwt.sign(
+      { k: 'punch', e: p.attendance.employee.id, m: 'otp', sid: 'session-1' }, S.punchSessionKey(), { algorithm: 'HS256', audience: 'rvm-punch', expiresIn: '1h' },
+    )))],
+    ['a portal token whose sid is not a UUID', (p) => bearer(S.signedAt(SIGNED_AT, () => jwt.sign(
+      { userId: p.hr.user.id, role: 'hr', sid: 7 }, TEST_JWT_SECRET, { expiresIn: '1h' },
+    )))],
   ];
 
   it.each(cases)('%s', async (_label, headers) => {

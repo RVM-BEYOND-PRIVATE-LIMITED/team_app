@@ -54,6 +54,7 @@ The refreshable session (A3) works like this (KP, 16 Oct: access tokens last 1 h
    - HR switches the login off;
    - the employee leaves;
    - the person signs out, or a used refresh token is presented again (all of that sign-in's tokens end).
+   - Added in the build, for KP to confirm: the portal password changes (`users.password_changed_at`, stamped by the Scheduler's own password change and forgot-password reset). The Scheduler never checks it, so without this a portal password somebody else learned would stay good for as long as they kept refreshing, after its owner changed it.
 
 ## Wave 3: Phase 1 features
 
@@ -139,13 +140,19 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-None yet. Wave 1 needs no table. From Wave 2 on, every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, and an agent checks it read-only afterwards.
+Wave 1 needs no table. From Wave 2 on, every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, and an agent checks it read-only afterwards.
+
+| # | Migration | Rollback | Creates | Needed by |
+| --- | --- | --- | --- | --- |
+| 1 | [`20261101000000_hr_ess_sessions.sql`](../db/migrations/20261101000000_hr_ess_sessions.sql) | [`db/rollbacks/20261101000000_hr_ess_sessions.sql`](../db/rollbacks/20261101000000_hr_ess_sessions.sql) | `hr_ess_sessions` (one row per refresh token, a keyed hash of it only), its indexes, and the functions `hr_ess_session_rotate` and `hr_ess_session_revoke`, service role only | A3: `POST /api/ess/session`, `/session/refresh`, `/session/sign-out`, `GET /api/ess/sessions`, `DELETE /api/ess/sessions/:id` answer 503 `MODULE_NOT_INSTALLED` until it is applied |
+
+The read-only check afterwards: `hr_ess_sessions` answers through PostgREST (not `PGRST205`), and `hr_ess_session_rotate` and `hr_ess_session_revoke` appear in the OpenAPI listing for the service key and not for the anon key. KP confirms the indexes with `SELECT indexname FROM pg_indexes WHERE tablename = 'hr_ess_sessions'` (five, `hr_ess_sessions_live_family_key` among them).
 
 ## Risks
 
 - **Token formats.**
   - The ESS verifies the Scheduler's tokens, and from A3 it also mints them, using the shared `JWT_SECRET`. If the Scheduler's signing code changes, the ESS answers 401 `NOT_AUTHENTICATED` to the new tokens and the app signs those people out. The ESS tests hold a verbatim copy of that code, but CI cannot read the Scheduler repository, so the copy is compared with the Scheduler only when someone runs `SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test --workspace apps/ess-api` by hand. Run it whenever the Scheduler changes.
-  - Rotating `JWT_SECRET` signs everyone out of both services.
+  - Rotating `JWT_SECRET` signs everyone out of both services, kept sign-ins (A3) included: their refresh tokens are hashed under a key derived from it, so none matches afterwards.
 - **Schema coupling.** The ESS reads Scheduler tables, so a Scheduler migration that renames a column breaks it. The tests' column list (`SCHEMA` in `apps/ess-api/tests/helpers/fakeSupabase.js`) is kept by hand, and nothing compares it with the Scheduler's migrations, so update it with every Scheduler migration that touches a table the ESS reads.
 - **Shared nginx.** A broken team_app nginx file would block the Scheduler's deploys. The ESS deploy tests before reloading, puts the last good file back on a failure, and CI runs every case against nginx 1.18 and 1.24 ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)). Deleting the ESS certificate while its file is enabled would also break `nginx -t`, so [05-deploy.md](05-deploy.md) takes the host off nginx first.
 - **The deploy secrets reach every branch.** On GitHub Free a repository's secrets cannot be limited to `main`. Today only the three organisation admins can push, and they hold the same secrets in Scheduler_Backend; [05-deploy.md](05-deploy.md) lists the steps before anyone else gets write access.
