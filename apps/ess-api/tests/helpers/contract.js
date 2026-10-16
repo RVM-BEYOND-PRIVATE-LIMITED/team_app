@@ -12,7 +12,10 @@ const Ajv2020 = require('ajv/dist/2020');
  * fails, just as a reply missing a required one does: the app may only rely on what is written.
  */
 
-const CONTRACT_FILE = path.join(__dirname, '..', '..', '..', '..', 'packages', 'contracts', 'openapi.yaml');
+// ESS_CONTRACT_FILE checks the replies against a draft before it is copied into
+// packages/contracts; CI never sets it.
+const CONTRACT_FILE = process.env.ESS_CONTRACT_FILE
+  || path.join(__dirname, '..', '..', '..', '..', 'packages', 'contracts', 'openapi.yaml');
 const contract = YAML.parse(fs.readFileSync(CONTRACT_FILE, 'utf8'));
 
 const METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
@@ -93,6 +96,9 @@ function operation(method, fullPath) {
   return found;
 }
 
+/** Whether the contract has the operation yet. */
+const documents = (method, fullPath) => operations().some((op) => op.method === method && op.path === fullPath);
+
 /** The error codes a response documents: those in its examples and those named in `backticks` in its description. */
 function documentedCodes(response) {
   const codes = new Set();
@@ -114,6 +120,13 @@ function contractProblems(op, res) {
   const key = responses[String(res.status)] ? String(res.status) : 'default';
   if (!responses[key]) return [`${op.method} ${op.path} does not document ${res.status}`];
   const documented = deref(responses[key]);
+  // 204 No Content: documented with no body, and sent with none.
+  if (res.status === 204) {
+    const problems = [];
+    if (documented.content) problems.push(`${op.method} ${op.path} documents a body for 204`);
+    if (res.text) problems.push('a 204 reply carried a body');
+    return problems;
+  }
   const media = documented.content && documented.content['application/json'];
   if (!media) return [`${op.method} ${op.path} ${key} documents no JSON reply`];
 
@@ -141,7 +154,8 @@ function contractProblems(op, res) {
 
 /**
  * The routes an Express 4 app serves under /api/ess, as 'GET /api/ess/me'. This reads Express's
- * own router stack, so it lists what is really mounted rather than what a test remembers.
+ * own router stack, so it lists what is really mounted rather than what a test remembers. A path
+ * parameter is spelt as the contract spells it: /sessions/:id is /sessions/{id}.
  */
 function essRoutes(app) {
   const routes = [];
@@ -149,10 +163,11 @@ function essRoutes(app) {
     if (layer.name !== 'router' || !layer.regexp.test('/api/ess')) continue;
     for (const inner of layer.handle.stack) {
       if (!inner.route) continue;
-      for (const method of Object.keys(inner.route.methods)) routes.push(`${method.toUpperCase()} /api/ess${inner.route.path}`);
+      const route = inner.route.path.replace(/:(\w+)/g, '{$1}');
+      for (const method of Object.keys(inner.route.methods)) routes.push(`${method.toUpperCase()} /api/ess${route}`);
     }
   }
   return routes.sort();
 }
 
-module.exports = { contract, deref, operations, operation, documentedCodes, contractProblems, essRoutes, CONTRACT_FILE };
+module.exports = { contract, deref, operations, operation, documents, documentedCodes, contractProblems, essRoutes, CONTRACT_FILE };

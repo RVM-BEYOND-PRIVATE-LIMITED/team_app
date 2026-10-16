@@ -1,6 +1,6 @@
 /**
  * The Scheduler's role names and inheritance, copied from Scheduler_Backend config/roles.js at
- * commit c28b9ca (lines 4-89 and 135-136).
+ * commit c28b9ca (lines 4-103 and 135-136).
  *
  * A copy, not a shared package, because the ESS runs as a separate process from a separate
  * repository (ADR-0005). tests/roles.test.js compares this file with the Scheduler's whenever
@@ -97,6 +97,20 @@ const SEES_ALL_LOCATIONS = new Set([
   ROLES.ACCOUNTS_ADMIN,
 ]);
 
+/**
+ * Roles that do not belong to a branch, and so are created without one.
+ *
+ * Deliberately NOT the same set as SEES_ALL_LOCATIONS, even though it contains it.
+ * SEES_ALL_LOCATIONS drives `req.isSuperAdmin`, which ~141 call sites read as "skip the
+ * branch filter". HR is company-wide in the sense that it has no branch, but it must not
+ * gain that bypass: it would hand HR every centre's students, fees and attendance, which
+ * is the opposite of a role that sees only its own workspace.
+ *
+ * So this set answers one narrow question — "must a branch be chosen when creating this
+ * account?" — and nothing else.
+ */
+const NO_BRANCH_ROLES = new Set([...SEES_ALL_LOCATIONS, ROLES.HR, ROLES.HR_EXECUTIVE, ROLES.BOT_READONLY]);
+
 // Roles that hold a teaching faculty record, so auth resolves them via users.faculty_id.
 const TEACHING_ROLES = new Set([ROLES.FACULTY, ROLES.HOD]);
 
@@ -107,5 +121,6 @@ module.exports = {
   roleSatisfies,
   rolesSatisfying,
   SEES_ALL_LOCATIONS,
+  NO_BRANCH_ROLES,
   TEACHING_ROLES,
 };

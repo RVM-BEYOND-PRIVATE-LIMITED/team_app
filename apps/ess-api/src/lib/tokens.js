@@ -26,6 +26,10 @@ const { TEACHING_ROLES } = require('../policy/roles');
  * to HS256 (auth.js accepts any HMAC algorithm jsonwebtoken allows). And a portal token must
  * look like one: auth.js admits anything signed with JWT_SECRET, a student token included, while
  * this service answers NOT_AN_EMPLOYEE for every shape that is not a staff login.
+ *
+ * The short access tokens the ESS mints for a kept sign-in (task A3, lib/accessTokens.js) are
+ * these same two formats with one more claim, `sid`, naming the ESS session. The Scheduler
+ * ignores it; readToken reports it, and employeeAuth refuses the token once that session ends.
  */
 
 /** The attendance session's audience: services/attendancePunch.js:206. */
@@ -42,11 +46,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const attendanceSessionKey = (jwtSecret) =>
   crypto.createHash('sha256').update(`rvm-punch-session:${jwtSecret}`).digest('hex');
 
-/**
- * readPunchSession (services/attendancePunch.js:230-239) with the clock passed in:
- * { employeeId, method, issuedAt (ms) } for an attendance session, null for anything else.
- */
-function readAttendanceSession(token, { jwtSecret, nowMs }) {
+/** The verified payload of an attendance session, or null: readPunchSession's checks. */
+function attendancePayload(token, { jwtSecret, nowMs }) {
   if (!token) return null;
   try {
     const p = jwt.verify(token, attendanceSessionKey(jwtSecret), {
@@ -54,11 +55,31 @@ function readAttendanceSession(token, { jwtSecret, nowMs }) {
       audience: ATTENDANCE_AUDIENCE,
       clockTimestamp: Math.floor(nowMs / 1000),
     });
-    if (!(p && p.k === 'punch' && typeof p.e === 'string' && UUID_RE.test(p.e))) return null;
-    return { employeeId: p.e, method: p.m === 'pw' ? 'pw' : 'otp', issuedAt: (Number(p.iat) || 0) * 1000 };
+    return p && p.k === 'punch' && typeof p.e === 'string' && UUID_RE.test(p.e) ? p : null;
   } catch {
     return null;
   }
+}
+
+const attendanceFields = (p) => ({ employeeId: p.e, method: p.m === 'pw' ? 'pw' : 'otp', issuedAt: (Number(p.iat) || 0) * 1000 });
+
+/**
+ * readPunchSession (services/attendancePunch.js:230-239) with the clock passed in:
+ * { employeeId, method, issuedAt (ms) } for an attendance session, null for anything else.
+ */
+function readAttendanceSession(token, options) {
+  const p = attendancePayload(token, options);
+  return p ? attendanceFields(p) : null;
+}
+
+/**
+ * The ESS session a token was minted for (lib/accessTokens.js), from its `sid` claim; null for a
+ * token the Scheduler issued, which never carries one. Only the ESS signs a sid in, so one that
+ * is not a uuid means the token is not what it claims to be.
+ */
+function sessionIdOf(p) {
+  if (p.sid === undefined) return { sessionId: null };
+  return typeof p.sid === 'string' && UUID_RE.test(p.sid) ? { sessionId: p.sid.toLowerCase() } : null;
 }
 
 /**
@@ -80,15 +101,21 @@ function isPortalPayload(p) {
 /**
  * What a bearer token is, tried in the Scheduler's order (attendance session first):
  *
- *   { kind: 'attendance', employeeId, method, issuedAt }
- *   { kind: 'portal', userId, role, facultyId, issuedAt }
+ *   { kind: 'attendance', employeeId, method, issuedAt, sessionId }
+ *   { kind: 'portal', userId, role, facultyId, locationName, issuedAt, sessionId }
  *   { kind: 'not_staff' }                         signed with JWT_SECRET but not a staff login
  *   { kind: 'rejected', reason: 'expired'|'invalid' }  absent, forged, expired or malformed
+ *
+ * sessionId is the ESS session a minted token belongs to, and null for the Scheduler's own.
  */
 function readToken(token, { jwtSecret, nowMs }) {
   if (!token) return { kind: 'rejected', reason: 'invalid' };
-  const session = readAttendanceSession(token, { jwtSecret, nowMs });
-  if (session) return { kind: 'attendance', ...session };
+  const a = attendancePayload(token, { jwtSecret, nowMs });
+  if (a) {
+    const sid = sessionIdOf(a);
+    if (!sid) return { kind: 'rejected', reason: 'invalid' };
+    return { kind: 'attendance', ...attendanceFields(a), ...sid };
+  }
 
   let p;
   try {
@@ -97,6 +124,8 @@ function readToken(token, { jwtSecret, nowMs }) {
     return { kind: 'rejected', reason: e && e.name === 'TokenExpiredError' ? 'expired' : 'invalid' };
   }
   if (!isPortalPayload(p)) return { kind: 'not_staff' };
+  const sid = sessionIdOf(p);
+  if (!sid) return { kind: 'rejected', reason: 'invalid' };
   const role = typeof p.role === 'string' ? p.role : null;
   return {
     kind: 'portal',
@@ -104,7 +133,11 @@ function readToken(token, { jwtSecret, nowMs }) {
     role,
     // auth.js finds a teaching role's account by this id rather than by userId (auth.js:50-57).
     facultyId: TEACHING_ROLES.has(role) && p.id ? p.id : null,
+    // The branch typed at sign-in, signed unchecked (userController.js:503). Never used to decide
+    // anything; an ESS session only carries it into the tokens it mints, as the Scheduler's does.
+    locationName: typeof p.locationName === 'string' ? p.locationName : null,
     issuedAt: (Number(p.iat) || 0) * 1000,
+    ...sid,
   };
 }
 

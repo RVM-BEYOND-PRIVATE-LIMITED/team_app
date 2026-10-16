@@ -10,7 +10,7 @@ const path = require('path');
  */
 
 const dir = process.env.SCHEDULER_BACKEND_DIR;
-const HELPERS = ['helpers/schedulerTokens.js', 'helpers/schedulerRules.js'];
+const HELPERS = ['helpers/schedulerTokens.js', 'helpers/schedulerRules.js', 'helpers/schedulerGuards.js', 'helpers/schedulerSignIn.js'];
 const MARKED = /^[ \t]*\/\/ <scheduler file="([^"]+)" lines="([^"]+)">[ \t]*\r?\n([\s\S]*?)^[ \t]*\/\/ <\/scheduler>/gm;
 
 const lines = (text) => text.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -42,6 +42,20 @@ describe('the verbatim Scheduler copies', () => {
       'services/attendanceAccounts.js:39-53',
       'services/attendancePunch.js:172',
       'controllers/hr/attendancePunchController.js:88-90',
+      // schedulerGuards.js: what the Scheduler does with a token the ESS minted.
+      'middleware/auth.js:6-106',
+      'middleware/punchAuth.js:22-33',
+      'services/attendancePunch.js:241-242',
+      'controllers/hr/attendanceOtpController.js:77-78',
+      'controllers/hr/attendanceOtpController.js:341-354',
+      // schedulerSignIn.js: how its two sign-ins find an account.
+      'controllers/hr/attendanceOtpController.js:77-78',
+      'utils/sms.js:66-72',
+      'services/hrPhones.js:47-52',
+      'services/attendanceAccounts.js:55-62',
+      'controllers/hr/attendanceOtpController.js:92-172',
+      'controllers/userController.js:271-279',
+      'controllers/userController.js:296-305',
     ]);
     for (const b of found) expect(b.code.length).toBeGreaterThan(0);
   });

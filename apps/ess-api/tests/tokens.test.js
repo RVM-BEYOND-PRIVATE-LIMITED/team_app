@@ -22,9 +22,9 @@ describe('the attendance session', () => {
     expect(ATTENDANCE_AUDIENCE).toBe('rvm-punch');
   });
 
-  it.each(['otp', 'pw'])('earned by %s reads back as the employee it names', (method) => {
+  it.each(['otp', 'pw'])('earned by %s reads back as the employee it names, with no ESS session', (method) => {
     const token = signed(() => S.issuePunchSession(people.attendance.employee.id, method));
-    expect(read(token)).toEqual({ kind: 'attendance', employeeId: people.attendance.employee.id, method, issuedAt: at.getTime() });
+    expect(read(token)).toEqual({ kind: 'attendance', employeeId: people.attendance.employee.id, method, issuedAt: at.getTime(), sessionId: null });
   });
 
   it('is read exactly as the Scheduler\'s readPunchSession reads it', () => {
@@ -57,9 +57,16 @@ describe('the attendance session', () => {
 });
 
 describe('the portal token', () => {
-  it('from sign-in reads back with its account, role and no faculty id for a non-teaching role', () => {
+  it('from sign-in reads back with its account, role, branch and no faculty id for a non-teaching role', () => {
     const token = signed(() => S.portalLoginToken(people.hr.user, 'Faridabad'));
-    expect(read(token)).toEqual({ kind: 'portal', userId: people.hr.user.id, role: 'hr', facultyId: null, issuedAt: at.getTime() });
+    expect(read(token)).toEqual({
+      kind: 'portal', userId: people.hr.user.id, role: 'hr', facultyId: null, locationName: 'Faridabad', issuedAt: at.getTime(), sessionId: null,
+    });
+  });
+
+  it('from a two-factor sign-in with no branch reads back with a null branch', () => {
+    // login/verify signs `location_name || null` (authSecurityController.js:80).
+    expect(read(signed(() => S.tokenFor(people.hr.user, null)))).toMatchObject({ kind: 'portal', locationName: null });
   });
 
   it.each(['faculty', 'hod'])('for a %s carries the faculty id auth.js resolves it by', (who) => {
@@ -130,6 +137,37 @@ describe('other tokens signed with JWT_SECRET', () => {
 
   it('a string payload is not a staff login', () => {
     expect(read(jwt.sign('just a string', TEST_JWT_SECRET))).toEqual({ kind: 'not_staff' });
+  });
+});
+
+describe('the sid claim of a token the ESS minted', () => {
+  const sid = '5a000000-0000-4000-8000-000000000001';
+
+  it('is read from either kind, as the ESS session the token belongs to', () => {
+    const attendance = jwt.sign({ k: 'punch', e: people.attendance.employee.id, m: 'otp', sid }, S.punchSessionKey(), { audience: 'rvm-punch', expiresIn: '1h' });
+    const portal = jwt.sign({ userId: people.hr.user.id, role: 'hr', sid }, TEST_JWT_SECRET, { expiresIn: '1h' });
+    expect(read(attendance, Date.now())).toMatchObject({ kind: 'attendance', sessionId: sid });
+    expect(read(portal, Date.now())).toMatchObject({ kind: 'portal', sessionId: sid });
+  });
+
+  it('is read in lower case, as the database keeps a uuid', () => {
+    const token = jwt.sign({ userId: people.hr.user.id, role: 'hr', sid: sid.toUpperCase() }, TEST_JWT_SECRET, { expiresIn: '1h' });
+    expect(read(token, Date.now()).sessionId).toBe(sid);
+  });
+
+  it.each([['not a uuid', 'session-1'], ['a number', 42], ['an object', { id: sid }], ['null', null]])(
+    'that is %s makes the token rejected: only the ESS signs a sid in, and it signs a uuid',
+    (_label, value) => {
+      const attendance = jwt.sign({ k: 'punch', e: people.attendance.employee.id, m: 'otp', sid: value }, S.punchSessionKey(), { audience: 'rvm-punch', expiresIn: '1h' });
+      const portal = jwt.sign({ userId: people.hr.user.id, role: 'hr', sid: value }, TEST_JWT_SECRET, { expiresIn: '1h' });
+      expect(read(attendance, Date.now())).toEqual({ kind: 'rejected', reason: 'invalid' });
+      expect(read(portal, Date.now())).toEqual({ kind: 'rejected', reason: 'invalid' });
+    },
+  );
+
+  it('leaves the Scheduler\'s reading of an attendance session as it was', () => {
+    const token = jwt.sign({ k: 'punch', e: people.attendance.employee.id, m: 'pw', sid }, S.punchSessionKey(), { audience: 'rvm-punch', expiresIn: '1h' });
+    expect(readAttendanceSession(token, { jwtSecret: TEST_JWT_SECRET, nowMs: Date.now() })).toEqual(S.readPunchSession(token));
   });
 });
 

@@ -149,8 +149,58 @@ function company() {
       { id: DEPT_HR_ID, name: 'Human Resources', is_active: true, source: 'manual' },
     ],
     hr_attendance_accounts: [attendanceAccount],
+    // The Scheduler's branches (users.location_id), in the order the web's dropdown lists them,
+    // which is not alphabetical, so a test can tell the two orders apart.
+    locations: LOCATIONS.map((l) => ({ ...l })),
+    hr_ess_sessions: [],
   };
   return { tables, people };
 }
 
-module.exports = { company, uuid, BRANCH_ID, DEPT_TECH_ID, DEPT_HR_ID, STUDENT_ID, PORTAL_PEOPLE };
+const LOCATIONS = Object.freeze([
+  { id: 1, name: 'Faridabad' },
+  { id: 2, name: 'Pune' },
+  { id: 3, name: 'Ahmedabad' },
+  { id: 4, name: 'Lucknow' },
+]);
+
+/** An install id as the app makes one: random, once per install. */
+const INSTALL_ID = 'install-0123456789abcdef';
+const OTHER_INSTALL_ID = 'install-fedcba9876543210';
+
+let sessionRows = 0;
+
+/**
+ * One hr_ess_sessions row, for a test that needs a sign-in the API did not make (somebody else's,
+ * an expired one). Defaults to a live attendance sign-in of the attendance-only employee, made on
+ * another install; set `refresh_hash` (lib/accessTokens.js refreshTokenHash, with the test secret)
+ * for a row a test presents a token for.
+ */
+function sessionRow(overrides = {}) {
+  sessionRows += 1;
+  const id = overrides.id || uuid('5', sessionRows);
+  return {
+    id,
+    family_id: id,
+    employee_id: uuid('e', 50),
+    login_kind: 'attendance',
+    user_id: null,
+    location_name: null,
+    method: 'otp',
+    signed_in_at: '2026-10-16T06:00:00.000Z',
+    install_id: OTHER_INSTALL_ID,
+    device_label: null,
+    refresh_hash: String(sessionRows).padStart(64, '0'),
+    created_at: '2026-10-16T06:00:00.000Z',
+    last_used_at: '2026-10-16T06:00:00.000Z',
+    expires_at: '2027-01-14T06:00:00.000Z',
+    replaced_by: null,
+    revoked_at: null,
+    revoked_reason: null,
+    ...overrides,
+  };
+}
+
+module.exports = {
+  company, uuid, sessionRow, BRANCH_ID, DEPT_TECH_ID, DEPT_HR_ID, STUDENT_ID, PORTAL_PEOPLE, LOCATIONS, INSTALL_ID, OTHER_INSTALL_ID,
+};
