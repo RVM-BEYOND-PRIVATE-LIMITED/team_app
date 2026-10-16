@@ -2,6 +2,11 @@ name: Deploy ESS
 
 # A merge to main that touches the ESS deploys it (ADR-0011). A manual run from main deploys
 # again, for instance after a repository variable changed.
+#
+# The ESS runs on the Scheduler's server as its own pm2 process (team-rvm-ess, port 3001, bound
+# to 127.0.0.1) behind its own nginx file for its own host name (ADR-0019). Nothing here touches
+# the Scheduler's directory, its pm2 process or its nginx files. docs/05-deploy.md is the
+# runbook: which secrets and variables to set, in which order, and how to switch it off.
 on:
   push:
     branches: [main]
@@ -46,12 +51,33 @@ jobs:
       - name: Test
         run: npm test --workspace apps/ess-api
 
-  # The safety switch. Until the server, the nginx route to port 3001 (ADR-0019) and the secrets are
-  # ready, a merge runs the tests and stops. Set the repository variable ESS_DEPLOY_ENABLED to
-  # 'true' to deploy.
+  # The nginx file and the script that installs it, run against a real nginx in a container
+  # through every case the deploy can meet (apps/ess-api/deploy/test-nginx.sh).
+  nginx:
+    name: nginx ${{ matrix.nginx }} file & script
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The nginx of Ubuntu 22.04 (1.18) and of 24.04 (1.24), as in ci.yml.
+        nginx: ['1.18', '1.24']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: shellcheck
+        run: shellcheck apps/ess-api/deploy/*.sh
+
+      - name: Run the nginx cases
+        run: |
+          docker run --rm -v "$PWD:/work:ro" "nginx:${{ matrix.nginx }}-alpine" sh -c \
+            "apk add --no-cache bash openssl curl > /dev/null && bash /work/apps/ess-api/deploy/test-nginx.sh"
+
+  # The safety switch. Until the server, the DNS record and the secrets are ready, a merge runs
+  # the tests and stops. Set the repository variable ESS_DEPLOY_ENABLED to 'true' to deploy.
   not-deployed:
     name: Deploy switched off
-    needs: test
+    needs: [test, nginx]
     if: ${{ !(vars.ESS_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
@@ -60,9 +86,11 @@ jobs:
 
   deploy:
     name: Deploy to the server
-    needs: test
+    needs: [test, nginx]
     if: ${{ vars.ESS_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    env:
+      ESS_HOST: ${{ vars.ESS_HOST }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -73,30 +101,60 @@ jobs:
           node-version: 20
           cache: npm
 
-      # A QUOTED heredoc: the shell expands nothing inside it, so a $ or a backtick in a secret is
-      # written exactly as typed. (The Scheduler's deploy uses an unquoted one, which expands them;
-      # ADR-0005.) Every value has to fit on one line, which is why the Firebase key is stored
-      # base64-encoded. The switch and the app versions are repository variables, not secrets.
+      # The name goes into an nginx file and a certbot command on the server, so only a plain
+      # host name is accepted, and never one of the Scheduler's (ADR-0019).
+      # configure-nginx.sh checks it again on the server.
+      - name: Check the host name
+        run: |
+          host=$(printf '%s' "$ESS_HOST" | tr '[:upper:]' '[:lower:]')
+          if ! printf '%s' "$host" | grep -Eq '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'; then
+            echo "::error::The repository variable ESS_HOST is missing or is not a host name. Set it to the ESS's own host name, for example team-api.rvmcad.org."
+            exit 1
+          fi
+          case "$host" in
+            scheduler.rvmcad.org|student.rvmcad.org)
+              echo "::error::ESS_HOST is ${host}, which belongs to the Scheduler. The ESS needs a host name of its own (ADR-0019)."
+              exit 1 ;;
+          esac
+          echo "ESS_HOST: ${host}"
+
+      # The values reach the file through environment variables and printf, never through the
+      # script's text, so a $, a backtick or a quote in a secret is written exactly as typed.
+      # Every value has to fit on one line, which is why the Firebase key is stored
+      # base64-encoded; a value with a line break is refused rather than splitting the file.
+      # The switch and the app versions are repository variables, not secrets.
       - name: Write .env on the runner
         working-directory: apps/ess-api
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ESS_ENABLED: ${{ vars.ESS_ENABLED }}
+          GIT_SHA: ${{ github.sha }}
+          MIN_APP_VERSION: ${{ vars.MIN_APP_VERSION }}
+          LATEST_APP_VERSION: ${{ vars.LATEST_APP_VERSION }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY_B64: ${{ secrets.FIREBASE_PRIVATE_KEY_B64 }}
         run: |
-          cat > .env << 'EOF'
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          ESS_ENABLED=${{ vars.ESS_ENABLED }}
-          GIT_SHA=${{ github.sha }}
-          MIN_APP_VERSION=${{ vars.MIN_APP_VERSION }}
-          LATEST_APP_VERSION=${{ vars.LATEST_APP_VERSION }}
-          FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
-          FIREBASE_CLIENT_EMAIL=${{ secrets.FIREBASE_CLIENT_EMAIL }}
-          FIREBASE_PRIVATE_KEY_B64=${{ secrets.FIREBASE_PRIVATE_KEY_B64 }}
-          EOF
+          umask 077
+          : > .env
+          for k in SUPABASE_URL SUPABASE_SERVICE_KEY JWT_SECRET ESS_ENABLED GIT_SHA \
+                   MIN_APP_VERSION LATEST_APP_VERSION \
+                   FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY_B64; do
+            v="${!k}"
+            case "$v" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${k} contains a line break. Store it on one line."
+                exit 1 ;;
+            esac
+            printf '%s=%s\n' "$k" "$v" >> .env
+          done
           chmod 600 .env
 
       # Lengths only, never values. A missing value fails the deploy here, before anything on the
       # server changes, rather than leaving a service that starts and refuses everybody. A secret
-      # missing from the heredoc is otherwise silently absent in production (ADR-0011).
+      # missing from the file is otherwise silently absent in production (ADR-0011).
       - name: Check the database and sign-in settings
         working-directory: apps/ess-api
         run: |
@@ -161,7 +219,7 @@ jobs:
       # The same check the server makes as it starts (src/config.js), made here so that a bad
       # value fails the deploy instead of the restart. It names variables, never values.
       - name: Install the production dependencies
-        run: npm ci --omit=dev --workspace=apps/ess-api
+        run: npm ci --omit=dev --ignore-scripts --workspace=apps/ess-api
 
       - name: Check the settings the way the ESS will
         working-directory: apps/ess-api
@@ -173,17 +231,32 @@ jobs:
             console.log('The ESS settings are valid.');
           "
 
+      # SSH_KNOWN_HOSTS, when set, pins the server's host key. Without it the key is fetched on
+      # each run, as the Scheduler's deploy does, and its fingerprint is printed so it can be pinned.
       - name: Set up SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           DEPLOY_HOST: ${{ secrets.HOST }}
         run: |
-          mkdir -p ~/.ssh
+          if [ -z "$SSH_PRIVATE_KEY" ] || [ -z "$DEPLOY_HOST" ]; then
+            echo "::error::The HOST and SSH_PRIVATE_KEY secrets must be set (the same server login as the Scheduler's deploy)."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            echo "Using the pinned host key from SSH_KNOWN_HOSTS."
+          else
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2> /dev/null
+            echo "::notice::SSH_KNOWN_HOSTS is not set, so the server's host key was fetched now. Its fingerprints:"
+            ssh-keygen -lf ~/.ssh/known_hosts
+          fi
 
-      # node_modules is installed on the server for its own platform, and .git stays behind.
+      # node_modules is installed on the server for its own platform, and .git and the docs stay
+      # behind.
       - name: Copy the code to the server
         env:
           DEPLOY_HOST: ${{ secrets.HOST }}
@@ -192,33 +265,46 @@ jobs:
           rsync -az --delete \
             --exclude='.git' \
             --exclude='node_modules' \
+            --exclude='/docs' \
             -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:~/team_app/"
 
-      # nginx is not touched here yet. The ESS's own server block and certificate (ADR-0019) are
-      # the next step (docs/04-build-plan.md); the Scheduler's nginx files are never written
-      # (ADR-0018). Only the ESS's own pm2 process is started or reloaded, never `pm2 restart all`.
-      - name: Install and restart on the server
+      # The process first, then nginx: nginx sends nothing to the ESS until it answers.
+      # `bash -l` gives the same login environment, and so the same PATH to node and pm2,
+      # as the Scheduler's deploy gets. The host name was checked above, so it is safe to quote.
+      - name: Install, restart and put nginx in front
         env:
           DEPLOY_HOST: ${{ secrets.HOST }}
           DEPLOY_USER: ${{ secrets.USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" << 'ENDSSH'
-          set -e
+          host=$(printf '%s' "$ESS_HOST" | tr '[:upper:]' '[:lower:]')
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "ESS_HOST='${host}' bash -l -s" << 'ENDSSH'
+          set -euo pipefail
           cd ~/team_app
           chmod 600 apps/ess-api/.env
 
           echo "Node on the server: $(node --version)"
           major=$(node -p "process.versions.node.split('.')[0]")
           if [ "$major" -lt 20 ]; then
-            echo "The ESS needs Node 20 or later."
+            echo "::error::The ESS needs Node 20 or later. The Scheduler shares this Node (ADR-0017)."
             exit 1
           fi
 
-          echo "Installing the ESS's production dependencies..."
-          npm ci --omit=dev --workspace=apps/ess-api
+          # Port 3001 must be free, or already be the ESS.
+          if ! pm2 describe team-rvm-ess > /dev/null 2>&1; then
+            if ss -ltn | awk '{print $4}' | grep -Eq '(^|:)3001$'; then
+              echo "::error::Something other than the ESS already listens on port 3001."
+              exit 1
+            fi
+          fi
 
-          echo "Starting or reloading team-rvm-ess..."
+          # --ignore-scripts: none of the ESS's dependencies needs an install script, and none
+          # should get to run code on the production server while it installs.
+          echo "Installing the ESS's production dependencies..."
+          npm ci --omit=dev --ignore-scripts --workspace=apps/ess-api
+
+          echo "Starting or reloading team-rvm-ess (no other pm2 process is touched)..."
           pm2 startOrReload apps/ess-api/ecosystem.config.cjs --update-env
           pm2 save
 
@@ -227,16 +313,36 @@ jobs:
           want=$(sed -n 's/^APP_VERSION=//p' apps/ess-api/.env)
           if [ -z "$want" ]; then want=$(sed -n 's/^GIT_SHA=//p' apps/ess-api/.env); fi
           echo "Waiting for /api/ess/health on port 3001 to report ${want}..."
+          ok=""
           for _ in $(seq 1 20); do
             body=$(curl -fsS --max-time 5 http://127.0.0.1:3001/api/ess/health || true)
             case "$body" in
-              *"\"version\":\"${want}\""*)
-                echo "$body"
-                echo "Deployed."
-                exit 0 ;;
+              *"\"version\":\"${want}\""*) ok=1; break ;;
             esac
             sleep 3
           done
-          echo "The ESS did not report ${want} on /api/ess/health within a minute. Look at: pm2 logs team-rvm-ess"
-          exit 1
+          if [ -z "$ok" ]; then
+            echo "::error::The ESS did not report ${want} on /api/ess/health within a minute. The last lines of its log:"
+            pm2 logs team-rvm-ess --lines 40 --nostream || true
+            exit 1
+          fi
+          echo "$body"
+          case "$body" in
+            *'"db":"ok"'*) ;;
+            *) echo "::warning::The ESS is up but cannot reach the database. Check SUPABASE_URL and SUPABASE_SERVICE_KEY." ;;
+          esac
+
+          bash apps/ess-api/deploy/configure-nginx.sh
+          echo "Deployed."
           ENDSSH
+
+      # From outside, through DNS, nginx and the certificate. On a first deploy the DNS record or
+      # the certificate may not be ready yet, so this warns rather than fails.
+      - name: Check the ESS from outside
+        run: |
+          host=$(printf '%s' "$ESS_HOST" | tr '[:upper:]' '[:lower:]')
+          if body=$(curl -fsS --max-time 15 "https://${host}/api/ess/health"); then
+            echo "https://${host}/api/ess/health: ${body}"
+          else
+            echo "::warning::https://${host}/api/ess/health does not answer yet. On a first deploy, check the DNS record and the certbot lines above."
+          fi

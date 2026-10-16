@@ -7,7 +7,9 @@
  * run once: a second instance, or cluster mode, would split the limits and run every job twice.
  *
  * The secrets are not here. They are in apps/ess-api/.env, which the deploy writes and
- * src/server.js reads; PORT is set here so that it wins over anything in that file.
+ * src/server.js reads; PORT and HOST are set here so that they win over anything in that file
+ * and over anything already in pm2's own environment. HOST keeps the port on loopback, behind
+ * the ESS's own nginx file (ADR-0019).
  */
 module.exports = {
   apps: [
@@ -24,6 +26,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3001,
+        HOST: '127.0.0.1',
       },
     },
   ],

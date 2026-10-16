@@ -66,3 +66,27 @@ jobs:
 
       - name: Lint packages/contracts/openapi.yaml
         run: npm run lint --workspace @team-rvm/contracts
+
+  # The ESS's nginx file and the script the deploy installs it with, run against a real nginx in
+  # a container through every case the deploy can meet (ADR-0019). The Scheduler's deploy stops
+  # when `nginx -t` fails for any site, so a broken file from here must never reach the server.
+  nginx:
+    name: nginx ${{ matrix.nginx }} file & script
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The nginx of Ubuntu 22.04 (1.18) and of 24.04 (1.24): the server runs one of them, and
+        # the file uses nothing newer than 1.18.
+        nginx: ['1.18', '1.24']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: shellcheck
+        run: shellcheck apps/ess-api/deploy/*.sh
+
+      - name: Run the nginx cases
+        run: |
+          docker run --rm -v "$PWD:/work:ro" "nginx:${{ matrix.nginx }}-alpine" sh -c \
+            "apk add --no-cache bash openssl curl > /dev/null && bash /work/apps/ess-api/deploy/test-nginx.sh"

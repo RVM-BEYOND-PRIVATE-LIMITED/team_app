@@ -16,10 +16,11 @@ team_app/
   db/migrations/         new hr_ess_* tables only (ADR-0021)
   db/rollbacks/          one rollback per migration, kept out of the migrations folder
   docs/                  summary, inputs, reconciliation, decisions, build plan, ADRs
-  .github/workflows/     ci.yml (every PR and push), deploy-ess.yml (merge to main)
+  .github/workflows/     ci.yml (every PR and push), deploy-ess.yml (merge to main),
+                         check-server.yml (a read-only look at the server, run by hand)
 ```
 
-Only `apps/ess-api` and `packages/contracts` exist so far.
+Only `apps/ess-api` and `packages/contracts` exist so far. `apps/ess-api/deploy/` holds the ESS's nginx file and the script the deploy installs it with.
 
 The JavaScript side is one set of npm workspaces with a single `package-lock.json` at the root: `apps/ess-api` and `packages/contracts`.
 
@@ -44,8 +45,9 @@ The settings, endpoints and error codes are in [apps/ess-api/README.md](apps/ess
 
 ## CI and deploy
 
-- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every pull request and push: `npm ci`, then the ESS's lint and tests on Node 20 and 24, and the Redocly lint of `packages/contracts/openapi.yaml`.
-- **Deploy** ([.github/workflows/deploy-ess.yml](.github/workflows/deploy-ess.yml)) runs on a merge to `main` that touches the ESS ([ADR-0011](docs/adr/0011-ci-merge-and-auto-deploy.md)). It runs the ESS's tests again and writes `.env` from the repository secrets in a quoted heredoc, printing only lengths. It then rsyncs to `~/team_app` on the server, installs the production dependencies, starts or reloads the pm2 process `team-rvm-ess` and waits until `/api/ess/health` reports the commit it deployed. It does nothing until the repository variable `ESS_DEPLOY_ENABLED` is `true`. It does not touch nginx yet: the ESS's own server block and certificate ([ADR-0019](docs/adr/0019-ess-on-its-own-subdomain.md)) are the next step ([docs/04-build-plan.md](docs/04-build-plan.md)).
+- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every pull request and push: `npm ci`, then the ESS's lint and tests on Node 20 and 24, the Redocly lint of `packages/contracts/openapi.yaml`, and the nginx cases (shellcheck, then `apps/ess-api/deploy/test-nginx.sh` against a real nginx in a container).
+- **Deploy** ([.github/workflows/deploy-ess.yml](.github/workflows/deploy-ess.yml)) runs on a merge to `main` that touches the ESS ([ADR-0011](docs/adr/0011-ci-merge-and-auto-deploy.md)). It runs the tests again, then writes `.env` from the repository secrets through environment variables, printing only lengths. It rsyncs to `~/team_app` on the server, installs the production dependencies, starts or reloads the pm2 process `team-rvm-ess` and waits until `/api/ess/health` reports the commit it deployed. Last, it puts the ESS's own nginx file in front, for `team-api.rvmcad.org`, with its own certificate ([ADR-0019](docs/adr/0019-ess-on-its-own-subdomain.md)), and checks the host from outside. It does nothing until the repository variable `ESS_DEPLOY_ENABLED` is `true`. Step by step, with how to switch it off: [docs/05-deploy.md](docs/05-deploy.md).
+- **Server check** ([.github/workflows/check-server.yml](.github/workflows/check-server.yml)), run by hand, logs in with the deploy key and reports what the deploy depends on, changing nothing.
 
 What the deploy reads:
 
@@ -55,6 +57,8 @@ What the deploy reads:
 | Secret | `JWT_SECRET` | The Scheduler's own value (required) |
 | Secret | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY_B64` | Push; log-only while empty |
 | Secret | `HOST`, `USER`, `SSH_PRIVATE_KEY` | The server and the deploy login |
+| Secret | `SSH_KNOWN_HOSTS` | Optional: the server's pinned host key |
+| Variable | `ESS_HOST` | The ESS's host name, `team-api.rvmcad.org` |
 | Variable | `ESS_DEPLOY_ENABLED` | `true` to deploy at all |
 | Variable | `ESS_ENABLED` | `false` switches the ESS off without a code change |
 | Variable | `MIN_APP_VERSION`, `LATEST_APP_VERSION` | What `/api/ess/health` tells the app |
@@ -68,6 +72,7 @@ What the deploy reads:
 | [docs/02-reconciliation.md](docs/02-reconciliation.md) | Every task checked against the Scheduler's code |
 | [docs/03-decisions.md](docs/03-decisions.md) | Product decisions and limits |
 | [docs/04-build-plan.md](docs/04-build-plan.md) | The build plan, wave by wave |
+| [docs/05-deploy.md](docs/05-deploy.md) | Deploying the ESS, and switching it off |
 | [docs/adr/](docs/adr/README.md) | Architecture decisions |
 
 The Scheduler is used as it is: its endpoints as a client and its database as a data source, never changed for Team RVM ([ADR-0018](docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
