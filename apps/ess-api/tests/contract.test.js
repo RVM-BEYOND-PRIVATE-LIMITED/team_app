@@ -35,11 +35,24 @@ const quietErrors = () => vi.spyOn(console, 'error').mockImplementation(() => {}
  */
 const AWAITING_CONTRACT = [
   'DELETE /api/ess/sessions/{id}',
+  'GET /api/ess/attendance/day',
+  'GET /api/ess/hr/data-requests',
+  'GET /api/ess/hr/devices',
+  'GET /api/ess/hr/employees/{id}/personal',
+  'GET /api/ess/hr/mock-location-reports',
+  'GET /api/ess/me/data-requests',
+  'GET /api/ess/me/personal',
   'GET /api/ess/sessions',
+  'PATCH /api/ess/hr/data-requests/{id}',
+  'POST /api/ess/attendance/mock-location',
+  'POST /api/ess/hr/devices/reset',
+  'POST /api/ess/me/data-requests',
   'POST /api/ess/session',
   'POST /api/ess/session/refresh',
   'POST /api/ess/session/sign-out',
   'POST /api/ess/sign-in/resolve',
+  'PUT /api/ess/hr/employees/{id}/personal',
+  'PUT /api/ess/me/personal',
 ];
 
 describe('the routes', () => {

@@ -107,4 +107,4 @@ The workflow itself also reads `HOST`, `USER` and `SSH_PRIVATE_KEY` (the server 
 
 ## Migrations
 
-There are none yet. When the first `hr_ess_*` tables arrive, they will be in `db/migrations`, with a rollback for each in `db/rollbacks`. KP applies them by hand, in order ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED`.
+The `hr_ess_*` tables are in `db/migrations`, with a rollback for each in `db/rollbacks`; [04-build-plan.md](04-build-plan.md#migrations-in-run-order) lists them in run order. KP applies them by hand, in order, in the Supabase SQL editor ([ADR-0021](adr/0021-migrations-new-tables-only.md)); the deploy never runs one. Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED`. Before applying, `npm run test:migrations` (Docker only) runs them against a throwaway Postgres.

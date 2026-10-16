@@ -1,19 +1,26 @@
+const crypto = require('crypto');
+
 /**
  * An in-memory stand-in for the supabase-js client, so the tests run the real store
  * (src/lib/store.js) against plain arrays and never reach a database.
  *
  * It answers the query shapes the store uses the way PostgREST does where the store depends on
- * it: from().select(columns) with .eq(), .is(), .not(column, 'is', null), .in(), .limit() and
- * .abortSignal(), awaited as a list or through .maybeSingle(); .insert() and .update(), each
- * optionally followed by .select(columns); and .rpc() for the functions team_app's migrations
- * create.
- *   - an unknown table is PGRST205, an unknown function PGRST202, an unknown column selected or
- *     filtered on is 42703, and one written PGRST204;
- *   - two rows for maybeSingle() is PGRST116;
- *   - a duplicate key is 23505, checked against the unique keys below;
+ * it:
+ *   - reads: from().select(columns) with .eq(), .neq(), .in(), .is(), .not(column, 'is', null),
+ *     .gte(), .gt(), .lte(), .lt(), .order(), .limit() and .abortSignal(), awaited as a list or
+ *     through .maybeSingle() or .single();
+ *   - writes: .insert(rows), .upsert(rows, { onConflict }) and .update(patch) with the same
+ *     filters, returning rows only when .select(columns) follows, as PostgREST does;
+ *   - .rpc() for the functions team_app's migrations create;
+ *   - an unknown table is PGRST205, an unknown function PGRST202; an unknown column selected,
+ *     filtered or ordered on is 42703, and an unknown column written is PGRST204;
+ *   - a second row on a primary or unique key is 23505, checked against KEYS and UNIQUE below;
+ *   - two rows for maybeSingle(), or anything but one for single(), is PGRST116;
  *   - select('*') throws, because the store must always name its columns.
  * Timestamps of team_app's own tables come back in PostgREST's spelling (+00:00, not Z), so code
  * that compares them as strings fails here as it would in production.
+ *
+ * Inserted rows get the defaults db/migrations gives the hr_ess_* tables, timed by `now`.
  *
  * `outage` simulates the database being away: 'error' (supabase-js returns an error, as it does
  * when fetch fails), 'throw' (the call itself rejects) or 'hang' (no answer until aborted).
@@ -22,9 +29,10 @@
  */
 
 /**
- * The columns each table has in the Scheduler's migrations at c28b9ca. Not every column, but
- * enough that a whitelist naming a wrong one fails here as it would in production, and that the
- * password hashes are present to prove they are never read.
+ * The columns each table has. Scheduler tables: its migrations at c28b9ca, not every column,
+ * but enough that a whitelist naming a wrong one fails here as it would in production, and that
+ * the password and token hashes are present to prove they are never read. hr_ess_* tables:
+ * db/migrations, all of them. Keep this in step with both (docs/04-build-plan.md, Risks).
  */
 const SCHEMA = {
   users: ['id', 'username', 'phone_number', 'password_hash', 'role', 'faculty_id', 'created_at', 'location_id',
@@ -37,16 +45,35 @@ const SCHEMA = {
   hr_attendance_accounts: ['id', 'employee_id', 'status', 'password_hash', 'password_set_at', 'sessions_valid_from',
     'failed_attempts', 'locked_until', 'last_login_at', 'created_at', 'updated_at'],
   locations: ['id', 'name'],
-  // team_app's own: db/migrations/20261101000000_hr_ess_sessions.sql.
+  // 20261020000000_hr_attendance_punch.sql:77-90
+  hr_attendance_devices: ['id', 'employee_id', 'token_hash', 'user_agent', 'bound_ip', 'status', 'bound_at', 'last_seen_at',
+    'revoked_at', 'revoked_by', 'revoked_by_name', 'revoke_reason'],
+  // 20261015000004:13-28, 20261020000000:62-66, 20261022000000:106-123
+  hr_staff_attendance: ['id', 'employee_id', 'branch_id', 'day', 'status', 'leave_type', 'note', 'marked_by', 'marked_by_name',
+    'marked_at', 'updated_at', 'source', 'first_in', 'last_out', 'worked_minutes', 'shift_id', 'shift_start', 'shift_end',
+    'grace_minutes', 'late_minutes', 'early_exit_minutes', 'late_count', 'late_half_day', 'late_excused',
+    'late_excused_by_name', 'late_excused_reason', 'late_excused_at'],
+  // 20261022000000:151-160
+  hr_attendance_remarks: ['id', 'employee_id', 'day', 'remarks', 'updated_by', 'updated_by_name', 'updated_at'],
+  // 20261023000000:12-19
+  hr_attendance_employee_remarks: ['id', 'employee_id', 'day', 'remarks', 'updated_at'],
+  // team_app's own, db/migrations: 20261101000000_hr_ess_sessions.sql
   hr_ess_sessions: ['id', 'family_id', 'employee_id', 'login_kind', 'user_id', 'location_name', 'method', 'signed_in_at',
     'install_id', 'device_label', 'refresh_hash', 'created_at', 'last_used_at', 'expires_at', 'replaced_by', 'revoked_at',
     'revoked_reason'],
+  // and 20261105000000 to 20261105000003
+  hr_ess_audit: ['id', 'at', 'actor_user_id', 'actor_employee_id', 'actor_name', 'action', 'target_employee_id', 'details'],
+  hr_ess_data_requests: ['id', 'employee_id', 'kind', 'details', 'status', 'created_at', 'resolved_at', 'resolved_by_user_id',
+    'resolved_by_name', 'resolution_note'],
+  hr_ess_personal_details: ['employee_id', 'date_of_birth', 'blood_group', 'address_line1', 'address_line2', 'city', 'state',
+    'pincode', 'emergency_name', 'emergency_relation', 'emergency_phone', 'updated_at', 'updated_by_user_id', 'updated_by_name'],
+  hr_ess_mock_location_reports: ['id', 'employee_id', 'branch_id', 'reported_at', 'client_at', 'kind', 'latitude', 'longitude',
+    'accuracy_m', 'provider', 'app_version', 'install_id'],
 };
 
-/** The unique keys the stand-in enforces, as the migrations declare them. */
+/** The unique keys the stand-in enforces besides the primary key (KEYS), as the migrations declare them. */
 const UNIQUE = {
   hr_ess_sessions: [
-    { name: 'hr_ess_sessions_pkey', columns: ['id'] },
     { name: 'hr_ess_sessions_refresh_hash_key', columns: ['refresh_hash'] },
     // One live row per family (the partial unique index).
     { name: 'hr_ess_sessions_live_family_key', columns: ['family_id'], where: (row) => row.revoked_at == null },
@@ -58,7 +85,45 @@ const TIMESTAMPS = {
   hr_ess_sessions: new Set(['signed_in_at', 'created_at', 'last_used_at', 'expires_at', 'revoked_at']),
 };
 
-const clone = (value) => JSON.parse(JSON.stringify(value));
+/** The primary key of each table, where it is not `id`. */
+const KEYS = {
+  hr_ess_personal_details: ['employee_id'],
+};
+
+/** What the database fills in on insert: the hr_ess_* DEFAULTs in db/migrations. */
+const DEFAULTS = {
+  hr_ess_audit: (at) => ({ at, details: {} }),
+  hr_ess_data_requests: (at) => ({ status: 'open', created_at: at }),
+  hr_ess_personal_details: (at) => ({ updated_at: at }),
+  hr_ess_mock_location_reports: (at) => ({ reported_at: at }),
+};
+
+const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+
+/** Timestamps compare as instants whatever their offset, as Postgres compares timestamptz. */
+const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T/;
+function compare(a, b) {
+  if (typeof a === 'string' && typeof b === 'string' && TIMESTAMP_RE.test(a) && TIMESTAMP_RE.test(b)) {
+    return Date.parse(a) - Date.parse(b);
+  }
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  const [x, y] = [String(a), String(b)];
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+const TESTS = {
+  eq: (v, x) => v === x,
+  neq: (v, x) => v !== x,
+  is: (v, x) => v === x,
+  'not.is': (v, x) => v !== x,
+  in: (v, xs) => xs.includes(v),
+  gte: (v, x) => v !== null && compare(v, x) >= 0,
+  gt: (v, x) => v !== null && compare(v, x) > 0,
+  lte: (v, x) => v !== null && compare(v, x) <= 0,
+  lt: (v, x) => v !== null && compare(v, x) < 0,
+};
+
+const missingTable = (table) => ({ data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } });
 
 /** 2026-10-16T06:30:00.000Z -> 2026-10-16T06:30:00+00:00, as PostgREST writes a timestamptz. */
 function postgrestTime(value) {
@@ -67,13 +132,18 @@ function postgrestTime(value) {
   return `${iso.slice(0, 19)}${iso.slice(19, 23) === '.000' ? '' : iso.slice(19, 23)}+00:00`;
 }
 
-const missingTable = (table) => ({ data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } });
 const missingColumn = (table, column) => ({ data: null, error: { code: '42703', message: `column ${table}.${column} does not exist` } });
 const duplicate = (key) => ({ data: null, error: { code: '23505', message: `duplicate key value violates unique constraint "${key}"` } });
 
-/** The first unique key `candidate` would break among `rows` (itself excepted), or null. */
+const primaryKey = (table) => KEYS[table] || ['id'];
+
+/**
+ * The first key `candidate` would break among `rows` (itself excepted), or null: the primary key
+ * (KEYS, `id` by default), then the table's UNIQUE keys.
+ */
 function brokenKey(table, rows, candidate) {
-  for (const key of UNIQUE[table] || []) {
+  const keys = [{ name: `${table}_pkey`, columns: primaryKey(table) }, ...(UNIQUE[table] || [])];
+  for (const key of keys) {
     if (key.where && !key.where(candidate)) continue;
     const value = key.columns.map((c) => candidate[c] ?? null);
     if (value.some((v) => v === null)) continue;
@@ -91,10 +161,13 @@ class Query {
     this.table = table;
     this.op = 'select';
     this.columns = null;
+    this.returning = null;
     this.values = null;
-    this.filters = [];
+    this.onConflict = null;
+    this.conditions = [];
+    this.orders = [];
     this.max = null;
-    this.single = false;
+    this.expect = null;
     this.signal = null;
   }
 
@@ -102,7 +175,9 @@ class Query {
     if (typeof columns !== 'string' || columns.includes('*')) {
       throw new Error(`select(${JSON.stringify(columns)}) on ${this.table}: the store must name its columns`);
     }
-    this.columns = columns.split(',').map((c) => c.trim()).filter(Boolean);
+    const list = columns.split(',').map((c) => c.trim()).filter(Boolean);
+    if (this.op === 'select') this.columns = list;
+    else this.returning = list;
     return this;
   }
 
@@ -112,31 +187,40 @@ class Query {
     return this;
   }
 
-  update(values) {
+  upsert(rows, { onConflict } = {}) {
+    this.op = 'upsert';
+    this.values = clone(Array.isArray(rows) ? rows : [rows]);
+    this.onConflict = onConflict ? onConflict.split(',').map((c) => c.trim()) : null;
+    return this;
+  }
+
+  update(patch) {
     this.op = 'update';
-    this.values = clone(values);
+    this.values = [clone(patch)];
     return this;
   }
 
-  /** Filters are [column, value] for eq, and [column, value, operator] for the others. */
-  eq(column, value) {
-    this.filters.push([column, value]);
+  where(test, column, value) {
+    this.conditions.push([test, column, value]);
     return this;
   }
 
-  is(column, value) {
-    this.filters.push([column, value, 'is']);
-    return this;
-  }
+  eq(column, value) { return this.where('eq', column, value); }
+  neq(column, value) { return this.where('neq', column, value); }
+  is(column, value) { return this.where('is', column, value); }
+  in(column, values) { return this.where('in', column, [...values]); }
+  gte(column, value) { return this.where('gte', column, value); }
+  gt(column, value) { return this.where('gt', column, value); }
+  lte(column, value) { return this.where('lte', column, value); }
+  lt(column, value) { return this.where('lt', column, value); }
 
   not(column, operator, value) {
     if (operator !== 'is') throw new Error(`not(${column}, ${operator}): only "is" is supported here`);
-    this.filters.push([column, value, 'not.is']);
-    return this;
+    return this.where('not.is', column, value);
   }
 
-  in(column, values) {
-    this.filters.push([column, [...values], 'in']);
+  order(column, { ascending = true } = {}) {
+    this.orders.push([column, ascending]);
     return this;
   }
 
@@ -151,7 +235,12 @@ class Query {
   }
 
   maybeSingle() {
-    this.single = true;
+    this.expect = 'maybe';
+    return this;
+  }
+
+  single() {
+    this.expect = 'one';
     return this;
   }
 
@@ -160,18 +249,12 @@ class Query {
   }
 
   matches(row) {
-    return this.filters.every(([c, v, op]) => {
-      const actual = row[c] ?? null;
-      if (op === 'is') return actual === v;
-      if (op === 'not.is') return actual !== v;
-      if (op === 'in') return v.includes(actual);
-      return actual === v;
-    });
+    return this.conditions.every(([test, column, value]) => TESTS[test](row[column] ?? null, value));
   }
 
-  shape(rows) {
+  project(rows, columns) {
     const times = TIMESTAMPS[this.table];
-    return rows.map((row) => Object.fromEntries(this.columns.map((c) => {
+    return rows.map((row) => Object.fromEntries(columns.map((c) => {
       const value = row[c] === undefined ? null : clone(row[c]);
       return [c, times && times.has(c) ? postgrestTime(value) : value];
     })));
@@ -180,8 +263,17 @@ class Query {
   async run() {
     const { fake } = this;
     const record = {
-      table: this.table, op: this.op, columns: this.columns || [], filters: this.filters, values: this.values,
-      single: this.single, limit: this.max, aborted: false,
+      op: this.op,
+      table: this.table,
+      columns: this.op === 'select' ? this.columns : (this.returning || []),
+      // [column, value] for an equality filter and [column, value, operator] for the others, the
+      // shape the older tests read; every condition, with its test first, in `conditions`.
+      filters: this.conditions.map(([t, c, v]) => (t === 'eq' ? [c, v] : [c, v, t])),
+      conditions: this.conditions,
+      values: clone(this.values),
+      single: this.expect !== null,
+      limit: this.max,
+      aborted: false,
     };
     fake.queries.push(record);
 
@@ -203,48 +295,96 @@ class Query {
 
     const known = fake.schema.get(this.table);
     if (!known) return missingTable(this.table);
-    for (const column of [...(this.columns || []), ...this.filters.map(([c]) => c)]) {
+    const read = [...(this.columns || []), ...(this.returning || []), ...this.conditions.map(([, c]) => c), ...this.orders.map(([c]) => c)];
+    for (const column of read) {
       if (!known.has(column)) return missingColumn(this.table, column);
     }
-    const table = fake.rows(this.table);
-
-    if (this.op === 'insert') {
-      for (const row of this.values) {
-        const unknown = Object.keys(row).find((c) => !known.has(c));
-        if (unknown) return { data: null, error: { code: 'PGRST204', message: `Could not find the '${unknown}' column of '${this.table}' in the schema cache` } };
+    for (const value of this.values || []) {
+      for (const column of Object.keys(value)) {
+        if (!known.has(column)) return { data: null, error: { code: 'PGRST204', message: `Could not find the '${column}' column of '${this.table}' in the schema cache` } };
       }
-      const after = [...table];
-      for (const row of this.values) {
-        after.push(row);
-        const key = brokenKey(this.table, after, row);
-        if (key) return duplicate(key);
-      }
-      table.push(...this.values);
-      return { data: this.columns ? this.shape(this.values) : null, error: null };
     }
 
-    if (this.op === 'update') {
-      const unknown = Object.keys(this.values).find((c) => !known.has(c));
-      if (unknown) return { data: null, error: { code: 'PGRST204', message: `Could not find the '${unknown}' column of '${this.table}' in the schema cache` } };
-      const hit = table.filter((row) => this.matches(row));
-      const before = hit.map((row) => ({ ...row }));
-      hit.forEach((row) => Object.assign(row, clone(this.values)));
-      const key = hit.map((row) => brokenKey(this.table, table, row)).find(Boolean);
-      if (key) {
-        hit.forEach((row, i) => { Object.keys(row).forEach((k) => delete row[k]); Object.assign(row, before[i]); });
-        return duplicate(key);
+    const rows = fake.rows(this.table);
+    let out;
+    if (this.op === 'select') {
+      out = rows.filter((row) => this.matches(row));
+      for (const [column, ascending] of [...this.orders].reverse()) {
+        out = [...out].sort((a, b) => {
+          const [x, y] = [a[column] ?? null, b[column] ?? null];
+          // PostgREST's defaults: nulls last going up, first going down.
+          if (x === null || y === null) return x === y ? 0 : (x === null ? 1 : -1) * (ascending ? 1 : -1);
+          return ascending ? compare(x, y) : compare(y, x);
+        });
       }
-      return { data: this.columns ? this.shape(hit) : null, error: null };
+      if (this.max !== null) out = out.slice(0, this.max);
+      out = this.project(out, this.columns);
+    } else {
+      const result = this.write(rows);
+      if (result.error) return result;
+      out = this.returning ? this.project(result.rows, this.returning) : null;
     }
 
-    let rows = table.filter((row) => this.matches(row));
-    if (this.max !== null) rows = rows.slice(0, this.max);
-    const out = this.shape(rows);
-    if (this.single) {
-      if (out.length > 1) return { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } };
+    if (this.expect && out) {
+      if (out.length > 1 || (this.expect === 'one' && out.length === 0)) {
+        return { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } };
+      }
       return { data: out[0] || null, error: null };
     }
     return { data: out, error: null };
+  }
+
+  /** One statement, all or nothing, as Postgres runs it: a broken key leaves the table as it was. */
+  write(rows) {
+    const { fake, table } = this;
+    const key = primaryKey(table);
+    const at = fake.now().toISOString();
+    const sameKey = (a, b, columns) => columns.every((c) => (a[c] ?? null) === (b[c] ?? null));
+
+    if (this.op === 'update') {
+      const changed = rows.filter((row) => this.matches(row));
+      const before = changed.map((row) => clone(row));
+      for (const row of changed) Object.assign(row, clone(this.values[0]));
+      const broken = changed.map((row) => brokenKey(table, rows, row)).find(Boolean);
+      if (broken) {
+        changed.forEach((row, i) => { Object.keys(row).forEach((k) => delete row[k]); Object.assign(row, before[i]); });
+        return duplicate(broken);
+      }
+      return { rows: changed };
+    }
+
+    const written = [];
+    const added = [];
+    const undo = [];
+    const fail = (broken) => {
+      for (const row of added) rows.splice(rows.indexOf(row), 1);
+      for (const [row, was] of undo) { Object.keys(row).forEach((k) => delete row[k]); Object.assign(row, was); }
+      return duplicate(broken);
+    };
+    for (const value of this.values) {
+      const conflictOn = this.op === 'upsert' ? (this.onConflict || key) : null;
+      const existing = conflictOn ? rows.find((row) => sameKey(row, value, conflictOn)) : null;
+      if (existing) {
+        // PostgREST's merge-duplicates: only the columns sent are written.
+        undo.push([existing, clone(existing)]);
+        Object.assign(existing, clone(value));
+        const broken = brokenKey(table, rows, existing);
+        if (broken) return fail(broken);
+        written.push(existing);
+        continue;
+      }
+      const row = {
+        ...(key.includes('id') ? { id: crypto.randomUUID() } : {}),
+        ...(DEFAULTS[table] ? DEFAULTS[table](at) : {}),
+        ...clone(value),
+      };
+      const broken = brokenKey(table, [...rows, row], row);
+      if (broken) return fail(broken);
+      rows.push(row);
+      added.push(row);
+      written.push(row);
+    }
+    return { rows: written };
   }
 }
 
@@ -325,14 +465,16 @@ class RpcCall {
 
 /**
  * @param {Record<string, object[]>} tables  rows by table name; copied, so the caller's fixture is not changed
+ * @param {{ now?: () => Date }} [options]   the database's clock, for its DEFAULT now() columns
  */
-function createFakeSupabase(tables = {}) {
+function createFakeSupabase(tables = {}, { now = () => new Date() } = {}) {
   const fake = {
     tables: clone(tables),
     schema: new Map(Object.entries(SCHEMA).map(([t, cols]) => [t, new Set(cols)])),
     queries: [],
     outage: null,
     failWhen: null,
+    now,
     from(table) {
       return new Query(fake, table);
     },
@@ -351,6 +493,10 @@ function createFakeSupabase(tables = {}) {
     rows(table) {
       if (!fake.tables[table]) fake.tables[table] = [];
       return fake.tables[table];
+    },
+    /** The writes made, oldest first: { op, table, values, conditions }. */
+    writes() {
+      return fake.queries.filter((q) => q.op !== 'select');
     },
   };
   return fake;

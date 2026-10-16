@@ -1,6 +1,9 @@
+const crypto = require('crypto');
+
 /**
- * A small company for the tests: one branch, two departments, one linked portal login for every
- * staff role, an employee with only an attendance login, and the accounts the ESS must refuse.
+ * A small company for the tests: two branches, two departments, one linked portal login for every
+ * staff role, an employee with only an attendance login, a member of staff at the second branch,
+ * and the accounts the ESS must refuse. Some of them have registered phones and attendance days.
  *
  * The reporting lines (manager_id) are:
  *
@@ -15,6 +18,7 @@
 const uuid = (prefix, n) => `${prefix}0000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 const BRANCH_ID = uuid('b', 1);
+const BRANCH_PUNE_ID = uuid('b', 2);
 const DEPT_TECH_ID = uuid('d', 1);
 const DEPT_HR_ID = uuid('d', 2);
 const STUDENT_ID = uuid('c', 1);
@@ -140,10 +144,112 @@ function company() {
   users.push(botUser);
   people.bot = { user: botUser, employee: null };
 
+  // Staff at the second branch, with no login of either kind; nobody reports to them.
+  const puneEmployee = {
+    id: uuid('e', 60),
+    employee_code: 'RVM-060',
+    full_name: 'Test Pune Counsellor',
+    designation: 'Counsellor',
+    department_id: DEPT_TECH_ID,
+    branch_id: BRANCH_PUNE_ID,
+    manager_id: null,
+    email: 'pune@example.test',
+    phone: '9710000060',
+    date_of_joining: '2025-03-01',
+    date_of_exit: null,
+    employment_status: 'active',
+    is_archived: false,
+    user_id: null,
+    geofence_exempt: false,
+  };
+  employees.push(puneEmployee);
+  people.pune = { user: null, employee: puneEmployee };
+
+  // Registered phones (hr_attendance_devices, 20261020000000:77-90). token_hash is there to prove
+  // it never leaves the server.
+  const device = (n, employeeId, change = {}) => ({
+    id: uuid('7', n),
+    employee_id: employeeId,
+    token_hash: `fixture-token-hash-${n}-never-returned`,
+    user_agent: 'Mozilla/5.0 (Linux; Android 14) Mobile',
+    bound_ip: '203.0.113.10',
+    status: 'active',
+    bound_at: `2026-10-${String(n).padStart(2, '0')}T04:00:00+00:00`,
+    last_seen_at: '2026-10-16T04:10:00+00:00',
+    revoked_at: null,
+    revoked_by: null,
+    revoked_by_name: null,
+    revoke_reason: null,
+    ...change,
+  });
+  const devices = [
+    device(1, people.faculty.employee.id),
+    device(2, attendanceEmployee.id),
+    device(3, attendanceEmployee.id, {
+      status: 'revoked', last_seen_at: '2026-10-02T04:00:00+00:00', revoked_at: '2026-10-02T05:00:00+00:00',
+      revoked_by: people.hr.user.id, revoked_by_name: 'hr.login', revoke_reason: 'Phone lost',
+    }),
+    device(4, puneEmployee.id),
+  ];
+
+  // Days (hr_staff_attendance) and remarks, for the attendance employee and, to prove nobody sees
+  // another's, the faculty member.
+  const day = (employeeId, d, change = {}) => ({
+    id: crypto.randomUUID(),
+    employee_id: employeeId,
+    branch_id: BRANCH_ID,
+    day: d,
+    status: 'present',
+    leave_type: null,
+    note: null,
+    marked_by: null,
+    marked_by_name: 'Test (self punch)',
+    marked_at: `${d}T04:00:00+00:00`,
+    updated_at: `${d}T12:00:00+00:00`,
+    source: 'self_punch',
+    first_in: `${d}T04:20:00+00:00`,
+    last_out: `${d}T12:40:00+00:00`,
+    worked_minutes: 500,
+    shift_id: null,
+    shift_start: '09:30:00',
+    shift_end: '18:30:00',
+    grace_minutes: 15,
+    late_minutes: 20,
+    early_exit_minutes: 20,
+    late_count: 1,
+    late_half_day: false,
+    late_excused: false,
+    late_excused_by_name: null,
+    late_excused_reason: null,
+    late_excused_at: null,
+    ...change,
+  });
+  const attendanceDays = [
+    day(attendanceEmployee.id, '2026-10-15', { note: 'Bus was late' }),
+    day(attendanceEmployee.id, '2026-09-20', { status: 'leave', leave_type: 'cl', source: 'override', note: 'CL approved by HR',
+      first_in: null, last_out: null, worked_minutes: null, late_minutes: null, early_exit_minutes: null, late_count: null }),
+    day(people.faculty.employee.id, '2026-10-15', { note: 'Faculty note, not for anybody else' }),
+  ];
+  const hrRemarks = [
+    { id: crypto.randomUUID(), employee_id: attendanceEmployee.id, day: '2026-10-15', remarks: 'Spoke to him about the bus.',
+      updated_by: people.hr.user.id, updated_by_name: 'hr.login', updated_at: '2026-10-15T09:00:00+00:00' },
+    { id: crypto.randomUUID(), employee_id: people.faculty.employee.id, day: '2026-10-15', remarks: 'Faculty HR remark.',
+      updated_by: people.hr.user.id, updated_by_name: 'hr.login', updated_at: '2026-10-15T09:00:00+00:00' },
+  ];
+  const employeeRemarks = [
+    { id: crypto.randomUUID(), employee_id: attendanceEmployee.id, day: '2026-10-15', remarks: 'The bus broke down.',
+      updated_at: '2026-10-15T05:00:00+00:00' },
+    { id: crypto.randomUUID(), employee_id: people.faculty.employee.id, day: '2026-10-15', remarks: 'Faculty own remark.',
+      updated_at: '2026-10-15T05:00:00+00:00' },
+  ];
+
   const tables = {
     users,
     hr_employees: employees,
-    hr_branches: [{ id: BRANCH_ID, name: 'Faridabad', is_active: true, latitude: 28.4089, longitude: 77.3178, geofence_radius_m: 150 }],
+    hr_branches: [
+      { id: BRANCH_ID, name: 'Faridabad', is_active: true, latitude: 28.4089, longitude: 77.3178, geofence_radius_m: 150 },
+      { id: BRANCH_PUNE_ID, name: 'Pune', is_active: true, latitude: 18.5204, longitude: 73.8567, geofence_radius_m: 150 },
+    ],
     hr_departments: [
       { id: DEPT_TECH_ID, name: 'Technical Training', is_active: true, source: 'manual' },
       { id: DEPT_HR_ID, name: 'Human Resources', is_active: true, source: 'manual' },
@@ -153,6 +259,10 @@ function company() {
     // which is not alphabetical, so a test can tell the two orders apart.
     locations: LOCATIONS.map((l) => ({ ...l })),
     hr_ess_sessions: [],
+    hr_attendance_devices: devices,
+    hr_staff_attendance: attendanceDays,
+    hr_attendance_remarks: hrRemarks,
+    hr_attendance_employee_remarks: employeeRemarks,
   };
   return { tables, people };
 }
@@ -202,5 +312,5 @@ function sessionRow(overrides = {}) {
 }
 
 module.exports = {
-  company, uuid, sessionRow, BRANCH_ID, DEPT_TECH_ID, DEPT_HR_ID, STUDENT_ID, PORTAL_PEOPLE, LOCATIONS, INSTALL_ID, OTHER_INSTALL_ID,
+  company, uuid, sessionRow, BRANCH_ID, BRANCH_PUNE_ID, DEPT_TECH_ID, DEPT_HR_ID, STUDENT_ID, PORTAL_PEOPLE, LOCATIONS, INSTALL_ID, OTHER_INSTALL_ID,
 };

@@ -140,13 +140,19 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Wave 1 needs no table. From Wave 2 on, every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, and an agent checks it read-only afterwards.
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, in this order, and an agent checks it read-only afterwards.
 
 | # | Migration | Rollback | Creates | Needed by |
 | --- | --- | --- | --- | --- |
 | 1 | [`20261101000000_hr_ess_sessions.sql`](../db/migrations/20261101000000_hr_ess_sessions.sql) | [`db/rollbacks/20261101000000_hr_ess_sessions.sql`](../db/rollbacks/20261101000000_hr_ess_sessions.sql) | `hr_ess_sessions` (one row per refresh token, a keyed hash of it only), its indexes, and the functions `hr_ess_session_rotate` and `hr_ess_session_revoke`, service role only | A3: `POST /api/ess/session`, `/session/refresh`, `/session/sign-out`, `GET /api/ess/sessions`, `DELETE /api/ess/sessions/:id` answer 503 `MODULE_NOT_INSTALLED` until it is applied |
+| 2 | `20261105000000_hr_ess_audit.sql` | same name in `db/rollbacks` | `hr_ess_audit`: HR's phone resets, data-request resolutions, and reads and changes of personal details | B8, A8, E9 |
+| 3 | `20261105000001_hr_ess_data_requests.sql` | same name | `hr_ess_data_requests` | A8 |
+| 4 | `20261105000002_hr_ess_personal_details.sql` | same name | `hr_ess_personal_details` | E9 |
+| 5 | `20261105000003_hr_ess_mock_location_reports.sql` | same name | `hr_ess_mock_location_reports` | B14 |
 
 The read-only check afterwards: `hr_ess_sessions` answers through PostgREST (not `PGRST205`), and `hr_ess_session_rotate` and `hr_ess_session_revoke` appear in the OpenAPI listing for the service key and not for the anon key. KP confirms the indexes with `SELECT indexname FROM pg_indexes WHERE tablename = 'hr_ess_sessions'` (five, `hr_ess_sessions_live_family_key` among them).
+
+B1 (`GET /api/ess/attendance/day`) and B8 (the phone list and reset) need no migration of their own; they read the Scheduler's tables from `20261015000004` to `20261023000000`, which are still to be confirmed in production.
 
 ## Risks
 

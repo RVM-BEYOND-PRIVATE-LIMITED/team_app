@@ -25,6 +25,8 @@ const { signInKey } = require('../policy/signIn');
  *                        it is no faster a way to try identifiers than the sign-in itself.
  *   signInPerIdentifier  the resolver again, per identifier from any address, so asking about one
  *                        person from many addresses gets no further.
+ *   mockReports          mocked-location reports (B14), per employee per day, counted apart
+ *                        from the per-employee limit.
  *
  * All count in this process's memory, as the Scheduler's limiters do: there is exactly one
  * ESS instance (ADR-0005), and a restart starting the counts again is acceptable.
@@ -38,17 +40,20 @@ const DEFAULT_LIMITS = Object.freeze({
   exchangePerEmployee: Object.freeze({ windowMs: FIFTEEN_MINUTES, limit: 10 }),
   signInPerIp: Object.freeze({ windowMs: FIFTEEN_MINUTES, limit: 40 }),
   signInPerIdentifier: Object.freeze({ windowMs: FIFTEEN_MINUTES, limit: 10 }),
+  // Mocked-location reports (B14), per employee per 24 hours. A real person refused for a mocked
+  // fix tries a handful of times; a phone stuck in a retry loop must not fill HR's list.
+  mockReports: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 30 }),
 });
 
-const refuse = (_req, res) => res.status(429).json({ error: MESSAGES.RATE_LIMITED, code: 'RATE_LIMITED' });
+const refuseWith = (message) => (_req, res) => res.status(429).json({ error: message, code: 'RATE_LIMITED' });
 
-const common = ({ windowMs, limit }) => ({
+const common = ({ windowMs, limit }, message = MESSAGES.RATE_LIMITED) => ({
   windowMs,
   limit,
   // RateLimit-* headers and Retry-After, as the Scheduler's limiters send them.
   standardHeaders: true,
   legacyHeaders: false,
-  handler: refuse,
+  handler: refuseWith(message),
 });
 
 function createIpLimiter(limits = DEFAULT_LIMITS.perIp) {
@@ -61,10 +66,14 @@ function createIpLimiter(limits = DEFAULT_LIMITS.perIp) {
   });
 }
 
-/** Mounted after employeeAuth, which sets req.auth; one count per person, whichever sign-in they used. */
-function createEmployeeLimiter(limits = DEFAULT_LIMITS.perEmployee) {
+/**
+ * Mounted after employeeAuth, which sets req.auth; one count per person, whichever sign-in they
+ * used. Each limiter counts in its own store, so a narrower one (mocked-location reports) adds to
+ * the per-employee limit rather than sharing its count.
+ */
+function createEmployeeLimiter(limits = DEFAULT_LIMITS.perEmployee, message = MESSAGES.RATE_LIMITED) {
   return rateLimit({
-    ...common(limits),
+    ...common(limits, message),
     keyGenerator: (req) => `employee:${req.auth.employee.id}`,
   });
 }

@@ -16,6 +16,8 @@ Run from the repository root (`npm run lint`, `npm test`) or from this folder:
 | `npm test` | Runs the vitest suite once. No database is needed: the tests run the real store over an in-memory client |
 | `npm run lint` | ESLint, including `no-undef` and `no-unused-vars` |
 
+`npm run test:migrations`, from the repository root, runs `db/migrations` against a throwaway Postgres in Docker (`db/test/run-migrations.js`).
+
 `tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml`: the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
 
 Set `SCHEDULER_BACKEND_DIR` to a Scheduler_Backend checkout to also run the drift checks. They compare `src/policy/roles.js` and `src/policy/hrPolicy.js` with the Scheduler's `config/roles.js` and `config/hrPolicy.js`, and the verbatim Scheduler code in `tests/helpers` with its source:
@@ -60,6 +62,16 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `GET /api/ess/sessions` | portal JWT or attendance session, or an access token from here | `{ sessions: [{ id, device_label, created_at, last_used_at, expires_at, current }] }`, the caller's own |
 | `DELETE /api/ess/sessions/:id` | as above | 204, ending one of the caller's own; 404 for anything else |
 | `POST /api/ess/sign-in/resolve` | none: `{ identifier }` | Which sign-in the one field holds (task A5): `{ kind: "portal", login_with: "as_typed", location_name \| location_names }`, `{ kind: "portal", login_with: "username_or_phone" }`, `{ kind: "attendance", methods }` or `{ kind: "unknown" }` |
+| `POST`, `GET /api/ess/me/data-requests` | either | File and list my requests to correct or delete my data (A8). At most 5 open |
+| `GET /api/ess/hr/data-requests?status=`, `PATCH /api/ess/hr/data-requests/:id` | portal: hr, hr_executive, super_admin | HR's queue, and done or rejected with a note. Never one's own (409 `OWN_REQUEST`) |
+| `GET`, `PUT /api/ess/me/personal` | either | My date of birth, blood group, address and emergency contact (E9). I change only the blood group and emergency contact; the rest is 403 `SENSITIVE_FIELD` |
+| `GET`, `PUT /api/ess/hr/employees/:id/personal` | portal: hr, hr_executive, super_admin | Anybody's personal details, every field. Never one's own (409 `OWN_RECORD`). Every read and change goes to `hr_ess_audit`, and a read that cannot be recorded is refused |
+| `GET /api/ess/attendance/day?date=` | either | `server_now`, my day as stored, its note, HR's remark and my remarks (B1); this month or last month |
+| `POST /api/ess/attendance/mock-location` | either | Report a punch refused for a mocked location (B14); 30 a day per person |
+| `GET /api/ess/hr/mock-location-reports?from=&to=&branch_id=` | portal: hr, ceo, super_admin | The reports, with whose each is |
+| `GET /api/ess/hr/devices?branch_id=&status=`, `POST /api/ess/hr/devices/reset` | portal: hr, ceo, super_admin | Registered phones, and the bulk reset (B8): the Scheduler's own revoke update on every active phone of a branch or a list of people. The one write to a Scheduler table |
+
+The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes. These routes are not in the contract yet (`AWAITING_CONTRACT` in `tests/contract.test.js`).
 
 The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)); the six Wave 2 routes are listed in `tests/contract.test.js` as awaiting it, and their replies are checked against it once it documents them.
 
@@ -90,13 +102,16 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 403 | `NO_ATTENDANCE_LOGIN` | An attendance session whose login is missing or switched off |
 | 403 | `PASSWORD_CHANGE_REQUIRED` | An attendance session signed in with HR's first-time password, before the person chose their own |
 | 403 | `SIGN_IN_NOT_FRESH` | Keeping a sign-in made more than 10 minutes ago |
+| 403 | `PORTAL_LOGIN_REQUIRED`, `HR_ACCESS_DENIED`, `ATTENDANCE_OVERRIDE_DENIED`, `SENSITIVE_FIELD` | HR's tools refused to this sign-in or role; a self-service change HR must make |
 | 409 | `ALREADY_EXCHANGED` | Keeping a token the ESS minted itself |
 | 409 | `REFRESH_IN_PROGRESS` | A refresh token traded in less than a minute ago, presented again by the same install: retry with the newest one |
-| 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included); a session that is not one of the caller's |
+| 409 | `OWN_REQUEST`, `OWN_RECORD`, `ALREADY_RESOLVED`, `TOO_MANY_OPEN_REQUESTS` | HR acting on their own data; a request already answered; 5 open requests |
+| 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included); a session that is not one of the caller's; or no such request, employee or branch |
 | 400 | `INVALID_JSON` | A request body that is not valid JSON |
 | 400 | `BAD_INSTALL_ID`, `BAD_DEVICE_LABEL`, `BAD_IDENTIFIER` | A missing or malformed install id, phone name or sign-in identifier |
-| 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB |
-| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
+| 400 | `VALIDATION_FAILED`, `DAY_OUT_OF_RANGE` | A field, query or id the endpoint refuses; the message says which |
+| 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB (32 kB for the phone reset's id list) |
+| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier; 30 mocked-location reports a day per employee (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
 | 503 | `UNAVAILABLE` | The database could not be reached. Never a 401 |
 | 503 | `MODULE_NOT_INSTALLED` | A table or column the ESS reads is missing: the code is live before its migration ([ADR-0021](../../docs/adr/0021-migrations-new-tables-only.md)) |
 | 503 | `MODULE_DISABLED` | `ESS_ENABLED=false` |
