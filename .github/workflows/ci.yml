@@ -1,0 +1,68 @@
+name: CI
+
+# Every pull request and every push (ADR-0011). Deploying is deploy-ess.yml's job, not this one's.
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ess-api:
+    name: ESS API on Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20 because the server's Node version is not confirmed yet, so the oldest supported one
+        # is tested; 24 is the LTS the service is meant to move to (ADR-0017).
+        node: [20, 24]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --workspace apps/ess-api
+
+      # Includes tests/contract.test.js, which holds the ESS's replies against
+      # packages/contracts/openapi.yaml. The checks that compare the ESS's copies of Scheduler code
+      # with Scheduler_Backend skip themselves here: CI cannot read that private repository, so
+      # they run on a developer's machine with SCHEDULER_BACKEND_DIR set (ADR-0008).
+      - name: Test
+        run: npm test --workspace apps/ess-api
+
+  contract:
+    name: OpenAPI contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      # Redocly CLI comes from the lockfile, so the version that lints here is the one every
+      # developer has. The ruleset (recommended-strict) is in packages/contracts/redocly.yaml.
+      - name: Install
+        run: npm ci
+
+      - name: Lint packages/contracts/openapi.yaml
+        run: npm run lint --workspace @team-rvm/contracts

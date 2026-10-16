@@ -1,0 +1,242 @@
+name: Deploy ESS
+
+# A merge to main that touches the ESS deploys it (ADR-0011). A manual run from main deploys
+# again, for instance after a repository variable changed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/ess-api/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-ess.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time and in order: two merges close together must not overlap or finish out of
+# order (ADR-0011).
+concurrency:
+  group: deploy-ess
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          # The oldest Node the ESS supports, while the server's version is unconfirmed.
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The ESS workspace only: it is what this workflow deploys. ci.yml lints the contract.
+      - name: Lint
+        run: npm run lint --workspace apps/ess-api
+
+      - name: Test
+        run: npm test --workspace apps/ess-api
+
+  # The safety switch. Until the server, the nginx route to port 3001 (ADR-0019) and the secrets are
+  # ready, a merge runs the tests and stops. Set the repository variable ESS_DEPLOY_ENABLED to
+  # 'true' to deploy.
+  not-deployed:
+    name: Deploy switched off
+    needs: test
+    if: ${{ !(vars.ESS_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Say why
+        run: echo "::notice::Not deployed. The ESS deploys only from main, and only while the repository variable ESS_DEPLOY_ENABLED is 'true'."
+
+  deploy:
+    name: Deploy to the server
+    needs: test
+    if: ${{ vars.ESS_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      # A QUOTED heredoc: the shell expands nothing inside it, so a $ or a backtick in a secret is
+      # written exactly as typed. (The Scheduler's deploy uses an unquoted one, which expands them;
+      # ADR-0005.) Every value has to fit on one line, which is why the Firebase key is stored
+      # base64-encoded. The switch and the app versions are repository variables, not secrets.
+      - name: Write .env on the runner
+        working-directory: apps/ess-api
+        run: |
+          cat > .env << 'EOF'
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          ESS_ENABLED=${{ vars.ESS_ENABLED }}
+          GIT_SHA=${{ github.sha }}
+          MIN_APP_VERSION=${{ vars.MIN_APP_VERSION }}
+          LATEST_APP_VERSION=${{ vars.LATEST_APP_VERSION }}
+          FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL=${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY_B64=${{ secrets.FIREBASE_PRIVATE_KEY_B64 }}
+          EOF
+          chmod 600 .env
+
+      # Lengths only, never values. A missing value fails the deploy here, before anything on the
+      # server changes, rather than leaving a service that starts and refuses everybody. A secret
+      # missing from the heredoc is otherwise silently absent in production (ADR-0011).
+      - name: Check the database and sign-in settings
+        working-directory: apps/ess-api
+        run: |
+          problems=0
+          for k in SUPABASE_URL SUPABASE_SERVICE_KEY JWT_SECRET; do
+            v=$(sed -n "s/^${k}=//p" .env)
+            if [ -z "$v" ]; then
+              echo "::error::${k} is empty. Add it to the team_app repository secrets."
+              problems=1
+            else
+              echo "  ${k}: set (${#v} chars)"
+            fi
+          done
+          jwt=$(sed -n "s/^JWT_SECRET=//p" .env)
+          if [ -n "$jwt" ] && [ "${#jwt}" -lt 32 ]; then
+            echo "::error::JWT_SECRET is shorter than 32 characters, and the ESS will not start with it."
+            problems=1
+          fi
+          # The Scheduler writes its .env through an UNQUOTED heredoc, which rewrites a dollar sign,
+          # a backtick or a backslash in a value. With any of them in JWT_SECRET the two services
+          # would hold different secrets, and the ESS would refuse every Scheduler token: everybody
+          # signed out.
+          case "$jwt" in
+            *'$'* | *'`'* | *\\*)
+              echo "::error::JWT_SECRET contains a dollar sign, a backtick or a backslash, which the Scheduler's deploy rewrites, so the two services would hold different secrets. Rotate it, in both repositories' secrets, to one without them."
+              problems=1 ;;
+          esac
+          if [ "$problems" -ne 0 ]; then exit 1; fi
+          echo "Database and sign-in settings: present."
+
+      - name: Check the push settings
+        working-directory: apps/ess-api
+        run: |
+          missing=0
+          for k in FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY_B64; do
+            v=$(sed -n "s/^${k}=//p" .env)
+            if [ -z "$v" ]; then
+              echo "  ${k}: empty"
+              missing=1
+            else
+              echo "  ${k}: set (${#v} chars)"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::notice::Push is LOG-ONLY: the FIREBASE_* secrets are not all set, so notifications are written to the pm2 log instead of being sent (ADR-0016)."
+          else
+            echo "Push: CONFIGURED."
+          fi
+
+      - name: Check the switch and the app versions
+        working-directory: apps/ess-api
+        run: |
+          for k in ESS_ENABLED MIN_APP_VERSION LATEST_APP_VERSION; do
+            v=$(sed -n "s/^${k}=//p" .env)
+            if [ -z "$v" ]; then echo "  ${k}: not set, the default applies"; else echo "  ${k}: set (${#v} chars)"; fi
+          done
+          enabled=$(sed -n "s/^ESS_ENABLED=//p" .env | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+          if [ "$enabled" = "false" ]; then
+            echo "::warning::ESS_ENABLED is false: every endpoint except /api/ess/health will answer 503 MODULE_DISABLED."
+          fi
+
+      # The same check the server makes as it starts (src/config.js), made here so that a bad
+      # value fails the deploy instead of the restart. It names variables, never values.
+      - name: Install the production dependencies
+        run: npm ci --omit=dev --workspace=apps/ess-api
+
+      - name: Check the settings the way the ESS will
+        working-directory: apps/ess-api
+        run: |
+          node -e "
+            require('dotenv').config({ path: '.env', quiet: true });
+            try { require('./src/config').loadConfig(process.env); }
+            catch (e) { console.error(e.message); process.exit(1); }
+            console.log('The ESS settings are valid.');
+          "
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_HOST: ${{ secrets.HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      # node_modules is installed on the server for its own platform, and .git stays behind.
+      - name: Copy the code to the server
+        env:
+          DEPLOY_HOST: ${{ secrets.HOST }}
+          DEPLOY_USER: ${{ secrets.USER }}
+        run: |
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:~/team_app/"
+
+      # nginx is not touched here yet. The ESS's own server block and certificate (ADR-0019) are
+      # the next step (docs/04-build-plan.md); the Scheduler's nginx files are never written
+      # (ADR-0018). Only the ESS's own pm2 process is started or reloaded, never `pm2 restart all`.
+      - name: Install and restart on the server
+        env:
+          DEPLOY_HOST: ${{ secrets.HOST }}
+          DEPLOY_USER: ${{ secrets.USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes "${DEPLOY_USER}@${DEPLOY_HOST}" << 'ENDSSH'
+          set -e
+          cd ~/team_app
+          chmod 600 apps/ess-api/.env
+
+          echo "Node on the server: $(node --version)"
+          major=$(node -p "process.versions.node.split('.')[0]")
+          if [ "$major" -lt 20 ]; then
+            echo "The ESS needs Node 20 or later."
+            exit 1
+          fi
+
+          echo "Installing the ESS's production dependencies..."
+          npm ci --omit=dev --workspace=apps/ess-api
+
+          echo "Starting or reloading team-rvm-ess..."
+          pm2 startOrReload apps/ess-api/ecosystem.config.cjs --update-env
+          pm2 save
+
+          # /api/ess/health reports APP_VERSION, else the GIT_SHA this deploy wrote (src/config.js),
+          # so the wait ends only when the process started by this deploy answers, not an older one.
+          want=$(sed -n 's/^APP_VERSION=//p' apps/ess-api/.env)
+          if [ -z "$want" ]; then want=$(sed -n 's/^GIT_SHA=//p' apps/ess-api/.env); fi
+          echo "Waiting for /api/ess/health on port 3001 to report ${want}..."
+          for _ in $(seq 1 20); do
+            body=$(curl -fsS --max-time 5 http://127.0.0.1:3001/api/ess/health || true)
+            case "$body" in
+              *"\"version\":\"${want}\""*)
+                echo "$body"
+                echo "Deployed."
+                exit 0 ;;
+            esac
+            sleep 3
+          done
+          echo "The ESS did not report ${want} on /api/ess/health within a minute. Look at: pm2 logs team-rvm-ess"
+          exit 1
+          ENDSSH
