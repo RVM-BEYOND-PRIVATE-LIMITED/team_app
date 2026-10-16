@@ -12,13 +12,13 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (16 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. Phase 1B is being built.
+**Where it stands (16 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. Phase 1B is built and deployed; its endpoints answer 503 until KP applies its five migrations ([05-deploy.md](05-deploy.md#migrations-to-apply)).
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
 | [0](#phase-0-rvms-set-up) | RVM's own set-up: accounts, data, roles, policy | Runs alongside |
 | [1A](#phase-1a-foundation) | Employee identity, capabilities, health, deploy | **Live, 16 Oct** |
-| [1B](#phase-1b-staying-signed-in-one-field-sign-in-and-the-attendance-extras) | Staying signed in, one-field sign-in, attendance extras, personal details | **Building** |
+| [1B](#phase-1b-staying-signed-in-one-field-sign-in-and-the-attendance-extras) | Staying signed in, one-field sign-in, attendance extras, personal details | **Deployed; migrations to apply** |
 | [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals | Next |
 | [1D](#phase-1d-inbox-notifications-and-push) | Notifications and push | |
 | [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | |
@@ -63,7 +63,7 @@ Not code. It runs alongside the build, and the pilot cannot start without it.
 
 ## Phase 1B: Staying signed in, one-field sign-in and the attendance extras
 
-**Being built.** The brief's Phase 1.
+**Built and deployed; waiting for its migrations.** The brief's Phase 1. The rows marked *added after the current build* are the next small step.
 
 | Work | Tasks |
 | --- | --- |

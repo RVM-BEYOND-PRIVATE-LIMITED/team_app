@@ -127,7 +127,7 @@ Wave 2 brings five, none applied yet. [04-build-plan.md](04-build-plan.md#migrat
 
 **The check afterwards (an agent, read-only, with KP's OK).** Nothing is written; each step only reads:
 - Each new table answers through PostgREST with the service key: `GET /rest/v1/<table>?select=id&limit=0` (`select=employee_id` for `hr_ess_personal_details`) is 200, not 404 `PGRST205`.
-- The same request with the anon key gets no rows: an empty list (row-level security on, no policy), or a permission error for `hr_ess_sessions`, whose grants are revoked.
+- The same request with the anon key is refused with a permission error: every new table's privileges are revoked from the API roles, and row-level security is on as well.
 - `hr_ess_session_rotate`, `hr_ess_session_revoke` and `hr_ess_session_password_current` appear in the PostgREST OpenAPI listing (`GET /rest/v1/`) for the service key, and not for the anon key.
 - KP, in the SQL editor, which also only reads: `SELECT relname, relrowsecurity FROM pg_class WHERE relname LIKE 'hr\_ess\_%' AND relkind = 'r';` shows the five tables, each `true`; `SELECT tablename, policyname FROM pg_policies WHERE tablename LIKE 'hr\_ess\_%';` shows no rows; `SELECT indexname FROM pg_indexes WHERE tablename = 'hr_ess_sessions';` shows six, `hr_ess_sessions_live_family_key` and `hr_ess_sessions_sign_in_key` among them; `SELECT tgname FROM pg_trigger WHERE tgname LIKE 'hr\_ess\_%';` shows `hr_ess_sessions_bind_password` and `hr_ess_data_requests_open_limit`.
 
