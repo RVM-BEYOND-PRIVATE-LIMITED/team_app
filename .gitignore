@@ -17,6 +17,9 @@ node_modules/
 key.properties
 service-account*.json
 
+# Worktrees the build agents create for their own work
+.claude/
+
 # Test and runtime output
 coverage/
 logs/

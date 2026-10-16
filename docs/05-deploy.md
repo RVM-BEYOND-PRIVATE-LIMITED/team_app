@@ -2,7 +2,7 @@
 
 The ESS is the new employee self-service API in `apps/ess-api`. It runs on the Scheduler's server as its own pm2 process, behind its own nginx file for its own host name, **`team-api.rvmcad.org`** ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)).
 
-**Nothing deploys yet.** A merge to `main` deploys only when the repository variable `ESS_DEPLOY_ENABLED` is `true` ([ADR-0011](adr/0011-ci-merge-and-auto-deploy.md)). Until KP sets it, the deploy workflow runs the tests and stops.
+**Live since 16 Oct 2026.** The repository variable `ESS_DEPLOY_ENABLED` is `true`, so every merge to `main` that changes the ESS deploys it ([ADR-0011](adr/0011-ci-merge-and-auto-deploy.md)). Set it to anything else to stop deploys; the tests still run.
 
 ## Where the set-up stands (16 Oct 2026)
 
@@ -13,7 +13,7 @@ The ESS is the new employee self-service API in `apps/ess-api`. It runs on the S
 | Repository variable: `ESS_HOST` = `team-api.rvmcad.org` | Done, 16 Oct |
 | A deploy key of its own: `team_app_deploy`, made on the server, its public half in `/home/ubuntu/.ssh/authorized_keys`, its private half only in the `SSH_PRIVATE_KEY` secret | Done by KP, 16 Oct |
 | The read-only server check (below) | Passed, 16 Oct: Node 22.23.1, nginx 1.18.0, certbot 1.21.0, pm2 6.0.14, port 3740 free |
-| `ESS_DEPLOY_ENABLED` = `true`: the first deploy | KP, when ready |
+| `ESS_DEPLOY_ENABLED` = `true`: the first deploy | Done, 16 Oct: commit `65d2b94` deployed at 18:26 IST. `https://team-api.rvmcad.org/api/ess/health` answers with the database reached; the certificate runs to 14 Jan 2027 and renews itself |
 
 ## What the deploy touches, and what it never touches
 
