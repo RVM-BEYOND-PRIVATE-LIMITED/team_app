@@ -5,12 +5,25 @@ const { DEFAULT_LIMITS, createIpLimiter, createEmployeeLimiter } = require('./mi
 const { healthRoute } = require('./routes/health');
 const { meRoute } = require('./routes/me');
 const { capabilitiesRoute } = require('./routes/capabilities');
+const { requireRoles } = require('./middleware/requireRoles');
+const { HR_RECORD_ROLES, ATTENDANCE_ROLES } = require('./policy/hrAccess');
+const dataRequests = require('./routes/dataRequests');
+const personal = require('./routes/personal');
+const mockLocation = require('./routes/mockLocation');
+const devices = require('./routes/devices');
+const { attendanceDayRoute } = require('./routes/attendanceDay');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
 
 /** Every request body the ESS takes is a small JSON form; files will arrive as multipart. */
 const JSON_BODY_LIMIT = '16kb';
+
+/**
+ * The bodies that are lists rather than forms, with their own limit: HR's bulk phone reset takes
+ * up to 500 employee ids (about 20 kB of JSON). nginx allows far more (ADR-0019: 12 MB).
+ */
+const LARGE_JSON_BODIES = Object.freeze({ '/hr/devices/reset': '32kb' });
 
 /**
  * The ESS as an Express app, with nothing listening yet: server.js listens, and tests build it
@@ -23,7 +36,7 @@ const JSON_BODY_LIMIT = '16kb';
  * @param {object} deps.config   from config.js loadConfig
  * @param {object} deps.store    lib/store.js createSupabaseStore, or a test stand-in
  * @param {() => Date} [deps.now]
- * @param {object} [deps.limits] tests only: smaller rate limits and health deadline
+ * @param {object} [deps.limits] tests only: smaller rate limits (perIp, perEmployee, mockReports) and health deadline
  */
 function createApp({ config, store, now = () => new Date(), limits = {} } = {}) {
   if (!config) throw new Error('createApp needs the config (config.js loadConfig).');
@@ -68,7 +81,10 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
     ? next()
     : sendError(res, 503, 'MODULE_DISABLED', MESSAGES.MODULE_DISABLED)));
 
-  api.use(express.json({ limit: JSON_BODY_LIMIT }));
+  const parseJson = express.json({ limit: JSON_BODY_LIMIT });
+  // A Map, so no request path can reach an Object prototype property.
+  const parseLargeJson = new Map(Object.entries(LARGE_JSON_BODIES).map(([path, limit]) => [path, express.json({ limit })]));
+  api.use((req, res, next) => (parseLargeJson.get(req.path) || parseJson)(req, res, next));
 
   // Sign-in and the per-person limit are attached route by route, not with api.use, so that an
   // unknown address answers 404 whether or not a token came with it.
@@ -78,6 +94,35 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   ];
   api.get('/me', asEmployee, meRoute({ store }));
   api.get('/me/capabilities', asEmployee, capabilitiesRoute({ config, store, now }));
+
+  // HR's tools: the sign-in, the per-person limit, then the exact-role check
+  // (middleware/requireRoles.js; the role sets are policy/hrAccess.js).
+  const asHrRecords = [...asEmployee, requireRoles(HR_RECORD_ROLES, 'HR_ACCESS_DENIED')];
+  const asAttendanceHr = [...asEmployee, requireRoles(ATTENDANCE_ROLES, 'ATTENDANCE_OVERRIDE_DENIED')];
+
+  // A8: requests to correct or delete my data.
+  api.post('/me/data-requests', asEmployee, dataRequests.createMyDataRequest({ store }));
+  api.get('/me/data-requests', asEmployee, dataRequests.listMyDataRequests({ store }));
+  api.get('/hr/data-requests', asHrRecords, dataRequests.listDataRequests({ store }));
+  api.patch('/hr/data-requests/:id', asHrRecords, dataRequests.resolveDataRequest({ store, now }));
+
+  // E9: personal details.
+  api.get('/me/personal', asEmployee, personal.getMyPersonal({ store }));
+  api.put('/me/personal', asEmployee, personal.putMyPersonal({ store, now }));
+  api.get('/hr/employees/:id/personal', asHrRecords, personal.getEmployeePersonal({ store }));
+  api.put('/hr/employees/:id/personal', asHrRecords, personal.putEmployeePersonal({ store, now }));
+
+  // B1: one of my days, with the server's clock, the day's note and HR's remark.
+  api.get('/attendance/day', asEmployee, attendanceDayRoute({ store, now }));
+
+  // B14: a mocked location the phone refused to punch with, reported for HR.
+  const mockReportLimiter = createEmployeeLimiter(limits.mockReports || DEFAULT_LIMITS.mockReports, MESSAGES.REPORTS_RATE_LIMITED);
+  api.post('/attendance/mock-location', asEmployee, mockReportLimiter, mockLocation.reportMockLocation({ store }));
+  api.get('/hr/mock-location-reports', asAttendanceHr, mockLocation.listMockLocationReports({ store, now }));
+
+  // B8: registered phones, and HR's bulk reset.
+  api.get('/hr/devices', asAttendanceHr, devices.listDevices({ store }));
+  api.post('/hr/devices/reset', asAttendanceHr, devices.resetDevices({ store, now }));
 
   app.use('/api/ess', api);
 
@@ -111,4 +156,4 @@ function errorHandler(err, req, res, next) {
   return sendError(res, 500, 'INTERNAL_ERROR', MESSAGES.INTERNAL_ERROR);
 }
 
-module.exports = { createApp, HEALTH_DB_TIMEOUT_MS, JSON_BODY_LIMIT };
+module.exports = { createApp, HEALTH_DB_TIMEOUT_MS, JSON_BODY_LIMIT, LARGE_JSON_BODIES };

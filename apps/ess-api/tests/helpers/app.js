@@ -20,9 +20,10 @@ function buildApp({ env = {}, setup, now = NOW, limits } = {}) {
   const config = loadConfig({ ...TEST_ENV, ...env });
   const world = company();
   if (setup) setup(world);
-  const db = createFakeSupabase(world.tables);
-  const store = createSupabaseStore(config, { client: db });
   const clock = typeof now === 'function' ? now : () => new Date(now.getTime());
+  // The database's clock is the app's, so a DEFAULT now() column reads the test's time.
+  const db = createFakeSupabase(world.tables, { now: clock });
+  const store = createSupabaseStore(config, { client: db });
   const app = createApp({ config, store, now: clock, limits });
   return { app, db, store, config, people: world.people };
 }
