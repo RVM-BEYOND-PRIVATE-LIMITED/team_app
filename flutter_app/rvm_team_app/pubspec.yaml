@@ -1,0 +1,51 @@
+name: rvm_team_app
+description: "Team RVM — employee app (Scheduler): sign-in, Me/account, priority-task inbox, and role work views the Scheduler backend supports today."
+publish_to: 'none'
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # state management + DI (same provided stack as staff_app / student_app)
+  flutter_bloc: ^8.1.6
+  get_it: ^7.7.0
+  equatable: ^2.0.5
+
+  # networking / connectivity
+  core_network:
+    path: ../packages/core_network
+  core_auth:
+    path: ../packages/core_auth
+  core_bloc:
+    path: ../packages/core_bloc
+  core_ui:
+    path: ../packages/core_ui
+  domain:
+    path: ../packages/domain
+  dio: ^5.7.0
+  connectivity_plus: ^6.0.5
+
+  # location for the geofenced punch (B6/B7): one fix per punch, plus the 2-min
+  # ping while punched in. isMocked flags a mocked provider on the phone.
+  geolocator: ^13.0.4
+
+  # navigation (matches staff_app / student_app)
+  go_router: ^14.0.0
+
+  # document/photo picker for multipart uploads (system picker → no storage perms)
+  file_picker: ^8.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  bloc_test: ^9.1.7
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
