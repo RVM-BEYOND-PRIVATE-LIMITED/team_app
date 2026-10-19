@@ -37,9 +37,11 @@ import 'features/me/bloc/attendance_day_bloc.dart';
 import 'features/me/bloc/data_requests_bloc.dart';
 import 'features/me/bloc/personal_bloc.dart';
 import 'features/me/bloc/sessions_bloc.dart';
+import 'features/helpdesk/bloc/helpdesk_bloc.dart';
 import 'features/my_team/bloc/team_today_bloc.dart';
 import 'features/notifications/bloc/notifications_bloc.dart';
 import 'features/requests/bloc/approvals_bloc.dart';
+import 'features/wall/bloc/wall_bloc.dart';
 import 'features/requests/bloc/requests_bloc.dart';
 import 'features/work/bloc/absent_remark_bloc.dart';
 import 'features/work/bloc/interview_action_bloc.dart';
@@ -186,14 +188,32 @@ void configureDependencies(AuthSession session) {
     ..registerFactory<TeamTodayBloc>(() => TeamTodayBloc(getIt()))
     ..registerFactory<LoadBloc<OrgView>>(() => LoadBloc<OrgView>(() => getIt<EssRepository>().myOrg()))
     ..registerFactory<LoadBloc<TeamOffWeek>>(() => LoadBloc<TeamOffWeek>(() => getIt<EssRepository>().teamOffThisWeek()))
+    ..registerFactory<LoadBloc<MyProfile>>(() => LoadBloc<MyProfile>(() => getIt<EssRepository>().myProfile()))
+    ..registerFactory<LoadBloc<PraisePage>>(() => LoadBloc<PraisePage>(() => getIt<EssRepository>().myPraise()))
     // ── Team RVM ESS (1C: requests, leave, approvals) ─────────────────────
     ..registerFactory<RequestsBloc>(() => RequestsBloc(getIt()))
     ..registerFactory<ApprovalsBloc>(() => ApprovalsBloc(getIt()))
     // ── Team RVM ESS (1D: notifications) ─────────────────────────────────
     ..registerFactory<NotificationsBloc>(() => NotificationsBloc(getIt()))
+    // ── Team RVM ESS (2A: the Wall) ──────────────────────────────────────
+    ..registerFactory<WallBloc>(() => WallBloc(getIt()))
+    // ── Team RVM ESS (2B: Helpdesk) ───────────────────────────────────────
+    ..registerFactory<HelpdeskBloc>(() => HelpdeskBloc(getIt()))
     // Mark screen is per (batch, date) — resolve with param1=batchId, param2=date.
     ..registerFactoryParam<MarkAttendanceBloc, String, DateTime>(
         (batchId, date) => MarkAttendanceBloc(getIt(), batchId: batchId, date: date));
+}
+
+/// D5: register this phone for push. A real token exists only once the Firebase project is
+/// configured (ADR-0016); until then the backend logs push instead of sending it. Pass a token
+/// today with `--dart-define=FCM_TOKEN=...`, or call this from the Firebase setup later.
+Future<void> registerPushToken(String token) async {
+  final installId = await getIt<AuthSession>().installId();
+  await getIt<EssRepository>().registerPushDevice(
+    token: token,
+    deviceLabel: 'Android',
+    installId: installId,
+  );
 }
 
 String _today() {

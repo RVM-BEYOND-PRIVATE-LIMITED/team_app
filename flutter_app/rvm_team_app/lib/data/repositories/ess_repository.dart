@@ -266,4 +266,282 @@ class EssRepository with ConnectivityGuard {
     await ensureOnline();
     return _remote.saveNotificationSettings(disabledCategories);
   }
+
+  // ── 2A: the Wall ─────────────────────────────────────────────────────────
+
+  Future<WallSettings> wallSettings() async {
+    await ensureOnline();
+    return _remote.wallSettings();
+  }
+
+  Future<WallFeed> wallFeed({String? scope, String? before}) async {
+    await ensureOnline();
+    return _remote.wallFeed(scope: scope, before: before);
+  }
+
+  Future<WallPostDetail> wallPost(String id) async {
+    await ensureOnline();
+    return _remote.wallPost(id);
+  }
+
+  Future<WallPost> createWallPost({
+    required String body,
+    String kind = 'post',
+    String? scope,
+    Map<String, dynamic>? poll,
+    List<Map<String, dynamic>>? attachments,
+  }) async {
+    await ensureOnline();
+    return _remote.createWallPost(body: body, kind: kind, scope: scope, poll: poll, attachments: attachments);
+  }
+
+  Future<List<WallReactionGroup>> postReactions(String id) async {
+    await ensureOnline();
+    return _remote.postReactions(id);
+  }
+
+  Future<List<WallReactionGroup>> commentReactions(String id) async {
+    await ensureOnline();
+    return _remote.commentReactions(id);
+  }
+
+  Future<void> addPollOption(String id, String label) async {
+    await ensureOnline();
+    return _remote.addPollOption(id, label);
+  }
+
+  Future<void> closePoll(String id) async {
+    await ensureOnline();
+    return _remote.closePoll(id);
+  }
+
+  Future<String?> putMyPhoto({required String base64, required String contentType}) async {
+    await ensureOnline();
+    return _remote.putMyPhoto(base64: base64, contentType: contentType);
+  }
+
+  Future<void> registerPushDevice({required String token, String? deviceLabel, String? installId}) async {
+    await ensureOnline();
+    return _remote.registerPushDevice(token: token, deviceLabel: deviceLabel, installId: installId);
+  }
+
+  Future<void> revokePushDevice(String id) async {
+    await ensureOnline();
+    return _remote.revokePushDevice(id);
+  }
+
+  Future<WallPost> editWallPost(String id, String body) async {
+    await ensureOnline();
+    return _remote.editWallPost(id, body);
+  }
+
+  Future<void> deleteWallComment(String id) async {
+    await ensureOnline();
+    return _remote.deleteWallComment(id);
+  }
+
+  Future<WallComment> editWallComment(String id, String body) async {
+    await ensureOnline();
+    return _remote.editWallComment(id, body);
+  }
+
+  Future<({WallReactionCounts counts, String? myReaction})> reactToComment(String id, String reaction) async {
+    await ensureOnline();
+    return _remote.reactToComment(id, reaction);
+  }
+
+  Future<({WallReactionCounts counts, String? myReaction})> unreactToComment(String id) async {
+    await ensureOnline();
+    return _remote.unreactToComment(id);
+  }
+
+  Future<void> reportPost(String id, {required String reason, String? detail}) async {
+    await ensureOnline();
+    return _remote.reportPost(id, reason: reason, detail: detail);
+  }
+
+  Future<void> reportComment(String id, {required String reason, String? detail}) async {
+    await ensureOnline();
+    return _remote.reportComment(id, reason: reason, detail: detail);
+  }
+
+  Future<void> withdrawPollVote(String id) async {
+    await ensureOnline();
+    return _remote.withdrawPollVote(id);
+  }
+
+  Future<bool> celebrationOptout() async {
+    await ensureOnline();
+    return _remote.celebrationOptout();
+  }
+
+  Future<void> setCelebrationOptout(bool hidden) async {
+    await ensureOnline();
+    return _remote.setCelebrationOptout(hidden);
+  }
+
+  Future<void> deleteWallPost(String id) async {
+    await ensureOnline();
+    return _remote.deleteWallPost(id);
+  }
+
+  Future<({WallReactionCounts counts, String? myReaction})> reactToPost(String id, String reaction) async {
+    await ensureOnline();
+    return _remote.reactToPost(id, reaction);
+  }
+
+  Future<({WallReactionCounts counts, String? myReaction})> unreactToPost(String id) async {
+    await ensureOnline();
+    return _remote.unreactToPost(id);
+  }
+
+  Future<WallComment> addWallComment({required String postId, required String body, String? parentId}) async {
+    await ensureOnline();
+    return _remote.addWallComment(postId: postId, body: body, parentId: parentId);
+  }
+
+  Future<WallPost> createPraise({
+    required String employeeId,
+    required String badge,
+    required String reason,
+    String scope = 'org',
+    List<Map<String, dynamic>>? attachments,
+  }) async {
+    await ensureOnline();
+    return _remote.createPraise(employeeId: employeeId, badge: badge, reason: reason, scope: scope, attachments: attachments);
+  }
+
+  Future<List<WallAnnouncement>> wallAnnouncements() async {
+    await ensureOnline();
+    return _remote.wallAnnouncements();
+  }
+
+  Future<void> readAnnouncement(String id) async {
+    await ensureOnline();
+    return _remote.readAnnouncement(id);
+  }
+
+  Future<void> ackAnnouncement(String id) async {
+    await ensureOnline();
+    return _remote.ackAnnouncement(id);
+  }
+
+  Future<WallCelebrations> wallCelebrations() async {
+    await ensureOnline();
+    return _remote.wallCelebrations();
+  }
+
+  Future<void> sendWish({required String employeeId, required String occasion, required String body}) async {
+    await ensureOnline();
+    return _remote.sendWish(employeeId: employeeId, occasion: occasion, body: body);
+  }
+
+  Future<void> votePoll({required String pollId, required List<String> optionIds}) async {
+    await ensureOnline();
+    return _remote.votePoll(pollId: pollId, optionIds: optionIds);
+  }
+
+  // ── 2B: Helpdesk ─────────────────────────────────────────────────────────
+
+  Future<HelpdeskSettings> helpdeskCategories() async {
+    await ensureOnline();
+    return _remote.helpdeskCategories();
+  }
+
+  Future<List<HelpdeskTicket>> myTickets({String? status}) async {
+    await ensureOnline();
+    return _remote.myTickets(status: status);
+  }
+
+  Future<HelpdeskTicket> raiseTicket({required String category, required String subject, required String body, bool anonymous = false}) async {
+    await ensureOnline();
+    return _remote.raiseTicket(category: category, subject: subject, body: body, anonymous: anonymous);
+  }
+
+  Future<HelpdeskTicketDetail> ticket(String id) async {
+    await ensureOnline();
+    return _remote.ticket(id);
+  }
+
+  Future<HelpdeskMessage> addTicketComment({required String id, required String body}) async {
+    await ensureOnline();
+    return _remote.addTicketComment(id: id, body: body);
+  }
+
+  Future<HelpdeskTicket> ticketAction(String id, String action, {Map<String, dynamic>? data}) async {
+    await ensureOnline();
+    return _remote.ticketAction(id, action, data: data);
+  }
+
+  Future<HelpdeskTicket> assignTicket({required String id, required String employeeId, String? note}) async {
+    await ensureOnline();
+    return _remote.assignTicket(id: id, employeeId: employeeId, note: note);
+  }
+
+  Future<HelpdeskQueue> helpdeskQueue({String? status, String? category}) async {
+    await ensureOnline();
+    return _remote.helpdeskQueue(status: status, category: category);
+  }
+
+  // ── 2C: documents, change requests, bank details, ID card ────────────────
+
+  Future<DocumentPage> myDocuments() async {
+    await ensureOnline();
+    return _remote.myDocuments();
+  }
+
+  Future<EssDocument> uploadDocument({
+    required String docType,
+    required String fileName,
+    required String contentType,
+    required String base64,
+    String? remark,
+  }) async {
+    await ensureOnline();
+    return _remote.uploadDocument(docType: docType, fileName: fileName, contentType: contentType, base64: base64, remark: remark);
+  }
+
+  Future<String?> documentFileUrl(String id) async {
+    await ensureOnline();
+    return _remote.documentFileUrl(id);
+  }
+
+  Future<List<ChangeRequest>> myChangeRequests() async {
+    await ensureOnline();
+    return _remote.myChangeRequests();
+  }
+
+  Future<ChangeRequest> createChangeRequest({required String field, String? oldValue, required String newValue, required String reason}) async {
+    await ensureOnline();
+    return _remote.createChangeRequest(field: field, oldValue: oldValue, newValue: newValue, reason: reason);
+  }
+
+  Future<BankDetails?> myBankDetails() async {
+    await ensureOnline();
+    return _remote.myBankDetails();
+  }
+
+  Future<BankDetails> saveBankDetails({
+    required String bankName,
+    String? branchName,
+    required String accountNumber,
+    required String ifscCode,
+    String? upiId,
+    required String consentName,
+  }) async {
+    await ensureOnline();
+    return _remote.saveBankDetails(
+      bankName: bankName,
+      branchName: branchName,
+      accountNumber: accountNumber,
+      ifscCode: ifscCode,
+      upiId: upiId,
+      consentName: consentName,
+    );
+  }
+
+  Future<IdCard> myIdCard() async {
+    await ensureOnline();
+    return _remote.myIdCard();
+  }
 }

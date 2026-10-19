@@ -1,9 +1,13 @@
+import 'dart:convert';
+
 import 'package:core_bloc/core_bloc.dart';
+import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/repositories/ess_repository.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -119,9 +123,29 @@ class _SecurityView extends StatelessWidget {
   Future<void> _changePhoto(BuildContext context) async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
     final file = result?.files.single;
-    if (file == null || file.bytes == null) return;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null || !context.mounted) return;
+    // E10: the ESS path works for attendance-only staff too; the Scheduler upload is the
+    // fallback for portal logins (e.g. an unsupported image type on the ESS).
+    final contentType = switch (file.extension?.toLowerCase()) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => null,
+    };
+    if (contentType != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await getIt<EssRepository>().putMyPhoto(base64: base64Encode(bytes), contentType: contentType);
+        if (context.mounted) context.read<MeBloc>().add(const LoadRefreshed());
+        messenger..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Photo updated.')));
+        return;
+      } on Failure {
+        // Fall through to the Scheduler upload.
+      }
+    }
     if (!context.mounted) return;
-    await _runAccountAction(context, AccountUploadPhoto(bytes: file.bytes!, filename: file.name));
+    await _runAccountAction(context, AccountUploadPhoto(bytes: bytes, filename: file.name));
   }
 
   void _changeEmail(BuildContext context, TeamProfile p) => _showActionDialog(

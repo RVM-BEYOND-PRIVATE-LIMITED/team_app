@@ -1355,6 +1355,21 @@ class WallPost extends Equatable {
   List<Object?> get props => [id, kind, mine, body, edited, hidden, deleted, badgeId, reactions, commentCount, poll, myReaction];
 }
 
+/// "Who reacted": one group per emoji, with the people behind it (F2).
+class WallReactionGroup extends Equatable {
+  const WallReactionGroup({required this.reaction, required this.count, required this.people});
+  final String reaction;
+  final int count;
+  final List<WallPerson> people;
+  factory WallReactionGroup.fromJson(Map<String, dynamic> j) => WallReactionGroup(
+        reaction: _str(j['reaction']) ?? '',
+        count: _int(j['count']) ?? 0,
+        people: _maps(j['people']).map(WallPerson.fromJson).toList(growable: false),
+      );
+  @override
+  List<Object?> get props => [reaction, count, people];
+}
+
 class PraiseBadge extends Equatable {
   const PraiseBadge({required this.id, required this.label, this.forGroup});
   final String id;
@@ -1446,21 +1461,45 @@ class WallFeed extends Equatable {
 }
 
 class WallSettings extends Equatable {
-  const WallSettings({required this.kinds, required this.scopes, required this.reactions, required this.badges, required this.maxPhotos});
-  final List<String> kinds;
+  const WallSettings({
+    required this.scopes,
+    required this.reactions,
+    required this.badges,
+    required this.maxAttachments,
+    required this.maxPinned,
+    required this.maxBody,
+    required this.maxComment,
+    required this.praiseMaxReason,
+  });
+
   final List<String> scopes;
   final List<String> reactions;
   final List<PraiseBadge> badges;
-  final int maxPhotos;
-  factory WallSettings.fromJson(Map<String, dynamic> j) => WallSettings(
-        kinds: _strings(j['kinds']),
-        scopes: _strings(j['scopes']),
-        reactions: _strings(j['reactions']),
-        badges: _maps(j['badges']).map(PraiseBadge.fromJson).toList(growable: false),
-        maxPhotos: _int(j['max_photos']) ?? 5,
-      );
+  final int maxAttachments;
+  final int maxPinned;
+  final int maxBody;
+  final int maxComment;
+  final int praiseMaxReason;
+
+  factory WallSettings.fromJson(Map<String, dynamic> j) {
+    final post = _map(j['post']) ?? const {};
+    final comment = _map(j['comment']) ?? const {};
+    final praise = _map(j['praise']) ?? const {};
+    final announcement = _map(j['announcement']) ?? const {};
+    return WallSettings(
+      scopes: _strings(post['scopes']),
+      reactions: _strings(j['reactions']),
+      badges: _maps(praise['badges']).map(PraiseBadge.fromJson).toList(growable: false),
+      maxAttachments: _int(post['max_attachments']) ?? 5,
+      maxPinned: _int(announcement['max_pinned']) ?? 3,
+      maxBody: _int(post['max_body']) ?? 2000,
+      maxComment: _int(comment['max_body']) ?? 1000,
+      praiseMaxReason: _int(praise['max_reason']) ?? 280,
+    );
+  }
+
   @override
-  List<Object?> get props => [kinds, scopes, reactions, badges, maxPhotos];
+  List<Object?> get props => [scopes, reactions, badges, maxAttachments, maxPinned, maxBody, maxComment];
 }
 
 class WallAnnouncement extends Equatable {
@@ -1518,24 +1557,69 @@ class WallAnnouncement extends Equatable {
   List<Object?> get props => [id, title, mine, needsAck, pinned, readAt, ackAt];
 }
 
-class WallCelebration extends Equatable {
-  const WallCelebration({required this.id, required this.kind, required this.person, this.on, this.daysAgo, this.wished = false});
-  final String id;
-  final String kind; // birthday | anniversary | new_joiner
-  final WallPerson person;
+/// One birthday / anniversary / new-joiner card (F6). The server sends the person as `employee`.
+class CelebrationCard extends Equatable {
+  const CelebrationCard({required this.employee, this.on, this.wishedByMe = false, this.wishCount = 0});
+  final WallPerson employee;
   final String? on;
-  final int? daysAgo;
-  final bool wished;
-  factory WallCelebration.fromJson(Map<String, dynamic> j) => WallCelebration(
-        id: _str(j['id']) ?? '',
-        kind: _str(j['kind']) ?? '',
-        person: WallPerson.fromJson(_map(j['person']) ?? _map(j['employee']) ?? const {}),
-        on: _str(j['on']),
-        daysAgo: _int(j['days_ago']),
-        wished: _bool(j['wished']),
+  final bool wishedByMe;
+  final int wishCount;
+  factory CelebrationCard.fromJson(Map<String, dynamic> j) => CelebrationCard(
+        employee: WallPerson.fromJson(_map(j['employee']) ?? const {}),
+        on: _str(j['on']) ?? _str(j['date_of_joining']),
+        wishedByMe: _bool(j['wished_by_me']),
+        wishCount: _int(j['wish_count']) ?? 0,
       );
   @override
-  List<Object?> get props => [id, kind, person, on, daysAgo, wished];
+  List<Object?> get props => [employee, on, wishedByMe, wishCount];
+}
+
+class WallCelebrations extends Equatable {
+  const WallCelebrations({
+    required this.today,
+    required this.windowDays,
+    required this.birthdays,
+    required this.anniversaries,
+    required this.newJoiners,
+    required this.hiddenCount,
+  });
+  final String today;
+  final int windowDays;
+  final List<CelebrationCard> birthdays;
+  final List<CelebrationCard> anniversaries;
+  final List<CelebrationCard> newJoiners;
+  final int hiddenCount;
+
+  bool get isEmpty => birthdays.isEmpty && anniversaries.isEmpty && newJoiners.isEmpty;
+
+  factory WallCelebrations.fromJson(Map<String, dynamic> j) => WallCelebrations(
+        today: _str(j['today']) ?? '',
+        windowDays: _int(j['window_days']) ?? 7,
+        birthdays: _maps(j['birthdays']).map(CelebrationCard.fromJson).toList(growable: false),
+        anniversaries: _maps(j['anniversaries']).map(CelebrationCard.fromJson).toList(growable: false),
+        newJoiners: _maps(j['new_joiners']).map(CelebrationCard.fromJson).toList(growable: false),
+        hiddenCount: _int(j['birthdays_hidden']) ?? 0,
+      );
+  @override
+  List<Object?> get props => [today, birthdays, anniversaries, newJoiners, hiddenCount];
+}
+
+/// One post with its comments (`GET /wall/posts/:id`).
+class WallPostDetail extends Equatable {
+  const WallPostDetail({required this.post, required this.comments, required this.truncated});
+  final WallPost post;
+  final List<WallComment> comments;
+  final bool truncated;
+  factory WallPostDetail.fromJson(Map<String, dynamic> j) {
+    final post = _map(j['post']) ?? const {};
+    return WallPostDetail(
+      post: WallPost.fromJson(post),
+      comments: _maps(post['comments']).map(WallComment.fromJson).toList(growable: false),
+      truncated: _bool(j['truncated']) || _bool(post['truncated']),
+    );
+  }
+  @override
+  List<Object?> get props => [post, comments, truncated];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1721,4 +1805,205 @@ class HelpdeskQueue extends Equatable {
       );
   @override
   List<Object?> get props => [tickets, categories];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 2C — documents, profile-change requests, bank details, ID card
+// (routes/documents.js, changeRequests.js, bankDetails.js, idCard.js)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class DocumentType extends Equatable {
+  const DocumentType({required this.slug, required this.name, required this.isMandatory, required this.essOnly, this.sort = 0});
+  final String slug;
+  final String name;
+  final bool isMandatory;
+  final bool essOnly;
+  final int sort;
+  factory DocumentType.fromJson(Map<String, dynamic> j) => DocumentType(
+        slug: _str(j['slug']) ?? '',
+        name: _str(j['name']) ?? '',
+        isMandatory: _bool(j['is_mandatory']),
+        essOnly: _bool(j['ess_only']),
+        sort: _int(j['sort']) ?? 0,
+      );
+  @override
+  List<Object?> get props => [slug, name, isMandatory, essOnly, sort];
+}
+
+class EssDocument extends Equatable {
+  const EssDocument({
+    required this.id,
+    required this.docType,
+    required this.fileName,
+    this.contentType,
+    this.sizeBytes,
+    this.remark,
+    required this.status, // pending | verified | rejected
+    this.verifiedByName,
+    this.verifiedAt,
+    this.rejectionReason,
+    this.createdAt,
+    this.updatedAt,
+  });
+  final String id;
+  final String docType;
+  final String fileName;
+  final String? contentType;
+  final int? sizeBytes;
+  final String? remark;
+  final String status;
+  final String? verifiedByName;
+  final DateTime? verifiedAt;
+  final String? rejectionReason;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  bool get isVerified => status == 'verified';
+  bool get isRejected => status == 'rejected';
+
+  factory EssDocument.fromJson(Map<String, dynamic> j) => EssDocument(
+        id: _str(j['id']) ?? '',
+        docType: _str(j['doc_type']) ?? '',
+        fileName: _str(j['file_name']) ?? '',
+        contentType: _str(j['content_type']),
+        sizeBytes: _int(j['size_bytes']),
+        remark: _str(j['remark']),
+        status: _str(j['status']) ?? 'pending',
+        verifiedByName: _str(j['verified_by_name']),
+        verifiedAt: _date(j['verified_at']),
+        rejectionReason: _str(j['rejection_reason']),
+        createdAt: _date(j['created_at']),
+        updatedAt: _date(j['updated_at']),
+      );
+  @override
+  List<Object?> get props => [id, docType, fileName, status, rejectionReason, createdAt];
+}
+
+class DocumentPage extends Equatable {
+  const DocumentPage({required this.types, required this.documents});
+  final List<DocumentType> types;
+  final List<EssDocument> documents;
+  factory DocumentPage.fromJson(Map<String, dynamic> j) => DocumentPage(
+        types: _maps(j['types']).map(DocumentType.fromJson).toList(growable: false),
+        documents: _maps(j['documents']).map(EssDocument.fromJson).toList(growable: false),
+      );
+  @override
+  List<Object?> get props => [types, documents];
+}
+
+class ChangeRequest extends Equatable {
+  const ChangeRequest({
+    required this.id,
+    required this.field,
+    this.oldValue,
+    required this.newValue,
+    required this.reason,
+    required this.status,
+    this.decidedByName,
+    this.decidedAt,
+    this.decisionNote,
+    this.createdAt,
+  });
+  final String id;
+  final String field; // date_of_birth | address | legal_name
+  final String? oldValue;
+  final String newValue;
+  final String reason;
+  final String status;
+  final String? decidedByName;
+  final DateTime? decidedAt;
+  final String? decisionNote;
+  final DateTime? createdAt;
+
+  String get fieldLabel => switch (field) {
+        'date_of_birth' => 'Date of birth',
+        'address' => 'Address',
+        'legal_name' => 'Legal name',
+        _ => field,
+      };
+
+  factory ChangeRequest.fromJson(Map<String, dynamic> j) => ChangeRequest(
+        id: _str(j['id']) ?? '',
+        field: _str(j['field']) ?? '',
+        oldValue: _str(j['old_value']),
+        newValue: _str(j['new_value']) ?? '',
+        reason: _str(j['reason']) ?? '',
+        status: _str(j['status']) ?? 'pending',
+        decidedByName: _str(j['decided_by_name']),
+        decidedAt: _date(j['decided_at']),
+        decisionNote: _str(j['decision_note']),
+        createdAt: _date(j['created_at']),
+      );
+  @override
+  List<Object?> get props => [id, field, status, newValue, createdAt];
+}
+
+class BankDetails extends Equatable {
+  const BankDetails({
+    required this.bankName,
+    this.branchName,
+    required this.accountNumber,
+    required this.ifscCode,
+    this.upiId,
+    this.consentGivenAt,
+    this.consentName,
+    this.updatedByName,
+    this.createdAt,
+    this.updatedAt,
+  });
+  final String bankName;
+  final String? branchName;
+  final String accountNumber;
+  final String ifscCode;
+  final String? upiId;
+  final DateTime? consentGivenAt;
+  final String? consentName;
+  final String? updatedByName;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  factory BankDetails.fromJson(Map<String, dynamic> j) => BankDetails(
+        bankName: _str(j['bank_name']) ?? '',
+        branchName: _str(j['branch_name']),
+        accountNumber: _str(j['account_number']) ?? '',
+        ifscCode: _str(j['ifsc_code']) ?? '',
+        upiId: _str(j['upi_id']),
+        consentGivenAt: _date(j['consent_given_at']),
+        consentName: _str(j['consent_name']),
+        updatedByName: _str(j['updated_by_name']),
+        createdAt: _date(j['created_at']),
+        updatedAt: _date(j['updated_at']),
+      );
+  @override
+  List<Object?> get props => [bankName, accountNumber, ifscCode, upiId, consentGivenAt];
+}
+
+class IdCard extends Equatable {
+  const IdCard({
+    required this.fullName,
+    this.employeeCode,
+    this.designation,
+    this.departmentName,
+    this.branchName,
+    this.photoUrl,
+    this.verifyUrl,
+  });
+  final String fullName;
+  final String? employeeCode;
+  final String? designation;
+  final String? departmentName;
+  final String? branchName;
+  final String? photoUrl;
+  final String? verifyUrl;
+  factory IdCard.fromJson(Map<String, dynamic> j) => IdCard(
+        fullName: _str(j['full_name']) ?? '',
+        employeeCode: _str(j['employee_code']),
+        designation: _str(j['designation']),
+        departmentName: _str(j['department_name']),
+        branchName: _str(j['branch_name']),
+        photoUrl: _str(j['photo_url']),
+        verifyUrl: _str(j['verify_url']),
+      );
+  @override
+  List<Object?> get props => [fullName, employeeCode, designation, departmentName, branchName, photoUrl];
 }

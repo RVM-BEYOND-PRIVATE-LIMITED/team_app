@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:core_auth/core_auth.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +20,10 @@ Future<void> main() async {
   await session.load();
   configureDependencies(session);
   getIt<TeamAuthBloc>().add(const TeamAuthProbeRequested());
+
+  // D5: register for push when a token is available (Firebase is not configured yet, ADR-0016).
+  const pushToken = String.fromEnvironment('FCM_TOKEN');
+  if (pushToken.isNotEmpty) unawaited(registerPushToken(pushToken));
 
   runApp(const TeamApp());
 }
