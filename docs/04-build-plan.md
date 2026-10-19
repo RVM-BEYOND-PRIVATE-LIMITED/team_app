@@ -128,6 +128,20 @@ The brief's Phase 1. Built and tested; waiting for migrations 11 and 12.
 **You after:** apply migrations 11 and 12 ([05-deploy.md](05-deploy.md#migrations-to-apply)). Until then the notification, settings and device endpoints answer 503; filing and deciding still work, without notifications.
 **Done when:** a decision or a priority task reaches the phone; the Inbox shows it with its unread count; a category turned off stays quiet.
 
+### Phase 1E: Me and My Team — built 19 Oct 2026, live
+
+| Work | How | Tasks | State |
+| --- | --- | --- | --- |
+| Profile | `GET /api/ess/me/profile`: Summary, Job, Personal (1B) and the Timeline — an allowlist of employee events, values and HR remarks never read. Pay, performance tags and background notes are never selected | E1, E12 | Built |
+| Photo | 300-second signed links; `PUT /api/ess/me/photo` stores the app-compressed image in the private `documents` bucket and updates the record's photo pointer (the Scheduler's own columns), audited. Old file left for cleanup; no HR approval (KP to confirm) | E10 | Built |
+| Org | `GET /api/ess/me/org`: chain to the CEO ("Reports to the CEO (not recorded)"), peers, direct reports, department; people on notice keep the chip | E2, E11 | Built |
+| Directory | `GET /api/ess/directory`: name/code search, branch and department filters; email to everyone, phone to HR and the manager chain only (decision 5's default: a report does not see a manager's phone) | E2, E8 | Built |
+| Team | `GET /api/ess/team/today` (reports, or the HoO's whole branch) and `/team/off-this-week` (reports, else peers; names and days only) | E6, H4 | Built |
+
+**No migrations.** 1E reads the Scheduler's records; the only write is the photo pointer on `hr_employees` (documented in the store, same columns as the Scheduler's own setPhoto).
+**Not built:** the HOD domain roster — the domain→faculty mapping lives in the HOD module, not on the HR record; it goes with 2D's faculty views. HODs still see their reports.
+**Tests:** 41 new endpoint tests and the contract at 0.5.0 (533 contract checks); the full suite is 1,569.
+
 ### Requests and leave (C)
 
 - **Tables.** The request tables and their history are new `hr_ess_*` tables ([ADR-0021](adr/0021-migrations-new-tables-only.md)).

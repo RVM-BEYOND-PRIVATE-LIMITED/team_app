@@ -122,10 +122,16 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `GET /api/ess/notifications` | either | My notifications, newest first, with the unread count (D6) |
 | `POST /api/ess/notifications/{id}/read`, `POST /api/ess/notifications/read-all` | either | Mark one (idempotent) or all read |
 | `GET /api/ess/notifications/settings`, `PUT /api/ess/notifications/settings` | either | The categories (`approvals`, `decisions`, `priority_tasks`) and the quiet hours (D8) |
+| `GET /api/ess/me/profile` | either | My Summary, Job, Personal and the safe Timeline, with a 300-second signed photo link (E1, E12, E10) |
+| `PUT /api/ess/me/photo` | either | Change my photo (base64, ≤1 MB, JPEG/PNG/WebP): the private bucket plus the record's pointer, audited (E10) |
+| `GET /api/ess/me/org` | either | My chain to the CEO ("Reports to the CEO (not recorded)"), peers, direct reports and department, with the notice chip (E2, E11) |
+| `GET /api/ess/directory` | either | Colleague search by name or code, filtered by branch or department; email to everyone, phone per the contact rule (E2, E8) |
+| `GET /api/ess/team/today` | either | Team today for managers, the branch for a HoO (E6, H4) |
+| `GET /api/ess/team/off-this-week` | either | Who is off this week: reports, else peers; names and days only (E6) |
 
 The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.4.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.5.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
 
 ### Staying signed in (task A3)
 
@@ -158,6 +164,12 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 - **The worker** (`src/jobs/push.js`) imports directly assigned priority tasks from the Scheduler's `priority_tasks` (read only; broadcast tasks are not imported) and delivers the queue: FCM when the three `FIREBASE_*` settings exist, the log otherwise. It holds everything between 21:00 and 08:00 IST, retries a failed send up to three times, and revokes a device FCM says belongs to no install.
 - **Devices** (`hr_ess_push_devices`) register after sign-in; the token is never returned. Registering a token another row holds moves it and lifts its revocation; signing out revokes it.
 - **Categories** (`approvals`, `decisions`, `priority_tasks`) can each be turned off; a turned-off category stays in the Inbox and stops the push. The quiet hours are shown, fixed for now.
+
+### Me and My Team (tasks E1, E2, E6, E8, E10-E12)
+
+- **The profile** reads the HR record, the 1B personal details and an allowlist of `hr_activity_events` (values never selected); pay, performance tags and background notes are never read. The photo is a 300-second signed link; `PUT /ess/me/photo` writes the app-compressed image to the private `documents` bucket and the record's pointer (the Scheduler's own columns), audits it, and leaves the old file for cleanup.
+- **The org and directory** work from one read of the active staff (~107 rows): chain, peers, reports, department, search. The contact rule is one function (`policy/me.js`): email to everyone, phone to HR's roles and the manager chain above the person only.
+- **Team today and Off this week** read the sheet's day rows; leave types and reasons are never selected. A HoO's view is their branch; a manager's is their reports; nobody's is empty.
 
 ### How sign-in is checked
 

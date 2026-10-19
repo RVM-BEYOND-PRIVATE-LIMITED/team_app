@@ -12,16 +12,17 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C is built** (requests, leave, the approvals Inbox, the decision functions, HR's cancel and the limits) and **Phase 1D is built** (notifications and push, log-only until the Firebase project exists); their endpoints go live when their code merges. Phase 1E is next.
+**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now); the pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
 | [0](#phase-0-rvms-set-up) | RVM's own set-up: accounts, data, roles, policy | Runs alongside |
 | [1A](#phase-1a-foundation) | Employee identity, capabilities, health, deploy | **Live, 16 Oct** |
 | [1B](#phase-1b-staying-signed-in-one-field-sign-in-and-the-attendance-extras) | Staying signed in, one-field sign-in, attendance extras, personal details | **Live; migrations applied** |
-| [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals, the limits, the on-duty job | **Built, 19 Oct; code to merge** |
-| [1D](#phase-1d-inbox-notifications-and-push) | Notifications, push, devices, priority tasks | **Built, 19 Oct; code to merge** |
-| [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | Next |
+| [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals, the limits, the on-duty job | **Built + deployed, 19 Oct** |
+| [1D](#phase-1d-inbox-notifications-and-push) | Notifications, push, devices, priority tasks | **Built + deployed, 19 Oct** |
+| [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | **Built + deployed, 19 Oct; no migrations** |
+| [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Next |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Gate |
 | [2A](#phase-2a-wall) | The Wall | |
 | [2B](#phase-2b-helpdesk) | The Helpdesk | |
@@ -164,7 +165,15 @@ migrations 11 and 12. What the build chose, for KP to confirm:
 
 ## Phase 1E: Me and My Team
 
-The brief's Phase 1.
+The brief's Phase 1. ## Phase 1E: Me and My Team
+
+**Built and deployed 19 Oct 2026; no migrations needed.**
+
+- **Profile:** Summary and Job from the HR record, Personal from 1B, the Timeline from HR events (an allowlist: joining, promotion, status, reporting line, designation and branch changes, increments as dates; HR remarks and event values are never read). Never pay, performance tags or background notes.
+- **Photo:** short-lived signed links; the employee's own change goes through the ESS into the private bucket, audited. Old files are left for cleanup. **KP to confirm:** no HR approval is needed (the build's default).
+- **Org and directory:** the chain up to the CEO with "Reports to the CEO (not recorded)", peers, direct reports, the department, and colleague search by name or code. Email to everyone; phone to HR's roles and the manager chain only (decision 5's default: a report does not see a manager's phone).
+- **Team:** Team today for anyone with reports, the whole branch for a HoO (H4); Off this week on Home (reports, else peers). Names and days only, never the leave type or reason.
+- **Not built:** the HOD's domain roster — the domain→faculty mapping lives in the HOD module; it goes with 2D's faculty views.
 
 | Work | Tasks |
 | --- | --- |
