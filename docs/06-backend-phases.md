@@ -12,16 +12,16 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. Phase 1B is built and deployed; its endpoints answer 503 until KP applies its five migrations ([05-deploy.md](05-deploy.md#migrations-to-apply)). **Phase 1C is built** and waits for its five migrations (6 to 10 in the deploy list): requests, leave, the approvals Inbox, the decision functions, HR's cancel and the limits. Phase 1D is next.
+**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C is built** (requests, leave, the approvals Inbox, the decision functions, HR's cancel and the limits) and **Phase 1D is built** (notifications and push, log-only until the Firebase project exists); their endpoints go live when their code merges. Phase 1E is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
 | [0](#phase-0-rvms-set-up) | RVM's own set-up: accounts, data, roles, policy | Runs alongside |
 | [1A](#phase-1a-foundation) | Employee identity, capabilities, health, deploy | **Live, 16 Oct** |
-| [1B](#phase-1b-staying-signed-in-one-field-sign-in-and-the-attendance-extras) | Staying signed in, one-field sign-in, attendance extras, personal details | **Deployed; migrations to apply** |
-| [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals, the limits, the on-duty job | **Built, 19 Oct; migrations to apply** |
-| [1D](#phase-1d-inbox-notifications-and-push) | Notifications and push | Next |
-| [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | |
+| [1B](#phase-1b-staying-signed-in-one-field-sign-in-and-the-attendance-extras) | Staying signed in, one-field sign-in, attendance extras, personal details | **Live; migrations applied** |
+| [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals, the limits, the on-duty job | **Built, 19 Oct; code to merge** |
+| [1D](#phase-1d-inbox-notifications-and-push) | Notifications, push, devices, priority tasks | **Built, 19 Oct; code to merge** |
+| [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | Next |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Gate |
 | [2A](#phase-2a-wall) | The Wall | |
 | [2B](#phase-2b-helpdesk) | The Helpdesk | |
@@ -133,7 +133,7 @@ phase.
 
 ## Phase 1D: Inbox, notifications and push
 
-The brief's Phase 1.
+The brief's Phase 1. **Built 19 Oct 2026; waiting for migrations 11 and 12.**
 
 | Work | Tasks |
 | --- | --- |
@@ -144,7 +144,19 @@ The brief's Phase 1.
 | Push for approvals, decisions and priority tasks. Priority tasks exist in the Scheduler for portal logins of every role but the CEO; attendance-only staff have none (a Scheduler limit), so the capabilities hide that section from them | D1, D2 |
 | Optional: interview reminders 24 hours before a round | Brief extra |
 
-- **You first:** the Firebase project and the three `FIREBASE_*` secrets. Without them everything works, but push is written to the log instead of being sent.
+**Built, in one place:** `src/routes/pushDevices.js`, `src/routes/notifications.js`,
+`src/lib/notify.js`, `src/lib/fcm.js`, `src/jobs/push.js` and `src/policy/notifications.js`;
+migrations 11 and 12. What the build chose, for KP to confirm:
+- quiet hours fixed at 21:00–08:00 IST (the app shows them; per-person hours are later);
+- 3 push attempts, a minute apart, then the row is `skipped`;
+- priority-task push for direct assignments only — the Scheduler's broadcast tasks need its own
+  role rules, which stay as they are (the D2 gap);
+- the three Phase 1 categories only; the Wall's categories extend the CHECK in Phase 2;
+- interview reminders are not built (optional, and the Scheduler ties that calendar to portal
+  logins).
+
+- **You first:** the Firebase project and the three `FIREBASE_*` secrets (Phase 0). Without them everything works, but push is written to the log instead of being sent.
+- **You after:** apply migrations 11 and 12, in order.
 - **Done when:**
   - a decision or a priority task reaches the phone;
   - the Inbox shows it with its unread count;

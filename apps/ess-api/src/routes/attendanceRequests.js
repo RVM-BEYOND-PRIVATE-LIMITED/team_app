@@ -3,6 +3,7 @@ const { bodyWith, requiredText, optionalText, chars, idParam, invalid } = requir
 const { istDay, isCalendarDay, monthBounds } = require('../lib/time');
 const { effectiveLimit, requestType } = require('../policy/requestLimits');
 const { ATTENDANCE_TYPES, windowProblem, countForMonth, requestView } = require('../policy/requests');
+const { notifyApprovers } = require('../lib/notify');
 
 /**
  * Tasks C1 and C3: the employee's attendance requests — on duty, fix a day, excuse a late.
@@ -82,6 +83,8 @@ function createMyAttendanceRequest({ store, now }) {
       fix_in: body.type === 'fix_a_day' ? fixIn : null,
       fix_out: body.type === 'fix_a_day' ? fixOut : null,
     });
+    // The approver hears about it (best effort; D6/D7).
+    await notifyApprovers({ store, requester: employee, request: created, family: 'attendance' });
     res.status(201).json({ request: requestView(created, 'attendance') });
   });
 }

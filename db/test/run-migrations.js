@@ -176,6 +176,20 @@ const REFUSALS = [
       VALUES ('7c000000-0000-4000-8000-000000000002', e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site');
     INSERT INTO public.hr_ess_attendance_request_history (request_id, action)
       VALUES ('7c000000-0000-4000-8000-000000000002', 'read')`),
+  refusal('a push token that is too short', "INSERT INTO public.hr_ess_push_devices (employee_id, token) VALUES (e, 'short')"),
+  refusal('a push token with a control character', "INSERT INTO public.hr_ess_push_devices (employee_id, token) VALUES (e, repeat('a', 19) || chr(9))"),
+  refusal('a phone that is not Android', "INSERT INTO public.hr_ess_push_devices (employee_id, token, platform) VALUES (e, repeat('a', 20), 'ios')"),
+  refusal('a second phone with the same token', "INSERT INTO public.hr_ess_push_devices (employee_id, token) VALUES (e, repeat('a', 20)), (e, repeat('a', 20))", 'unique_violation'),
+  refusal('a notification of an unknown category', "INSERT INTO public.hr_ess_notifications (employee_id, category, title, body) VALUES (e, 'wall', 'Hello', 'Hello there.')"),
+  refusal('a notification with a blank title', "INSERT INTO public.hr_ess_notifications (employee_id, category, title, body) VALUES (e, 'decisions', '  ', 'Hello there.')"),
+  refusal('a notification whose data is not an object', "INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, data) VALUES (e, 'decisions', 'Hello', 'Hello there.', '[]'::jsonb)"),
+  refusal('a pushed notification with no mode', "INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, pushed_at) VALUES (e, 'decisions', 'Hello', 'Hello there.', now())"),
+  refusal('an unpushed notification with a mode', "INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, push_mode) VALUES (e, 'decisions', 'Hello', 'Hello there.', 'fcm')"),
+  refusal('a notification with a negative attempt count', "INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, push_attempts) VALUES (e, 'decisions', 'Hello', 'Hello there.', -1)"),
+  refusal('a second notification for the same priority task', `INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, data)
+      VALUES (e, 'priority_tasks', 'Task', 'Do the task.', '{"task_id": "7f000000-0000-4000-8000-000000000001"}'::jsonb),
+             (e, 'priority_tasks', 'Task', 'Do the task.', '{"task_id": "7f000000-0000-4000-8000-000000000001"}'::jsonb)`, 'unique_violation'),
+  refusal('a notification setting for an unknown category', "INSERT INTO public.hr_ess_notification_settings (employee_id, disabled_categories) VALUES (e, ARRAY['wall'])"),
 ];
 
 /** Rows the ESS writes must go in, take their defaults, and follow an employee's deletion. */
@@ -400,6 +414,56 @@ BEGIN
               WHERE q.id IS NULL) THEN RAISE EXCEPTION 'history kept'; END IF;
 END $check$;`;
 
+/** The notification tables: defaults, the both-ways push CHECK, the task key, and the cascade. */
+const NOTIFICATIONS = `DO $check$
+DECLARE
+  e uuid := gen_random_uuid();
+  other uuid := gen_random_uuid();
+  r record;
+BEGIN
+  INSERT INTO public.hr_employees (id) VALUES (e), (other);
+
+  -- A device registers with its defaults; the same token then moves to another person in place.
+  INSERT INTO public.hr_ess_push_devices (employee_id, token, device_label) VALUES (e, repeat('t', 32), 'Pixel 8');
+  IF (SELECT platform FROM public.hr_ess_push_devices WHERE employee_id = e) <> 'android' THEN
+    RAISE EXCEPTION 'device platform default';
+  END IF;
+  UPDATE public.hr_ess_push_devices SET employee_id = other WHERE employee_id = e;
+  INSERT INTO public.hr_ess_push_devices (employee_id, token) VALUES (e, repeat('u', 32));
+
+  -- A notification takes its defaults, and both directions of the pushed CHECK hold.
+  INSERT INTO public.hr_ess_notifications (employee_id, category, title, body)
+    VALUES (e, 'decisions', 'Request approved', 'Your CL on 20 Oct was approved.');
+  SELECT read_at, pushed_at, push_mode, push_attempts INTO r FROM public.hr_ess_notifications WHERE employee_id = e;
+  IF r.read_at IS NOT NULL OR r.pushed_at IS NOT NULL OR r.push_mode IS NOT NULL OR r.push_attempts <> 0 THEN
+    RAISE EXCEPTION 'notification defaults';
+  END IF;
+  UPDATE public.hr_ess_notifications SET read_at = now(), pushed_at = now(), push_mode = 'skipped' WHERE employee_id = e;
+
+  -- One notification per priority task, held by the unique index.
+  INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, data)
+    VALUES (e, 'priority_tasks', 'Task', 'Do it.', '{"task_id": "7f000000-0000-4000-8000-000000000002"}'::jsonb);
+  BEGIN
+    INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, data)
+      VALUES (e, 'priority_tasks', 'Task', 'Do it.', '{"task_id": "7f000000-0000-4000-8000-000000000002"}'::jsonb);
+    RAISE EXCEPTION 'a second task notification was accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  -- Settings: nothing disabled by default, and an array of known categories stored.
+  INSERT INTO public.hr_ess_notification_settings (employee_id) VALUES (e);
+  IF (SELECT disabled_categories FROM public.hr_ess_notification_settings WHERE employee_id = e) <> '{}'::text[] THEN
+    RAISE EXCEPTION 'settings default';
+  END IF;
+  UPDATE public.hr_ess_notification_settings SET disabled_categories = ARRAY['approvals'] WHERE employee_id = e;
+
+  -- The employee's deletion takes their devices, notifications and settings with it.
+  DELETE FROM public.hr_employees WHERE id = e;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_notifications WHERE employee_id = e) THEN RAISE EXCEPTION 'notifications kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_notification_settings WHERE employee_id = e) THEN RAISE EXCEPTION 'settings kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_push_devices WHERE employee_id = e) THEN RAISE EXCEPTION 'devices kept'; END IF;
+END $check$;`;
+
 function check(label, fn) {
   try {
     const problem = fn();
@@ -460,6 +524,7 @@ function main() {
     for (const { label, sql } of REFUSALS) check(`refuses ${label}`, () => runSql(label, sql));
     check('takes the rows the ESS writes, fills their defaults, and follows a deleted employee', () => runSql('the accepted rows', ACCEPTED));
     check('the request functions decide, withdraw and cancel as documented', () => runSql('the request flow', REQUEST_FLOW));
+    check('takes the notifications, their defaults and settings, and follows a deleted employee', () => runSql('the notification rows', NOTIFICATIONS));
 
     for (const pass of [1, 2]) {
       for (const file of [...rollbacks].reverse()) {

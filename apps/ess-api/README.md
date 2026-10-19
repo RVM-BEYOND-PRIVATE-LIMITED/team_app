@@ -75,6 +75,16 @@ Phase 1C adds no setting either:
 | My lists | the last 100 requests | `src/lib/store.js` `LIST_LIMITS.myRequests` |
 | The Inbox | at most 100 requests and 5 "who else is off" names per request | `src/lib/store.js` `LIST_LIMITS.inbox`, `src/routes/approvals.js` `CONTEXT_NAMES` |
 
+Phase 1D adds no setting either:
+
+| What | Value | Where |
+| --- | --- | --- |
+| Push quiet hours | 21:00 to 08:00 IST: nothing is pushed, the rows wait for the morning | `src/policy/notifications.js` |
+| The push worker | once at boot, then every minute; 50 notifications a batch; 3 attempts before a row is `skipped` | `src/jobs/push.js` |
+| The priority-task window | 48 hours back, so a restart loses nothing; one notification per task and person | `src/jobs/push.js`, the task key in migration 12 |
+| My notifications | the last 100 | `src/lib/store.js` `LIST_LIMITS.notifications` |
+| FCM | real sends only when all three `FIREBASE_*` settings exist; the log otherwise | `src/lib/fcm.js`, `src/config.js` |
+
 ## Endpoints
 
 Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Control: no-store`.
@@ -108,10 +118,14 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `POST /api/ess/approvals/{family}/{id}/archive` | either | Clear a request from my Inbox without deciding it (204); per approver |
 | `POST /api/ess/hr/attendance-requests/{id}/cancel`, `/hr/leave-requests/{id}/cancel` | portal: hr, ceo, super_admin | Cancel an APPROVED request (C8) with a reason, restoring the day it wrote; audited |
 | `GET /api/ess/hr/request-limits`, `PUT /api/ess/hr/request-limits/{type}` | portal: hr, ceo, super_admin | The monthly limits HR owns (C6); a change is audited |
+| `POST /api/ess/push-devices`, `DELETE /api/ess/push-devices/{id}` | either | Register this phone's FCM token (D5), and revoke it on sign-out. One install, one row; the token is never sent back |
+| `GET /api/ess/notifications` | either | My notifications, newest first, with the unread count (D6) |
+| `POST /api/ess/notifications/{id}/read`, `POST /api/ess/notifications/read-all` | either | Mark one (idempotent) or all read |
+| `GET /api/ess/notifications/settings`, `PUT /api/ess/notifications/settings` | either | The categories (`approvals`, `decisions`, `priority_tasks`) and the quiet hours (D8) |
 
 The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.3.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.4.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
 
 ### Staying signed in (task A3)
 
@@ -137,6 +151,13 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 - **On duty ahead of time.** An approval for a future day writes nothing; the morning job (`src/jobs/onDuty.js`) writes it as present on the day itself, with `On duty: <place>` as the note. One process only; idempotent; failures go to the pm2 log and to `hr_ess_audit`.
 - **The Inbox.** A manager's list is their direct reports' pending requests (an attendance sign-in may be a manager's); HR's roles see everybody's and may filter by any status. The context is computed in a handful of bounded reads: the month's count per kind, the day's late marks, and who else is off that day.
 - **The limits** live in `hr_ess_request_limits`. `GET /ess/me/capabilities` falls back to the code's defaults before that migration; the request endpoints answer 503 until their own tables and the limits are there.
+
+### Notifications and push (tasks D2, D5-D8)
+
+- **Every notification is an in-app row first**, in `hr_ess_notifications`: filing a request writes one for the approver (the manager on the HR record; HR when nobody is recorded), and a decision writes one for the employee. The Inbox reads them with the unread count; tapping marks one read.
+- **The worker** (`src/jobs/push.js`) imports directly assigned priority tasks from the Scheduler's `priority_tasks` (read only; broadcast tasks are not imported) and delivers the queue: FCM when the three `FIREBASE_*` settings exist, the log otherwise. It holds everything between 21:00 and 08:00 IST, retries a failed send up to three times, and revokes a device FCM says belongs to no install.
+- **Devices** (`hr_ess_push_devices`) register after sign-in; the token is never returned. Registering a token another row holds moves it and lifts its revocation; signing out revokes it.
+- **Categories** (`approvals`, `decisions`, `priority_tasks`) can each be turned off; a turned-off category stays in the Inbox and stops the push. The quiet hours are shown, fixed for now.
 
 ### How sign-in is checked
 

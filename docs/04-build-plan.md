@@ -103,6 +103,31 @@ withdraw, cancel, the CL rule, the cut-off, the job).
 
 **Done when:** an employee files each type, sees the counter and withdraws one; the manager decides from the Inbox; the approved day appears in the Scheduler as an override, locked; an on-duty day approved ahead shows present on the day without a punch; the limits and the cut-off hold; two people deciding at once cannot both win.
 
+### Phase 1D: Inbox, notifications and push — built 19 Oct 2026
+
+The brief's Phase 1. Built and tested; waiting for migrations 11 and 12.
+
+| Work | How | Tasks | State |
+| --- | --- | --- | --- |
+| Phone registration | `POST /api/ess/push-devices` and `DELETE /…/{id}`: one install is one row; registering a token another row holds moves it to the caller and lifts any revocation. The token is never sent back | D5 | Built |
+| The notifications Inbox | `hr_ess_notifications`: the ESS writes a row for its own events; `GET /api/ess/notifications` lists the caller's own with the unread count; `POST /…/{id}/read` and `/read-all` mark them | D6 | Built |
+| The push worker | `src/jobs/push.js`, once at boot then every minute: FCM HTTP v1 with a service-account JWT when the three `FIREBASE_*` settings exist, the log otherwise (ADR-0016). Nothing is pushed 21:00–08:00 IST. A failed send is retried each minute, 3 attempts at most; a token FCM says belongs to no install is revoked | D7, D8 | Built |
+| Categories and their events | Filing a request notifies the approver (the manager on the HR record, HR when nobody is recorded); a decision notifies the employee. Each category can be turned off through `GET`/`PUT /api/ess/notifications/settings` | D6, D8 | Built |
+| Priority tasks | A task assigned to one person in the Scheduler's `priority_tasks` becomes a `priority_tasks` notification once (48-hour window, one per task and person). Broadcast tasks (`assigned_to` NULL) are NOT pushed: their recipients are the Scheduler's admin set, resolved in its own code, and changing that is a Scheduler change (D2) | D2 | Built, direct assignments |
+| Interview reminders | The optional extra | Brief | Not built (optional; the interview calendar is tied to portal logins in the Scheduler) |
+
+**What the build chose, for KP to confirm:**
+- **Quiet hours are fixed** at 21:00–08:00 IST; the app's settings show them but do not change them in this phase. The in-app row is always written at once.
+- **A notification is attempted on every live phone** the person has; success on one is enough. After 3 failed attempts the row is marked skipped, so a dead phone cannot jam the queue.
+- **The categories are Phase 1's three** (`approvals`, `decisions`, `priority_tasks`); the Wall's (mentions, replies, praise, announcements, acknowledgement reminders, polls) extend the migration's CHECK in Phase 2.
+- **Priority-task push covers direct assignments only.** The Scheduler's broadcast tasks need its own role rules, which stay as they are.
+
+**Tests:** 84 new endpoint and worker tests (devices, notifications, read state, settings, the worker's log-only and FCM paths, retries, quiet hours, token revocation, priority-task import) and 7 new contract operations with every documented status; the full suite is 1,492 tests. The migration suite covers migrations 11 and 12, their rollbacks, their CHECKs and the cascade.
+
+**You first:** the Firebase project and the three `FIREBASE_*` secrets (Phase 0). Without them everything works, but push is a log line.
+**You after:** apply migrations 11 and 12 ([05-deploy.md](05-deploy.md#migrations-to-apply)). Until then the notification, settings and device endpoints answer 503; filing and deciding still work, without notifications.
+**Done when:** a decision or a priority task reaches the phone; the Inbox shows it with its unread count; a category turned off stays quiet.
+
 ### Requests and leave (C)
 
 - **Tables.** The request tables and their history are new `hr_ess_*` tables ([ADR-0021](adr/0021-migrations-new-tables-only.md)).
@@ -185,7 +210,7 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). None of them is applied yet.
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **All twelve were applied on 19 Oct 2026.**
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
@@ -199,6 +224,8 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 8 | [`20261106000002_hr_ess_leave_requests.sql`](../db/migrations/20261106000002_hr_ess_leave_requests.sql) | [`20261106000002_hr_ess_leave_requests.sql`](../db/rollbacks/20261106000002_hr_ess_leave_requests.sql): drops the history, the leave-request table, the trigger and its function | `hr_ess_leave_requests` (CL, LWP; whole days; the same decision fields as attendance) and `hr_ess_leave_request_history`, with the `filed` trigger. Three indexes | C2, C4: the leave endpoints and the balances answer 503 |
 | 9 | [`20261106000003_hr_ess_request_archives.sql`](../db/migrations/20261106000003_hr_ess_request_archives.sql) | [`20261106000003_hr_ess_request_archives.sql`](../db/rollbacks/20261106000003_hr_ess_request_archives.sql): drops the table | `hr_ess_request_archives`: one row per (family, request, approver), so clearing the Inbox is per approver; unique on the three; the employee's deletion cascades it | D1: archiving answers 503; the Inbox works without it |
 | 10 | [`20261106000004_hr_ess_request_functions.sql`](../db/migrations/20261106000004_hr_ess_request_functions.sql) | [`20261106000004_hr_ess_request_functions.sql`](../db/rollbacks/20261106000004_hr_ess_request_functions.sql): drops the seven functions | `hr_ess_decide_attendance_request`, `hr_ess_decide_leave_request`, `hr_ess_withdraw_attendance_request`, `hr_ess_withdraw_leave_request`, `hr_ess_cancel_attendance_request`, `hr_ess_cancel_leave_request`, `hr_ess_on_duty_apply`: each locks the request, re-checks the status, the window, the future-day rule, the cut-off and the one-CL rule, writes the day through the Scheduler's own `hr_attendance_apply_override` (or excuses the late in place), writes the history, and answers an `outcome` the routes map to refusals. Service role only | C7, C8, D1, H6: the decide, withdraw, cancel and archive (archive needs only 9) endpoints answer 503; `hr_ess_on_duty_apply` missing stops the job with a logged line, not the server |
+| 11 | [`20261107000000_hr_ess_push_devices.sql`](../db/migrations/20261107000000_hr_ess_push_devices.sql) | [`20261107000000_hr_ess_push_devices.sql`](../db/rollbacks/20261107000000_hr_ess_push_devices.sql): drops the table | `hr_ess_push_devices`: one row per FCM token, unique, with the phone's label and install id, the last time it was seen and its revocation; the employee's deletion cascades it | D5: the device endpoints answer 503; pushes stop |
+| 12 | [`20261107000001_hr_ess_notifications.sql`](../db/migrations/20261107000001_hr_ess_notifications.sql) | [`20261107000001_hr_ess_notifications.sql`](../db/rollbacks/20261107000001_hr_ess_notifications.sql): drops the settings table, then the notifications table | `hr_ess_notifications` (category, title, body, `data` ids, read time, push bookkeeping with its both-ways CHECK; the unique key that makes one priority-task notification per person) and `hr_ess_notification_settings` (`disabled_categories`, checked against the three categories). Four indexes (person, unread, pending, the task key) | D6, D8: the notification and settings endpoints answer 503; the push job's own writes to it log and retry |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 

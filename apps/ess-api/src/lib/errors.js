@@ -145,6 +145,13 @@ const MESSAGES = Object.freeze({
   LIMIT_TYPE: 'Choose a request type to change.',
   LIMIT_VALUE: 'Give a whole number of requests (or minutes for short leave), or null for no limit.',
   BALANCES_MONTH: 'Look at this month or last month.',
+
+  // D5-D8: push devices and notifications.
+  PUSH_TOKEN: "The phone's push token is missing or not valid.",
+  PUSH_DEVICE_LABEL: 'Keep the phone name to 80 characters.',
+  PUSH_DEVICE_NOT_FOUND: 'That phone was not found.',
+  NOTIFICATION_NOT_FOUND: 'That notification was not found.',
+  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions or priority_tasks.',
 });
 
 /** error and code first, and an extra field can never replace either of them. */

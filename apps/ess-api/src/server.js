@@ -8,6 +8,7 @@ const { loadConfig } = require('./config');
 const { createSupabaseStore } = require('./lib/store');
 const { createApp } = require('./app');
 const { startOnDutyJob } = require('./jobs/onDuty');
+const { startPushJob } = require('./jobs/push');
 
 let config;
 try {
@@ -30,4 +31,6 @@ app.listen(config.port, config.host, () => {
   if (!config.push.enabled) console.log('[ess] Push is log-only: the FIREBASE_* settings are not all set.');
   // The on-duty morning job (C3, C7): once at boot, then hourly. Off with the ESS switch.
   startOnDutyJob({ store });
+  // Notifications and push (D2, D7, D8): priority tasks in, pushes out; log-only without Firebase.
+  startPushJob({ store, config });
 });

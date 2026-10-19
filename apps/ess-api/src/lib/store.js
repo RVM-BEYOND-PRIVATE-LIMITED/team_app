@@ -101,6 +101,17 @@ const COLUMNS = Object.freeze({
   dayLate: 'employee_id, day, late_minutes, late_count, late_half_day, late_excused',
   dayLeave: 'employee_id, day',
   leaveOnDay: 'employee_id, day, status',
+  // D5: a registered phone. The token itself is never sent back to the app.
+  pushDevice: 'id, employee_id, platform, device_label, install_id, created_at, updated_at, last_seen_at, revoked_at',
+  pushTarget: 'id, employee_id, token',
+  // D6: one notification as the Inbox reads it; the push bookkeeping stays server-side.
+  notification: 'id, category, title, body, data, read_at, created_at',
+  notificationWorker: 'id, employee_id, category, title, body, data, push_attempts',
+  notificationSetting: 'employee_id, disabled_categories, updated_at',
+  taskNotification: 'id, data',
+  // D2: the Scheduler's priority tasks, read for push only (its own columns).
+  task: 'id, title, due_date, task_date, assigned_to, created_at',
+  employeeForUser: 'id, user_id',
 });
 
 /**
@@ -183,6 +194,8 @@ const LIST_LIMITS = Object.freeze({
   // My own requests, and one approver's Inbox.
   myRequests: 100,
   inbox: 100,
+  // The notifications Inbox, newest first.
+  notifications: 100,
 });
 
 /**
@@ -664,6 +677,62 @@ function createSupabaseStore(config, { client } = {}) {
         if (!(e instanceof HttpError && e.code === 'MODULE_NOT_INSTALLED')) throw e;
       }
     },
+
+    /* ── D5: push devices ── */
+
+    /** The same token registers once: an upsert moves it to the caller and lifts any revocation. */
+    registerPushDevice: async (row) => write('hr_ess_push_devices',
+      (q) => q.upsert([row], { onConflict: 'token' }).select(COLUMNS.pushDevice).single()),
+    /** Revokes one of the caller's own live phones; null when it is not theirs or already revoked. */
+    revokePushDevice: (id, employeeId, at) => write('hr_ess_push_devices',
+      (q) => q.update({ revoked_at: at, updated_at: at }).eq('id', id).eq('employee_id', employeeId)
+        .is('revoked_at', null).select('id').maybeSingle()),
+    /** The worker's own revoke, by row id, when FCM says the token belongs to no install. */
+    revokePushDeviceRow: (id, at) => write('hr_ess_push_devices',
+      (q) => q.update({ revoked_at: at, updated_at: at }).eq('id', id).select('id').maybeSingle()),
+    listPushDevicesFor: async (employeeIds) =>
+      readIn('hr_ess_push_devices', COLUMNS.pushTarget, 'employee_id', employeeIds, (q) => q.is('revoked_at', null)),
+
+    /* ── D6, D8: notifications and their settings ── */
+
+    createNotification: (row) => write('hr_ess_notifications', (q) => q.insert([row]).select('id, employee_id').single()),
+    /** Newest first, one more than LIST_LIMITS.notifications so the caller can say it was cut. */
+    listNotifications: async (employeeId) =>
+      (await read('hr_ess_notifications', (q) => q.select(COLUMNS.notification).eq('employee_id', employeeId)
+        .order('created_at', { ascending: false }).limit(LIST_LIMITS.notifications + 1))) || [],
+    getNotification: (id, employeeId) =>
+      read('hr_ess_notifications', (q) => q.select(COLUMNS.notification).eq('id', id).eq('employee_id', employeeId).maybeSingle()),
+    countUnreadNotifications: async (employeeId) =>
+      ((await read('hr_ess_notifications', (q) => q.select('id').eq('employee_id', employeeId).is('read_at', null))) || []).length,
+    markNotificationRead: (id, employeeId, at) => write('hr_ess_notifications',
+      (q) => q.update({ read_at: at }).eq('id', id).eq('employee_id', employeeId).select('id').maybeSingle()),
+    markAllNotificationsRead: async (employeeId, at) =>
+      ((await write('hr_ess_notifications', (q) => q.update({ read_at: at }).eq('employee_id', employeeId)
+        .is('read_at', null).select('id'))) || []).length,
+    getNotificationSettings: (employeeId) => one('hr_ess_notification_settings', COLUMNS.notificationSetting, 'employee_id', employeeId),
+    saveNotificationSettings: (employeeId, row) => write('hr_ess_notification_settings',
+      (q) => q.upsert([{ employee_id: employeeId, ...row }], { onConflict: 'employee_id' }).select(COLUMNS.notificationSetting).single()),
+    /** The push worker's queue: not yet pushed, oldest first. */
+    listUndeliveredNotifications: async (limit) =>
+      (await read('hr_ess_notifications', (q) => q.select(COLUMNS.notificationWorker)
+        .is('pushed_at', null).order('created_at', { ascending: true }).limit(limit))) || [],
+    markNotificationPushed: (id, patch) => write('hr_ess_notifications',
+      (q) => q.update(patch).eq('id', id).select('id').maybeSingle()),
+    notificationSettingsFor: async (employeeIds) =>
+      readIn('hr_ess_notification_settings', COLUMNS.notificationSetting, 'employee_id', employeeIds),
+    /** The priority-task notifications this person already has, for the worker's dedupe. */
+    listTaskNotifications: async (employeeId, sinceIso) =>
+      (await read('hr_ess_notifications', (q) => q.select(COLUMNS.taskNotification).eq('employee_id', employeeId)
+        .eq('category', 'priority_tasks').gte('created_at', sinceIso))) || [],
+
+    /* ── D2: the Scheduler's priority tasks, read for push only ── */
+
+    /** Tasks assigned to one person, created since the window opens. Broadcast tasks have no assignee. */
+    listNewPriorityTasks: async ({ sinceIso, limit }) =>
+      (await read('priority_tasks', (q) => q.select(COLUMNS.task).not('assigned_to', 'is', null)
+        .gte('created_at', sinceIso).order('created_at', { ascending: true }).limit(limit))) || [],
+    listEmployeesByUserIds: async (userIds) => readIn('hr_employees', COLUMNS.employeeForUser, 'user_id', userIds),
+    listHrUserIds: () => list('users', (q) => q.select('id').eq('role', 'hr')),
 
     /* ── the audit trail ── */
 

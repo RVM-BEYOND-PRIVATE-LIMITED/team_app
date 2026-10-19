@@ -1041,14 +1041,131 @@ const WAVE_3 = {
   ],
 };
 
+/* ── Wave 4 (Phase 1D): push devices, notifications and their settings ── */
+
+const PUSH = '/api/ess/push-devices';
+const NOTIF = '/api/ess/notifications';
+const NOTIF_SETTINGS = '/api/ess/notifications/settings';
+const PUSH_TOKEN = `test-token-${'a'.repeat(40)}`;
+const NID4 = (n) => `81000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+const notificationSeed = (employeeId, n, change = {}) => ({
+  id: NID4(n), employee_id: employeeId, category: 'decisions', title: 'Request approved',
+  body: 'Your request for on duty on 15 Oct was approved.', data: { request_id: '7a000000-0000-4000-8000-000000000001' },
+  read_at: null, pushed_at: null, push_mode: null, push_attempts: 0, push_error: null,
+  created_at: '2026-10-16T05:00:00+00:00', ...change,
+});
+
+const withNotification = (w) => {
+  w.tables.hr_ess_notifications = [notificationSeed(w.people.attendance.employee.id, 1)];
+};
+
+const WAVE_4 = {
+  'POST /api/ess/push-devices': [
+    ['201, an attendance session', call('attendance', post(PUSH, { token: PUSH_TOKEN, device_label: 'Pixel 8' }))],
+    ['400 VALIDATION_FAILED, a token too short', call('attendance', post(PUSH, { token: 'short' }))],
+    ['401, no token', call('attendance', (app) => request(app).post(PUSH).send({ token: PUSH_TOKEN }))],
+    ['403 PASSWORD_CHANGE_REQUIRED', call('attendance', (app, _token, w) => post(PUSH, { token: PUSH_TOKEN })(app, tokens.attendance(w.people.attendance, 'pw')), {
+      setup: (w) => { w.people.attendance.account.password_set_at = null; },
+    })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(PUSH, { token: PUSH_TOKEN })(app, tokens.attendance(people.attendance));
+      return post(PUSH, { token: `${PUSH_TOKEN}b` })(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', post(PUSH, { token: PUSH_TOKEN }), { prepare: drop('hr_ess_push_devices') })],
+  ],
+  'DELETE /api/ess/push-devices/{id}': [
+    ['204, mine', async () => {
+      const w = buildApp();
+      const token = tokens.attendance(w.people.attendance);
+      const registered = await post(PUSH, { token: PUSH_TOKEN })(w.app, token);
+      return request(w.app).delete(`${PUSH}/${registered.body.device.id}`).set(bearer(token));
+    }],
+    ['400 VALIDATION_FAILED', call('attendance', (app, token) => request(app).delete(`${PUSH}/42`).set(bearer(token)))],
+    ['401, no token', call('attendance', (app) => request(app).delete(`${PUSH}/83000000-0000-4000-8000-000000000001`))],
+    ['403 NOT_LINKED', call('desk', (app, token) => request(app).delete(`${PUSH}/83000000-0000-4000-8000-000000000001`).set(bearer(token)))],
+    ['404 NOT_FOUND', call('attendance', (app, token) => request(app).delete(`${PUSH}/83000000-0000-4000-8000-000000000001`).set(bearer(token)))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await request(app).delete(`${PUSH}/83000000-0000-4000-8000-000000000001`).set(bearer(tokens.attendance(people.attendance)));
+      return request(app).delete(`${PUSH}/83000000-0000-4000-8000-000000000001`).set(bearer(tokens.attendance(people.attendance)));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', (app, token) => request(app).delete(`${PUSH}/83000000-0000-4000-8000-000000000001`).set(bearer(token)), { prepare: drop('hr_ess_push_devices') })],
+  ],
+  'GET /api/ess/notifications': [
+    ['200, mine', call('attendance', get(NOTIF), { setup: withNotification })],
+    ['401, no token', call('attendance', (app) => request(app).get(NOTIF))],
+    ['403 NOT_LINKED', call('desk', get(NOTIF))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(NOTIF)(app, tokens.attendance(people.attendance));
+      return get(NOTIF)(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', get(NOTIF), { prepare: drop('hr_ess_notifications') })],
+  ],
+  'POST /api/ess/notifications/{id}/read': [
+    ['204, mine', call('attendance', (app, token) => request(app).post(`${NOTIF}/${NID4(1)}/read`).set(bearer(token)), { setup: withNotification })],
+    ['204, already read', call('attendance', (app, token) => request(app).post(`${NOTIF}/${NID4(1)}/read`).set(bearer(token)), {
+      setup: (w) => { w.tables.hr_ess_notifications = [notificationSeed(w.people.attendance.employee.id, 1, { read_at: '2026-10-16T06:00:00+00:00' })]; },
+    })],
+    ['400 VALIDATION_FAILED', call('attendance', (app, token) => request(app).post(`${NOTIF}/nope/read`).set(bearer(token)))],
+    ['401, no token', call('attendance', (app) => request(app).post(`${NOTIF}/${NID4(1)}/read`))],
+    ['403 NOT_LINKED', call('desk', (app, token) => request(app).post(`${NOTIF}/${NID4(1)}/read`).set(bearer(token)))],
+    ['404 NOT_FOUND, somebody else\'s', call('attendance', (app, token) => request(app).post(`${NOTIF}/${NID4(2)}/read`).set(bearer(token)), {
+      setup: (w) => { w.tables.hr_ess_notifications = [notificationSeed(w.people.faculty.employee.id, 2)]; },
+    })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ setup: withNotification, limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await request(app).post(`${NOTIF}/${NID4(1)}/read`).set(bearer(tokens.attendance(people.attendance)));
+      return request(app).post(`${NOTIF}/${NID4(1)}/read`).set(bearer(tokens.attendance(people.attendance)));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', (app, token) => request(app).post(`${NOTIF}/${NID4(1)}/read`).set(bearer(token)), { setup: withNotification, prepare: drop('hr_ess_notifications') })],
+  ],
+  'POST /api/ess/notifications/read-all': [
+    ['200, two unread', call('attendance', (app, token) => request(app).post(`${NOTIF}/read-all`).set(bearer(token)), { setup: withNotification })],
+    ['401, no token', call('attendance', (app) => request(app).post(`${NOTIF}/read-all`))],
+    ['403 NOT_LINKED', call('desk', post(`${NOTIF}/read-all`, undefined))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await request(app).post(`${NOTIF}/read-all`).set(bearer(tokens.attendance(people.attendance)));
+      return request(app).post(`${NOTIF}/read-all`).set(bearer(tokens.attendance(people.attendance)));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', post(`${NOTIF}/read-all`, undefined), { prepare: drop('hr_ess_notifications') })],
+  ],
+  'GET /api/ess/notifications/settings': [
+    ['200, the defaults', call('attendance', get(NOTIF_SETTINGS))],
+    ['401, no token', call('attendance', (app) => request(app).get(NOTIF_SETTINGS))],
+    ['403 NOT_LINKED', call('desk', get(NOTIF_SETTINGS))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(NOTIF_SETTINGS)(app, tokens.attendance(people.attendance));
+      return get(NOTIF_SETTINGS)(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', get(NOTIF_SETTINGS), { prepare: drop('hr_ess_notification_settings') })],
+  ],
+  'PUT /api/ess/notifications/settings': [
+    ['200, one turned off', call('attendance', put(NOTIF_SETTINGS, { disabled_categories: ['approvals'] }))],
+    ['400 VALIDATION_FAILED, a category it does not know', call('attendance', put(NOTIF_SETTINGS, { disabled_categories: ['wall'] }))],
+    ['401, no token', call('attendance', (app) => request(app).put(NOTIF_SETTINGS).send({ disabled_categories: [] }))],
+    ['403 NOT_LINKED', call('desk', put(NOTIF_SETTINGS, { disabled_categories: [] }))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await put(NOTIF_SETTINGS, { disabled_categories: [] })(app, tokens.attendance(people.attendance));
+      return put(NOTIF_SETTINGS, { disabled_categories: [] })(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', put(NOTIF_SETTINGS, { disabled_categories: [] }), { prepare: drop('hr_ess_notification_settings') })],
+  ],
+};
+
 describe('the scenario tables', () => {
-  it('cover every route Wave 2 and Wave 3 added', () => {
+  it('cover every route Wave 2, Wave 3 and Wave 4 added', () => {
     const wave1 = ['GET /api/ess/health', 'GET /api/ess/me', 'GET /api/ess/me/capabilities'];
     const served = C.essRoutes(buildApp().app).filter((route) => !wave1.includes(route));
-    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3)].sort()).toEqual(served);
+    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4)].sort()).toEqual(served);
   });
 
-  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3)])('provoke every status %s documents', (route, scenarios) => {
+  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4)])('provoke every status %s documents', (route, scenarios) => {
     const [method, path] = route.split(' ');
     const documented = Object.keys(C.operation(method, path).operation.responses).filter((s) => s !== 'default');
     const provoked = new Set(scenarios.map(([label]) => label.slice(0, 3)));
@@ -1056,7 +1173,7 @@ describe('the scenario tables', () => {
   });
 });
 
-describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3)])('%s', (route, scenarios) => {
+describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4)])('%s', (route, scenarios) => {
   const [method, path] = route.split(' ');
   it.each(scenarios)('%s', async (label, provoke) => {
     quietErrors();

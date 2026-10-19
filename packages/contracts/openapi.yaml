@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.3.0
+  version: 0.4.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -2789,6 +2789,335 @@ paths:
           $ref: '#/components/responses/EssAttendanceHrForbidden'
         '404':
           $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/push-devices:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: registerPushDevice
+      tags: [ESS]
+      x-owner: ess
+      summary: Register this phone for push (D5)
+      description: |
+        Either token kind. Call it after sign-in and on every launch: Firebase can rotate the token. One install is one row — registering a token that another row holds moves it to the caller and lifts any revocation. The token is never sent back.
+
+        Until the `FIREBASE_*` settings exist on the server, pushes are written to the server log instead of being sent (ADR-0016); everything else works.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  minLength: 20
+                  maxLength: 4096
+                device_label:
+                  type: [string, 'null']
+                  maxLength: 80
+                install_id:
+                  type: [string, 'null']
+                  maxLength: 128
+            examples:
+              pixel:
+                value: { token: 'fcm-token-example-0123456789abcdef', device_label: Pixel 8, install_id: install-0123456789abcdef }
+      responses:
+        '201':
+          description: Registered (or re-registered, or moved from another person).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device]
+                properties:
+                  device:
+                    $ref: '#/components/schemas/PushDevice'
+              examples:
+                registered:
+                  value:
+                    device:
+                      id: 5c4b3a29-1807-4f6e-9d5c-4b3a291807f6
+                      platform: android
+                      device_label: Pixel 8
+                      install_id: install-0123456789abcdef
+                      created_at: '2026-10-16T06:30:00+00:00'
+                      updated_at: '2026-10-16T06:30:00+00:00'
+                      last_seen_at: '2026-10-16T06:30:00+00:00'
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/push-devices/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    delete:
+      operationId: revokePushDevice
+      tags: [ESS]
+      x-owner: ess
+      summary: Stop pushing to this phone (D5)
+      description: Either token kind. On sign-out, revoke the token this install registered. Only the caller's own; 404 for anything else or for one already revoked.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The device's `id` from the register reply. Not a uuid is 400 `VALIDATION_FAILED`.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Revoked. Nothing more is pushed to that token.
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/notifications:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listNotifications
+      tags: [ESS]
+      x-owner: ess
+      summary: My notifications and the unread count (D6)
+      description: |
+        Either token kind. Newest first, at most 100; `unread` counts every unread one, whether or not the list was cut.
+
+        Categories in this phase: `approvals` (a request waits for me), `decisions` (my request was decided) and `priority_tasks` (a task assigned to me). The Wall's categories arrive with Phase 2. Nothing is pushed between 21:00 and 08:00 IST; the row is here at once regardless.
+      responses:
+        '200':
+          description: My notifications.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+              examples:
+                two:
+                  value:
+                    unread: 1
+                    truncated: false
+                    notifications:
+                      - id: 6d5c4b3a-2918-407f-8e6d-5c4b3a291807
+                        category: decisions
+                        title: Request approved
+                        body: Your request for on duty on 15 Oct was approved by Priya Sharma.
+                        data: { request_id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c, request_family: attendance }
+                        read_at: null
+                        created_at: '2026-10-16T06:30:00+00:00'
+                      - id: 7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918
+                        category: priority_tasks
+                        title: New priority task
+                        body: Check the lab PCs Due 20 Oct.
+                        data: { task_id: 84000000-0000-4000-8000-000000000001 }
+                        read_at: '2026-10-16T07:00:00+00:00'
+                        created_at: '2026-10-16T05:00:00+00:00'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/notifications/{id}/read:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: readNotification
+      tags: [ESS]
+      x-owner: ess
+      summary: Mark one notification read (D6)
+      description: 'Either token kind, own only. Idempotent: reading one already read is 204 again. Somebody else''s is 404.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Read.
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/notifications/read-all:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: readAllNotifications
+      tags: [ESS]
+      x-owner: ess
+      summary: Mark every notification read (D6)
+      description: Either token kind. Answers how many were unread until now.
+      responses:
+        '200':
+          description: Marked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marked]
+                properties:
+                  marked:
+                    type: integer
+                    minimum: 0
+              examples:
+                three:
+                  value: { marked: 3 }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/notifications/settings:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getNotificationSettings
+      tags: [ESS]
+      x-owner: ess
+      summary: Which notification categories reach my phone (D8)
+      description: Either token kind. Every category, on or off, and the quiet hours (21:00 to 08:00 IST, when nothing is pushed).
+      responses:
+        '200':
+          description: The settings; everything on until the person turns something off.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettings'
+              examples:
+                defaults:
+                  value:
+                    categories:
+                      - { category: approvals, enabled: true }
+                      - { category: decisions, enabled: true }
+                      - { category: priority_tasks, enabled: true }
+                    quiet_hours: { from: '21:00', to: '08:00' }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    put:
+      operationId: putNotificationSettings
+      tags: [ESS]
+      x-owner: ess
+      summary: Turn notification categories off or on (D8)
+      description: Either token kind. A turned-off category stays in the Inbox and stops the phone push.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSettingsUpdate'
+            examples:
+              off:
+                value: { disabled_categories: [approvals] }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettings'
+              examples:
+                saved:
+                  value:
+                    categories:
+                      - { category: approvals, enabled: false }
+                      - { category: decisions, enabled: true }
+                      - { category: priority_tasks, enabled: true }
+                    quiet_hours: { from: '21:00', to: '08:00' }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
         '429':
           $ref: '#/components/responses/EssRateLimited'
         '503':
@@ -6135,6 +6464,111 @@ components:
           items:
             $ref: '#/components/schemas/RequestLimit'
 
+    PushDevice:
+      type: object
+      description: One registered phone. The token is never sent back.
+      required: [id, platform, device_label, install_id, created_at, updated_at, last_seen_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+          enum: [android]
+        device_label:
+          type: [string, 'null']
+        install_id:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+
+    Notification:
+      type: object
+      description: One in-app notification. `data` carries the ids a tap needs, never personal data.
+      required: [id, category, title, body, data, read_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum: [approvals, decisions, priority_tasks]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        data:
+          type: object
+        read_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      required: [notifications, unread, truncated]
+      properties:
+        notifications:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Notification'
+        unread:
+          type: integer
+          minimum: 0
+        truncated:
+          type: boolean
+
+    NotificationSettings:
+      type: object
+      required: [categories, quiet_hours]
+      properties:
+        categories:
+          type: array
+          items:
+            type: object
+            required: [category, enabled]
+            properties:
+              category:
+                type: string
+                enum: [approvals, decisions, priority_tasks]
+              enabled:
+                type: boolean
+        quiet_hours:
+          type: object
+          required: [from, to]
+          properties:
+            from:
+              type: string
+              pattern: '^\d{2}:\d{2}$'
+            to:
+              type: string
+              pattern: '^\d{2}:\d{2}$'
+
+    NotificationSettingsUpdate:
+      type: object
+      required: [disabled_categories]
+      properties:
+        disabled_categories:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [approvals, decisions, priority_tasks]
+
     # ───────────── Scheduler: portal sign-in ─────────────
 
     UserRole:
@@ -7169,6 +7603,25 @@ components:
         error: Look at this month or last month.
         code: DAY_OUT_OF_RANGE
 
+    # ───────────── D5-D8: push devices and notifications ─────────────
+
+    EssPushToken:
+      value:
+        error: The phone's push token is missing or not valid.
+        code: VALIDATION_FAILED
+    EssNotificationCategories:
+      value:
+        error: 'Choose the notification categories: approvals, decisions or priority_tasks.'
+        code: VALIDATION_FAILED
+    EssNotificationNotFound:
+      value:
+        error: That notification was not found.
+        code: NOT_FOUND
+    EssDeviceNotFound:
+      value:
+        error: That phone was not found.
+        code: NOT_FOUND
+
   responses:
 
     # ───────────── ESS ─────────────
@@ -7563,6 +8016,10 @@ components:
               $ref: '#/components/examples/EssRequestWindow'
             balancesMonth:
               $ref: '#/components/examples/EssBalancesMonth'
+            pushToken:
+              $ref: '#/components/examples/EssPushToken'
+            notificationCategories:
+              $ref: '#/components/examples/EssNotificationCategories'
             unknownField:
               $ref: '#/components/examples/EssUnknownField'
             invalidId:
@@ -7612,6 +8069,10 @@ components:
           examples:
             request:
               $ref: '#/components/examples/EssRequestNotFound'
+            notification:
+              $ref: '#/components/examples/EssNotificationNotFound'
+            device:
+              $ref: '#/components/examples/EssDeviceNotFound'
             nothing:
               value:
                 error: There is nothing at this address.

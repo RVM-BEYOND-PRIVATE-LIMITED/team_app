@@ -3,6 +3,7 @@ const { bodyWith, requiredText, idParam, oneQueryValue, invalid } = require('../
 const { istDay, isCalendarDay, monthBounds } = require('../lib/time');
 const { REQUEST_TYPES, effectiveLimit } = require('../policy/requestLimits');
 const { LEAVE_TYPES, windowProblem, monthProblem, countForMonth, balanceOf, requestView } = require('../policy/requests');
+const { notifyApprovers } = require('../lib/notify');
 
 /**
  * Tasks C2, C4 and C5: casual leave (one a month, the Scheduler's own rule) and leave without
@@ -50,6 +51,8 @@ function createMyLeaveRequest({ store, now }) {
     }
 
     const created = await store.createLeaveRequest({ employee_id: employee.id, type: body.type, day, reason });
+    // The approver hears about it (best effort; D6/D7).
+    await notifyApprovers({ store, requester: employee, request: created, family: 'leave' });
     res.status(201).json({ request: requestView(created, 'leave') });
   });
 }

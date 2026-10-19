@@ -91,6 +91,15 @@ const SCHEMA = {
     'action', 'note', 'details'],
   // 20261106000003_hr_ess_request_archives.sql
   hr_ess_request_archives: ['id', 'family', 'request_id', 'employee_id', 'archived_at'],
+  // 20261107000000_hr_ess_push_devices.sql
+  hr_ess_push_devices: ['id', 'employee_id', 'token', 'platform', 'device_label', 'install_id', 'created_at', 'updated_at', 'last_seen_at', 'revoked_at'],
+  // 20261107000001_hr_ess_notifications.sql
+  hr_ess_notifications: ['id', 'employee_id', 'category', 'title', 'body', 'data', 'read_at', 'pushed_at', 'push_mode', 'push_attempts', 'push_error', 'created_at'],
+  hr_ess_notification_settings: ['employee_id', 'disabled_categories', 'updated_at'],
+  // The Scheduler's priority tasks, read for push only (20260814000001:30-53)
+  priority_tasks: ['id', 'location_id', 'task_date', 'title', 'notes', 'priority', 'due_date', 'assigned_to', 'assigned_by',
+    'assigned_by_name', 'assigned_by_role', 'status', 'progress_note', 'completed_by', 'completed_at', 'cancelled_by',
+    'cancelled_at', 'cancel_reason', 'created_at', 'updated_at'],
   // 20261020000000_hr_attendance_punch.sql (the log hr_attendance_apply_override writes)
   hr_attendance_overrides: ['id', 'employee_id', 'day', 'before', 'after', 'reason', 'overridden_by', 'overridden_by_name', 'overridden_at'],
 };
@@ -106,6 +115,9 @@ const UNIQUE = {
   ],
   hr_ess_request_archives: [
     { name: 'hr_ess_request_archives_family_request_id_employee_id_key', columns: ['family', 'request_id', 'employee_id'] },
+  ],
+  hr_ess_push_devices: [
+    { name: 'hr_ess_push_devices_token_key', columns: ['token'] },
   ],
 };
 
@@ -201,6 +213,9 @@ const DEFAULTS = {
   hr_ess_attendance_request_history: (at) => ({ at, details: {} }),
   hr_ess_leave_request_history: (at) => ({ at, details: {} }),
   hr_ess_request_archives: (at) => ({ archived_at: at }),
+  hr_ess_push_devices: (at) => ({ platform: 'android', created_at: at, updated_at: at, last_seen_at: at }),
+  hr_ess_notifications: (at) => ({ data: {}, push_attempts: 0, created_at: at }),
+  hr_ess_notification_settings: (at) => ({ disabled_categories: [], updated_at: at }),
   hr_attendance_overrides: (at) => ({ overridden_at: at }),
 };
 

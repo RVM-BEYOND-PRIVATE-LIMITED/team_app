@@ -18,6 +18,8 @@ const attendanceRequests = require('./routes/attendanceRequests');
 const leaveRequests = require('./routes/leaveRequests');
 const approvals = require('./routes/approvals');
 const hrRequests = require('./routes/hrRequests');
+const pushDevices = require('./routes/pushDevices');
+const notifications = require('./routes/notifications');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
@@ -168,6 +170,17 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.post('/hr/leave-requests/:id/cancel', asAttendanceHr, hrRequests.cancelLeaveRequest({ store, now }));
   api.get('/hr/request-limits', asAttendanceHr, hrRequests.listRequestLimits({ store }));
   api.put('/hr/request-limits/:type', asAttendanceHr, hrRequests.setRequestLimit({ store, now }));
+
+  // D5: the phone's push registration.
+  api.post('/push-devices', asEmployee, pushDevices.registerPushDevice({ store, now }));
+  api.delete('/push-devices/:id', asEmployee, pushDevices.revokePushDevice({ store, now }));
+
+  // D6, D8: notifications, their read state, and the categories a person turns off.
+  api.get('/notifications', asEmployee, notifications.listNotifications({ store }));
+  api.post('/notifications/read-all', asEmployee, notifications.readAllNotifications({ store, now }));
+  api.get('/notifications/settings', asEmployee, notifications.getSettings({ store }));
+  api.put('/notifications/settings', asEmployee, notifications.putSettings({ store, now }));
+  api.post('/notifications/:id/read', asEmployee, notifications.readNotification({ store, now }));
 
   app.use('/api/ess', api);
 

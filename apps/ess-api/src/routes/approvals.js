@@ -6,6 +6,7 @@ const { effectiveLimit, requestType } = require('../policy/requestLimits');
 const { isActive } = require('../policy/employment');
 const { canDecideAny, canDecideRequest, STATUSES, requestView } = require('../policy/requests');
 const { HALF_DAY_MINUTES, ensureShiftSnapshot, recomputeMonth } = require('../policy/attendance');
+const { notifyDecision } = require('../lib/notify');
 
 /**
  * Tasks D1 and H6: the approvals Inbox and the decision.
@@ -205,6 +206,16 @@ function decideRequest({ store, now }) {
     }
 
     const fresh = family === 'leave' ? await store.getLeaveRequest(id) : await store.getAttendanceRequest(id);
+    // The employee hears the outcome (best effort; D6/D7).
+    if (outcome === 'approved' || outcome === 'rejected') {
+      await notifyDecision({
+        store,
+        request: fresh,
+        family,
+        approved: outcome === 'approved',
+        byName: req.auth.employee.full_name,
+      });
+    }
     res.json({ request: requestView(fresh, family, { employee: requester }) });
   });
 }
