@@ -669,4 +669,24 @@ class EssRepository with ConnectivityGuard {
     return _remote.moderationLog();
   }
 
+  Future<WallAnnouncement> editAnnouncement(String id, {required String title, required String body, bool? pinned}) async {
+    await ensureOnline();
+    return _remote.editAnnouncement(id, title: title, body: body, pinned: pinned);
+  }
+
+  Future<void> deleteAnnouncement(String id) async {
+    await ensureOnline();
+    return _remote.deleteAnnouncement(id);
+  }
+
+  Future<void> unhidePost(String id) async {
+    await ensureOnline();
+    return _remote.unhidePost(id);
+  }
+
+  Future<void> unhideComment(String id) async {
+    await ensureOnline();
+    return _remote.unhideComment(id);
+  }
+
 }
