@@ -7,6 +7,11 @@ import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/helpdesk/helpdesk_screen.dart';
+import '../features/hr/hr_bank_screen.dart';
+import '../features/hr/hr_change_requests_screen.dart';
+import '../features/hr/hr_documents_screen.dart';
+import '../features/hr/leaders_screen.dart';
+import '../features/hr/request_limits_screen.dart';
 import '../features/helpdesk/queue_screen.dart';
 import '../features/helpdesk/ticket_screen.dart';
 import '../features/hod/hod_screen.dart';
@@ -27,8 +32,10 @@ import '../features/my_team/directory_screen.dart';
 import '../features/notifications/notifications_screen.dart';
 import '../features/requests/approvals_screen.dart';
 import '../features/requests/requests_screen.dart';
+import '../features/wall/wall_moderation_screen.dart';
 import '../features/wall/wall_post_screen.dart';
 import '../features/shell/team_shell.dart';
+import '../features/work/faculty_day_screen.dart';
 import '../features/work/faculty_indicators_screen.dart';
 import '../features/work/interviews_screen.dart';
 import '../features/work/mark_attendance_screen.dart';
@@ -93,6 +100,15 @@ GoRouter createRouter(TeamAuthBloc authBloc) {
       GoRoute(path: '/helpdesk/queue', builder: (_, __) => const HelpdeskQueueScreen()),
       GoRoute(path: '/helpdesk/ticket/:id', builder: (_, state) => TicketScreen(ticketId: state.pathParameters['id']!)),
       GoRoute(path: '/hr/tools', builder: (_, __) => const HrToolsScreen()),
+      // ── Team RVM ESS (2D) ────────────────────────────────────────────────
+      GoRoute(path: '/leaders', builder: (_, __) => const LeadersScreen()),
+      GoRoute(path: '/work/my-day', builder: (_, __) => const FacultyDayScreen()),
+      // ── HR desks (2B/2C) ────────────────────────────────────────────────
+      GoRoute(path: '/hr/request-limits', builder: (_, __) => const RequestLimitsScreen()),
+      GoRoute(path: '/hr/change-requests', builder: (_, __) => const HrChangeRequestsScreen()),
+      GoRoute(path: '/hr/documents', builder: (_, __) => const HrDocumentsScreen()),
+      GoRoute(path: '/hr/bank', builder: (_, __) => const HrBankScreen()),
+      GoRoute(path: '/wall/moderation', builder: (_, __) => const WallModerationScreen()),
       GoRoute(
         path: '/hr/employee/:id/personal',
         builder: (_, state) => EmployeePersonalScreen(

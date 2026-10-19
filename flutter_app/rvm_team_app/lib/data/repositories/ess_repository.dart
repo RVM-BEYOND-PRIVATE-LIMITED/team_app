@@ -190,9 +190,11 @@ class EssRepository with ConnectivityGuard {
     String? place,
     String? fixIn,
     String? fixOut,
+    int? minutes,
   }) async {
     await ensureOnline();
-    return _remote.createAttendanceRequest(type: type, day: day, reason: reason, place: place, fixIn: fixIn, fixOut: fixOut);
+    return _remote.createAttendanceRequest(
+        type: type, day: day, reason: reason, place: place, fixIn: fixIn, fixOut: fixOut, minutes: minutes);
   }
 
   Future<List<EssRequest>> myAttendanceRequests() async {
@@ -544,4 +546,127 @@ class EssRepository with ConnectivityGuard {
     await ensureOnline();
     return _remote.myIdCard();
   }
+
+  // ── 2D ───────────────────────────────────────────────────────────────────
+
+  Future<LeadersOverview> leadersOverview() async {
+    await ensureOnline();
+    return _remote.leadersOverview();
+  }
+
+  Future<FacultyDay> facultyDay({String? date}) async {
+    await ensureOnline();
+    return _remote.facultyDay(date: date);
+  }
+
+  Future<ApprovalChain> approvalChain(String family, String id) async {
+    await ensureOnline();
+    return _remote.approvalChain(family, id);
+  }
+
+  // ── HR desk ──────────────────────────────────────────────────────────────
+
+  Future<List<RequestLimit>> requestLimits() async {
+    await ensureOnline();
+    return _remote.requestLimits();
+  }
+
+  Future<void> setRequestLimit(String type, {int? count, int? minutes}) async {
+    await ensureOnline();
+    return _remote.setRequestLimit(type, count: count, minutes: minutes);
+  }
+
+  Future<EssRequest> cancelRequest(String family, String id, String reason) async {
+    await ensureOnline();
+    return _remote.cancelRequest(family, id, reason);
+  }
+
+  Future<List<ChangeRequest>> hrChangeRequests() async {
+    await ensureOnline();
+    return _remote.hrChangeRequests();
+  }
+
+  Future<ChangeRequest> decideChangeRequest(String id, {required bool approve, String? note}) async {
+    await ensureOnline();
+    return _remote.decideChangeRequest(id, approve: approve, note: note);
+  }
+
+  Future<DocumentPage> hrEmployeeDocuments(String employeeId) async {
+    await ensureOnline();
+    return _remote.hrEmployeeDocuments(employeeId);
+  }
+
+  Future<String?> hrDocumentFileUrl(String employeeId, String documentId) async {
+    await ensureOnline();
+    return _remote.hrDocumentFileUrl(employeeId, documentId);
+  }
+
+  Future<EssDocument> verifyDocument(String employeeId, String documentId) async {
+    await ensureOnline();
+    return _remote.verifyDocument(employeeId, documentId);
+  }
+
+  Future<EssDocument> rejectDocument(String employeeId, String documentId, String reason) async {
+    await ensureOnline();
+    return _remote.rejectDocument(employeeId, documentId, reason);
+  }
+
+  Future<void> deleteDocument(String employeeId, String documentId) async {
+    await ensureOnline();
+    return _remote.deleteDocument(employeeId, documentId);
+  }
+
+  Future<BankDetails?> hrEmployeeBank(String employeeId) async {
+    await ensureOnline();
+    return _remote.hrEmployeeBank(employeeId);
+  }
+
+  // ── Wall moderation / announcements ──────────────────────────────────────
+
+  Future<WallAnnouncement> createAnnouncement({
+    required String title,
+    required String body,
+    bool needsAck = false,
+    String? closesOn,
+    bool pinned = false,
+  }) async {
+    await ensureOnline();
+    return _remote.createAnnouncement(title: title, body: body, needsAck: needsAck, closesOn: closesOn, pinned: pinned);
+  }
+
+  Future<List<WallAnnouncement>> hrAnnouncements() async {
+    await ensureOnline();
+    return _remote.hrAnnouncements();
+  }
+
+  Future<Map<String, int>> announcementCounts(String id) async {
+    await ensureOnline();
+    return _remote.announcementCounts(id);
+  }
+
+  Future<void> hidePost(String id, String reason) async {
+    await ensureOnline();
+    return _remote.hidePost(id, reason);
+  }
+
+  Future<void> hideComment(String id, String reason) async {
+    await ensureOnline();
+    return _remote.hideComment(id, reason);
+  }
+
+  Future<List<WallReport>> wallReports({String status = 'open'}) async {
+    await ensureOnline();
+    return _remote.wallReports(status: status);
+  }
+
+  Future<void> resolveReport(String id, {required bool hidden, String? note}) async {
+    await ensureOnline();
+    return _remote.resolveReport(id, hidden: hidden, note: note);
+  }
+
+  Future<List<ModerationEntry>> moderationLog() async {
+    await ensureOnline();
+    return _remote.moderationLog();
+  }
+
 }

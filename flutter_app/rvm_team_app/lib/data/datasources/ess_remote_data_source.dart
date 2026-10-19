@@ -208,6 +208,7 @@ class EssRemoteDataSource with DioExecutor {
     String? place,
     String? fixIn,
     String? fixOut,
+    int? minutes,
   }) =>
       guard(() async => EssRequest.fromJson(_obj(_body(await _dio.post('/attendance-requests', data: {
             'type': type,
@@ -216,6 +217,7 @@ class EssRemoteDataSource with DioExecutor {
             if (place != null) 'place': place,
             if (fixIn != null) 'fix_in': fixIn,
             if (fixOut != null) 'fix_out': fixOut,
+            if (minutes != null) 'minutes': minutes,
           }))['request'])));
 
   Future<List<EssRequest>> myAttendanceRequests() => guard(() async =>
@@ -551,6 +553,111 @@ class EssRemoteDataSource with DioExecutor {
 
   Future<void> setCelebrationOptout(bool hidden) =>
       guard(() async => _dio.put('/me/celebration-optout', data: {'hidden': hidden}));
+
+
+  // ── 2D: leaders, faculty day, approval chain ─────────────────────────────
+
+  Future<LeadersOverview> leadersOverview() =>
+      guard(() async => LeadersOverview.fromJson(_body(await _dio.get('/leaders/overview'))));
+
+  Future<FacultyDay> facultyDay({String? date}) => guard(() async => FacultyDay.fromJson(
+      _body(await _dio.get('/me/faculty-day', queryParameters: {if (date != null) 'date': date}))));
+
+  Future<ApprovalChain> approvalChain(String family, String id) =>
+      guard(() async => ApprovalChain.fromJson(_body(await _dio.get('/approvals/$family/$id/chain'))));
+
+  // ── HR desk ──────────────────────────────────────────────────────────────
+
+  Future<List<RequestLimit>> requestLimits() => guard(() async =>
+      _list(_body(await _dio.get('/hr/request-limits'))['limits'], RequestLimit.fromJson));
+
+  Future<void> setRequestLimit(String type, {int? count, int? minutes}) =>
+      guard(() async => _dio.put('/hr/request-limits/$type', data: {
+            if (count != null) 'limit_count': count,
+            if (minutes != null) 'limit_minutes': minutes,
+          }));
+
+  Future<EssRequest> cancelRequest(String family, String id, String reason) => guard(() async {
+        final path = family == 'leave' ? '/hr/leave-requests/$id/cancel' : '/hr/attendance-requests/$id/cancel';
+        return EssRequest.fromJson(_obj(_body(await _dio.post(path, data: {'reason': reason}))['request']));
+      });
+
+  Future<List<ChangeRequest>> hrChangeRequests() => guard(() async =>
+      _list(_body(await _dio.get('/hr/change-requests'))['requests'], ChangeRequest.fromJson));
+
+  Future<ChangeRequest> decideChangeRequest(String id, {required bool approve, String? note}) =>
+      guard(() async => ChangeRequest.fromJson(_obj(_body(await _dio.post('/hr/change-requests/$id/decide', data: {
+            'decision': approve ? 'approved' : 'rejected',
+            if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          }))['request'])));
+
+  Future<DocumentPage> hrEmployeeDocuments(String employeeId) =>
+      guard(() async => DocumentPage.fromJson(_body(await _dio.get('/hr/employees/$employeeId/documents'))));
+
+  Future<String?> hrDocumentFileUrl(String employeeId, String documentId) => guard(() async {
+        final data = _body(await _dio.get('/hr/employees/$employeeId/documents/$documentId/file'));
+        return _obj(data['file'])['url']?.toString();
+      });
+
+  Future<EssDocument> verifyDocument(String employeeId, String documentId) => guard(() async =>
+      EssDocument.fromJson(_obj(_body(await _dio.post('/hr/employees/$employeeId/documents/$documentId/verify'))['document'])));
+
+  Future<EssDocument> rejectDocument(String employeeId, String documentId, String reason) => guard(() async =>
+      EssDocument.fromJson(_obj(_body(await _dio.post('/hr/employees/$employeeId/documents/$documentId/reject',
+          data: {'reason': reason}))['document'])));
+
+  Future<void> deleteDocument(String employeeId, String documentId) =>
+      guard(() async => _dio.delete('/hr/employees/$employeeId/documents/$documentId'));
+
+  Future<BankDetails?> hrEmployeeBank(String employeeId) => guard(() async {
+        final data = _body(await _dio.get('/hr/employees/$employeeId/bank-details'));
+        final bank = _mapOf(data['bank_details']);
+        return bank.isEmpty ? null : BankDetails.fromJson(bank);
+      });
+
+  // ── Wall moderation and announcements (HR) ───────────────────────────────
+
+  Future<WallAnnouncement> createAnnouncement({
+    required String title,
+    required String body,
+    bool needsAck = false,
+    String? closesOn,
+    bool pinned = false,
+  }) =>
+      guard(() async => WallAnnouncement.fromJson(_obj(_body(await _dio.post('/wall/announcements', data: {
+            'title': title,
+            'body': body,
+            'audience': {'all': true},
+            'needs_ack': needsAck,
+            if (closesOn != null) 'closes_on': closesOn,
+            'pinned': pinned,
+          }))['announcement'])));
+
+  Future<List<WallAnnouncement>> hrAnnouncements() => guard(() async =>
+      _list(_body(await _dio.get('/wall/hr/announcements'))['announcements'], WallAnnouncement.fromJson));
+
+  Future<Map<String, int>> announcementCounts(String id) => guard(() async {
+        final counts = _mapOf(_body(await _dio.get('/wall/announcements/$id/counts'))['counts']);
+        return counts.map((k, v) => MapEntry(k, (v as num?)?.toInt() ?? 0));
+      });
+
+  Future<void> hidePost(String id, String reason) =>
+      guard(() async => _dio.post('/wall/posts/$id/hide', data: {'reason': reason}));
+
+  Future<void> hideComment(String id, String reason) =>
+      guard(() async => _dio.post('/wall/comments/$id/hide', data: {'reason': reason}));
+
+  Future<List<WallReport>> wallReports({String status = 'open'}) => guard(() async =>
+      _list(_body(await _dio.get('/wall/hr/reports', queryParameters: {'status': status}))['reports'], WallReport.fromJson));
+
+  Future<void> resolveReport(String id, {required bool hidden, String? note}) =>
+      guard(() async => _dio.post('/wall/hr/reports/$id/resolve', data: {
+            'status': hidden ? 'hidden' : 'kept',
+            if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          }));
+
+  Future<List<ModerationEntry>> moderationLog() => guard(() async =>
+      _list(_body(await _dio.get('/wall/hr/moderation-log'))['entries'], ModerationEntry.fromJson));
 
   Map<String, dynamic> _mapOf(dynamic v) => v is Map ? v.cast<String, dynamic>() : const {};
 }

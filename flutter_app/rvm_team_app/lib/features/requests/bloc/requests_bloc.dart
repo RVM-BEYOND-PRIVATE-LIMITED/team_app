@@ -29,6 +29,7 @@ class RequestCreateRequested extends RequestsEvent {
     this.place,
     this.fixIn,
     this.fixOut,
+    this.minutes,
   });
   final String family;
   final String type;
@@ -37,6 +38,7 @@ class RequestCreateRequested extends RequestsEvent {
   final String? place;
   final String? fixIn;
   final String? fixOut;
+  final int? minutes;
 }
 
 class RequestWithdrawRequested extends RequestsEvent {
@@ -109,7 +111,7 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
         await _repo.createLeaveRequest(type: e.type, day: e.day, reason: e.reason);
       } else {
         await _repo.createAttendanceRequest(
-          type: e.type, day: e.day, reason: e.reason, place: e.place, fixIn: e.fixIn, fixOut: e.fixOut);
+          type: e.type, day: e.day, reason: e.reason, place: e.place, fixIn: e.fixIn, fixOut: e.fixOut, minutes: e.minutes);
       }
       final created = state.createdNonce + 1;
       emit(RequestsState(status: state.status, requests: state.requests, balances: state.balances, createdNonce: created));

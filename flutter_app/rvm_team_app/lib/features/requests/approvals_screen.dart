@@ -1,8 +1,10 @@
 import 'package:core_bloc/core_bloc.dart';
+import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -142,6 +144,10 @@ class _ApprovalCard extends StatelessWidget {
                 if (ctx.othersOffCount > 0) '${ctx.othersOffCount} others off${ctx.othersOffNames.isEmpty ? '' : ' (${ctx.othersOffNames.join(', ')})'}',
               ].where((s) => s.isNotEmpty).join(' · '), style: Theme.of(context).textTheme.labelSmall),
             ],
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => _showChain(context), child: const Text('Approval chain')),
+            ),
             if (request.status == 'pending') ...[
               const SizedBox(height: RvmSpacing.sm),
               Row(
@@ -164,17 +170,83 @@ class _ApprovalCard extends StatelessWidget {
                 ],
               ),
             ] else
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => context.read<ApprovalsBloc>().add(ApprovalArchived(family: request.family, id: request.id)),
-                  child: const Text('Archive'),
-                ),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                children: [
+                  if (request.status == 'approved')
+                    TextButton(onPressed: () => _cancel(context), child: const Text('Cancel (HR)')),
+                  TextButton(
+                    onPressed: () => context.read<ApprovalsBloc>().add(ApprovalArchived(family: request.family, id: request.id)),
+                    child: const Text('Archive'),
+                  ),
+                ],
               ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _showChain(BuildContext context) async {
+    try {
+      final chain = await getIt<EssRepository>().approvalChain(request.family, request.id);
+      if (!context.mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Approval chain'),
+          content: SizedBox(
+            width: 360,
+            child: chain.chain.isEmpty
+                ? Text(chain.hrFallback ? 'HR decides this one.' : 'No chain recorded.')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final e in chain.chain)
+                        ListTile(
+                          dense: true,
+                          leading: Icon(e.mayDecide ? Icons.check_circle : Icons.circle_outlined,
+                              color: e.mayDecide ? RvmColors.success : null),
+                          title: Text(e.employee.fullName),
+                          subtitle: e.skipped == null ? null : Text('skipped: ${e.skipped}'),
+                        ),
+                      if (chain.hrFallback) const ListTile(dense: true, title: Text('HR fallback')),
+                    ],
+                  ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+        ),
+      );
+    } on Failure catch (f) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(f.message)));
+      }
+    }
+  }
+
+  Future<void> _cancel(BuildContext context) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel this approved request'),
+        content: TextField(controller: controller, minLines: 2, maxLines: 3, decoration: const InputDecoration(hintText: 'Reason (at least 3 characters)')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Back')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Cancel request')),
+        ],
+      ),
+    );
+    if (reason == null || reason.length < 3 || !context.mounted) return;
+    try {
+      await getIt<EssRepository>().cancelRequest(request.family, request.id, reason);
+      if (context.mounted) context.read<ApprovalsBloc>().add(const ApprovalsRefreshed());
+    } on Failure catch (f) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(f.message)));
+      }
+    }
   }
 
   Future<void> _reject(BuildContext context) async {

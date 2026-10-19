@@ -49,6 +49,19 @@ class _WallView extends StatelessWidget {
               subtitle: const Text('Company feed, praise and announcements'),
               actions: [
                 Builder(
+                  builder: (context) {
+                    final caps = context.watch<CapabilitiesBloc>().state.data;
+                    if (caps == null || (!caps.wallModerate && !caps.wallAnnounce)) {
+                      return const SizedBox.shrink();
+                    }
+                    return IconButton(
+                      tooltip: 'Wall desk',
+                      onPressed: () => context.push('/wall/moderation'),
+                      icon: const Icon(Icons.shield_outlined),
+                    );
+                  },
+                ),
+                Builder(
                   builder: (context) => IconButton(
                     tooltip: 'Settings',
                     onPressed: () => showModalBottomSheet<void>(
