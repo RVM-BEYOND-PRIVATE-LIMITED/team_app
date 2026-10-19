@@ -42,8 +42,13 @@ const SCHEMA = {
   hr_employees: ['id', 'employee_code', 'full_name', 'designation', 'department_id', 'branch_id', 'manager_id',
     'email', 'phone', 'additional_phones', 'date_of_joining', 'date_of_exit', 'employment_status', 'performance_tag', 'seniority',
     'is_archived', 'archived_at', 'archive_reason', 'user_id', 'photo_path', 'geofence_exempt', 'created_at', 'updated_at',
+    // 20260830000001:29 and the Scheduler's own setPhoto update
+    'photo_updated_at', 'photo_updated_by', 'updated_by',
     // 20261022000000:87-93 and 20261024000000 (the shift a day is judged by)
     'shift_id', 'saturday_shift_id', 'sunday_shift_id', 'week_off_days'],
+  // 20260826000001:463-483 (the Timeline reads employees' events; values are never selected)
+  hr_activity_events: ['id', 'event_type', 'entity_type', 'entity_id', 'entity_label', 'actor_user_id', 'actor_name',
+    'actor_role', 'before', 'after', 'changed_keys', 'metadata', 'note', 'occurred_at'],
   hr_branches: ['id', 'name', 'is_active', 'latitude', 'longitude', 'geofence_radius_m', 'office_ips', 'created_at', 'updated_at'],
   hr_departments: ['id', 'name', 'is_active', 'source', 'created_at', 'updated_at'],
   hr_shifts: ['id', 'name', 'start_time', 'end_time', 'grace_minutes', 'is_active'],
@@ -984,9 +989,29 @@ function createFakeSupabase(tables = {}, { now = () => new Date() } = {}) {
     tables: clone(tables),
     schema: new Map(Object.entries(SCHEMA).map(([t, cols]) => [t, new Set(cols)])),
     queries: [],
+    storageCalls: [],
     outage: null,
     failWhen: null,
     now,
+    /** Supabase Storage, as the ESS uses it: signed links, uploads, removals; nothing leaves. */
+    storage: {
+      from(bucket) {
+        return {
+          createSignedUrl: async (path, expiresIn) => ({
+            data: { signedUrl: `https://storage.test/${bucket}/${path}?token=test-signed&expires=${expiresIn}` },
+            error: null,
+          }),
+          upload: async (path, buffer, options) => {
+            fake.storageCalls.push({ op: 'upload', bucket, path, size: buffer.length, options });
+            return { data: { path }, error: null };
+          },
+          remove: async (paths) => {
+            fake.storageCalls.push({ op: 'remove', bucket, paths });
+            return { data: [], error: null };
+          },
+        };
+      },
+    },
     from(table) {
       return new Query(fake, table);
     },

@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.4.0
+  version: 0.5.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -3114,6 +3114,342 @@ paths:
                     quiet_hours: { from: '21:00', to: '08:00' }
         '400':
           $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/profile:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: myProfile
+      tags: [ESS]
+      x-owner: ess
+      summary: My profile, personal details, timeline and photo (E1, E10, E12)
+      description: |
+        Either token kind (attendance-only staff included). Summary, Job and Personal come from the HR record and the personal-details table; the designation is the HR record's, never the login role. The Timeline is an allowlist of employee events — joining, promotion, status, reporting line, designation and branch changes, increments (dates only) — mapped to one line each; HR remarks and unknown events never appear, and the event values are never read, so pay cannot leak. Pay, performance tags and background notes are never selected.
+
+        `photo_url` is a 300-second signed link to the private bucket, null when there is no photo.
+      responses:
+        '200':
+          description: My profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeProfile'
+              examples:
+                full:
+                  value:
+                    employee:
+                      id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                      full_name: Suresh Yadav
+                      employee_code: RVM-0217
+                      designation: Office Assistant
+                      department: { id: 1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d, name: Technical Training }
+                      branch: { id: 9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a, name: Faridabad }
+                      manager: { id: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f, full_name: Priya Sharma, designation: Admin Manager }
+                      date_of_joining: '2025-06-01'
+                      employment_status: active
+                      notice_period: false
+                      email: suresh@example.test
+                      phone: '9710000050'
+                      photo_url: 'https://storage.example.test/documents/hr/employee/2b3c/photo/x.jpg?token=…'
+                    personal:
+                      date_of_birth: '1994-05-21'
+                      blood_group: B+
+                      address_line1: House 12, Sector 15
+                      address_line2: null
+                      city: Faridabad
+                      state: Haryana
+                      pincode: '121007'
+                      emergency_name: Sunita Yadav
+                      emergency_relation: Mother
+                      emergency_phone: '9876543210'
+                    timeline:
+                      - { id: 5c4b3a29-1807-4f6e-9d5c-4b3a291807f6, title: Designation changed, at: '2026-06-01T05:00:00+00:00' }
+                      - { id: 6d5c4b3a-2918-407f-8e6d-5c4b3a291807, title: Joined RVM, at: '2025-06-01T05:00:00+00:00' }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/photo:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    put:
+      operationId: putMyPhoto
+      tags: [ESS]
+      x-owner: ess
+      summary: Change my photo (E10)
+      description: |
+        Either token kind, so attendance-only staff can change it too. `photo_base64` is the app-compressed image (up to 1 MB decoded; up to about 2 MB on the wire) and `content_type` is `image/jpeg`, `image/png` or `image/webp`. The file goes to the private bucket (the Scheduler's own path shape) and the record's photo pointer is updated; the old file is left for cleanup. The change is recorded in `hr_ess_audit`. **KP's open question: should an employee's own photo need HR's approval?** The build says no.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [photo_base64, content_type]
+              properties:
+                photo_base64:
+                  type: string
+                  minLength: 16
+                  maxLength: 2100000
+                content_type:
+                  type: string
+                  enum: [image/jpeg, image/png, image/webp]
+            examples:
+              png:
+                value: { photo_base64: 'iVBORw0KGgoAAAANSUhEUg…', content_type: image/png }
+      responses:
+        '200':
+          description: Saved, with a fresh signed link.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [employee]
+                properties:
+                  employee:
+                    type: object
+                    required: [id, photo_url]
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      photo_url:
+                        type: [string, 'null']
+              examples:
+                saved:
+                  value:
+                    employee: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, photo_url: 'https://storage.example.test/documents/hr/employee/2b3c/photo/y.jpg?token=…' }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/org:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: myOrg
+      tags: [ESS]
+      x-owner: ess
+      summary: My chain, peers, reports and department (E2, E11)
+      description: |
+        Either token kind. The manager chain upward (empty when nobody is recorded), peers under the same manager, direct reports and the department's people. Where the top of the chain has no manager recorded and is not the CEO, `reports_to_ceo_not_recorded` is true, as the brief words it. People serving notice stay on every list with `notice_period: true` (E11). Phones follow the contact rule (E8): HR's roles see every phone; otherwise only a manager above the person — so a chain view shows no phones by default (decision 5). Email is on every card.
+      responses:
+        '200':
+          description: The org around me.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgView'
+              examples:
+                manager:
+                  value:
+                    manager_chain:
+                      - { id: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f, full_name: Priya Sharma, employee_code: RVM-0006, designation: Admin Manager, department: null, branch: null, email: priya@example.test, phone: null, employment_status: active, notice_period: false }
+                    reports_to_ceo_not_recorded: false
+                    peers: []
+                    direct_reports:
+                      count: 1
+                      people:
+                        - { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: Suresh Yadav, employee_code: RVM-0217, designation: Office Assistant, department: null, branch: null, email: suresh@example.test, phone: '9710000050', employment_status: active, notice_period: false }
+                    department:
+                      id: 1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d
+                      name: Technical Training
+                      people: []
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/directory:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: directorySearch
+      tags: [ESS]
+      x-owner: ess
+      summary: Search colleagues by name or code (E2, E8)
+      description: |
+        Either token kind. `q` matches the name or employee code (case-insensitive contains, up to 60 characters); `branch_id` and `department_id` filter. Active staff only, never yourself, at most 50 with `truncated` saying more matched. The contact rule applies as in `GET /ess/me/org`; people on notice carry the chip.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 60
+        - name: branch_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: department_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The people who match.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Directory'
+              examples:
+                search:
+                  value:
+                    truncated: false
+                    people:
+                      - { id: 4d5e6f7a-8b9c-4d0e-9f1a-2b3c4d5e6f7a, full_name: Anita Sharma, employee_code: RVM-0211, designation: CAD Faculty, department: null, branch: null, email: anita@example.test, phone: null, employment_status: active, notice_period: false }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/team/today:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: teamToday
+      tags: [ESS]
+      x-owner: ess
+      summary: Team today — my reports, or the HoO's branch (E6, H4)
+      description: |
+        Either token kind. The caller's direct reports; a HoO gets the whole branch instead (H4). Anyone with neither gets `scope: null` and an empty view. Each person carries `state` (`in`, `done`, `not_in`, `on_leave`, `week_off`, `holiday`) and the day's late flag; the leave's type and reason are never read. `filter` narrows to `not_in`, `late` or `on_leave`; `counts` always describes the whole roster.
+      parameters:
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, not_in, late, on_leave]
+            default: all
+      responses:
+        '200':
+          description: The roster.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamToday'
+              examples:
+                reports:
+                  value:
+                    scope: reports
+                    date: '2026-10-16'
+                    filter: all
+                    counts: { all: 2, not_in: 1, late: 1, on_leave: 0 }
+                    people:
+                      - { id: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f, full_name: Ramesh Kumar, employee_code: RVM-0007, designation: Branch Admin, department: null, branch: null, email: ramesh@example.test, phone: '9710000007', employment_status: active, notice_period: false, state: not_in, late: false, late_minutes: null, first_in: null, last_out: null }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/team/off-this-week:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: teamOffThisWeek
+      tags: [ESS]
+      x-owner: ess
+      summary: Who is off this week (E6)
+      description: |
+        Either token kind, for Home. The caller's direct reports; with none, the peers under the same manager; `scope` says which, null when there is nobody. Days come from the sheet's leave records in the IST week (Monday to Sunday); the leave type and reason are never read, let alone sent.
+      responses:
+        '200':
+          description: Who is off, names and days only.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffThisWeek'
+              examples:
+                reports:
+                  value:
+                    week: { from: '2026-10-12', to: '2026-10-18' }
+                    scope: reports
+                    people:
+                      - { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: Suresh Yadav, employee_code: RVM-0217, designation: Office Assistant, department: null, branch: null, email: suresh@example.test, phone: '9710000050', employment_status: active, notice_period: false, days: ['2026-10-15'] }
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
@@ -6568,6 +6904,256 @@ components:
           items:
             type: string
             enum: [approvals, decisions, priority_tasks]
+
+    PersonCard:
+      type: object
+      description: 'One colleague as the org views show them (E2, E8): email always, phone by the contact rule.'
+      required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+        designation:
+          type: [string, 'null']
+        department:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        email:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+        employment_status:
+          type: [string, 'null']
+        notice_period:
+          type: boolean
+
+    ProfileEmployee:
+      type: object
+      required: [id, full_name, employee_code, designation, department, branch, manager, date_of_joining, employment_status, notice_period, email, phone, photo_url]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+        designation:
+          type: [string, 'null']
+        department:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        manager:
+          oneOf:
+            - type: object
+              required: [id, full_name, designation]
+              properties:
+                id: { type: string, format: uuid }
+                full_name: { type: string }
+                designation: { type: [string, 'null'] }
+            - type: 'null'
+        date_of_joining:
+          type: [string, 'null']
+        employment_status:
+          type: [string, 'null']
+        notice_period:
+          type: boolean
+        email:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+        photo_url:
+          type: [string, 'null']
+
+    ProfilePersonal:
+      type: object
+      required: [date_of_birth, blood_group, address_line1, address_line2, city, state, pincode, emergency_name, emergency_relation, emergency_phone]
+      properties:
+        date_of_birth: { type: [string, 'null'] }
+        blood_group: { type: [string, 'null'] }
+        address_line1: { type: [string, 'null'] }
+        address_line2: { type: [string, 'null'] }
+        city: { type: [string, 'null'] }
+        state: { type: [string, 'null'] }
+        pincode: { type: [string, 'null'] }
+        emergency_name: { type: [string, 'null'] }
+        emergency_relation: { type: [string, 'null'] }
+        emergency_phone: { type: [string, 'null'] }
+
+    TimelineEntry:
+      type: object
+      required: [id, title, at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        at: { type: string, format: date-time }
+
+    MeProfile:
+      type: object
+      required: [employee, personal, timeline]
+      properties:
+        employee:
+          $ref: '#/components/schemas/ProfileEmployee'
+        personal:
+          $ref: '#/components/schemas/ProfilePersonal'
+        timeline:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TimelineEntry'
+
+    OrgView:
+      type: object
+      required: [manager_chain, reports_to_ceo_not_recorded, peers, direct_reports, department]
+      properties:
+        manager_chain:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonCard'
+        reports_to_ceo_not_recorded:
+          type: boolean
+        peers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonCard'
+        direct_reports:
+          type: object
+          required: [count, people]
+          properties:
+            count: { type: integer, minimum: 0 }
+            people:
+              type: array
+              items:
+                $ref: '#/components/schemas/PersonCard'
+        department:
+          oneOf:
+            - type: object
+              required: [id, name, people]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+                people:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/PersonCard'
+            - type: 'null'
+
+    Directory:
+      type: object
+      required: [people, truncated]
+      properties:
+        people:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/PersonCard'
+        truncated:
+          type: boolean
+
+    TeamPerson:
+      type: object
+      required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period, state, late, late_minutes, first_in, last_out]
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+        employee_code: { type: [string, 'null'] }
+        designation: { type: [string, 'null'] }
+        department:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        email: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        employment_status: { type: [string, 'null'] }
+        notice_period: { type: boolean }
+        state:
+          type: string
+          enum: [in, done, not_in, on_leave, week_off, holiday]
+        late: { type: boolean }
+        late_minutes: { type: [integer, 'null'] }
+        first_in: { type: [string, 'null'] }
+        last_out: { type: [string, 'null'] }
+
+    TeamToday:
+      type: object
+      required: [scope, date, filter, counts, people]
+      properties:
+        scope:
+          type: [string, 'null']
+          enum: [reports, branch, null]
+        date: { type: string, format: date }
+        filter:
+          type: string
+          enum: [all, not_in, late, on_leave]
+        counts:
+          type: object
+          required: [all, not_in, late, on_leave]
+          properties:
+            all: { type: integer, minimum: 0 }
+            not_in: { type: integer, minimum: 0 }
+            late: { type: integer, minimum: 0 }
+            on_leave: { type: integer, minimum: 0 }
+        people:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamPerson'
+
+    OffThisWeek:
+      type: object
+      required: [week, scope, people]
+      properties:
+        week:
+          type: object
+          required: [from, to]
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+        scope:
+          type: [string, 'null']
+          enum: [reports, peers, null]
+        people:
+          type: array
+          items:
+            type: object
+            required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period, days]
+            properties:
+              id: { type: string, format: uuid }
+              full_name: { type: string }
+              employee_code: { type: [string, 'null'] }
+              designation: { type: [string, 'null'] }
+              department:
+                oneOf:
+                  - $ref: '#/components/schemas/BranchRef'
+                  - type: 'null'
+              branch:
+                oneOf:
+                  - $ref: '#/components/schemas/BranchRef'
+                  - type: 'null'
+              email: { type: [string, 'null'] }
+              phone: { type: [string, 'null'] }
+              employment_status: { type: [string, 'null'] }
+              notice_period: { type: boolean }
+              days:
+                type: array
+                items: { type: string, format: date }
 
     # ───────────── Scheduler: portal sign-in ─────────────
 

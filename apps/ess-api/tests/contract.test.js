@@ -1158,14 +1158,125 @@ const WAVE_4 = {
   ],
 };
 
+/* ── Wave 5 (Phase 1E): profile, org, directory and team ── */
+
+const OFF = '/api/ess/team/off-this-week';
+const TODAY_TEAM = '/api/ess/team/today';
+const PNG_B64 = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63fcffff3f030005fe02fea72d1e4b0000000049454e44ae426082', 'hex').toString('base64');
+
+const teamDaySeed = (w, employeeId, day, change = {}) => {
+  w.tables.hr_staff_attendance.push({
+    id: `86000000-0000-4000-8000-${String(day.charCodeAt(9) * 7).padStart(12, '0')}`, employee_id: employeeId,
+    branch_id: null, day, status: 'present', leave_type: null, note: null, marked_by: null, marked_by_name: 'Test (self punch)',
+    marked_at: `${day}T04:00:00+00:00`, updated_at: `${day}T12:00:00+00:00`, source: 'self_punch',
+    first_in: `${day}T04:20:00+00:00`, last_out: `${day}T12:40:00+00:00`, worked_minutes: 500, shift_id: null,
+    shift_start: null, shift_end: null, grace_minutes: null, late_minutes: null, early_exit_minutes: null,
+    late_count: null, late_half_day: false, late_excused: false, late_excused_by_name: null, late_excused_reason: null,
+    late_excused_at: null, ...change,
+  });
+};
+
+const WAVE_5 = {
+  'GET /api/ess/me/profile': [
+    ['200, an attendance session', call('attendance', get('/api/ess/me/profile'))],
+    ['401, no token', call('attendance', (app) => request(app).get('/api/ess/me/profile'))],
+    ['403 NOT_ACTIVE', call('faculty', get('/api/ess/me/profile'), { setup: (w) => { w.people.faculty.employee.employment_status = 'exited'; } })],
+    ['403 NOT_LINKED', call('desk', get('/api/ess/me/profile'))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get('/api/ess/me/profile')(app, tokens.attendance(people.attendance));
+      return get('/api/ess/me/profile')(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', get('/api/ess/me/profile'), { prepare: drop('hr_activity_events') })],
+  ],
+  'PUT /api/ess/me/photo': [
+    ['200, mine', call('attendance', put('/api/ess/me/photo', { photo_base64: PNG_B64, content_type: 'image/png' }))],
+    ['400 VALIDATION_FAILED, not an image type', call('attendance', put('/api/ess/me/photo', { photo_base64: PNG_B64, content_type: 'application/pdf' }))],
+    ['400 INVALID_JSON', call('attendance', (app, token) => request(app).put('/api/ess/me/photo').set(bearer(token)).set('Content-Type', 'application/json').send('{"photo_base64": '))],
+    ['401, no token', call('attendance', (app) => request(app).put('/api/ess/me/photo').send({ photo_base64: PNG_B64, content_type: 'image/png' }))],
+    ['403 NOT_LINKED', call('desk', put('/api/ess/me/photo', { photo_base64: PNG_B64, content_type: 'image/png' }))],
+    ['403 PASSWORD_CHANGE_REQUIRED', call('attendance', (app, _token, w) => put('/api/ess/me/photo', { photo_base64: PNG_B64, content_type: 'image/png' })(app, tokens.attendance(w.people.attendance, 'pw')), {
+      setup: (w) => { w.people.attendance.account.password_set_at = null; },
+    })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      const body = { photo_base64: PNG_B64, content_type: 'image/png' };
+      await put('/api/ess/me/photo', body)(app, tokens.attendance(people.attendance));
+      return put('/api/ess/me/photo', body)(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', put('/api/ess/me/photo', { photo_base64: PNG_B64, content_type: 'image/png' }), {
+      prepare: (w) => w.db.dropColumn('hr_employees', 'photo_updated_at'),
+    })],
+  ],
+  'GET /api/ess/me/org': [
+    ['200, a manager', call('admin_manager', get('/api/ess/me/org'))],
+    ['200, a chain that reports to the CEO (not recorded)', call('faculty', get('/api/ess/me/org'), { setup: (w) => { w.people.hod.employee.manager_id = null; } })],
+    ['401, no token', call('faculty', (app) => request(app).get('/api/ess/me/org'))],
+    ['403 NOT_LINKED', call('desk', get('/api/ess/me/org'))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get('/api/ess/me/org')(app, tokens.portal(people.hr));
+      return get('/api/ess/me/org')(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', get('/api/ess/me/org'), { prepare: drop('hr_employees') })],
+  ],
+  'GET /api/ess/directory': [
+    ['200, a code search', call('attendance', get('/api/ess/directory?q=RVM-011'))],
+    ['200, a branch filter', call('attendance', get(`/api/ess/directory?branch_id=${BRANCH_PUNE_ID}`))],
+    ['400 VALIDATION_FAILED', call('attendance', get('/api/ess/directory?branch_id=1'))],
+    ['401, no token', call('attendance', (app) => request(app).get('/api/ess/directory'))],
+    ['403 NOT_LINKED', call('desk', get('/api/ess/directory'))],
+    ['404 NOT_FOUND, a branch that does not exist', call('attendance', get(`/api/ess/directory?branch_id=${uuid('b', 9)}`))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get('/api/ess/directory')(app, tokens.attendance(people.attendance));
+      return get('/api/ess/directory')(app, tokens.attendance(people.attendance));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', get('/api/ess/directory'), { prepare: drop('hr_departments') })],
+  ],
+  'GET /api/ess/team/today': [
+    ['200, a manager', call('admin_manager', get(TODAY_TEAM), { setup: (w) => {
+      teamDaySeed(w, w.people.attendance.employee.id, '2026-10-16', { last_out: null, late_minutes: 25 });
+    } })],
+    ['200, the HoO\'s branch', call('hoo', get(TODAY_TEAM))],
+    ['200, nobody to show', call('faculty', get(TODAY_TEAM))],
+    ['400 VALIDATION_FAILED', call('admin_manager', get(`${TODAY_TEAM}?filter=wfh`))],
+    ['401, no token', call('admin_manager', (app) => request(app).get(TODAY_TEAM))],
+    ['403 NOT_LINKED', call('desk', get(TODAY_TEAM))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(TODAY_TEAM)(app, tokens.portal(people.hr));
+      return get(TODAY_TEAM)(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('admin_manager', get(TODAY_TEAM), { prepare: drop('hr_staff_attendance') })],
+  ],
+  'GET /api/ess/team/off-this-week': [
+    ['200, a manager', call('admin_manager', get(OFF), { setup: (w) => {
+      teamDaySeed(w, w.people.attendance.employee.id, '2026-10-15', { status: 'leave', source: 'override', first_in: null, last_out: null });
+    } })],
+    ['200, the peers under the same manager', call('hr', get(OFF), { setup: (w) => {
+      teamDaySeed(w, w.people.hoo.employee.id, '2026-10-15', { status: 'leave', source: 'override', first_in: null, last_out: null });
+    } })],
+    ['200, nobody', call('faculty', get(OFF))],
+    ['401, no token', call('faculty', (app) => request(app).get(OFF))],
+    ['403 NOT_LINKED', call('desk', get(OFF))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(OFF)(app, tokens.portal(people.hr));
+      return get(OFF)(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('admin_manager', get(OFF), { prepare: drop('hr_staff_attendance') })],
+  ],
+};
+
 describe('the scenario tables', () => {
-  it('cover every route Wave 2, Wave 3 and Wave 4 added', () => {
+  it('cover every route Wave 2 to Wave 5 added', () => {
     const wave1 = ['GET /api/ess/health', 'GET /api/ess/me', 'GET /api/ess/me/capabilities'];
     const served = C.essRoutes(buildApp().app).filter((route) => !wave1.includes(route));
-    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4)].sort()).toEqual(served);
+    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4), ...Object.keys(WAVE_5)].sort()).toEqual(served);
   });
 
-  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4)])('provoke every status %s documents', (route, scenarios) => {
+  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5)])('provoke every status %s documents', (route, scenarios) => {
     const [method, path] = route.split(' ');
     const documented = Object.keys(C.operation(method, path).operation.responses).filter((s) => s !== 'default');
     const provoked = new Set(scenarios.map(([label]) => label.slice(0, 3)));
@@ -1173,7 +1284,7 @@ describe('the scenario tables', () => {
   });
 });
 
-describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4)])('%s', (route, scenarios) => {
+describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5)])('%s', (route, scenarios) => {
   const [method, path] = route.split(' ');
   it.each(scenarios)('%s', async (label, provoke) => {
     quietErrors();

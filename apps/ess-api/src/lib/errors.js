@@ -152,6 +152,15 @@ const MESSAGES = Object.freeze({
   PUSH_DEVICE_NOT_FOUND: 'That phone was not found.',
   NOTIFICATION_NOT_FOUND: 'That notification was not found.',
   NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions or priority_tasks.',
+
+  // E1-E12: Me and My Team.
+  PHOTO_FORMAT: 'Send the photo as base64 image data (JPEG, PNG or WebP).',
+  PHOTO_SIZE: 'A photo must be up to 1 MB after the app compresses it.',
+  PHOTO_TYPE: 'A photo must be a JPEG, PNG or WebP image.',
+  DIRECTORY_QUERY: 'Search by name or employee code, up to 60 characters.',
+  DEPARTMENT_ID: 'department_id must be a department id.',
+  DEPARTMENT_NOT_FOUND: 'That department was not found.',
+  TEAM_FILTER: 'filter must be all, not_in, late or on_leave.',
 });
 
 /** error and code first, and an extra field can never replace either of them. */

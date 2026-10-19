@@ -112,7 +112,22 @@ const COLUMNS = Object.freeze({
   // D2: the Scheduler's priority tasks, read for push only (its own columns).
   task: 'id, title, due_date, task_date, assigned_to, created_at',
   employeeForUser: 'id, user_id',
+  // E1, E2: the HR record as the app may read it (never performance tags, never pay).
+  profile: 'id, full_name, employee_code, designation, department_id, branch_id, manager_id, email, phone, '
+    + 'date_of_joining, date_of_exit, employment_status, is_archived, photo_path, photo_updated_at',
+  // The directory's own columns: enough for a card, nothing more (user_id is read for the
+  // "Reports to the CEO (not recorded)" test and never sent).
+  directoryPerson: 'id, full_name, employee_code, designation, department_id, branch_id, manager_id, user_id, email, phone, '
+    + 'employment_status, date_of_exit, is_archived',
+  // E12: the events the Timeline reads. before/after and notes are never selected.
+  timeline: 'id, event_type, occurred_at, changed_keys',
+  // E6: a team member's day (never the leave type or the reason).
+  teamDay: 'employee_id, day, status, first_in, last_out, late_minutes, late_excused',
+  userRole: 'id, role',
 });
+
+/** The Scheduler's private bucket every HR file lives in (20260830000001:15-16). */
+const PHOTO_BUCKET = 'documents';
 
 /**
  * A missing table or column means the code is live before its migration: merges deploy at
@@ -315,6 +330,7 @@ function createSupabaseStore(config, { client } = {}) {
       ((await read('hr_employees', (q) => q.select('id').eq('branch_id', branchId))) || []).map((e) => e.id),
     getBranch: (branchId) => one('hr_branches', COLUMNS.branch, 'id', branchId),
     listBranches: (branchIds) => readIn('hr_branches', COLUMNS.branch, 'id', branchIds),
+    listAllBranches: async () => (await read('hr_branches', (q) => q.select(COLUMNS.branch))) || [],
     getDepartment: (departmentId) => one('hr_departments', COLUMNS.department, 'id', departmentId),
     getAttendanceAccount: (employeeId) => one('hr_attendance_accounts', COLUMNS.attendanceAccount, 'employee_id', employeeId),
 
@@ -733,6 +749,59 @@ function createSupabaseStore(config, { client } = {}) {
         .gte('created_at', sinceIso).order('created_at', { ascending: true }).limit(limit))) || [],
     listEmployeesByUserIds: async (userIds) => readIn('hr_employees', COLUMNS.employeeForUser, 'user_id', userIds),
     listHrUserIds: () => list('users', (q) => q.select('id').eq('role', 'hr')),
+
+    /* ── E1, E2, E12: the profile, the org and the timeline ── */
+
+    getProfile: (employeeId) => one('hr_employees', COLUMNS.profile, 'id', employeeId),
+    /** Everybody not archived, with the directory's columns: the org views and search work from here. */
+    listActiveEmployees: async () =>
+      (await read('hr_employees', (q) => q.select(COLUMNS.directoryPerson).eq('is_archived', false))) || [],
+    listAllDepartments: async () => (await read('hr_departments', (q) => q.select('id, name, is_active'))) || [],
+    /** The person's own HR events, newest first; values and notes are never selected. */
+    listTimeline: async (employeeId, limit = 50) =>
+      (await read('hr_activity_events', (q) => q.select(COLUMNS.timeline).eq('entity_type', 'employee')
+        .eq('entity_id', employeeId).order('occurred_at', { ascending: false }).limit(limit))) || [],
+    /** The portal roles behind these user ids: the "Reports to the CEO (not recorded)" test. */
+    listUserRolesFor: async (userIds) => readIn('users', COLUMNS.userRole, 'id', userIds),
+
+    /* ── E10: photos through the Scheduler's private bucket, as its own code uses it ── */
+
+    /** A 300-second signed link, exactly as the Scheduler signs its HR files; null on any failure. */
+    signedPhotoUrl: async (path, expiresIn = 300) => {
+      if (!path) return null;
+      try {
+        const { data } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(path, expiresIn);
+        return (data && data.signedUrl) || null;
+      } catch {
+        return null;
+      }
+    },
+    /** Upload bytes under `path`; a storage failure is an outage, never a 500 with a stack. */
+    uploadProfilePhoto: async (path, buffer, contentType) => {
+      const { error } = await db.storage.from(PHOTO_BUCKET).upload(path, buffer, { contentType, upsert: false });
+      if (error) throw new HttpError(503, 'UNAVAILABLE', MESSAGES.UNAVAILABLE);
+    },
+    /** Best effort: an orphaned file is a cleanup job, not a failed request. */
+    removeStorageObjects: async (paths) => {
+      try {
+        await db.storage.from(PHOTO_BUCKET).remove(paths);
+      } catch { /* logged nowhere: nothing reads the object once the row points elsewhere */ }
+    },
+    /**
+     * The employee's photo pointer on their HR record — the one write to hr_employees the ESS
+     * makes, and only to the photo columns (the Scheduler's own setPhoto writes the same ones).
+     */
+    setEmployeePhoto: (employeeId, patch) =>
+      write('hr_employees', (q) => q.update(patch).eq('id', employeeId).select('id, photo_path').maybeSingle()),
+
+    /* ── E6: the team's day, and the week's leave ── */
+
+    listTeamDayRows: async (employeeIds, day) =>
+      readIn('hr_staff_attendance', COLUMNS.teamDay, 'employee_id', employeeIds, (q) => q.eq('day', day)),
+    /** The days the sheet records leave for these people in from..to (never the leave type). */
+    listLeaveDaysBetween: async (employeeIds, from, to) =>
+      readIn('hr_staff_attendance', 'employee_id, day', 'employee_id', employeeIds,
+        (q) => q.eq('status', 'leave').gte('day', from).lte('day', to)),
 
     /* ── the audit trail ── */
 

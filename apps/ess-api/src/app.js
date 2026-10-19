@@ -20,6 +20,9 @@ const approvals = require('./routes/approvals');
 const hrRequests = require('./routes/hrRequests');
 const pushDevices = require('./routes/pushDevices');
 const notifications = require('./routes/notifications');
+const meProfile = require('./routes/meProfile');
+const meOrg = require('./routes/meOrg');
+const team = require('./routes/team');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
@@ -31,7 +34,11 @@ const JSON_BODY_LIMIT = '16kb';
  * The bodies that are lists rather than forms, with their own limit: HR's bulk phone reset takes
  * up to 500 employee ids (about 20 kB of JSON). nginx allows far more (ADR-0019: 12 MB).
  */
-const LARGE_JSON_BODIES = Object.freeze({ '/hr/devices/reset': '32kb' });
+const LARGE_JSON_BODIES = Object.freeze({
+  '/hr/devices/reset': '32kb',
+  // A photo arrives as base64 (the app compresses to under 1 MB first): about 1.4 MB on the wire.
+  '/me/photo': '2mb',
+});
 
 /**
  * The ESS as an Express app, with nothing listening yet: server.js listens, and tests build it
@@ -181,6 +188,14 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.get('/notifications/settings', asEmployee, notifications.getSettings({ store }));
   api.put('/notifications/settings', asEmployee, notifications.putSettings({ store, now }));
   api.post('/notifications/:id/read', asEmployee, notifications.readNotification({ store, now }));
+
+  // E1-E12: Me and My Team.
+  api.get('/me/profile', asEmployee, meProfile.myProfile({ store }));
+  api.put('/me/photo', asEmployee, meProfile.putMyPhoto({ store, now }));
+  api.get('/me/org', asEmployee, meOrg.myOrg({ store }));
+  api.get('/directory', asEmployee, meOrg.directory({ store }));
+  api.get('/team/today', asEmployee, team.teamToday({ store, now }));
+  api.get('/team/off-this-week', asEmployee, team.teamOffThisWeek({ store, now }));
 
   app.use('/api/ess', api);
 
