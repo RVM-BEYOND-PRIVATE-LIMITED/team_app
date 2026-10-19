@@ -16,7 +16,15 @@ function capabilitiesRoute({ config, store, now }) {
     const today = istDay(now());
     const reports = await store.listDirectReports(employee.id);
     const directReports = reports.filter((r) => isActive(r, today)).length;
-    res.json(capabilitiesFor({ kind, role, directReports, pushEnabled: config.push.enabled }));
+    // The numbers HR set (task C6), when the limits table is there. This is the app's launch
+    // call: before the migration it answers with the code's own defaults, never a 503.
+    let limitRows = null;
+    try {
+      limitRows = await store.getRequestLimits();
+    } catch (e) {
+      if (!(e && e.code === 'MODULE_NOT_INSTALLED')) throw e;
+    }
+    res.json(capabilitiesFor({ kind, role, directReports, pushEnabled: config.push.enabled, limitRows }));
   });
 }
 

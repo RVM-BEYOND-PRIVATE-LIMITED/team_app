@@ -68,6 +68,41 @@ The refreshable session (A3) works like this (KP, 16 Oct: access tokens last 1 h
 
 ## Wave 3: Phase 1 features
 
+### Phase 1C: requests, leave and approvals — built 19 Oct 2026
+
+The brief's Phase 1 core and the largest single piece of the ESS. Built to this plan, tested, and
+waiting for its migrations (6 to 10 below). Everything is in `apps/ess-api` and
+`db/migrations/20261106000000` to `20261106000004`.
+
+| Work | How, with no Scheduler change | Tasks | State |
+| --- | --- | --- | --- |
+| Request tables and their history | `hr_ess_attendance_requests` (on duty, fix a day, excuse a late) and `hr_ess_leave_requests` (CL, LWP), each with a history table; a 'filed' row is written by the database trigger as the request goes in | C1 | Built |
+| Filing, listing, withdrawing | `POST`/`GET /api/ess/attendance-requests` and `/leave-requests`; `POST /…/{id}/withdraw` (pending only; somebody else's is 404) | C1–C4, C8 | Built |
+| The month's counter | `GET /api/ess/leave/balances` — allowed, used, pending and remaining per type, for this month or last; each create checks it before the row goes in (409 `LIMIT_REACHED`) | C5 | Built |
+| The limits HR owns | `hr_ess_request_limits`, seeded with KP's numbers, read by every form and editable through `GET`/`PUT /api/ess/hr/request-limits` (`hr`, CEO, super admins; HR Executive excluded). A `PUT` is audited | C6 | Built |
+| One decision function per family | `hr_ess_decide_attendance_request` and `hr_ess_decide_leave_request`: lock the request, re-check its status, the window, the future-day rule, the cut-off and the one-CL rule, write the day through `hr_attendance_apply_override` (or excuse the late in place), write status and history — one transaction. A second decision is 409 `ALREADY_DECIDED` | C7, C9 | Built |
+| The on-duty morning job | `hr_ess_on_duty_apply`, called by `src/jobs/onDuty.js` at boot and hourly: an approved on_duty day with no row yet is written present, note `On duty: <place>`, on the day itself; idempotent, failures logged for HR (pm2 + `hr_ess_audit` as `on_duty.failed`) | C3, C7 | Built |
+| Cancel after approval | `POST /api/ess/hr/attendance-requests/{id}/cancel` and `/hr/leave-requests/{id}/cancel`: only an approved request, HR's roles only; the day is restored from the row kept before the approval (or removed when the approval created it); audited | C8 | Built |
+| Approver and Inbox | `GET /api/ess/approvals`: a manager sees their direct reports' pending requests (attendance sign-in included); HR/CEO/super admins see everybody's and may filter any status. Each row carries the month's count for its kind, the limit, the day's late marks and who else is off that day. `POST /api/ess/approvals/{family}/{id}/decide` (a rejection needs a reason), `…/archive` clears it for one approver | C10, D1, H6 | Built |
+
+**What the build had to choose, for KP to confirm:**
+- **Decision 6 (the cut-off).** The build's default: the 5th itself is open, for raising and for deciding; last month closes on the 6th. One function (`lastMonthOpen`, `src/policy/requests.js`) and the same `extract(day …) > 5` in the decision migration hold it. Change both together.
+- **On duty needs no punch** (ADR-0020): an approval writes the day present with the place as its note; the day's existing punch times, if any, are kept. A future day is written by the morning job, never at approval time.
+- **Leave is whole days in this phase.** A half-day CL needs a rule change in the Scheduler's day model; it is not offered.
+- **LWP has no limit** until KP sets one; the HR limits endpoint can set one at any time.
+- **An HR Executive is a manager, not an HR decider:** they see and decide their own reports' requests, and cannot cancel, change limits or see everybody's. That is the 16 Oct decision ("HR's powers without attendance or leave").
+- **The archive is per approver** (`hr_ess_request_archives`): one manager clearing a request never hides it from HR.
+
+**Tests:** the ESS suite is 1,408 tests (69 new endpoint tests for these routes, the Inbox, the
+job and the limits; 435 contract checks, every route's every documented status provoked); the
+migration suite `npm run test:migrations` applies the ten migrations and their rollbacks twice
+against a throwaway Postgres and runs the decision functions themselves (approve, reject,
+withdraw, cancel, the CL rule, the cut-off, the job).
+
+**You after:** apply migrations 6 to 10, in order ([05-deploy.md](05-deploy.md#migrations-to-apply)). Until then every request endpoint answers 503 `MODULE_NOT_INSTALLED`; the app's launch call falls back to the code's own limits.
+
+**Done when:** an employee files each type, sees the counter and withdraws one; the manager decides from the Inbox; the approved day appears in the Scheduler as an override, locked; an on-duty day approved ahead shows present on the day without a punch; the limits and the cut-off hold; two people deciding at once cannot both win.
+
 ### Requests and leave (C)
 
 - **Tables.** The request tables and their history are new `hr_ess_*` tables ([ADR-0021](adr/0021-migrations-new-tables-only.md)).
@@ -140,7 +175,7 @@ These were in the gap report or found in STEP 1. They stay as they are unless KP
 3. **Short leave and half days.** Do planned early-leaving minutes protect a day from the 4-hour half-day rule?
 4. **Mocked pings.** Are they reported to HR like mocked punches?
 5. **Colleague contacts.** Does an employee also see their own managers' phone numbers?
-6. **Cut-off.** Is the 5th itself open? Can a pending request for last month be decided after the cut-off?
+6. **Cut-off.** Is the 5th itself open? Can a pending request for last month be decided after the cut-off? The 1C build's default, while this is open: the 5th itself is open, for raising and for deciding; last month closes on the 6th. One function (`lastMonthOpen`, `src/policy/requests.js`) and the matching `extract(day …) > 5` in migration 10 hold it; change both together.
 7. **HR's web tools.** Where do HR review change requests and documents, and where do helpdesk agents work on the web? The brief put these in the web HRMS, which now stays unchanged. The options are the app itself, or a small web page served by team_app.
 8. **Faculty marking.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open?
 9. **Infra register.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? That writes a Scheduler table.
@@ -159,6 +194,11 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 3 | [`20261105000001_hr_ess_data_requests.sql`](../db/migrations/20261105000001_hr_ess_data_requests.sql) | [`20261105000001_hr_ess_data_requests.sql`](../db/rollbacks/20261105000001_hr_ess_data_requests.sql): drops the table, then its trigger's function | `hr_ess_data_requests`: kind `correct` or `delete`, details of 1 to 2,000 characters, status `open`, `done` or `rejected`, and HR's answer; a row is either fully open or fully resolved. Cascades with the employee. Two indexes (HR's queue, each person's list). The trigger `hr_ess_data_requests_open_limit` holds five open requests per person, counted under a lock per person, so requests sent at once cannot pass it | A8: the four data-request endpoints answer 503 |
 | 4 | [`20261105000002_hr_ess_personal_details.sql`](../db/migrations/20261105000002_hr_ess_personal_details.sql) | [`20261105000002_hr_ess_personal_details.sql`](../db/rollbacks/20261105000002_hr_ess_personal_details.sql): drops the table | `hr_ess_personal_details`: one row per employee (its primary key, cascading); date of birth from 1940, the eight blood groups, address with a 6-digit PIN, and the emergency contact (a 10-digit Indian mobile, a name and a phone together) | E9: the four personal-details endpoints answer 503 |
 | 5 | [`20261105000003_hr_ess_mock_location_reports.sql`](../db/migrations/20261105000003_hr_ess_mock_location_reports.sql) | [`20261105000003_hr_ess_mock_location_reports.sql`](../db/rollbacks/20261105000003_hr_ess_mock_location_reports.sql): drops the table | `hr_ess_mock_location_reports`: kind `punch` only, the mocked fix (both coordinates or neither, in range), accuracy, the phone's clock and app details, and the branch at the time (set null if the branch goes). Cascades with the employee. Three indexes (by time, by branch, by employee) | B14: both mocked-location endpoints answer 503 |
+| 6 | [`20261106000000_hr_ess_request_limits.sql`](../db/migrations/20261106000000_hr_ess_request_limits.sql) | [`20261106000000_hr_ess_request_limits.sql`](../db/rollbacks/20261106000000_hr_ess_request_limits.sql): drops the table | `hr_ess_request_limits`: one row per type (the seven in the policy table), `limit_count` or `limit_minutes` for the number and NULL for no limit, seeded with KP's numbers by `ON CONFLICT DO NOTHING` so a re-run never puts back a number HR changed, and who changed it last | C6: the request endpoints and the balances answer 503; `GET /api/ess/me/capabilities` falls back to the code's defaults rather than failing |
+| 7 | [`20261106000001_hr_ess_attendance_requests.sql`](../db/migrations/20261106000001_hr_ess_attendance_requests.sql) | [`20261106000001_hr_ess_attendance_requests.sql`](../db/rollbacks/20261106000001_hr_ess_attendance_requests.sql): drops the history, the request table, the trigger and its function | `hr_ess_attendance_requests` (on duty, fix a day, excuse a late; each type's own fields; the decision fields matching the status; the day kept before an approval for HR's cancel) and `hr_ess_attendance_request_history`, with the `filed` trigger. Three indexes (person, status, approved on-duty by day) | C1, C3: the attendance request endpoints answer 503 |
+| 8 | [`20261106000002_hr_ess_leave_requests.sql`](../db/migrations/20261106000002_hr_ess_leave_requests.sql) | [`20261106000002_hr_ess_leave_requests.sql`](../db/rollbacks/20261106000002_hr_ess_leave_requests.sql): drops the history, the leave-request table, the trigger and its function | `hr_ess_leave_requests` (CL, LWP; whole days; the same decision fields as attendance) and `hr_ess_leave_request_history`, with the `filed` trigger. Three indexes | C2, C4: the leave endpoints and the balances answer 503 |
+| 9 | [`20261106000003_hr_ess_request_archives.sql`](../db/migrations/20261106000003_hr_ess_request_archives.sql) | [`20261106000003_hr_ess_request_archives.sql`](../db/rollbacks/20261106000003_hr_ess_request_archives.sql): drops the table | `hr_ess_request_archives`: one row per (family, request, approver), so clearing the Inbox is per approver; unique on the three; the employee's deletion cascades it | D1: archiving answers 503; the Inbox works without it |
+| 10 | [`20261106000004_hr_ess_request_functions.sql`](../db/migrations/20261106000004_hr_ess_request_functions.sql) | [`20261106000004_hr_ess_request_functions.sql`](../db/rollbacks/20261106000004_hr_ess_request_functions.sql): drops the seven functions | `hr_ess_decide_attendance_request`, `hr_ess_decide_leave_request`, `hr_ess_withdraw_attendance_request`, `hr_ess_withdraw_leave_request`, `hr_ess_cancel_attendance_request`, `hr_ess_cancel_leave_request`, `hr_ess_on_duty_apply`: each locks the request, re-checks the status, the window, the future-day rule, the cut-off and the one-CL rule, writes the day through the Scheduler's own `hr_attendance_apply_override` (or excuses the late in place), writes the history, and answers an `outcome` the routes map to refusals. Service role only | C7, C8, D1, H6: the decide, withdraw, cancel and archive (archive needs only 9) endpoints answer 503; `hr_ess_on_duty_apply` missing stops the job with a logged line, not the server |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 
@@ -182,4 +222,6 @@ Tested on a throwaway `postgres:17-alpine` in Docker, never on a real database:
 - **Kept sign-ins after a rollback.** Rolling back `hr_ess_sessions` makes every access token the ESS minted answer 503 on the ESS (not 401), so the app does not sign out by itself; on the Scheduler those tokens last out their hour.
 - **Production state unconfirmed.** Whether the attendance migrations (`20261020000000` to `20261023000000`) and the one-CL index are applied in production is not confirmed. Check, read-only, before Wave 3 relies on them.
 - **Open holes.** The Scheduler's holes stay open while the app ships. Whether to release anyway is KP's decision.
+- **The on-duty job runs inside the ESS process.** One instance only (`ecosystem.config.cjs`, fork mode), as for the rate limits; the SQL it calls is idempotent (a written day no longer matches), so a restart or a second manual run changes nothing. Its failures go to the pm2 log and to `hr_ess_audit` as `on_duty.failed`, best effort.
+- **The limits are load-bearing for the request endpoints.** They read `hr_ess_request_limits` and answer 503 until migration 6 is applied; `GET /api/ess/me/capabilities`, the app's launch call, falls back to the code's defaults instead of failing.
 - **Another agent session.** It works in the Scheduler repositories. team_app work never touches them, and reads only from detached read-only copies.

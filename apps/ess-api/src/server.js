@@ -7,6 +7,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true
 const { loadConfig } = require('./config');
 const { createSupabaseStore } = require('./lib/store');
 const { createApp } = require('./app');
+const { startOnDutyJob } = require('./jobs/onDuty');
 
 let config;
 try {
@@ -17,10 +18,16 @@ try {
   process.exit(1);
 }
 
-const app = createApp({ config, store: createSupabaseStore(config) });
+const store = createSupabaseStore(config);
+const app = createApp({ config, store });
 
 app.listen(config.port, config.host, () => {
   console.log(`[ess] Team RVM ESS ${config.version} listening on ${config.host} port ${config.port}`);
-  if (!config.essEnabled) console.log('[ess] ESS_ENABLED=false: every endpoint except /api/ess/health answers 503 MODULE_DISABLED.');
+  if (!config.essEnabled) {
+    console.log('[ess] ESS_ENABLED=false: every endpoint except /api/ess/health answers 503 MODULE_DISABLED.');
+    return;
+  }
   if (!config.push.enabled) console.log('[ess] Push is log-only: the FIREBASE_* settings are not all set.');
+  // The on-duty morning job (C3, C7): once at boot, then hourly. Off with the ESS switch.
+  startOnDutyJob({ store });
 });

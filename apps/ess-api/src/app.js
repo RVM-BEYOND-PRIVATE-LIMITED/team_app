@@ -14,6 +14,10 @@ const personal = require('./routes/personal');
 const mockLocation = require('./routes/mockLocation');
 const devices = require('./routes/devices');
 const { attendanceDayRoute } = require('./routes/attendanceDay');
+const attendanceRequests = require('./routes/attendanceRequests');
+const leaveRequests = require('./routes/leaveRequests');
+const approvals = require('./routes/approvals');
+const hrRequests = require('./routes/hrRequests');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
@@ -144,6 +148,26 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   // B8: registered phones, and HR's bulk reset.
   api.get('/hr/devices', asAttendanceHr, devices.listDevices({ store }));
   api.post('/hr/devices/reset', asAttendanceHr, devices.resetDevices({ store, now }));
+
+  // C1-C5: my requests and balances. The decision itself is the approvals route's.
+  api.post('/attendance-requests', asEmployee, attendanceRequests.createMyAttendanceRequest({ store, now }));
+  api.get('/attendance-requests', asEmployee, attendanceRequests.listMyAttendanceRequests({ store }));
+  api.post('/attendance-requests/:id/withdraw', asEmployee, attendanceRequests.withdrawMyAttendanceRequest({ store, now }));
+  api.post('/leave-requests', asEmployee, leaveRequests.createMyLeaveRequest({ store, now }));
+  api.get('/leave-requests', asEmployee, leaveRequests.listMyLeaveRequests({ store }));
+  api.post('/leave-requests/:id/withdraw', asEmployee, leaveRequests.withdrawMyLeaveRequest({ store, now }));
+  api.get('/leave/balances', asEmployee, leaveRequests.myLeaveBalances({ store, now }));
+
+  // D1, H6: the approvals Inbox, the decision, and the archive that clears it for one approver.
+  api.get('/approvals', asEmployee, approvals.listApprovals({ store, now }));
+  api.post('/approvals/:family/:id/decide', asEmployee, approvals.decideRequest({ store, now }));
+  api.post('/approvals/:family/:id/archive', asEmployee, approvals.archiveRequest({ store }));
+
+  // HR's own tools: cancelling an approved request, and the monthly limits.
+  api.post('/hr/attendance-requests/:id/cancel', asAttendanceHr, hrRequests.cancelAttendanceRequest({ store, now }));
+  api.post('/hr/leave-requests/:id/cancel', asAttendanceHr, hrRequests.cancelLeaveRequest({ store, now }));
+  api.get('/hr/request-limits', asAttendanceHr, hrRequests.listRequestLimits({ store }));
+  api.put('/hr/request-limits/:type', asAttendanceHr, hrRequests.setRequestLimit({ store, now }));
 
   app.use('/api/ess', api);
 

@@ -41,9 +41,13 @@ const SCHEMA = {
     'email', 'email_verified_at', 'photo_path', 'two_factor_enabled', 'password_changed_at'],
   hr_employees: ['id', 'employee_code', 'full_name', 'designation', 'department_id', 'branch_id', 'manager_id',
     'email', 'phone', 'additional_phones', 'date_of_joining', 'date_of_exit', 'employment_status', 'performance_tag', 'seniority',
-    'is_archived', 'archived_at', 'archive_reason', 'user_id', 'photo_path', 'geofence_exempt', 'created_at', 'updated_at'],
+    'is_archived', 'archived_at', 'archive_reason', 'user_id', 'photo_path', 'geofence_exempt', 'created_at', 'updated_at',
+    // 20261022000000:87-93 and 20261024000000 (the shift a day is judged by)
+    'shift_id', 'saturday_shift_id', 'sunday_shift_id', 'week_off_days'],
   hr_branches: ['id', 'name', 'is_active', 'latitude', 'longitude', 'geofence_radius_m', 'office_ips', 'created_at', 'updated_at'],
   hr_departments: ['id', 'name', 'is_active', 'source', 'created_at', 'updated_at'],
+  hr_shifts: ['id', 'name', 'start_time', 'end_time', 'grace_minutes', 'is_active'],
+  hr_holidays: ['id', 'day', 'name', 'branch_id'],
   hr_attendance_accounts: ['id', 'employee_id', 'status', 'password_hash', 'password_set_at', 'sessions_valid_from',
     'failed_attempts', 'locked_until', 'last_login_at', 'created_at', 'updated_at'],
   locations: ['id', 'name'],
@@ -71,6 +75,24 @@ const SCHEMA = {
     'pincode', 'emergency_name', 'emergency_relation', 'emergency_phone', 'updated_at', 'updated_by_user_id', 'updated_by_name'],
   hr_ess_mock_location_reports: ['id', 'employee_id', 'branch_id', 'reported_at', 'client_at', 'kind', 'latitude', 'longitude',
     'accuracy_m', 'provider', 'app_version', 'install_id'],
+  // db/migrations: 20261106000000_hr_ess_request_limits.sql
+  hr_ess_request_limits: ['type', 'limit_count', 'limit_minutes', 'updated_at', 'updated_by_user_id', 'updated_by_name'],
+  // 20261106000001_hr_ess_attendance_requests.sql
+  hr_ess_attendance_requests: ['id', 'employee_id', 'type', 'status', 'day', 'reason', 'place', 'fix_in', 'fix_out',
+    'day_before', 'day_written_at', 'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name', 'decided_at',
+    'decision_note', 'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason', 'created_at', 'updated_at'],
+  hr_ess_attendance_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
+    'action', 'note', 'details'],
+  // 20261106000002_hr_ess_leave_requests.sql
+  hr_ess_leave_requests: ['id', 'employee_id', 'type', 'status', 'day', 'reason', 'day_before', 'day_written_at',
+    'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name', 'decided_at', 'decision_note',
+    'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason', 'created_at', 'updated_at'],
+  hr_ess_leave_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
+    'action', 'note', 'details'],
+  // 20261106000003_hr_ess_request_archives.sql
+  hr_ess_request_archives: ['id', 'family', 'request_id', 'employee_id', 'archived_at'],
+  // 20261020000000_hr_attendance_punch.sql (the log hr_attendance_apply_override writes)
+  hr_attendance_overrides: ['id', 'employee_id', 'day', 'before', 'after', 'reason', 'overridden_by', 'overridden_by_name', 'overridden_at'],
 };
 
 /** The unique keys the stand-in enforces besides the primary key (KEYS), as the migrations declare them. */
@@ -81,6 +103,9 @@ const UNIQUE = {
     { name: 'hr_ess_sessions_live_family_key', columns: ['family_id'], where: (row) => row.revoked_at == null },
     // One trade per Scheduler sign-in: a family's first row, by person, kind and sign-in time.
     { name: 'hr_ess_sessions_sign_in_key', columns: ['employee_id', 'login_kind', 'signed_in_at'], where: (row) => row.id === row.family_id },
+  ],
+  hr_ess_request_archives: [
+    { name: 'hr_ess_request_archives_family_request_id_employee_id_key', columns: ['family', 'request_id', 'employee_id'] },
   ],
 };
 
@@ -127,7 +152,32 @@ const TRIGGERS = {
       ? { code: '23514', message: `hr_ess_data_requests_open_limit: ${row.employee_id} already has 5 open requests` }
       : null;
   },
+  // hr_ess_attendance_requests_filed / hr_ess_leave_requests_filed: the 'filed' history row, as
+  // the SQL triggers write it.
+  hr_ess_attendance_requests(fake, row) {
+    return filedHistory(fake, 'hr_ess_attendance_request_history', row);
+  },
+  hr_ess_leave_requests(fake, row) {
+    return filedHistory(fake, 'hr_ess_leave_request_history', row);
+  },
 };
+
+/** The 'filed' history row both request-table triggers write. */
+function filedHistory(fake, historyTable, row) {
+  const employee = fake.rows('hr_employees').find((e) => e.id === row.employee_id);
+  fake.rows(historyTable).push({
+    id: crypto.randomUUID(),
+    request_id: row.id,
+    at: row.created_at,
+    actor_employee_id: row.employee_id,
+    actor_user_id: null,
+    actor_name: employee ? employee.full_name : null,
+    action: 'filed',
+    note: null,
+    details: { type: row.type, day: row.day },
+  });
+  return null;
+}
 
 /** timestamptz columns of team_app's own tables, answered in PostgREST's spelling. */
 const TIMESTAMPS = {
@@ -145,6 +195,13 @@ const DEFAULTS = {
   hr_ess_data_requests: (at) => ({ status: 'open', created_at: at }),
   hr_ess_personal_details: (at) => ({ updated_at: at }),
   hr_ess_mock_location_reports: (at) => ({ reported_at: at }),
+  hr_ess_request_limits: (at) => ({ updated_at: at }),
+  hr_ess_attendance_requests: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
+  hr_ess_leave_requests: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
+  hr_ess_attendance_request_history: (at) => ({ at, details: {} }),
+  hr_ess_leave_request_history: (at) => ({ at, details: {} }),
+  hr_ess_request_archives: (at) => ({ archived_at: at }),
+  hr_attendance_overrides: (at) => ({ overridden_at: at }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
@@ -449,6 +506,78 @@ class Query {
  * does (tests/migration.test.js runs the SQL itself on a real Postgres). Each answers as PostgREST
  * would: a RETURNS TABLE function a list of rows, a RETURNS integer one a number.
  */
+/** The IST calendar day of an instant, as time.js works it out. */
+const istDayOf = (instant) => new Date(Date.parse(instant) + 330 * 60000).toISOString().slice(0, 10);
+
+/** The instant of an IST wall-clock time on a day, as the functions' (day + time) AT TIME ZONE does. */
+const istTimeOn = (day, hhmm) => new Date(`${day}T${hhmm}:00+05:30`).toISOString();
+
+const monthStartOf = (day) => `${day.slice(0, 7)}-01`;
+
+const monthBefore = (day) => {
+  const [y, m] = day.slice(0, 7).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
+};
+
+/** One history row, as the functions and the triggers write them. */
+function pushHistory(fake, table, { requestId, at, action, note = null, details = {}, employeeId = null, userId = null, name = null }) {
+  fake.rows(table).push({
+    id: crypto.randomUUID(), request_id: requestId, at, actor_employee_id: employeeId, actor_user_id: userId,
+    actor_name: name, action, note, details,
+  });
+}
+
+/**
+ * hr_attendance_apply_override, as this stand-in sees it: the same upsert and log the Scheduler's
+ * own function writes (db/test/scheduler-snapshot.sql copies it, and tests/migration.test.js runs
+ * the SQL). Answers { row, before } or { error } for the one refusal the Scheduler's index holds:
+ * a second CL in a month (uq_hr_staff_attendance_one_cl_a_month).
+ */
+function fakeApplyOverride(fake, a) {
+  const rows = fake.rows('hr_staff_attendance');
+  const existing = rows.find((r) => r.employee_id === a.employee_id && r.day === a.day);
+  const before = existing ? clone(existing) : null;
+  if (a.status === 'leave' && a.leave_type === 'cl') {
+    const clash = rows.find((r) => r !== existing && r.employee_id === a.employee_id
+      && (r.day || '').slice(0, 7) === a.day.slice(0, 7) && r.status === 'leave' && r.leave_type === 'cl');
+    if (clash) {
+      return { error: { code: '23505', message: 'duplicate key value violates unique constraint "uq_hr_staff_attendance_one_cl_a_month"' } };
+    }
+  }
+  const at = fake.now().toISOString();
+  const row = existing || {
+    id: crypto.randomUUID(), employee_id: a.employee_id, day: a.day, branch_id: null,
+    late_half_day: false, late_excused: false,
+  };
+  Object.assign(row, {
+    branch_id: existing ? existing.branch_id : (a.branch_id ?? null),
+    status: a.status, leave_type: a.leave_type ?? null, note: a.reason ?? null, source: 'override',
+    first_in: a.first_in ?? null, last_out: a.last_out ?? null, worked_minutes: a.worked_minutes ?? null,
+    marked_by: a.by ?? null, marked_by_name: a.by_name ?? null, marked_at: at, updated_at: at,
+  });
+  if (!existing) rows.push(row);
+  fake.rows('hr_attendance_overrides').push({
+    id: crypto.randomUUID(), employee_id: a.employee_id, day: a.day, before, after: clone(row),
+    reason: a.reason ?? null, overridden_by: a.by ?? null, overridden_by_name: a.by_name ?? null, overridden_at: at,
+  });
+  return { row, before };
+}
+
+/**
+ * The reach-back window and the cut-off both decide functions re-check: null when the decision
+ * may go on, the outcome to answer otherwise. The 5th itself is open (the default while
+ * decision 6 is open; src/policy/requests.js). The future-day rule is the approve path's own:
+ * a rejection never writes anything.
+ */
+function windowOutcome(day, today) {
+  const boundary = monthStartOf(today);
+  if (day < boundary) {
+    if (day < monthBefore(today)) return 'too_old';
+    if (Number(today.slice(8, 10)) > 5) return 'cutoff';
+  }
+  return null;
+}
+
 const FUNCTIONS = {
   hr_ess_session_rotate: {
     table: 'hr_ess_sessions',
@@ -497,6 +626,309 @@ const FUNCTIONS = {
         n += 1;
       }
       return { data: n, error: null };
+    },
+  },
+
+  /* ── the request functions (db/migrations/20261106000004_hr_ess_request_functions.sql) ── */
+
+  hr_ess_withdraw_attendance_request: {
+    table: 'hr_ess_attendance_requests',
+    run(fake, { p_request_id, p_employee_id, p_now }) {
+      const r = fake.rows('hr_ess_attendance_requests').find((x) => x.id === p_request_id);
+      if (!r || r.employee_id !== p_employee_id) return { data: { outcome: 'not_found' }, error: null };
+      if (r.status !== 'pending') return { data: { outcome: 'not_pending', request: clone(r) }, error: null };
+      Object.assign(r, { status: 'withdrawn', updated_at: p_now });
+      const employee = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
+      pushHistory(fake, 'hr_ess_attendance_request_history', {
+        requestId: r.id, at: p_now, action: 'withdrawn', employeeId: r.employee_id,
+        name: employee ? employee.full_name : null, details: { type: r.type, day: r.day },
+      });
+      return { data: { outcome: 'withdrawn', request: clone(r) }, error: null };
+    },
+  },
+
+  hr_ess_withdraw_leave_request: {
+    table: 'hr_ess_leave_requests',
+    run(fake, { p_request_id, p_employee_id, p_now }) {
+      const r = fake.rows('hr_ess_leave_requests').find((x) => x.id === p_request_id);
+      if (!r || r.employee_id !== p_employee_id) return { data: { outcome: 'not_found' }, error: null };
+      if (r.status !== 'pending') return { data: { outcome: 'not_pending', request: clone(r) }, error: null };
+      Object.assign(r, { status: 'withdrawn', updated_at: p_now });
+      const employee = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
+      pushHistory(fake, 'hr_ess_leave_request_history', {
+        requestId: r.id, at: p_now, action: 'withdrawn', employeeId: r.employee_id,
+        name: employee ? employee.full_name : null, details: { type: r.type, day: r.day },
+      });
+      return { data: { outcome: 'withdrawn', request: clone(r) }, error: null };
+    },
+  },
+
+  hr_ess_decide_attendance_request: {
+    table: 'hr_ess_attendance_requests',
+    run(fake, args) {
+      const { p_request_id, p_decider_employee_id, p_decider_user_id, p_decider_name, p_approve, p_note, p_now, p_half_day_minutes } = args;
+      const rows = fake.rows('hr_ess_attendance_requests');
+      const r = rows.find((x) => x.id === p_request_id);
+      if (!r) return { data: { outcome: 'not_found' }, error: null };
+      if (r.status !== 'pending') return { data: { outcome: 'not_pending', request: clone(r) }, error: null };
+      const today = istDayOf(p_now);
+      const blocked = windowOutcome(r.day, today);
+      if (blocked) return { data: { outcome: blocked }, error: null };
+      const note = (p_note || '').trim();
+      if (!p_approve) {
+        if (note.length < 3) return { data: { outcome: 'note_required' }, error: null };
+        Object.assign(r, {
+          status: 'rejected', decided_by_employee_id: p_decider_employee_id ?? null,
+          decided_by_user_id: p_decider_user_id ?? null, decided_by_name: p_decider_name,
+          decided_at: p_now, decision_note: note, updated_at: p_now,
+        });
+        pushHistory(fake, 'hr_ess_attendance_request_history', {
+          requestId: r.id, at: p_now, action: 'rejected', note, employeeId: p_decider_employee_id ?? null,
+          userId: p_decider_user_id ?? null, name: p_decider_name, details: { type: r.type, day: r.day },
+        });
+        return { data: { outcome: 'rejected', request: clone(r) }, error: null };
+      }
+      // Only an approval carries the future-day rule: a rejection writes nothing.
+      if (r.type !== 'on_duty' && r.day > today) return { data: { outcome: 'future' }, error: null };
+
+      const days = fake.rows('hr_staff_attendance');
+      let written = false;
+      if (r.type === 'excuse_late') {
+        const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
+        if (!dayRow || (dayRow.late_minutes == null && !dayRow.late_excused)) {
+          return { data: { outcome: 'not_late' }, error: null };
+        }
+        r.day_before = clone(dayRow);
+        Object.assign(dayRow, {
+          late_excused: true, late_excused_by_name: p_decider_name,
+          late_excused_reason: note || r.reason, late_excused_at: p_now, updated_at: p_now,
+        });
+        written = true;
+      } else if (r.type === 'fix_a_day') {
+        const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
+        if (dayRow && ['leave', 'week_off', 'holiday'].includes(dayRow.status)) {
+          return { data: { outcome: 'day_off' }, error: null };
+        }
+        const inTs = r.fix_in ? istTimeOn(r.day, r.fix_in) : (dayRow ? dayRow.first_in : null);
+        const outTs = r.fix_out ? istTimeOn(r.day, r.fix_out) : (dayRow ? dayRow.last_out : null);
+        if (!inTs || !outTs || Date.parse(outTs) <= Date.parse(inTs)) {
+          return { data: { outcome: 'times_incomplete' }, error: null };
+        }
+        const worked = Math.floor((Date.parse(outTs) - Date.parse(inTs)) / 60000);
+        const status = worked >= p_half_day_minutes ? 'present' : 'half_day';
+        const applied = fakeApplyOverride(fake, {
+          employee_id: r.employee_id, day: r.day, branch_id: dayRow ? dayRow.branch_id : null,
+          status, leave_type: null, first_in: inTs, last_out: outTs, worked_minutes: worked,
+          reason: `Fix a day: ${r.reason}`, by: p_decider_user_id ?? null, by_name: p_decider_name,
+        });
+        if (applied.error) return { data: null, error: applied.error };
+        r.day_before = applied.before;
+        written = true;
+      } else if (r.day <= today) { // on_duty, on the day or later: write it now
+        const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
+        const employee = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
+        const applied = fakeApplyOverride(fake, {
+          employee_id: r.employee_id, day: r.day,
+          branch_id: dayRow ? dayRow.branch_id : (employee ? employee.branch_id ?? null : null),
+          status: 'present', leave_type: null,
+          // The times the day already records are kept, as the controller's own merge does.
+          first_in: dayRow ? dayRow.first_in ?? null : null,
+          last_out: dayRow ? dayRow.last_out ?? null : null,
+          worked_minutes: dayRow ? dayRow.worked_minutes ?? null : null,
+          reason: `On duty: ${r.place}`, by: p_decider_user_id ?? null, by_name: p_decider_name,
+        });
+        if (applied.error) return { data: null, error: applied.error };
+        r.day_before = applied.before;
+        written = true;
+      }
+      if (written) r.day_written_at = p_now;
+
+      Object.assign(r, {
+        status: 'approved', decided_by_employee_id: p_decider_employee_id ?? null,
+        decided_by_user_id: p_decider_user_id ?? null, decided_by_name: p_decider_name,
+        decided_at: p_now, decision_note: note || null, updated_at: p_now,
+      });
+      pushHistory(fake, 'hr_ess_attendance_request_history', {
+        requestId: r.id, at: p_now, action: 'approved', note: note || null, employeeId: p_decider_employee_id ?? null,
+        userId: p_decider_user_id ?? null, name: p_decider_name,
+        details: { type: r.type, day: r.day, day_written: written },
+      });
+      return { data: { outcome: 'approved', request: clone(r), day_written: written }, error: null };
+    },
+  },
+
+  hr_ess_decide_leave_request: {
+    table: 'hr_ess_leave_requests',
+    run(fake, args) {
+      const { p_request_id, p_decider_employee_id, p_decider_user_id, p_decider_name, p_approve, p_note, p_now } = args;
+      const r = fake.rows('hr_ess_leave_requests').find((x) => x.id === p_request_id);
+      if (!r) return { data: { outcome: 'not_found' }, error: null };
+      if (r.status !== 'pending') return { data: { outcome: 'not_pending', request: clone(r) }, error: null };
+      const today = istDayOf(p_now);
+      const blocked = windowOutcome(r.day, today);
+      if (blocked) return { data: { outcome: blocked }, error: null };
+      const note = (p_note || '').trim();
+      if (!p_approve) {
+        if (note.length < 3) return { data: { outcome: 'note_required' }, error: null };
+        Object.assign(r, {
+          status: 'rejected', decided_by_employee_id: p_decider_employee_id ?? null,
+          decided_by_user_id: p_decider_user_id ?? null, decided_by_name: p_decider_name,
+          decided_at: p_now, decision_note: note, updated_at: p_now,
+        });
+        pushHistory(fake, 'hr_ess_leave_request_history', {
+          requestId: r.id, at: p_now, action: 'rejected', note, employeeId: p_decider_employee_id ?? null,
+          userId: p_decider_user_id ?? null, name: p_decider_name, details: { type: r.type, day: r.day },
+        });
+        return { data: { outcome: 'rejected', request: clone(r) }, error: null };
+      }
+      if (r.type === 'cl') {
+        const taken = fake.rows('hr_staff_attendance').some((d) => d.employee_id === r.employee_id
+          && d.status === 'leave' && d.leave_type === 'cl'
+          && (d.day || '').slice(0, 7) === r.day.slice(0, 7) && d.day !== r.day);
+        if (taken) return { data: { outcome: 'cl_limit' }, error: null };
+      }
+      const dayRow = fake.rows('hr_staff_attendance').find((a) => a.employee_id === r.employee_id && a.day === r.day);
+      const applied = fakeApplyOverride(fake, {
+        employee_id: r.employee_id, day: r.day, branch_id: dayRow ? dayRow.branch_id : null,
+        status: 'leave', leave_type: r.type,
+        // Whatever times the day records are kept, as the controller's own merge does.
+        first_in: dayRow ? dayRow.first_in ?? null : null,
+        last_out: dayRow ? dayRow.last_out ?? null : null,
+        worked_minutes: dayRow ? dayRow.worked_minutes ?? null : null,
+        reason: r.reason, by: p_decider_user_id ?? null, by_name: p_decider_name,
+      });
+      if (applied.error) return { data: null, error: applied.error };
+      r.day_before = applied.before;
+      r.day_written_at = p_now;
+      Object.assign(r, {
+        status: 'approved', decided_by_employee_id: p_decider_employee_id ?? null,
+        decided_by_user_id: p_decider_user_id ?? null, decided_by_name: p_decider_name,
+        decided_at: p_now, decision_note: note || null, updated_at: p_now,
+      });
+      pushHistory(fake, 'hr_ess_leave_request_history', {
+        requestId: r.id, at: p_now, action: 'approved', note: note || null, employeeId: p_decider_employee_id ?? null,
+        userId: p_decider_user_id ?? null, name: p_decider_name,
+        details: { type: r.type, day: r.day, day_written: true },
+      });
+      return { data: { outcome: 'approved', request: clone(r), day_written: true }, error: null };
+    },
+  },
+
+  hr_ess_cancel_attendance_request: {
+    table: 'hr_ess_attendance_requests',
+    run(fake, { p_request_id, p_by_employee_id, p_by_user_id, p_by_name, p_reason, p_now }) {
+      const r = fake.rows('hr_ess_attendance_requests').find((x) => x.id === p_request_id);
+      if (!r) return { data: { outcome: 'not_found' }, error: null };
+      if (r.status !== 'approved') return { data: { outcome: 'not_approved', request: clone(r) }, error: null };
+      const days = fake.rows('hr_staff_attendance');
+      const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
+      if (r.type === 'excuse_late') {
+        if (dayRow && r.day_before) {
+          Object.assign(dayRow, {
+            late_excused: r.day_before.late_excused ?? false,
+            late_excused_by_name: r.day_before.late_excused_by_name ?? null,
+            late_excused_reason: r.day_before.late_excused_reason ?? null,
+            late_excused_at: r.day_before.late_excused_at ?? null,
+            updated_at: p_now,
+          });
+        }
+      } else if (dayRow) {
+        if (!r.day_before) {
+          days.splice(days.indexOf(dayRow), 1);
+        } else {
+          const b = r.day_before;
+          Object.assign(dayRow, {
+            status: b.status, leave_type: b.leave_type ?? null, note: b.note ?? null, source: b.source ?? null,
+            first_in: b.first_in ?? null, last_out: b.last_out ?? null, worked_minutes: b.worked_minutes ?? null,
+            marked_by: b.marked_by ?? null, marked_by_name: b.marked_by_name ?? null, marked_at: b.marked_at ?? null,
+            updated_at: p_now,
+          });
+        }
+      }
+      Object.assign(r, {
+        status: 'cancelled', cancelled_by_user_id: p_by_user_id ?? null, cancelled_by_name: p_by_name,
+        cancelled_at: p_now, cancel_reason: (p_reason || '').trim(), updated_at: p_now,
+      });
+      pushHistory(fake, 'hr_ess_attendance_request_history', {
+        requestId: r.id, at: p_now, action: 'cancelled', note: (p_reason || '').trim(),
+        employeeId: p_by_employee_id ?? null, userId: p_by_user_id ?? null, name: p_by_name,
+        details: { type: r.type, day: r.day, day_restored: true },
+      });
+      return { data: { outcome: 'cancelled', request: clone(r), day_restored: true }, error: null };
+    },
+  },
+
+  hr_ess_cancel_leave_request: {
+    table: 'hr_ess_leave_requests',
+    run(fake, { p_request_id, p_by_employee_id, p_by_user_id, p_by_name, p_reason, p_now }) {
+      const r = fake.rows('hr_ess_leave_requests').find((x) => x.id === p_request_id);
+      if (!r) return { data: { outcome: 'not_found' }, error: null };
+      if (r.status !== 'approved') return { data: { outcome: 'not_approved', request: clone(r) }, error: null };
+      const days = fake.rows('hr_staff_attendance');
+      const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
+      if (dayRow) {
+        if (!r.day_before) {
+          days.splice(days.indexOf(dayRow), 1);
+        } else {
+          const b = r.day_before;
+          Object.assign(dayRow, {
+            status: b.status, leave_type: b.leave_type ?? null, note: b.note ?? null, source: b.source ?? null,
+            first_in: b.first_in ?? null, last_out: b.last_out ?? null, worked_minutes: b.worked_minutes ?? null,
+            marked_by: b.marked_by ?? null, marked_by_name: b.marked_by_name ?? null, marked_at: b.marked_at ?? null,
+            updated_at: p_now,
+          });
+        }
+      }
+      Object.assign(r, {
+        status: 'cancelled', cancelled_by_user_id: p_by_user_id ?? null, cancelled_by_name: p_by_name,
+        cancelled_at: p_now, cancel_reason: (p_reason || '').trim(), updated_at: p_now,
+      });
+      pushHistory(fake, 'hr_ess_leave_request_history', {
+        requestId: r.id, at: p_now, action: 'cancelled', note: (p_reason || '').trim(),
+        employeeId: p_by_employee_id ?? null, userId: p_by_user_id ?? null, name: p_by_name,
+        details: { type: r.type, day: r.day, day_restored: true },
+      });
+      return { data: { outcome: 'cancelled', request: clone(r), day_restored: true }, error: null };
+    },
+  },
+
+  hr_ess_on_duty_apply: {
+    table: 'hr_ess_attendance_requests',
+    run(fake, { p_day, p_now }) {
+      const days = fake.rows('hr_staff_attendance');
+      const due = fake.rows('hr_ess_attendance_requests').filter((x) => x.type === 'on_duty' && x.status === 'approved'
+        && x.day === p_day && !days.some((a) => a.employee_id === x.employee_id && a.day === x.day));
+      let applied = 0;
+      const failed = [];
+      const employees = [];
+      for (const r of due) {
+        const employee = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
+        const out = fakeApplyOverride(fake, {
+          employee_id: r.employee_id, day: r.day, branch_id: employee ? employee.branch_id ?? null : null,
+          status: 'present', leave_type: null, first_in: null, last_out: null, worked_minutes: null,
+          reason: `On duty: ${r.place}`, by: r.decided_by_user_id ?? null,
+          by_name: r.decided_by_name ?? 'Team RVM (on duty)',
+        });
+        if (out.error) {
+          failed.push({ request_id: r.id, employee_id: r.employee_id, error: out.error.message });
+          continue;
+        }
+        Object.assign(r, { day_before: null, day_written_at: p_now, updated_at: p_now });
+        applied += 1;
+        employees.push(r.employee_id);
+      }
+      return { data: { applied, failed, employees }, error: null };
+    },
+  },
+
+  // The Scheduler's own hr_attendance_recompute (20261022000000:197-286), which the decide
+  // route and the job call after a decision that wrote a day. The stand-in does not re-count late
+  // marks: the SQL test runs the real functions, and no endpoint test asserts the recomputed
+  // numbers. It answers 0, as a run that changed nothing.
+  hr_attendance_recompute: {
+    table: 'hr_staff_attendance',
+    run() {
+      return { data: 0, error: null };
     },
   },
 };

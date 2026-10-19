@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.2.1
+  version: 0.3.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -1839,6 +1839,962 @@ paths:
           $ref: '#/components/responses/EssUnexpected'
 
   # ═══════════════════ Scheduler: portal sign-in ═══════════════════
+
+  /ess/attendance-requests:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: createMyAttendanceRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: File an attendance request (C1, C3)
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. Files a request about the caller; the decision is `POST /ess/approvals/attendance/{id}/decide`.
+
+        - `type`: `on_duty` (takes `place`), `fix_a_day` (takes `fix_in` and/or `fix_out`, `HH:MM` 24-hour) or `excuse_late`. Work from home is not offered and `short_leave` is Phase 2.
+        - `day`: this month or last month. Last month closes at the payroll cut-off: on the 6th and after, it is 409 `REQUEST_CLOSED`; the 5th itself is open.
+        - `reason`: 5 to 1,000 characters. Each type takes exactly its own fields: a field of another type is a 400, never ignored.
+        - A `fix_a_day` or an `excuse_late` is for a day that has happened; `on_duty` may be filed ahead (its day is written on the day itself).
+        - One pending request per type and day: a second is 409 `DUPLICATE_REQUEST`.
+        - The month's counter is checked before the row goes in: over the limit HR set is 409 `LIMIT_REACHED`. Every form can show allowed, used and remaining from `GET /ess/leave/balances`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, day, reason]
+              properties:
+                type:
+                  type: string
+                  enum: [on_duty, fix_a_day, excuse_late]
+                day:
+                  type: string
+                  format: date
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 1000
+                place:
+                  type: [string, 'null']
+                  maxLength: 120
+                  description: On duty only, 1 to 120 characters.
+                fix_in:
+                  type: [string, 'null']
+                  pattern: '^\d{2}:\d{2}$'
+                fix_out:
+                  type: [string, 'null']
+                  pattern: '^\d{2}:\d{2}$'
+            examples:
+              onDuty:
+                value: { type: on_duty, day: 2026-10-15, reason: College drive at the Pune centre., place: Pune centre }
+              fixADay:
+                value: { type: fix_a_day, day: 2026-10-15, reason: I forgot to punch out., fix_out: '18:00' }
+      responses:
+        '201':
+          description: Filed. It waits for the approver (the manager on the HR record, or HR).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/AttendanceRequest'
+              examples:
+                filed:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      family: attendance
+                      type: on_duty
+                      status: pending
+                      day: '2026-10-15'
+                      reason: College drive at the Pune centre.
+                      place: Pune centre
+                      fix_in: null
+                      fix_out: null
+                      created_at: '2026-10-14T05:00:00+00:00'
+                      decided_at: null
+                      decided_by_name: null
+                      decision_note: null
+                      cancelled_at: null
+                      cancelled_by_name: null
+                      cancel_reason: null
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '409':
+          $ref: '#/components/responses/EssRequestConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    get:
+      operationId: listMyAttendanceRequests
+      tags: [ESS]
+      x-owner: ess
+      summary: My attendance requests
+      description: |
+        Either token kind. The caller's own requests, newest first, at most 100. Never anybody else's, and never the decider's account id.
+      responses:
+        '200':
+          description: My requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests]
+                properties:
+                  requests:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: '#/components/schemas/AttendanceRequest'
+              examples:
+                one:
+                  value:
+                    requests:
+                      - id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                        family: attendance
+                        type: fix_a_day
+                        status: rejected
+                        day: '2026-10-15'
+                        reason: I forgot to punch out.
+                        place: null
+                        fix_in: null
+                        fix_out: '18:00'
+                        created_at: '2026-10-14T05:00:00+00:00'
+                        decided_at: '2026-10-15T05:00:00+00:00'
+                        decided_by_name: Priya Sharma
+                        decision_note: The branch closed at 17:30 that day. Ask HR to set it.
+                        cancelled_at: null
+                        cancelled_by_name: null
+                        cancel_reason: null
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/attendance-requests/{id}/withdraw:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: withdrawMyAttendanceRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Withdraw a pending attendance request (C8)
+      description: |
+        Either token kind. Only the caller's own, and only while it is still pending; it then leaves the approver's Inbox. Somebody else's request is 404 `NOT_FOUND`, as if it did not exist.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The request's `id`. Not a uuid is 400 `VALIDATION_FAILED`.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Withdrawn. It can be filed again.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/AttendanceRequest'
+              examples:
+                withdrawn:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      family: attendance
+                      type: on_duty
+                      status: withdrawn
+                      day: '2026-10-15'
+                      reason: College drive at the Pune centre.
+                      place: Pune centre
+                      fix_in: null
+                      fix_out: null
+                      created_at: '2026-10-14T05:00:00+00:00'
+                      decided_at: null
+                      decided_by_name: null
+                      decision_note: null
+                      cancelled_at: null
+                      cancelled_by_name: null
+                      cancel_reason: null
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '409':
+          $ref: '#/components/responses/EssRequestConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/leave-requests:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: createMyLeaveRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: File a leave request (C2, C4)
+      description: |
+        Either token kind, with the checks of `GET /ess/me`.
+
+        - `type`: `cl` (casual leave; one a month, the Scheduler's own rule, enforced here and by the database) or `lwp` (leave without pay; no limit set yet).
+        - `day`: this month or last month, and leave may be filed AHEAD (a planned CL). The same cut-off as attendance requests: last month closes after the 5th (409 `REQUEST_CLOSED`).
+        - The month's CL already on the sheet counts as used, so a CL cannot be filed around one HR recorded by hand; over the limit is 409 `LIMIT_REACHED`.
+        - One pending request per type and day: a second is 409 `DUPLICATE_REQUEST`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, day, reason]
+              properties:
+                type:
+                  type: string
+                  enum: [cl, lwp]
+                day:
+                  type: string
+                  format: date
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 1000
+            examples:
+              cl:
+                value: { type: cl, day: 2026-10-20, reason: Family function at home. }
+      responses:
+        '201':
+          description: Filed. It waits for the approver; an approval writes the day.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/LeaveRequest'
+              examples:
+                filed:
+                  value:
+                    request:
+                      id: 4a3b2c1d-0e9f-4a8b-7c6d-5e4f3a2b1c0d
+                      family: leave
+                      type: cl
+                      status: pending
+                      day: '2026-10-20'
+                      reason: Family function at home.
+                      created_at: '2026-10-16T06:30:00+00:00'
+                      decided_at: null
+                      decided_by_name: null
+                      decision_note: null
+                      cancelled_at: null
+                      cancelled_by_name: null
+                      cancel_reason: null
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '409':
+          $ref: '#/components/responses/EssRequestConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    get:
+      operationId: listMyLeaveRequests
+      tags: [ESS]
+      x-owner: ess
+      summary: My leave requests
+      description: Either token kind. The caller's own, newest first, at most 100.
+      responses:
+        '200':
+          description: My requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests]
+                properties:
+                  requests:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: '#/components/schemas/LeaveRequest'
+              examples:
+                empty:
+                  value: { requests: [] }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/leave-requests/{id}/withdraw:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: withdrawMyLeaveRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Withdraw a pending leave request (C8)
+      description: Either token kind. Only the caller's own, and only while it is still pending.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The request's `id`. Not a uuid is 400 `VALIDATION_FAILED`.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Withdrawn.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/LeaveRequest'
+              examples:
+                withdrawn:
+                  value:
+                    request:
+                      id: 4a3b2c1d-0e9f-4a8b-7c6d-5e4f3a2b1c0d
+                      family: leave
+                      type: cl
+                      status: withdrawn
+                      day: '2026-10-20'
+                      reason: Family function at home.
+                      created_at: '2026-10-16T06:30:00+00:00'
+                      decided_at: null
+                      decided_by_name: null
+                      decision_note: null
+                      cancelled_at: null
+                      cancelled_by_name: null
+                      cancel_reason: null
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '409':
+          $ref: '#/components/responses/EssRequestConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/leave/balances:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: myLeaveBalances
+      tags: [ESS]
+      x-owner: ess
+      summary: My request balances, this month or last (C5)
+      description: |
+        Either token kind. Allowed, used, pending and remaining for every request type, for the month of the `day` they apply to. The numbers HR set in `PUT /ess/hr/request-limits/{type}`; `allowed` null means no limit, and `remaining` counts pending requests too.
+
+        For leave, the days the sheet already records count as used (so a CL marked by hand cannot hide); for the attendance types, approved requests do. `short_leave` (Phase 2) and `wfh` (not offered) show their limits with nothing filed.
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+            default: the current IST month
+          description: This month or last month; anything else is 400 `DAY_OUT_OF_RANGE`.
+      responses:
+        '200':
+          description: The balances.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balances'
+              examples:
+                october:
+                  value:
+                    month: '2026-10'
+                    types:
+                      - { type: on_duty, offered: true, unit: count, phase: 1, allowed: null, used: 1, pending: 0, remaining: null }
+                      - { type: fix_a_day, offered: true, unit: count, phase: 1, allowed: 3, used: 1, pending: 0, remaining: 2 }
+                      - { type: excuse_late, offered: true, unit: count, phase: 1, allowed: 3, used: 0, pending: 0, remaining: 3 }
+                      - { type: short_leave, offered: true, unit: minutes, phase: 2, allowed: 180, used: 0, pending: 0, remaining: 180 }
+                      - { type: leave_cl, offered: true, unit: count, phase: 1, allowed: 1, used: 0, pending: 1, remaining: 0 }
+                      - { type: leave_lwp, offered: true, unit: count, phase: 1, allowed: null, used: 0, pending: 0, remaining: null }
+                      - { type: wfh, offered: false, unit: count, phase: 1, allowed: 0, used: 0, pending: 0, remaining: 0 }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/approvals:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listApprovals
+      tags: [ESS]
+      x-owner: ess
+      summary: The approvals Inbox (D1, H6)
+      description: |
+        - A manager sees their own direct reports' requests, whatever their login role (an attendance session included). `status` must be `pending` for them.
+        - HR, the CEO and super admins (the Scheduler's `ATTENDANCE_OVERRIDE_ROLES`; an HR Executive is not among them) see everybody's, and may filter by any status: `pending` (the default), `approved`, `rejected`, `withdrawn`, `cancelled` or `all`.
+        - `counts` is always the pending count this caller can still decide, archived ones left out.
+        - Each request carries its context: how many of that kind the person has this month (pending + approved), the month's limit, the day's late marks (attendance only), and who else is off that day — never the leave's type or reason, and at most 5 names.
+        - Archiving (`POST /ess/approvals/{family}/{id}/archive`) clears a request from the caller's own Inbox without deciding it.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected, withdrawn, cancelled, all]
+            default: pending
+      responses:
+        '200':
+          description: The requests and the counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalsList'
+              examples:
+                manager:
+                  value:
+                    counts: { attendance: 1, leave: 0, total: 1 }
+                    truncated: false
+                    requests:
+                      - id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                        family: attendance
+                        type: excuse_late
+                        status: pending
+                        day: '2026-10-15'
+                        reason: The bus broke down near the depot.
+                        place: null
+                        fix_in: null
+                        fix_out: null
+                        created_at: '2026-10-15T06:30:00+00:00'
+                        decided_at: null
+                        decided_by_name: null
+                        decision_note: null
+                        cancelled_at: null
+                        cancelled_by_name: null
+                        cancel_reason: null
+                        employee: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: Suresh Yadav, employee_code: RVM-0217 }
+                        context:
+                          type_this_month: 1
+                          month_limit: 3
+                          late: { late_minutes: 25, late_count: 1, late_half_day: false, late_excused: false }
+                          others_off: { count: 1, names: [Anita Sharma] }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssApproverForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/approvals/{family}/{id}/decide:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: decideRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Decide a request — approve or reject (D1, H6)
+      description: |
+        The manager on the HR record, or HR, the CEO or a super admin (task D1). An attendance session may decide as a manager; the HR-wide decision needs the portal role.
+
+        - `decision`: `approve` or `reject`. `note`: up to 1,000 characters; a rejection needs one (at least 3), because the employee is owed the reason.
+        - An approval writes the official day through the Scheduler's override function, in one transaction with the request's status and history; a second decision on the same request is 409 `ALREADY_DECIDED` whatever two approvers do at the same moment.
+        - What a decision can refuse: `NOT_LATE` (excusing a day that is not a late), `TIMES_INCOMPLETE` (the fix would leave the day without an in or out), `DAY_LOCKED` (a fix on a day recorded as leave, a week off or a holiday), `CL_LIMIT` (a second CL in the month), `REQUEST_CLOSED`/`REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or excuse for a day that has not happened). A refused decision changes nothing.
+        - An approved on_duty day for a FUTURE date is not written yet: the morning job writes it on the day itself, so the day is never locked before it happens.
+      parameters:
+        - name: family
+          in: path
+          required: true
+          description: '`attendance` or `leave`.'
+          schema:
+            type: string
+            enum: [attendance, leave]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [approve, reject]
+                note:
+                  type: [string, 'null']
+                  maxLength: 1000
+            examples:
+              approve:
+                value: { decision: approve, note: Checked with the branch. }
+              reject:
+                value: { decision: reject, note: The branch needs him that day. }
+      responses:
+        '200':
+          description: Decided. The reply is the request as it now stands.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/AttendanceRequest'
+              examples:
+                approved:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      family: attendance
+                      type: on_duty
+                      status: approved
+                      day: '2026-10-15'
+                      reason: College drive at the Pune centre.
+                      place: Pune centre
+                      fix_in: null
+                      fix_out: null
+                      created_at: '2026-10-14T05:00:00+00:00'
+                      decided_at: '2026-10-16T06:30:00+00:00'
+                      decided_by_name: Priya Sharma
+                      decision_note: null
+                      cancelled_at: null
+                      cancelled_by_name: null
+                      cancel_reason: null
+                      employee: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: Suresh Yadav, employee_code: RVM-0217 }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssApproverForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '409':
+          $ref: '#/components/responses/EssRequestConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/approvals/{family}/{id}/archive:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: archiveRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Clear a request from my Inbox, deciding nothing (D1)
+      description: |
+        For an approver of that request, as `POST /ess/approvals/{family}/{id}/decide`. It stays pending and every other approver still sees it; archiving again is the same as once.
+      parameters:
+        - name: family
+          in: path
+          required: true
+          description: '`attendance` or `leave`.'
+          schema:
+            type: string
+            enum: [attendance, leave]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Archived for this caller.
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssApproverForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/attendance-requests/{id}/cancel:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: cancelAttendanceRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: HR cancels an approved attendance request (C8)
+      description: |
+        A portal login whose role is `hr`, `ceo` or `super_admin` (`ATTENDANCE_ROLES`); an HR Executive is not among them. Only an approved request can be cancelled; the day the approval wrote is put back exactly as it was (or removed, when the approval created it). Every cancel is recorded in `hr_ess_audit`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestCancel'
+            examples:
+              cancel:
+                value: { reason: Recorded by mistake. }
+      responses:
+        '200':
+          description: Cancelled, with the day restored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/AttendanceRequest'
+              examples:
+                cancelled:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      family: attendance
+                      type: on_duty
+                      status: cancelled
+                      day: '2026-10-15'
+                      reason: College drive at the Pune centre.
+                      place: Pune centre
+                      fix_in: null
+                      fix_out: null
+                      created_at: '2026-10-14T05:00:00+00:00'
+                      decided_at: '2026-10-16T06:00:00+00:00'
+                      decided_by_name: Priya Sharma
+                      decision_note: null
+                      cancelled_at: '2026-10-16T07:00:00+00:00'
+                      cancelled_by_name: Priya Sharma
+                      cancel_reason: Recorded by mistake.
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '409':
+          $ref: '#/components/responses/EssRequestConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/leave-requests/{id}/cancel:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: cancelLeaveRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: HR cancels an approved leave request (C8)
+      description: As `POST /ess/hr/attendance-requests/{id}/cancel`, for a leave request.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestCancel'
+            examples:
+              cancel:
+                value: { reason: The dates changed. }
+      responses:
+        '200':
+          description: Cancelled, with the day restored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/LeaveRequest'
+              examples:
+                cancelled:
+                  value:
+                    request:
+                      id: 4a3b2c1d-0e9f-4a8b-7c6d-5e4f3a2b1c0d
+                      family: leave
+                      type: cl
+                      status: cancelled
+                      day: '2026-10-20'
+                      reason: Family function at home.
+                      created_at: '2026-10-16T06:30:00+00:00'
+                      decided_at: '2026-10-16T07:00:00+00:00'
+                      decided_by_name: Priya Sharma
+                      decision_note: null
+                      cancelled_at: '2026-10-16T08:00:00+00:00'
+                      cancelled_by_name: Priya Sharma
+                      cancel_reason: The dates changed.
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '409':
+          $ref: '#/components/responses/EssRequestConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/request-limits:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listRequestLimits
+      tags: [ESS]
+      x-owner: ess
+      summary: The monthly request limits (C6)
+      description: The roles of `POST /ess/hr/attendance-requests/{id}/cancel`. Every known type and the number HR set; `limit_count` or `limit_minutes` carries the number, null meaning no limit.
+      responses:
+        '200':
+          description: The limits.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestLimitsList'
+              examples:
+                seeded:
+                  value:
+                    limits:
+                      - { type: on_duty, limit_count: null, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
+                      - { type: fix_a_day, limit_count: 3, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
+                      - { type: excuse_late, limit_count: 3, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
+                      - { type: short_leave, limit_count: null, limit_minutes: 180, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
+                      - { type: leave_cl, limit_count: 1, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
+                      - { type: leave_lwp, limit_count: null, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
+                      - { type: wfh, limit_count: 0, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/request-limits/{type}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    put:
+      operationId: setRequestLimit
+      tags: [ESS]
+      x-owner: ess
+      summary: Change a monthly request limit (C6)
+      description: |
+        The roles of `POST /ess/hr/attendance-requests/{id}/cancel`. Exactly the type's own unit: a count type takes `limit_count`, short leave takes `limit_minutes`; null means no limit. The change is recorded in `hr_ess_audit`, and every form and balance reads it from the next request.
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [on_duty, fix_a_day, excuse_late, short_leave, leave_cl, leave_lwp, wfh]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit_count:
+                  type: [integer, 'null']
+                  minimum: 0
+                limit_minutes:
+                  type: [integer, 'null']
+                  minimum: 0
+            examples:
+              count:
+                value: { limit_count: 5 }
+              noLimit:
+                value: { limit_count: null }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [limit]
+                properties:
+                  limit:
+                    $ref: '#/components/schemas/RequestLimit'
+              examples:
+                changed:
+                  value:
+                    limit: { type: fix_a_day, limit_count: 5, limit_minutes: null, updated_at: '2026-10-16T07:00:00+00:00', updated_by_name: Priya Sharma }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
 
   /users/login:
     post:
@@ -4836,6 +5792,349 @@ components:
           minLength: 3
           maxLength: 200
 
+    RequestCancel:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 200
+          description: HR's reason; it stays on the request and in the audit trail.
+
+    AttendanceRequest:
+      type: object
+      description: One attendance request as the employee and the approver read it. `employee` is present in an approver's reply, never in the person's own list.
+      required: [id, family, type, status, day, reason, place, fix_in, fix_out, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
+      properties:
+        id:
+          type: string
+          format: uuid
+        family:
+          type: string
+          enum: [attendance]
+        type:
+          type: string
+          enum: [on_duty, fix_a_day, excuse_late]
+        status:
+          type: string
+          enum: [pending, approved, rejected, withdrawn, cancelled]
+        day:
+          type: string
+          format: date
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 1000
+        place:
+          type: [string, 'null']
+        fix_in:
+          type: [string, 'null']
+          pattern: '^\d{2}:\d{2}$'
+        fix_out:
+          type: [string, 'null']
+          pattern: '^\d{2}:\d{2}$'
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        decided_by_name:
+          type: [string, 'null']
+        decision_note:
+          type: [string, 'null']
+        cancelled_at:
+          type: [string, 'null']
+          format: date-time
+        cancelled_by_name:
+          type: [string, 'null']
+        cancel_reason:
+          type: [string, 'null']
+        employee:
+          $ref: '#/components/schemas/EmployeeCard'
+
+    LeaveRequest:
+      type: object
+      description: One leave request as the employee and the approver read it. `employee` is present in an approver's reply, never in the person's own list.
+      required: [id, family, type, status, day, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
+      properties:
+        id:
+          type: string
+          format: uuid
+        family:
+          type: string
+          enum: [leave]
+        type:
+          type: string
+          enum: [cl, lwp]
+        status:
+          type: string
+          enum: [pending, approved, rejected, withdrawn, cancelled]
+        day:
+          type: string
+          format: date
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 1000
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        decided_by_name:
+          type: [string, 'null']
+        decision_note:
+          type: [string, 'null']
+        cancelled_at:
+          type: [string, 'null']
+          format: date-time
+        cancelled_by_name:
+          type: [string, 'null']
+        cancel_reason:
+          type: [string, 'null']
+        employee:
+          $ref: '#/components/schemas/EmployeeCard'
+
+    ApprovalLate:
+      type: object
+      description: The day's late marks, for the Inbox's context (attendance requests only).
+      required: [late_minutes, late_count, late_half_day, late_excused]
+      properties:
+        late_minutes:
+          type: [integer, 'null']
+        late_count:
+          type: [integer, 'null']
+        late_half_day:
+          type: boolean
+        late_excused:
+          type: boolean
+
+    ApprovalContext:
+      type: object
+      description: What the approver needs beside the request itself (task D1).
+      required: [type_this_month, month_limit, late, others_off]
+      properties:
+        type_this_month:
+          type: integer
+          minimum: 0
+          description: This kind of request the person has this month, pending and approved.
+        month_limit:
+          type: [integer, 'null']
+          description: The month's limit for the type; null means no limit.
+        late:
+          description: The day's late marks; null for a leave request or a day with no row.
+          oneOf:
+            - $ref: '#/components/schemas/ApprovalLate'
+            - type: 'null'
+        others_off:
+          type: object
+          required: [count, names]
+          properties:
+            count:
+              type: integer
+              minimum: 0
+            names:
+              type: array
+              maxItems: 5
+              items:
+                type: string
+
+    InboxAttendanceRequest:
+      type: object
+      description: An attendance request in an approver's Inbox, with whose it is and its context.
+      required: [id, family, type, status, day, reason, place, fix_in, fix_out, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason, employee, context]
+      properties:
+        id:
+          type: string
+          format: uuid
+        family:
+          type: string
+          enum: [attendance]
+        type:
+          type: string
+          enum: [on_duty, fix_a_day, excuse_late]
+        status:
+          type: string
+          enum: [pending, approved, rejected, withdrawn, cancelled]
+        day:
+          type: string
+          format: date
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 1000
+        place:
+          type: [string, 'null']
+        fix_in:
+          type: [string, 'null']
+          pattern: '^\d{2}:\d{2}$'
+        fix_out:
+          type: [string, 'null']
+          pattern: '^\d{2}:\d{2}$'
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        decided_by_name:
+          type: [string, 'null']
+        decision_note:
+          type: [string, 'null']
+        cancelled_at:
+          type: [string, 'null']
+          format: date-time
+        cancelled_by_name:
+          type: [string, 'null']
+        cancel_reason:
+          type: [string, 'null']
+        employee:
+          $ref: '#/components/schemas/EmployeeCard'
+        context:
+          $ref: '#/components/schemas/ApprovalContext'
+
+    InboxLeaveRequest:
+      type: object
+      description: A leave request in an approver's Inbox, with whose it is and its context.
+      required: [id, family, type, status, day, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason, employee, context]
+      properties:
+        id:
+          type: string
+          format: uuid
+        family:
+          type: string
+          enum: [leave]
+        type:
+          type: string
+          enum: [cl, lwp]
+        status:
+          type: string
+          enum: [pending, approved, rejected, withdrawn, cancelled]
+        day:
+          type: string
+          format: date
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 1000
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        decided_by_name:
+          type: [string, 'null']
+        decision_note:
+          type: [string, 'null']
+        cancelled_at:
+          type: [string, 'null']
+          format: date-time
+        cancelled_by_name:
+          type: [string, 'null']
+        cancel_reason:
+          type: [string, 'null']
+        employee:
+          $ref: '#/components/schemas/EmployeeCard'
+        context:
+          $ref: '#/components/schemas/ApprovalContext'
+
+    ApprovalCounts:
+      type: object
+      description: What still waits for this caller, archived ones left out.
+      required: [attendance, leave, total]
+      properties:
+        attendance:
+          type: integer
+          minimum: 0
+        leave:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+
+    ApprovalsList:
+      type: object
+      required: [counts, requests, truncated]
+      properties:
+        counts:
+          $ref: '#/components/schemas/ApprovalCounts'
+        requests:
+          type: array
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/InboxAttendanceRequest'
+              - $ref: '#/components/schemas/InboxLeaveRequest'
+        truncated:
+          type: boolean
+
+    BalanceLine:
+      type: object
+      required: [type, offered, unit, phase, allowed, used, pending, remaining]
+      properties:
+        type:
+          $ref: '#/components/schemas/RequestType'
+        offered:
+          type: boolean
+        unit:
+          type: string
+          enum: [count, minutes]
+        phase:
+          type: integer
+          enum: [1, 2]
+        allowed:
+          type: [integer, 'null']
+        used:
+          type: integer
+          minimum: 0
+        pending:
+          type: integer
+          minimum: 0
+        remaining:
+          type: [integer, 'null']
+
+    Balances:
+      type: object
+      required: [month, types]
+      properties:
+        month:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        types:
+          type: array
+          items:
+            $ref: '#/components/schemas/BalanceLine'
+
+    RequestLimit:
+      type: object
+      required: [type, limit_count, limit_minutes, updated_at, updated_by_name]
+      properties:
+        type:
+          $ref: '#/components/schemas/RequestType'
+        limit_count:
+          type: [integer, 'null']
+        limit_minutes:
+          type: [integer, 'null']
+        updated_at:
+          type: string
+          format: date-time
+        updated_by_name:
+          type: [string, 'null']
+
+    RequestLimitsList:
+      type: object
+      required: [limits]
+      properties:
+        limits:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequestLimit'
+
     # ───────────── Scheduler: portal sign-in ─────────────
 
     UserRole:
@@ -5803,6 +7102,73 @@ components:
         error: Too many wrong codes. Request a new one.
         code: ATTEMPTS_EXHAUSTED
 
+    # ───────────── C1-C12: requests, leave and approvals ─────────────
+
+    EssRequestReason:
+      value:
+        error: Say the reason, in 5 to 1,000 characters.
+        code: VALIDATION_FAILED
+    EssRequestWindow:
+      value:
+        error: Requests can be for this month or last month only.
+        code: REQUEST_WINDOW
+    EssRequestClosed:
+      value:
+        error: Last month's requests closed on the 5th. Ask HR.
+        code: REQUEST_CLOSED
+    EssRequestFuture:
+      value:
+        error: That day has not happened yet.
+        code: REQUEST_FUTURE
+    EssTimesIncomplete:
+      value:
+        error: The day would still be missing an in or out time. Ask the employee for the full times.
+        code: TIMES_INCOMPLETE
+    EssDayLocked:
+      value:
+        error: That day is recorded as leave, a week off or a holiday. Change the day first.
+        code: DAY_LOCKED
+    EssDuplicateRequest:
+      value:
+        error: You already have a request for that day. Wait for it to be decided.
+        code: DUPLICATE_REQUEST
+    EssLimitReached:
+      value:
+        error: That is over this type's monthly limit. Check the balance on the form.
+        code: LIMIT_REACHED
+    EssRequestNotFound:
+      value:
+        error: That request was not found.
+        code: NOT_FOUND
+    EssRequestNotPending:
+      value:
+        error: Only a pending request can be withdrawn.
+        code: REQUEST_NOT_PENDING
+    EssAlreadyDecided:
+      value:
+        error: That request has already been decided.
+        code: ALREADY_DECIDED
+    EssNotAnApprover:
+      value:
+        error: Only the person's manager or HR can decide this request.
+        code: NOT_AN_APPROVER
+    EssNotLate:
+      value:
+        error: That day is not a late arrival.
+        code: NOT_LATE
+    EssCannotCancel:
+      value:
+        error: Only an approved request can be cancelled.
+        code: CANNOT_CANCEL
+    EssClTaken:
+      value:
+        error: This month's CL is already taken. Reject this request, or approve it as leave without pay.
+        code: CL_LIMIT
+    EssBalancesMonth:
+      value:
+        error: Look at this month or last month.
+        code: DAY_OUT_OF_RANGE
+
   responses:
 
     # ───────────── ESS ─────────────
@@ -6180,3 +7546,94 @@ components:
               $ref: '#/components/examples/PunchNotInstalled'
             accountsNotInstalled:
               $ref: '#/components/examples/AccountsNotInstalled'
+
+    # ───────────── C1-C12: requests, leave and approvals ─────────────
+
+    EssRequestBad:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule — a type, a day, a reason, a place, a time, a body the ESS cannot read. `INVALID_JSON`, `BAD_REQUEST`: a body it cannot read. `DAY_OUT_OF_RANGE`: a month other than this one and the last.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            reason:
+              $ref: '#/components/examples/EssRequestReason'
+            window:
+              $ref: '#/components/examples/EssRequestWindow'
+            balancesMonth:
+              $ref: '#/components/examples/EssBalancesMonth'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            invalidId:
+              $ref: '#/components/examples/EssInvalidId'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssRequestConflict:
+      description: |
+        The request cannot move. A `withdraw` of something decided is `REQUEST_NOT_PENDING`; a second decision is `ALREADY_DECIDED`. An approval may be refused with `REQUEST_CLOSED` or `REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or an excuse for a day that has not happened), `NOT_LATE`, `TIMES_INCOMPLETE`, `DAY_LOCKED` or `CL_LIMIT`; the request then stays pending. A cancel of anything but an approved request is `CANNOT_CANCEL`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            duplicate:
+              $ref: '#/components/examples/EssDuplicateRequest'
+            limit:
+              $ref: '#/components/examples/EssLimitReached'
+            notPending:
+              $ref: '#/components/examples/EssRequestNotPending'
+            alreadyDecided:
+              $ref: '#/components/examples/EssAlreadyDecided'
+            closed:
+              $ref: '#/components/examples/EssRequestClosed'
+            window:
+              $ref: '#/components/examples/EssRequestWindow'
+            future:
+              $ref: '#/components/examples/EssRequestFuture'
+            notLate:
+              $ref: '#/components/examples/EssNotLate'
+            timesIncomplete:
+              $ref: '#/components/examples/EssTimesIncomplete'
+            dayLocked:
+              $ref: '#/components/examples/EssDayLocked'
+            clTaken:
+              $ref: '#/components/examples/EssClTaken'
+            cannotCancel:
+              $ref: '#/components/examples/EssCannotCancel'
+
+    EssNoSuchRequest:
+      description: '`NOT_FOUND`: no request (or employee) has this id.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            request:
+              $ref: '#/components/examples/EssRequestNotFound'
+            nothing:
+              value:
+                error: There is nothing at this address.
+                code: NOT_FOUND
+
+    EssApproverForbidden:
+      description: |
+        Not a reason to sign out.
+        - `NOT_AN_APPROVER`: this request is not this caller's to decide or clear.
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notAnApprover:
+              $ref: '#/components/examples/EssNotAnApprover'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'

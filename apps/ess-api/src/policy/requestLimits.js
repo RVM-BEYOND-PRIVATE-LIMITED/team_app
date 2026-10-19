@@ -35,9 +35,24 @@ const requestType = (type) => REQUEST_TYPES.find((t) => t.type === type) || null
 
 const offeredRequestTypes = () => REQUEST_TYPES.filter((t) => t.offered).map((t) => t.type);
 
-/** The `requests` block of the capability document, as fresh objects so a caller cannot edit the table. */
-const requestPolicy = () => ({
-  types: REQUEST_TYPES.map((t) => ({ ...t })),
+/**
+ * The effective limit of one type: the number from hr_ess_request_limits when the table has the
+ * row (task C6; HR changes them through the HR endpoint), and this file's default otherwise --
+ * before the migration, or for a row somebody deleted by hand. Null means no limit.
+ */
+function effectiveLimit(t, limitRows = null) {
+  const row = (limitRows || []).find((r) => r.type === t.type);
+  if (!row) return t.limit;
+  return t.unit === 'minutes' ? (row.limit_minutes ?? null) : (row.limit_count ?? null);
+}
+
+/**
+ * The `requests` block of the capability document and of the balances reply, as fresh objects so
+ * a caller cannot edit the table. With `limitRows` (hr_ess_request_limits), the numbers are the
+ * ones HR set; without them (a caller that could not read the table), this file's defaults.
+ */
+const requestPolicy = (limitRows = null) => ({
+  types: REQUEST_TYPES.map((t) => ({ ...t, limit: effectiveLimit(t, limitRows) })),
   payroll_cutoff_day: PAYROLL_CUTOFF_DAY,
   reach_back_months: REACH_BACK_MONTHS,
 });
@@ -48,5 +63,6 @@ module.exports = {
   REACH_BACK_MONTHS,
   requestType,
   offeredRequestTypes,
+  effectiveLimit,
   requestPolicy,
 };

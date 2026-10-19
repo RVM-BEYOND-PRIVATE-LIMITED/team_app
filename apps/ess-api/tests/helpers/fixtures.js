@@ -243,6 +243,26 @@ function company() {
       updated_at: '2026-10-15T05:00:00+00:00' },
   ];
 
+  // The monthly request limits HR can change (hr_ess_request_limits, seeded by
+  // 20261106000000): the KP values of 16 Oct 2026, as the migration seeds them.
+  const requestLimit = (type, limitCount, limitMinutes) => ({
+    type,
+    limit_count: limitCount,
+    limit_minutes: limitMinutes,
+    updated_at: '2026-10-16T04:00:00+00:00',
+    updated_by_user_id: null,
+    updated_by_name: null,
+  });
+  const requestLimits = [
+    requestLimit('on_duty', null, null),
+    requestLimit('fix_a_day', 3, null),
+    requestLimit('excuse_late', 3, null),
+    requestLimit('short_leave', null, 180),
+    requestLimit('leave_cl', 1, null),
+    requestLimit('leave_lwp', null, null),
+    requestLimit('wfh', 0, null),
+  ];
+
   const tables = {
     users,
     hr_employees: employees,
@@ -263,6 +283,9 @@ function company() {
     hr_staff_attendance: attendanceDays,
     hr_attendance_remarks: hrRemarks,
     hr_attendance_employee_remarks: employeeRemarks,
+    hr_ess_request_limits: requestLimits,
+    hr_shifts: [],
+    hr_holidays: [],
   };
   return { tables, people };
 }

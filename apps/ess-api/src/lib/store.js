@@ -81,6 +81,26 @@ const COLUMNS = Object.freeze({
     + 'emergency_name, emergency_relation, emergency_phone, updated_at, updated_by_name',
   mockReport: 'id, employee_id, branch_id, reported_at, client_at, kind, latitude, longitude, accuracy_m, provider, app_version, install_id',
   mockReportCreated: 'id, reported_at',
+  // C6: the numbers HR can change. updated_by_user_id is kept for the record and never sent.
+  requestLimit: 'type, limit_count, limit_minutes, updated_at, updated_by_name',
+  // C1-C12: a request as the app reads it. day_before and day_written_at stay server-side (HR's
+  // cancel reads them inside SQL), and the decided_by and cancelled_by account ids are never sent.
+  attendanceRequest: 'id, employee_id, type, status, day, reason, place, fix_in, fix_out, '
+    + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
+  leaveRequest: 'id, employee_id, type, status, day, reason, '
+    + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
+  // The counters and duplicate checks read these.
+  requestFacts: 'id, employee_id, type, status, day',
+  archive: 'id, family, request_id, employee_id',
+  // What ensureSnapshot reads before it copies a shift onto a day (attendanceRules.js:214-236).
+  daySnapshot: 'id, source, shift_start',
+  employeeShifts: 'id, shift_id, saturday_shift_id, sunday_shift_id, week_off_days',
+  shift: 'id, start_time, end_time, grace_minutes, is_active',
+  holiday: 'id, day, name, branch_id',
+  // The approvals Inbox's context: a day's late marks, and who else is off a day.
+  dayLate: 'employee_id, day, late_minutes, late_count, late_half_day, late_excused',
+  dayLeave: 'employee_id, day',
+  leaveOnDay: 'employee_id, day, status',
 });
 
 /**
@@ -99,6 +119,17 @@ const SESSION_FUNCTIONS = Object.freeze({
   passwordCurrent: 'hr_ess_session_password_current',
 });
 
+/** The functions db/migrations/20261106000004_hr_ess_request_functions.sql creates. */
+const REQUEST_FUNCTIONS = Object.freeze({
+  decideAttendance: 'hr_ess_decide_attendance_request',
+  decideLeave: 'hr_ess_decide_leave_request',
+  withdrawAttendance: 'hr_ess_withdraw_attendance_request',
+  withdrawLeave: 'hr_ess_withdraw_leave_request',
+  cancelAttendance: 'hr_ess_cancel_attendance_request',
+  cancelLeave: 'hr_ess_cancel_leave_request',
+  onDutyApply: 'hr_ess_on_duty_apply',
+});
+
 /**
  * Refusals the database gives on purpose, which the routes answer as a 409 rather than as a
  * failure: the name of the key or rule is in Postgres's message, which PostgREST passes on.
@@ -111,6 +142,11 @@ const REFUSALS = Object.freeze({
   SIGN_IN_KEPT: { code: '23505', name: 'hr_ess_sessions_sign_in_key' },
   OPEN_LIMIT: { code: '23514', name: 'hr_ess_data_requests_open_limit' },
   EMERGENCY_HALF: { code: '23514', name: 'hr_ess_personal_details_emergency_chk' },
+  // The Scheduler's own one-CL-a-month index, hit when two CL approvals race (or a CL is
+  // approved while somebody marks one): the decision answers 409 CL_LIMIT, as its own check does.
+  CL_TAKEN: { code: '23505', name: 'uq_hr_staff_attendance_one_cl_a_month' },
+  // Archiving a request twice for the same approver: the second is simply already archived.
+  ARCHIVE_KEPT: { code: '23505', name: 'hr_ess_request_archives_family_request_id_employee_id_key' },
 });
 
 const isRefusal = (error, { code, name }) =>
@@ -144,6 +180,9 @@ const LIST_LIMITS = Object.freeze({
   mockReports: 500,
   dataRequests: 500,
   myDataRequests: 100,
+  // My own requests, and one approver's Inbox.
+  myRequests: 100,
+  inbox: 100,
 });
 
 /**
@@ -224,8 +263,13 @@ function createSupabaseStore(config, { client } = {}) {
 
   const read = (table, build) => run('reading', table, () => build(db.from(table)));
   const write = (table, build, refusal) => run('writing', table, () => build(db.from(table)), refusal);
-  // The session functions read and write hr_ess_sessions, and arrive with it in one migration.
-  const call = (fn, args) => run('writing', 'hr_ess_sessions', () => db.rpc(fn, args));
+  /**
+   * A database function. The table it carries is for the 503's words (and for tests that make one
+   * table fail): the sessions functions read and write hr_ess_sessions, the request functions
+   * their request table. `refusal` is a database refusal the caller answers as its own 409.
+   */
+  const call = (fn, args, { table = 'hr_ess_sessions', refusal = null } = {}) =>
+    run('writing', table, () => db.rpc(fn, args), refusal);
 
   /** At most one row, or null. Every filter here is on a key that is unique in the schema. */
   const one = (table, columns, column, value) =>
@@ -470,6 +514,156 @@ function createSupabaseStore(config, { client } = {}) {
         return (branchId ? base.eq('branch_id', branchId) : base)
           .order('reported_at', { ascending: false }).limit(LIST_LIMITS.mockReports + 1);
       })) || [],
+
+    /* ── C6: the request limits HR can change ── */
+
+    getRequestLimits: () => list('hr_ess_request_limits', (q) => q.select(COLUMNS.requestLimit).order('type')),
+    /** One row per type (its primary key), so the update is at most one row; null for no such type. */
+    setRequestLimit: (type, patch) =>
+      write('hr_ess_request_limits', (q) => q.update(patch).eq('type', type).select(COLUMNS.requestLimit).maybeSingle()),
+
+    /* ── C1, C3: my attendance requests ── */
+
+    createAttendanceRequest: (row) =>
+      write('hr_ess_attendance_requests', (q) => q.insert([row]).select(COLUMNS.attendanceRequest).single()),
+    getAttendanceRequest: (id) => one('hr_ess_attendance_requests', COLUMNS.attendanceRequest, 'id', id),
+    listMyAttendanceRequests: async (employeeId) =>
+      (await read('hr_ess_attendance_requests', (q) => q.select(COLUMNS.attendanceRequest)
+        .eq('employee_id', employeeId).order('created_at', { ascending: false }).limit(LIST_LIMITS.myRequests))) || [],
+    /**
+     * The counters a form and the balances need: the caller's attendance requests whose day is
+     * in from..to, as the four columns that decide them -- never the reasons or the days' detail.
+     */
+    listMyRequestFacts: async (family, employeeId, from, to) => {
+      const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
+      return (await read(table, (q) => q.select(COLUMNS.requestFacts).eq('employee_id', employeeId)
+        .gte('day', from).lte('day', to))) || [];
+    },
+    /** Whether the same type+day already waits: the duplicate check before a request goes in. */
+    countPendingRequests: async ({ family, employeeId, type, day }) => {
+      const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
+      const rows = await read(table, (q) => q.select('id').eq('employee_id', employeeId)
+        .eq('type', type).eq('day', day).eq('status', 'pending'));
+      return (rows || []).length;
+    },
+
+    /* ── C2, C4, C5: my leave requests and the days the sheet records ── */
+
+    createLeaveRequest: (row) =>
+      write('hr_ess_leave_requests', (q) => q.insert([row]).select(COLUMNS.leaveRequest).single()),
+    getLeaveRequest: (id) => one('hr_ess_leave_requests', COLUMNS.leaveRequest, 'id', id),
+    listMyLeaveRequests: async (employeeId) =>
+      (await read('hr_ess_leave_requests', (q) => q.select(COLUMNS.leaveRequest)
+        .eq('employee_id', employeeId).order('created_at', { ascending: false }).limit(LIST_LIMITS.myRequests))) || [],
+    /** The CL and LWP days the sheet records for the month: the leave ledger the balance shows. */
+    listMyLeaveDays: async (employeeId, from, to) =>
+      (await read('hr_staff_attendance', (q) => q.select('day, leave_type').eq('employee_id', employeeId)
+        .eq('status', 'leave').in('leave_type', ['cl', 'lwp']).gte('day', from).lte('day', to))) || [],
+
+    /* ── D1, H6: the approvals Inbox ── */
+
+    /**
+     * One family's requests, oldest first. `employeeIds` limits it to those people (a manager's
+     * reports); without it, everybody (an HR decider's view). `status` null means any.
+     */
+    listRequestsForApprover: async ({ family, employeeIds = null, status = 'pending' }) => {
+      const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
+      const columns = family === 'leave' ? COLUMNS.leaveRequest : COLUMNS.attendanceRequest;
+      const limit = LIST_LIMITS.inbox + 1;
+      const withStatus = (q) => (status ? q.eq('status', status) : q);
+      if (employeeIds) {
+        const rows = await readIn(table, columns, 'employee_id', employeeIds,
+          (q) => withStatus(q).order('created_at', { ascending: true }).limit(limit));
+        return rows.sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)).slice(0, limit);
+      }
+      return (await read(table, (q) => withStatus(q.select(columns)).order('created_at', { ascending: true }).limit(limit))) || [];
+    },
+    /** One employee's requests of every status whose day is in from..to, for the context counts. */
+    listRequestCountsFor: async ({ family, employeeIds, from, to }) => {
+      const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
+      return readIn(table, COLUMNS.requestFacts, 'employee_id', employeeIds, (q) => q.gte('day', from).lte('day', to));
+    },
+    /** The day rows' late marks for the Inbox's context, for these days. */
+    listDayLateMarks: async (days) => {
+      const unique = [...new Set((days || []).filter(Boolean))];
+      if (!unique.length) return [];
+      return readIn('hr_staff_attendance', COLUMNS.dayLate, 'day', unique);
+    },
+    /** Who the sheet records on leave on these days. */
+    listDaysOnLeave: async (days) => {
+      const unique = [...new Set((days || []).filter(Boolean))];
+      if (!unique.length) return [];
+      return readIn('hr_staff_attendance', COLUMNS.dayLeave, 'day', unique, (q) => q.eq('status', 'leave'));
+    },
+    /** Leave requests, pending or approved, whose day is one of these: "who else is off". */
+    listLeaveRequestsOnDays: async (days, statuses) => {
+      const unique = [...new Set((days || []).filter(Boolean))];
+      if (!unique.length) return [];
+      return readIn('hr_ess_leave_requests', COLUMNS.leaveOnDay, 'day', unique, (q) => q.in('status', statuses));
+    },
+
+    /* ── the decisions, withdrawals and cancels (the SQL functions) ── */
+
+    /** A database refusal (a racing second CL) answers as the function's own cl_limit outcome. */
+    decideAttendanceRequest: async (args) => {
+      const out = await call(REQUEST_FUNCTIONS.decideAttendance, args,
+        { table: 'hr_ess_attendance_requests', refusal: REFUSALS.CL_TAKEN });
+      return out === REFUSED ? { outcome: 'cl_limit' } : out;
+    },
+    decideLeaveRequest: async (args) => {
+      const out = await call(REQUEST_FUNCTIONS.decideLeave, args,
+        { table: 'hr_ess_leave_requests', refusal: REFUSALS.CL_TAKEN });
+      return out === REFUSED ? { outcome: 'cl_limit' } : out;
+    },
+    withdrawAttendanceRequest: (args) =>
+      call(REQUEST_FUNCTIONS.withdrawAttendance, args, { table: 'hr_ess_attendance_requests' }),
+    withdrawLeaveRequest: (args) =>
+      call(REQUEST_FUNCTIONS.withdrawLeave, args, { table: 'hr_ess_leave_requests' }),
+    cancelAttendanceRequest: (args) =>
+      call(REQUEST_FUNCTIONS.cancelAttendance, args, { table: 'hr_ess_attendance_requests' }),
+    cancelLeaveRequest: (args) =>
+      call(REQUEST_FUNCTIONS.cancelLeave, args, { table: 'hr_ess_leave_requests' }),
+    /**
+     * The on-duty morning job (one call a day, idempotent): every approved on_duty request for
+     * `day` with no day row yet is written as present. Answers { applied, failed, employees }.
+     */
+    applyOnDutyDays: (day, at) =>
+      call(REQUEST_FUNCTIONS.onDutyApply, { p_day: day, p_now: at }, { table: 'hr_ess_attendance_requests' }),
+    /** Archiving twice is the same as once: the unique key answers the second one. */
+    createArchive: async (row) => {
+      const created = await write('hr_ess_request_archives', (q) => q.insert([row]), REFUSALS.ARCHIVE_KEPT);
+      return created !== REFUSED;
+    },
+    listMyArchives: async (employeeId) =>
+      (await read('hr_ess_request_archives', (q) => q.select(COLUMNS.archive).eq('employee_id', employeeId))) || [],
+
+    /* ── the day's shift snapshot, and the month's recompute (policy/attendance.js) ── */
+
+    getEmployeeShifts: (employeeId) => one('hr_employees', COLUMNS.employeeShifts, 'id', employeeId),
+    getShift: (shiftId) => one('hr_shifts', COLUMNS.shift, 'id', shiftId),
+    listHolidays: (from, to) => list('hr_holidays', (q) => q.select(COLUMNS.holiday).gte('day', from).lte('day', to)),
+    getDaySnapshotState: (employeeId, day) =>
+      read('hr_staff_attendance', (q) => q.select(COLUMNS.daySnapshot).eq('employee_id', employeeId).eq('day', day).maybeSingle()),
+    /** The shift a day is judged by, copied on while it has none (attendanceRules.js ensureSnapshot). */
+    setDaySnapshot: (id, snapshot) =>
+      write('hr_staff_attendance', (q) => q.update(snapshot).eq('id', id).select('id').maybeSingle()),
+    /**
+     * Re-work late, early and the third-late half day for the month of `day`. Before the
+     * Scheduler's shifts migration the function is missing and the rules are simply off
+     * (attendanceRules.js:20-22): that is not a failure of the decision that called this.
+     */
+    recomputeAttendance: async ({ employeeIds, day, today, halfDayMinutes }) => {
+      try {
+        await run('writing', 'hr_attendance_recompute', () => db.rpc('hr_attendance_recompute', {
+          p_employee_ids: employeeIds,
+          p_day: day,
+          p_today: today,
+          p_half_day_minutes: halfDayMinutes,
+        }));
+      } catch (e) {
+        if (!(e instanceof HttpError && e.code === 'MODULE_NOT_INSTALLED')) throw e;
+      }
+    },
 
     /* ── the audit trail ── */
 

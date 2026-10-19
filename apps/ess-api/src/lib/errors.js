@@ -114,6 +114,37 @@ const MESSAGES = Object.freeze({
   DEVICE_STATUS_FILTER: 'status must be active, revoked or all.',
   RESET_TARGET: 'Send either branch_id or employee_ids (1 to 500 employee ids), not both.',
   RESET_REASON: 'Say why the phones are being reset, in 3 to 200 characters.',
+
+  // C1-C12: requests, leave and approvals. The words the contract quotes; the codes the app reads
+  // are the keys, except where an outcome shares another endpoint's code (CL_LIMIT, DAY_OUT_OF_RANGE).
+  ATTENDANCE_REQUEST_TYPE: 'Choose the kind of attendance request: on duty, fix a day or excuse a late.',
+  LEAVE_REQUEST_TYPE: 'Choose casual leave or leave without pay.',
+  REQUEST_REASON: 'Say the reason, in 5 to 1,000 characters.',
+  REQUEST_PLACE: 'Say where the duty is, in 1 to 120 characters.',
+  REQUEST_TIMES: 'Give the corrected in or out times as HH:MM (24-hour).',
+  REQUEST_TIMES_NEEDED: 'Give the in time, the out time, or both.',
+  REQUEST_FUTURE: 'That day has not happened yet.',
+  REQUEST_WINDOW: 'Requests can be for this month or last month only.',
+  REQUEST_CLOSED: "Last month's requests closed on the 5th. Ask HR.",
+  DUPLICATE_REQUEST: 'You already have a request for that day. Wait for it to be decided.',
+  LIMIT_REACHED: "That is over this type's monthly limit. Check the balance on the form.",
+  REQUEST_NOT_FOUND: 'That request was not found.',
+  REQUEST_NOT_PENDING: 'Only a pending request can be withdrawn.',
+  DECIDE_DECISION: 'Mark the request approved or rejected.',
+  DECIDE_NOTE: 'Keep the note to 1,000 characters.',
+  DECIDE_REJECT_NOTE: 'Say why the request is rejected, in at least 3 characters. The employee sees it.',
+  ALREADY_DECIDED: 'That request has already been decided.',
+  NOT_AN_APPROVER: "Only the person's manager or HR can decide this request.",
+  NOT_LATE: 'That day is not a late arrival.',
+  TIMES_INCOMPLETE: 'The day would still be missing an in or out time. Ask the employee for the full times.',
+  DAY_LOCKED: 'That day is recorded as leave, a week off or a holiday. Change the day first.',
+  CL_TAKEN: "This month's CL is already taken. Reject this request, or approve it as leave without pay.",
+  CANNOT_CANCEL: 'Only an approved request can be cancelled.',
+  CANCEL_REASON: 'Say why it is cancelled, in 3 to 200 characters.',
+  APPROVAL_STATUS: 'status must be pending, approved, rejected, withdrawn, cancelled or all.',
+  LIMIT_TYPE: 'Choose a request type to change.',
+  LIMIT_VALUE: 'Give a whole number of requests (or minutes for short leave), or null for no limit.',
+  BALANCES_MONTH: 'Look at this month or last month.',
 });
 
 /** error and code first, and an extra field can never replace either of them. */

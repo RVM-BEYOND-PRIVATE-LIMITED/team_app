@@ -724,14 +724,331 @@ Object.assign(WAVE_2, {
   ],
 });
 
+/* ── Wave 3 (Phase 1C): requests, leave, approvals, cancels and the limits ── */
+
+const AR_REQ = '/api/ess/attendance-requests';
+const LR_REQ = '/api/ess/leave-requests';
+const BALANCES = '/api/ess/leave/balances';
+const INBOX = '/api/ess/approvals';
+const LIMITS = '/api/ess/hr/request-limits';
+const AID = (n) => `7c000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const LID = (n) => `7c000000-0001-4000-8000-${String(n).padStart(12, '0')}`;
+const ON_DUTY = { type: 'on_duty', day: '2026-10-15', reason: 'Client visit at the Pune centre.', place: 'Pune centre' };
+const A_FIX = { type: 'fix_a_day', day: '2026-10-15', reason: 'I forgot to punch out.', fix_out: '18:00' };
+
+/** A request row of either family, as the tables hold it. */
+const requestRow = (family, employeeId, id, change = {}) => {
+  const common = {
+    id,
+    employee_id: employeeId,
+    type: family === 'leave' ? 'cl' : 'on_duty',
+    status: 'pending',
+    day: '2026-10-15',
+    reason: 'Client visit at the Pune centre.',
+    day_before: null,
+    day_written_at: null,
+    decided_by_employee_id: null,
+    decided_by_user_id: null,
+    decided_by_name: null,
+    decided_at: null,
+    decision_note: null,
+    cancelled_by_user_id: null,
+    cancelled_by_name: null,
+    cancelled_at: null,
+    cancel_reason: null,
+    created_at: '2026-10-14T05:00:00+00:00',
+    updated_at: '2026-10-14T05:00:00+00:00',
+    ...change,
+  };
+  return family === 'attendance' ? { place: null, fix_in: null, fix_out: null, ...common } : common;
+};
+
+/** A day row, for the late marks and the days a fix or an excuse lands on. */
+const contractDayRow = (employeeId, day, change = {}) => ({
+  id: `7e000000-0000-4000-8000-${String(day.charCodeAt(9) * 37).padStart(12, '0')}`, employee_id: employeeId, branch_id: null,
+  day, status: 'present', leave_type: null, note: null, marked_by: null, marked_by_name: 'Test (self punch)',
+  marked_at: `${day}T04:00:00+00:00`, updated_at: `${day}T12:00:00+00:00`, source: 'self_punch',
+  first_in: `${day}T04:20:00+00:00`, last_out: `${day}T12:40:00+00:00`, worked_minutes: 500, shift_id: null,
+  shift_start: null, shift_end: null, grace_minutes: null, late_minutes: null, early_exit_minutes: null, late_count: null,
+  late_half_day: false, late_excused: false, late_excused_by_name: null, late_excused_reason: null, late_excused_at: null,
+  ...change,
+});
+
+/** One pending on-duty request from the attendance employee, one pending CL from the faculty member. */
+const withRequests = (w) => {
+  w.tables.hr_ess_attendance_requests = [requestRow('attendance', w.people.attendance.employee.id, AID(1), { place: 'Pune centre' })];
+  w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.faculty.employee.id, LID(2))];
+};
+
+/** A decided attendance request, for the cancel and archive scenarios. */
+const withApproved = (w) => {
+  w.tables.hr_ess_attendance_requests = [requestRow('attendance', w.people.attendance.employee.id, AID(3), {
+    status: 'approved', place: 'Pune centre', decided_by_name: 'Test Admin Manager', decided_at: '2026-10-16T06:00:00+00:00',
+  })];
+};
+
+const AT_SIX = () => new Date('2026-10-06T06:30:00.000Z');
+
+const WAVE_3 = {
+  'POST /api/ess/attendance-requests': [
+    ['201, on duty as an attendance session', call('attendance', post(AR_REQ, ON_DUTY))],
+    ['201, a fix as a portal login', call('faculty', post(AR_REQ, A_FIX))],
+    ['400 VALIDATION_FAILED, a type not offered', call('faculty', post(AR_REQ, { type: 'wfh', day: '2026-10-15', reason: 'Working from home today.' }))],
+    ['400 VALIDATION_FAILED, a day before last month', call('faculty', post(AR_REQ, { ...ON_DUTY, day: '2026-08-31' }))],
+    ['400 VALIDATION_FAILED, a fix for a day that has not happened', call('faculty', post(AR_REQ, { ...A_FIX, day: '2026-10-17' }))],
+    ['400 INVALID_JSON', call('faculty', (app, token) => request(app).post(AR_REQ).set(bearer(token)).set('Content-Type', 'application/json').send('{"type": '))],
+    ['401, no token', call('faculty', (app) => request(app).post(AR_REQ).send(ON_DUTY))],
+    ['403 NOT_LINKED', call('desk', post(AR_REQ, ON_DUTY))],
+    ['403 PASSWORD_CHANGE_REQUIRED', call('attendance', (app, _token, w) => post(AR_REQ, ON_DUTY)(app, tokens.attendance(w.people.attendance, 'pw')), {
+      setup: (w) => { w.people.attendance.account.password_set_at = null; },
+    })],
+    ['409 REQUEST_CLOSED', async () => {
+      const w = buildApp({ now: AT_SIX() });
+      return post(AR_REQ, { ...ON_DUTY, day: '2026-09-30' })(w.app, tokens.portal(w.people.faculty));
+    }],
+    ['409 DUPLICATE_REQUEST', call('attendance', post(AR_REQ, ON_DUTY), { setup: withRequests })],
+    ['409 LIMIT_REACHED', call('faculty', post(AR_REQ, A_FIX), {
+      prepare: (w) => { w.db.tables.hr_ess_request_limits.find((l) => l.type === 'fix_a_day').limit_count = 0; },
+    })],
+    ['413 PAYLOAD_TOO_LARGE', call('faculty', post(AR_REQ, { ...ON_DUTY, reason: 'x'.repeat(20 * 1024) }))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(AR_REQ, ON_DUTY)(app, tokens.portal(people.faculty));
+      return post(AR_REQ, { ...ON_DUTY, day: '2026-10-16' })(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', post(AR_REQ, ON_DUTY), { prepare: drop('hr_ess_attendance_requests') })],
+    ['503 UNAVAILABLE', call('faculty', post(AR_REQ, ON_DUTY), { prepare: fails('hr_ess_request_limits') })],
+    ['503 MODULE_DISABLED', call('faculty', post(AR_REQ, ON_DUTY), { env: { ESS_ENABLED: 'false' } })],
+  ],
+  'GET /api/ess/attendance-requests': [
+    ['200, mine', call('attendance', get(AR_REQ), { setup: withRequests })],
+    ['401, no token', call('attendance', (app) => request(app).get(AR_REQ))],
+    ['403 NOT_LINKED', call('desk', get(AR_REQ))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(AR_REQ)(app, tokens.portal(people.faculty));
+      return get(AR_REQ)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', get(AR_REQ), { prepare: drop('hr_ess_attendance_requests') })],
+  ],
+  'POST /api/ess/attendance-requests/{id}/withdraw': [
+    ['200, mine and pending', call('attendance', post(`${AR_REQ}/${AID(1)}/withdraw`, undefined), { setup: withRequests })],
+    ['400 VALIDATION_FAILED', call('attendance', post(`${AR_REQ}/42/withdraw`, undefined), { setup: withRequests })],
+    ['401, no token', call('attendance', (app) => request(app).post(`${AR_REQ}/${AID(1)}/withdraw`))],
+    ['403 NOT_LINKED', call('desk', post(`${AR_REQ}/${AID(1)}/withdraw`, undefined))],
+    ['404 NOT_FOUND, somebody else\'s', call('attendance', post(`${AR_REQ}/${LID(2)}/withdraw`, undefined), { setup: withRequests })],
+    ['409 REQUEST_NOT_PENDING', call('attendance', post(`${AR_REQ}/${AID(1)}/withdraw`, undefined), {
+      setup: (w) => { w.tables.hr_ess_attendance_requests = [requestRow('attendance', w.people.attendance.employee.id, AID(1), { status: 'withdrawn' })]; },
+    })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(`${AR_REQ}/${AID(1)}/withdraw`, undefined)(app, tokens.portal(people.faculty));
+      return post(`${AR_REQ}/${AID(1)}/withdraw`, undefined)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', post(`${AR_REQ}/${AID(1)}/withdraw`, undefined), { prepare: drop('hr_ess_attendance_requests') })],
+  ],
+  'POST /api/ess/leave-requests': [
+    ['201, a CL as a portal login', call('faculty', post(LR_REQ, { type: 'cl', day: '2026-10-20', reason: 'Family function at home.' }))],
+    ['400 VALIDATION_FAILED, a type it does not take', call('faculty', post(LR_REQ, { type: 'sick', day: '2026-10-20', reason: 'Down with a fever.' }))],
+    ['400 VALIDATION_FAILED, a short reason', call('faculty', post(LR_REQ, { type: 'cl', day: '2026-10-20', reason: 'home' }))],
+    ['401, no token', call('faculty', (app) => request(app).post(LR_REQ).send({ type: 'cl', day: '2026-10-20', reason: 'Family function at home.' }))],
+    ['403 PASSWORD_CHANGE_REQUIRED', call('attendance', (app, _token, w) => post(LR_REQ, { type: 'cl', day: '2026-10-20', reason: 'Family function at home.' })(app, tokens.attendance(w.people.attendance, 'pw')), {
+      setup: (w) => { w.people.attendance.account.password_set_at = null; },
+    })],
+    ['409 DUPLICATE_REQUEST', call('faculty', post(LR_REQ, { type: 'cl', day: '2026-10-15', reason: 'Family function at home.' }), { setup: withRequests })],
+    ['409 LIMIT_REACHED', call('faculty', post(LR_REQ, { type: 'cl', day: '2026-10-20', reason: 'Family function at home.' }), {
+      prepare: (w) => { w.db.tables.hr_staff_attendance.push(contractDayRow(w.people.faculty.employee.id, '2026-10-10', { status: 'leave', leave_type: 'cl', source: 'override' })); },
+    })],
+    ['409 REQUEST_CLOSED', async () => {
+      const w = buildApp({ now: AT_SIX() });
+      return post(LR_REQ, { type: 'cl', day: '2026-09-30', reason: 'Family function at home.' })(w.app, tokens.portal(w.people.faculty));
+    }],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(LR_REQ, { type: 'lwp', day: '2026-10-20', reason: 'Unpaid days at home.' })(app, tokens.portal(people.faculty));
+      return post(LR_REQ, { type: 'lwp', day: '2026-10-21', reason: 'Unpaid days at home.' })(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', post(LR_REQ, { type: 'cl', day: '2026-10-20', reason: 'Family function at home.' }), { prepare: drop('hr_ess_leave_requests') })],
+    ['503 UNAVAILABLE', call('faculty', post(LR_REQ, { type: 'cl', day: '2026-10-20', reason: 'Family function at home.' }), { prepare: fails('hr_ess_request_limits') })],
+    ['503 MODULE_DISABLED', call('faculty', post(LR_REQ, { type: 'cl', day: '2026-10-20', reason: 'Family function at home.' }), { env: { ESS_ENABLED: 'false' } })],
+  ],
+  'GET /api/ess/leave-requests': [
+    ['200, mine', call('faculty', get(LR_REQ), { setup: withRequests })],
+    ['401, no token', call('faculty', (app) => request(app).get(LR_REQ))],
+    ['403 NOT_LINKED', call('desk', get(LR_REQ))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(LR_REQ)(app, tokens.portal(people.faculty));
+      return get(LR_REQ)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', get(LR_REQ), { prepare: drop('hr_ess_leave_requests') })],
+  ],
+  'POST /api/ess/leave-requests/{id}/withdraw': [
+    ['200, mine and pending', call('faculty', post(`${LR_REQ}/${LID(2)}/withdraw`, undefined), { setup: withRequests })],
+    ['400 VALIDATION_FAILED', call('faculty', post(`${LR_REQ}/42/withdraw`, undefined), { setup: withRequests })],
+    ['401, no token', call('faculty', (app) => request(app).post(`${LR_REQ}/${LID(2)}/withdraw`))],
+    ['403 NOT_LINKED', call('desk', post(`${LR_REQ}/${LID(2)}/withdraw`, undefined))],
+    ['404 NOT_FOUND, somebody else\'s', call('faculty', post(`${LR_REQ}/${AID(1)}/withdraw`, undefined), { setup: withRequests })],
+    ['409 REQUEST_NOT_PENDING', call('faculty', post(`${LR_REQ}/${LID(2)}/withdraw`, undefined), {
+      setup: (w) => { w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.faculty.employee.id, LID(2), { status: 'approved', decided_by_name: 'Test HR Manager', decided_at: '2026-10-15T05:00:00+00:00' })]; },
+    })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(`${LR_REQ}/${LID(2)}/withdraw`, undefined)(app, tokens.portal(people.faculty));
+      return post(`${LR_REQ}/${LID(2)}/withdraw`, undefined)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('faculty', post(`${LR_REQ}/${LID(2)}/withdraw`, undefined), { prepare: drop('hr_ess_leave_requests') })],
+  ],
+  'GET /api/ess/leave/balances': [
+    ['200, this month', call('attendance', get(BALANCES), { setup: withRequests })],
+    ['400 DAY_OUT_OF_RANGE', call('attendance', get(`${BALANCES}?month=2026-08`))],
+    ['400 VALIDATION_FAILED', call('attendance', get(`${BALANCES}?month=26-10`))],
+    ['401, no token', call('attendance', (app) => request(app).get(BALANCES))],
+    ['403 NOT_LINKED', call('desk', get(BALANCES))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(BALANCES)(app, tokens.portal(people.faculty));
+      return get(BALANCES)(app, tokens.portal(people.faculty));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('attendance', get(BALANCES), { prepare: drop('hr_ess_request_limits') })],
+  ],
+  'GET /api/ess/approvals': [
+    ['200, a manager', call('admin_manager', get(INBOX), { setup: withRequests })],
+    ['400 VALIDATION_FAILED', call('hr', get(`${INBOX}?status=lost`))],
+    ['401, no token', call('hr', (app) => request(app).get(INBOX))],
+    ['403 NOT_AN_APPROVER', call('hr_executive', get(`${INBOX}?status=all`))],
+    ['403 NOT_LINKED', call('desk', get(INBOX))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(INBOX)(app, tokens.portal(people.hr));
+      return get(INBOX)(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('admin_manager', get(INBOX), { prepare: drop('hr_ess_attendance_requests') })],
+  ],
+  'POST /api/ess/approvals/{family}/{id}/decide': [
+    ['200, a manager approves an on-duty day', call('admin_manager', post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'approve' }), { setup: withRequests })],
+    ['400 VALIDATION_FAILED, no decision', call('admin_manager', post(`${INBOX}/attendance/${AID(1)}/decide`, {}), { setup: withRequests })],
+    ['400 VALIDATION_FAILED, a bad id', call('admin_manager', post(`${INBOX}/attendance/nope/decide`, { decision: 'approve' }), { setup: withRequests })],
+    ['401, no token', call('admin_manager', (app) => request(app).post(`${INBOX}/attendance/${AID(1)}/decide`).send({ decision: 'approve' }))],
+    ['403 NOT_AN_APPROVER', call('attendance', post(`${INBOX}/leave/${LID(2)}/decide`, { decision: 'approve' }), { setup: withRequests })],
+    ['404 NOT_FOUND, no such request', call('hr', post(`${INBOX}/attendance/${AID(9)}/decide`, { decision: 'approve' }), { setup: withRequests })],
+    ['404 NOT_FOUND, no such family', call('hr', post(`${INBOX}/wall/${AID(1)}/decide`, { decision: 'approve' }))],
+    ['409 ALREADY_DECIDED', async () => {
+      const w = buildApp({ setup: withRequests });
+      await post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'approve' })(w.app, tokens.portal(w.people.admin_manager));
+      return post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'reject', note: 'Changed my mind.' })(w.app, tokens.portal(w.people.admin_manager));
+    }],
+    ['409 CL_LIMIT', call('hr', post(`${INBOX}/leave/${LID(2)}/decide`, { decision: 'approve' }), {
+      setup: withRequests,
+      prepare: (w) => { w.db.tables.hr_staff_attendance.push(contractDayRow(w.people.faculty.employee.id, '2026-10-10', { status: 'leave', leave_type: 'cl', source: 'override' })); },
+    })],
+    ['409 NOT_LATE', call('admin_manager', post(`${INBOX}/attendance/${AID(4)}/decide`, { decision: 'approve' }), {
+      setup: (w) => { w.tables.hr_ess_attendance_requests = [requestRow('attendance', w.people.attendance.employee.id, AID(4), { type: 'excuse_late', place: null, day: '2026-10-13' })]; },
+    })],
+    ['409 TIMES_INCOMPLETE', call('admin_manager', post(`${INBOX}/attendance/${AID(5)}/decide`, { decision: 'approve' }), {
+      setup: (w) => { w.tables.hr_ess_attendance_requests = [requestRow('attendance', w.people.attendance.employee.id, AID(5), { type: 'fix_a_day', place: null, day: '2026-10-13', fix_in: '09:00' })]; },
+    })],
+    ['409 DAY_LOCKED', call('admin_manager', post(`${INBOX}/attendance/${AID(6)}/decide`, { decision: 'approve' }), {
+      setup: (w) => {
+        w.tables.hr_staff_attendance.push(contractDayRow(w.people.attendance.employee.id, '2026-10-13', { status: 'week_off' }));
+        w.tables.hr_ess_attendance_requests = [requestRow('attendance', w.people.attendance.employee.id, AID(6), { type: 'fix_a_day', place: null, day: '2026-10-13', fix_out: '18:00' })];
+      },
+    })],
+    ['409 REQUEST_CLOSED', async () => {
+      const w = buildApp({ now: AT_SIX(), setup: (x) => { x.tables.hr_ess_leave_requests = [requestRow('leave', x.people.faculty.employee.id, LID(7), { type: 'lwp', day: '2026-09-30' })]; } });
+      return post(`${INBOX}/leave/${LID(7)}/decide`, { decision: 'approve' })(w.app, tokens.portal(w.people.hr));
+    }],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ setup: withRequests, limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'approve' })(app, tokens.portal(people.admin_manager));
+      return post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'approve' })(app, tokens.portal(people.admin_manager));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'approve' }), { setup: withRequests, prepare: drop('hr_ess_attendance_requests') })],
+  ],
+  'POST /api/ess/approvals/{family}/{id}/archive': [
+    ['204, mine to clear', call('admin_manager', post(`${INBOX}/attendance/${AID(1)}/archive`, undefined), { setup: withRequests })],
+    ['400 VALIDATION_FAILED', call('admin_manager', post(`${INBOX}/attendance/42/archive`, undefined), { setup: withRequests })],
+    ['401, no token', call('admin_manager', (app) => request(app).post(`${INBOX}/attendance/${AID(1)}/archive`))],
+    ['403 NOT_AN_APPROVER', call('faculty', post(`${INBOX}/attendance/${AID(1)}/archive`, undefined), { setup: withRequests })],
+    ['404 NOT_FOUND', call('hr', post(`${INBOX}/attendance/${AID(9)}/archive`, undefined), { setup: withRequests })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ setup: withRequests, limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(`${INBOX}/attendance/${AID(1)}/archive`, undefined)(app, tokens.portal(people.admin_manager));
+      return post(`${INBOX}/attendance/${AID(1)}/archive`, undefined)(app, tokens.portal(people.admin_manager));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('admin_manager', post(`${INBOX}/attendance/${AID(1)}/archive`, undefined), { setup: withRequests, prepare: drop('hr_ess_attendance_requests') })],
+  ],
+  'POST /api/ess/hr/attendance-requests/{id}/cancel': [
+    ['200, an approved one comes back', call('hr', post(`/api/ess/hr/attendance-requests/${AID(3)}/cancel`, { reason: 'Recorded by mistake.' }), { setup: withApproved })],
+    ['400 VALIDATION_FAILED, a short reason', call('hr', post(`/api/ess/hr/attendance-requests/${AID(3)}/cancel`, { reason: 'x' }), { setup: withApproved })],
+    ['401, no token', call('hr', (app) => request(app).post(`/api/ess/hr/attendance-requests/${AID(3)}/cancel`).send({ reason: 'Recorded by mistake.' }))],
+    ['403 ATTENDANCE_OVERRIDE_DENIED, an HR Executive', call('hr_executive', post(`/api/ess/hr/attendance-requests/${AID(3)}/cancel`, { reason: 'Let me, too.' }), { setup: withApproved })],
+    ['404 NOT_FOUND', call('hr', post(`/api/ess/hr/attendance-requests/${AID(9)}/cancel`, { reason: 'Nothing there.' }), { setup: withApproved })],
+    ['409 CANNOT_CANCEL, still pending', call('hr', post(`/api/ess/hr/attendance-requests/${AID(1)}/cancel`, { reason: 'Not yet decided.' }), { setup: withRequests })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ setup: withApproved, limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(`/api/ess/hr/attendance-requests/${AID(3)}/cancel`, { reason: 'Recorded by mistake.' })(app, tokens.portal(people.hr));
+      return post(`/api/ess/hr/attendance-requests/${AID(3)}/cancel`, { reason: 'Recorded by mistake.' })(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', post(`/api/ess/hr/attendance-requests/${AID(3)}/cancel`, { reason: 'Recorded by mistake.' }), { setup: withApproved, prepare: drop('hr_ess_attendance_requests') })],
+  ],
+  'POST /api/ess/hr/leave-requests/{id}/cancel': [
+    ['200, an approved one comes back', call('hr', post(`/api/ess/hr/leave-requests/${LID(4)}/cancel`, { reason: 'The dates changed.' }), {
+      setup: (w) => { w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.faculty.employee.id, LID(4), { status: 'approved', decided_by_name: 'Test HR Manager', decided_at: '2026-10-16T06:00:00+00:00' })]; },
+    })],
+    ['400 VALIDATION_FAILED, a short reason', call('hr', post(`/api/ess/hr/leave-requests/${LID(4)}/cancel`, { reason: 'x' }), {
+      setup: (w) => { w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.faculty.employee.id, LID(4), { status: 'approved', decided_by_name: 'Test HR Manager', decided_at: '2026-10-16T06:00:00+00:00' })]; },
+    })],
+    ['401, no token', call('hr', (app) => request(app).post(`/api/ess/hr/leave-requests/${LID(4)}/cancel`).send({ reason: 'The dates changed.' }))],
+    ['403 ATTENDANCE_OVERRIDE_DENIED', call('hod', post(`/api/ess/hr/leave-requests/${LID(2)}/cancel`, { reason: 'The dates changed.' }), { setup: withRequests })],
+    ['404 NOT_FOUND', call('hr', post(`/api/ess/hr/leave-requests/${LID(9)}/cancel`, { reason: 'Nothing there.' }), { setup: withRequests })],
+    ['409 CANNOT_CANCEL, still pending', call('hr', post(`/api/ess/hr/leave-requests/${LID(2)}/cancel`, { reason: 'Not yet decided.' }), { setup: withRequests })],
+    ['429 RATE_LIMITED', async () => {
+      const setup = (w) => { w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.faculty.employee.id, LID(4), { status: 'approved', decided_by_name: 'Test HR Manager', decided_at: '2026-10-16T06:00:00+00:00' })]; };
+      const { app, people } = buildApp({ setup, limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await post(`/api/ess/hr/leave-requests/${LID(4)}/cancel`, { reason: 'The dates changed.' })(app, tokens.portal(people.hr));
+      return post(`/api/ess/hr/leave-requests/${LID(4)}/cancel`, { reason: 'The dates changed.' })(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', post(`/api/ess/hr/leave-requests/${LID(4)}/cancel`, { reason: 'The dates changed.' }), { setup: withRequests, prepare: drop('hr_ess_leave_requests') })],
+  ],
+  'GET /api/ess/hr/request-limits': [
+    ['200, the seeded limits', call('hr', get(LIMITS))],
+    ['401, no token', call('hr', (app) => request(app).get(LIMITS))],
+    ['403 ATTENDANCE_OVERRIDE_DENIED', call('hr_executive', get(LIMITS))],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await get(LIMITS)(app, tokens.portal(people.hr));
+      return get(LIMITS)(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', get(LIMITS), { prepare: drop('hr_ess_request_limits') })],
+  ],
+  'PUT /api/ess/hr/request-limits/{type}': [
+    ['200, a count type', call('hr', put(`${LIMITS}/fix_a_day`, { limit_count: 5 }))],
+    ['200, cleared to no limit', call('super_admin', put(`${LIMITS}/leave_lwp`, { limit_count: null }))],
+    ['400 VALIDATION_FAILED, not a type', call('hr', put(`${LIMITS}/tea_break`, { limit_count: 2 }))],
+    ['400 VALIDATION_FAILED, a negative number', call('hr', put(`${LIMITS}/fix_a_day`, { limit_count: -1 }))],
+    ['401, no token', call('hr', (app) => request(app).put(`${LIMITS}/fix_a_day`).send({ limit_count: 5 }))],
+    ['403 ATTENDANCE_OVERRIDE_DENIED', call('admin_manager', put(`${LIMITS}/fix_a_day`, { limit_count: 5 }))],
+    ['404 NOT_FOUND, a row somebody deleted', call('hr', put(`${LIMITS}/fix_a_day`, { limit_count: 5 }), {
+      prepare: (w) => { w.db.tables.hr_ess_request_limits = w.db.tables.hr_ess_request_limits.filter((l) => l.type !== 'fix_a_day'); },
+    })],
+    ['429 RATE_LIMITED', async () => {
+      const { app, people } = buildApp({ limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
+      await put(`${LIMITS}/fix_a_day`, { limit_count: 5 })(app, tokens.portal(people.hr));
+      return put(`${LIMITS}/fix_a_day`, { limit_count: 5 })(app, tokens.portal(people.hr));
+    }],
+    ['503 MODULE_NOT_INSTALLED', call('hr', put(`${LIMITS}/fix_a_day`, { limit_count: 5 }), { prepare: drop('hr_ess_request_limits') })],
+  ],
+};
+
 describe('the scenario tables', () => {
-  it('cover every route Wave 2 added', () => {
+  it('cover every route Wave 2 and Wave 3 added', () => {
     const wave1 = ['GET /api/ess/health', 'GET /api/ess/me', 'GET /api/ess/me/capabilities'];
     const served = C.essRoutes(buildApp().app).filter((route) => !wave1.includes(route));
-    expect(Object.keys(WAVE_2).sort()).toEqual(served);
+    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3)].sort()).toEqual(served);
   });
 
-  it.each(Object.entries(WAVE_2))('provoke every status %s documents', (route, scenarios) => {
+  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3)])('provoke every status %s documents', (route, scenarios) => {
     const [method, path] = route.split(' ');
     const documented = Object.keys(C.operation(method, path).operation.responses).filter((s) => s !== 'default');
     const provoked = new Set(scenarios.map(([label]) => label.slice(0, 3)));
@@ -739,7 +1056,7 @@ describe('the scenario tables', () => {
   });
 });
 
-describe.each(Object.entries(WAVE_2))('%s', (route, scenarios) => {
+describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3)])('%s', (route, scenarios) => {
   const [method, path] = route.split(' ');
   it.each(scenarios)('%s', async (label, provoke) => {
     quietErrors();

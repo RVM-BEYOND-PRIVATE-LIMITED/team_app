@@ -159,6 +159,23 @@ const REFUSALS = [
   refusal('audit details that are not an object', "INSERT INTO public.hr_ess_audit (actor_name, action, details) VALUES ('HR', 'devices.reset', '[]'::jsonb)"),
   refusal('an audit action that is not a dotted name', "INSERT INTO public.hr_ess_audit (actor_name, action) VALUES ('HR', 'Reset Devices')"),
   refusal('an audit row with no actor name', "INSERT INTO public.hr_ess_audit (action) VALUES ('devices.reset')", 'not_null_violation'),
+  refusal('an attendance request of a type it does not take', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place) VALUES (e, 'wfh', DATE '2026-10-16', 'Work from home, please.', 'Home')"),
+  refusal('an on-duty request with no place', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason) VALUES (e, 'on_duty', DATE '2026-10-16', 'Client visit, please.')"),
+  refusal('a fix-a-day request with no times', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason) VALUES (e, 'fix_a_day', DATE '2026-10-16', 'I forgot to punch out.')"),
+  refusal('an excuse-late request carrying times', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, fix_in) VALUES (e, 'excuse_late', DATE '2026-10-16', 'The bus was late.', TIME '09:00')"),
+  refusal('a request reason of four characters', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place) VALUES (e, 'on_duty', DATE '2026-10-16', 'fix!', 'Site')"),
+  refusal('a pending request that says it was decided', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, decided_at, decided_by_name) VALUES (e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site', now(), 'HR')"),
+  refusal('a cancelled request with no cancel time', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, decided_at, decided_by_name, status) VALUES (e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site', now(), 'HR', 'cancelled')"),
+  refusal('a leave request of a type it does not take', "INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason) VALUES (e, 'sick', DATE '2026-10-16', 'I am not well.')"),
+  refusal('a request limit of an unknown type', "INSERT INTO public.hr_ess_request_limits (type, limit_count) VALUES ('tea_break', 2)"),
+  refusal('a minutes limit kept in the count column', "INSERT INTO public.hr_ess_request_limits (type, limit_count) VALUES ('short_leave', 5)"),
+  refusal('a negative request limit', "INSERT INTO public.hr_ess_request_limits (type, limit_count) VALUES ('fix_a_day', -1)"),
+  refusal('an archive in an unknown family', "INSERT INTO public.hr_ess_request_archives (family, request_id, employee_id) VALUES ('wall', gen_random_uuid(), e)"),
+  refusal('a second archive for the same request and person', "INSERT INTO public.hr_ess_request_archives (family, request_id, employee_id) VALUES ('attendance', '7c000000-0000-4000-8000-000000000001', e), ('attendance', '7c000000-0000-4000-8000-000000000001', e)", 'unique_violation'),
+  refusal('a history row with an unknown action', `INSERT INTO public.hr_ess_attendance_requests (id, employee_id, type, day, reason, place)
+      VALUES ('7c000000-0000-4000-8000-000000000002', e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site');
+    INSERT INTO public.hr_ess_attendance_request_history (request_id, action)
+      VALUES ('7c000000-0000-4000-8000-000000000002', 'read')`),
 ];
 
 /** Rows the ESS writes must go in, take their defaults, and follow an employee's deletion. */
@@ -211,6 +228,176 @@ BEGIN
   DELETE FROM public.users WHERE id = u;
   SELECT actor_user_id, actor_employee_id, actor_name INTO r FROM public.hr_ess_audit WHERE target_employee_id = e;
   IF r.actor_user_id IS NOT NULL OR r.actor_employee_id IS NOT NULL OR r.actor_name <> 'Test HR' THEN RAISE EXCEPTION 'audit actor'; END IF;
+END $check$;`;
+
+/** The request functions, run for real: decide, withdraw, cancel, the morning job, and the
+ * refusals they re-check. Everything the functions write is checked against what the endpoints
+ * promise (docs/06-backend-phases.md, Phase 1C). Callers' identities are plain uuids: the
+ * functions record them, never verify them (that is employeeAuth's job). */
+const REQUEST_FLOW = `DO $check$
+DECLARE
+  e uuid := gen_random_uuid();
+  m uuid := gen_random_uuid();
+  u uuid := gen_random_uuid();
+  b uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'Asia/Kolkata')::date;
+  v_month date := date_trunc('month', v_today::timestamp)::date;
+  v_out jsonb;
+  v_row record;
+  r_id uuid;
+  second_id uuid;
+BEGIN
+  INSERT INTO public.hr_employees (id, full_name, branch_id) VALUES (e, 'Test Requester', b);
+  INSERT INTO public.hr_employees (id, full_name) VALUES (m, 'Test Manager');
+  INSERT INTO public.users (id) VALUES (u);
+  INSERT INTO public.hr_branches (id) VALUES (b);
+
+  -- The limits are seeded, in the one place HR can change them.
+  IF (SELECT count(*) FROM public.hr_ess_request_limits) <> 7 THEN RAISE EXCEPTION 'the limits are not seeded'; END IF;
+  IF (SELECT limit_count FROM public.hr_ess_request_limits WHERE type = 'fix_a_day') <> 3 THEN RAISE EXCEPTION 'the fix-a-day limit'; END IF;
+  IF (SELECT limit_minutes FROM public.hr_ess_request_limits WHERE type = 'short_leave') <> 180 THEN RAISE EXCEPTION 'the short-leave limit'; END IF;
+
+  -- Withdraw: the person's own, only while pending; nobody else's, and never leaked.
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place)
+    VALUES (e, 'on_duty', v_today - 1, 'Client visit.', 'Faridabad') RETURNING id INTO r_id;
+  IF (SELECT action FROM public.hr_ess_attendance_request_history WHERE request_id = r_id) <> 'filed' THEN
+    RAISE EXCEPTION 'the filed history row';
+  END IF;
+  v_out := public.hr_ess_withdraw_attendance_request(r_id, m, now());
+  IF v_out ->> 'outcome' <> 'not_found' THEN RAISE EXCEPTION 'a withdraw by somebody else: %', v_out; END IF;
+  v_out := public.hr_ess_withdraw_attendance_request(r_id, e, now());
+  IF v_out ->> 'outcome' <> 'withdrawn' THEN RAISE EXCEPTION 'the withdraw: %', v_out; END IF;
+  v_out := public.hr_ess_withdraw_attendance_request(r_id, e, now());
+  IF v_out ->> 'outcome' <> 'not_pending' THEN RAISE EXCEPTION 'a second withdraw: %', v_out; END IF;
+
+  -- On duty on a past day: the approval writes the day; the cancel takes it away again.
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place)
+    VALUES (e, 'on_duty', v_today - 1, 'College drive.', 'Pune centre') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', true, NULL, now(), 240);
+  IF v_out ->> 'outcome' <> 'approved' OR NOT (v_out ->> 'day_written')::boolean THEN
+    RAISE EXCEPTION 'the on-duty approval: %', v_out;
+  END IF;
+  SELECT status, note, source INTO v_row FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today - 1;
+  IF v_row.status <> 'present' OR v_row.note <> 'On duty: Pune centre' OR v_row.source <> 'override' THEN
+    RAISE EXCEPTION 'the on-duty day: %, %, %', v_row.status, v_row.note, v_row.source;
+  END IF;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', true, NULL, now(), 240);
+  IF v_out ->> 'outcome' <> 'not_pending' THEN RAISE EXCEPTION 'a second decision: %', v_out; END IF;
+  v_out := public.hr_ess_cancel_attendance_request(r_id, m, u, 'Test Manager', 'Not needed any more.', now());
+  IF v_out ->> 'outcome' <> 'cancelled' THEN RAISE EXCEPTION 'the cancel: %', v_out; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today - 1) THEN
+    RAISE EXCEPTION 'the cancelled on-duty day is still there';
+  END IF;
+  v_out := public.hr_ess_cancel_attendance_request(r_id, m, u, 'Test Manager', 'Again.', now());
+  IF v_out ->> 'outcome' <> 'not_approved' THEN RAISE EXCEPTION 'a second cancel: %', v_out; END IF;
+
+  -- Fix a day: the other side of the day is kept, the day is judged by its times, and the cancel
+  -- puts back exactly the row the approval found.
+  INSERT INTO public.hr_staff_attendance (employee_id, branch_id, day, status, source, first_in)
+    VALUES (e, b, v_today - 2, 'absent', 'auto', ((v_today - 2) + TIME '09:00') AT TIME ZONE 'Asia/Kolkata');
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, fix_out)
+    VALUES (e, 'fix_a_day', v_today - 2, 'I forgot to punch out.', TIME '18:00') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', true, 'Checked with the branch.', now(), 240);
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the fix approval: %', v_out; END IF;
+  SELECT status, first_in, last_out, worked_minutes, source INTO v_row
+    FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today - 2;
+  IF v_row.status <> 'present' OR v_row.worked_minutes <> 540 OR v_row.source <> 'override'
+     OR v_row.last_out <> (((v_today - 2) + TIME '18:00') AT TIME ZONE 'Asia/Kolkata') THEN
+    RAISE EXCEPTION 'the fixed day: %, %, %, %', v_row.status, v_row.worked_minutes, v_row.source, v_row.last_out;
+  END IF;
+  v_out := public.hr_ess_cancel_attendance_request(r_id, m, u, 'Test Manager', 'Wrong day.', now());
+  IF v_out ->> 'outcome' <> 'cancelled' THEN RAISE EXCEPTION 'the fix cancel: %', v_out; END IF;
+  SELECT status, first_in, last_out, source INTO v_row
+    FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today - 2;
+  IF v_row.status <> 'absent' OR v_row.last_out IS NOT NULL OR v_row.source <> 'auto' THEN
+    RAISE EXCEPTION 'the restored day: %, %, %', v_row.status, v_row.last_out, v_row.source;
+  END IF;
+
+  -- Excuse a late: the excuse lands on the day (HR's own fields), the cancel takes it back.
+  INSERT INTO public.hr_staff_attendance (employee_id, day, status, source, late_minutes)
+    VALUES (e, v_today - 3, 'present', 'self_punch', 20);
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason)
+    VALUES (e, 'excuse_late', v_today - 3, 'The bus broke down.') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', true, NULL, now(), 240);
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the excuse approval: %', v_out; END IF;
+  SELECT late_excused, late_excused_by_name, late_excused_reason INTO v_row
+    FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today - 3;
+  IF NOT v_row.late_excused OR v_row.late_excused_by_name <> 'Test Manager' OR v_row.late_excused_reason <> 'The bus broke down.' THEN
+    RAISE EXCEPTION 'the excused late: %, %, %', v_row.late_excused, v_row.late_excused_by_name, v_row.late_excused_reason;
+  END IF;
+  v_out := public.hr_ess_cancel_attendance_request(r_id, m, u, 'Test Manager', 'Not the one.', now());
+  IF v_out ->> 'outcome' <> 'cancelled' THEN RAISE EXCEPTION 'the excuse cancel: %', v_out; END IF;
+  IF (SELECT late_excused FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today - 3) THEN
+    RAISE EXCEPTION 'the excuse is not undone';
+  END IF;
+
+  -- Not a late, and the future, are refused; a rejection needs a reason.
+  INSERT INTO public.hr_staff_attendance (employee_id, day, status, source) VALUES (e, v_today - 4, 'present', 'self_punch');
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason)
+    VALUES (e, 'excuse_late', v_today - 4, 'On time, I think.') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', true, NULL, now(), 240);
+  IF v_out ->> 'outcome' <> 'not_late' THEN RAISE EXCEPTION 'an excuse of a day that is not late: %', v_out; END IF;
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, fix_in, fix_out)
+    VALUES (e, 'fix_a_day', v_today + 1, 'While I remember.', TIME '09:00', TIME '18:00') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', true, NULL, now(), 240);
+  IF v_out ->> 'outcome' <> 'future' THEN RAISE EXCEPTION 'a fix of a future day: %', v_out; END IF;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', false, NULL, now(), 240);
+  IF v_out ->> 'outcome' <> 'note_required' THEN RAISE EXCEPTION 'a rejection with no reason: %', v_out; END IF;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', false, 'Not yet.', now(), 240);
+  IF v_out ->> 'outcome' <> 'rejected' THEN RAISE EXCEPTION 'the rejection: %', v_out; END IF;
+
+  -- One CL a month: the first is approved, a second in the same month is refused, and cancelling
+  -- the first makes room again. Leave may be recorded ahead.
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
+    VALUES (e, 'cl', v_month + 1, 'Family function.') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the CL approval: %', v_out; END IF;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
+    VALUES (e, 'cl', v_month + 2, 'One more.') RETURNING id INTO second_id;
+  v_out := public.hr_ess_decide_leave_request(second_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'cl_limit' THEN RAISE EXCEPTION 'a second CL: %', v_out; END IF;
+  v_out := public.hr_ess_cancel_leave_request(r_id, m, u, 'Test Manager', 'Moved it.', now());
+  IF v_out ->> 'outcome' <> 'cancelled' THEN RAISE EXCEPTION 'the CL cancel: %', v_out; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_month + 1 AND leave_type = 'cl') THEN
+    RAISE EXCEPTION 'the cancelled CL is still on the day';
+  END IF;
+  v_out := public.hr_ess_decide_leave_request(second_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the CL after the cancel: %', v_out; END IF;
+
+  -- The window: before last month is outside it; last month is open on the 5th and closed on the 6th.
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
+    VALUES (e, 'lwp', (v_month - interval '1 month')::date - 1, 'Long ago.') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'too_old' THEN RAISE EXCEPTION 'a day before last month: %', v_out; END IF;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
+    VALUES (e, 'lwp', (v_month - interval '1 month')::date + 3, 'Last month, unpaid.') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL,
+    ((v_month + interval '5 days' + interval '6 hours') AT TIME ZONE 'Asia/Kolkata'));
+  IF v_out ->> 'outcome' <> 'cutoff' THEN RAISE EXCEPTION 'last month after the 5th: %', v_out; END IF;
+  v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL,
+    ((v_month + interval '4 days' + interval '23 hours') AT TIME ZONE 'Asia/Kolkata'));
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'last month on the 5th: %', v_out; END IF;
+
+  -- The morning job: an approved on-duty day with no row is written; a day that already has a row
+  -- is left alone; running again changes nothing.
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, status, decided_by_name, decided_at)
+    VALUES (e, 'on_duty', v_today, 'Away on a course.', 'Ahmedabad', 'approved', 'Test Manager', now());
+  v_out := public.hr_ess_on_duty_apply(v_today, now());
+  IF (v_out ->> 'applied')::integer <> 1 THEN RAISE EXCEPTION 'the job applied %: %', v_out ->> 'applied', v_out; END IF;
+  SELECT status, note INTO v_row FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today;
+  IF v_row.status <> 'present' OR v_row.note <> 'On duty: Ahmedabad' THEN RAISE EXCEPTION 'the job day: %, %', v_row.status, v_row.note; END IF;
+  v_out := public.hr_ess_on_duty_apply(v_today, now());
+  IF (v_out ->> 'applied')::integer <> 0 THEN RAISE EXCEPTION 'a second run applied %', v_out ->> 'applied'; END IF;
+
+  -- The employee's deletion takes the requests, their history and the archives with it.
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason) VALUES (e, 'lwp', v_today, 'Unpaid.') RETURNING id INTO r_id;
+  INSERT INTO public.hr_ess_request_archives (family, request_id, employee_id) VALUES ('leave', r_id, m);
+  DELETE FROM public.hr_employees WHERE id = e;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_attendance_requests WHERE employee_id = e) THEN RAISE EXCEPTION 'requests kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_leave_requests WHERE employee_id = e) THEN RAISE EXCEPTION 'leave requests kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_attendance_request_history h
+              LEFT JOIN public.hr_ess_attendance_requests q ON q.id = h.request_id
+              WHERE q.id IS NULL) THEN RAISE EXCEPTION 'history kept'; END IF;
 END $check$;`;
 
 function check(label, fn) {
@@ -272,6 +459,7 @@ function main() {
 
     for (const { label, sql } of REFUSALS) check(`refuses ${label}`, () => runSql(label, sql));
     check('takes the rows the ESS writes, fills their defaults, and follows a deleted employee', () => runSql('the accepted rows', ACCEPTED));
+    check('the request functions decide, withdraw and cancel as documented', () => runSql('the request flow', REQUEST_FLOW));
 
     for (const pass of [1, 2]) {
       for (const file of [...rollbacks].reverse()) {

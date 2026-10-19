@@ -60,8 +60,9 @@ const INTEGRITY_REQUIRED = false;
  * @param {string|null} who.role            users.role for a portal login; ignored for an attendance session
  * @param {number} who.directReports        active employees whose manager_id is the caller
  * @param {boolean} who.pushEnabled         whether the FIREBASE_* settings are all present
+ * @param {Array<object>|null} [who.limitRows]  hr_ess_request_limits rows, for the numbers HR set
  */
-function capabilitiesFor({ kind, role, directReports, pushEnabled }) {
+function capabilitiesFor({ kind, role, directReports, pushEnabled, limitRows = null }) {
   // An attendance session carries no portal role, whatever the person's account says: these
   // powers come with the portal login, so a session that did not use it does not get them.
   const r = kind === 'portal' ? role : null;
@@ -77,7 +78,7 @@ function capabilitiesFor({ kind, role, directReports, pushEnabled }) {
       request_types: anyRequest || ownReports ? offeredRequestTypes() : [],
       hr_scope: [...(HR_SCOPE.get(r) || [])],
     },
-    requests: requestPolicy(),
+    requests: requestPolicy(limitRows),
     wall: { post: true, announce: ANNOUNCE_ROLES.has(r), moderate: MODERATE_ROLES.has(r) },
     push: { enabled: pushEnabled === true },
     integrity: { required: INTEGRITY_REQUIRED },

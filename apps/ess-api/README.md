@@ -2,7 +2,7 @@
 
 The Team RVM employee self-service API. It runs as its own pm2 process (`team-rvm-ess`, port 3740) on the Scheduler's server ([ADR-0005](../../docs/adr/0005-separate-ess-service.md)) and serves everything under `/api/ess`. It is reached on a host name of its own, `https://team-api.rvmcad.org/api/ess` ([ADR-0019](../../docs/adr/0019-ess-on-its-own-subdomain.md)), through an nginx file that the deploy writes from `deploy/nginx/` ([docs/05-deploy.md](../../docs/05-deploy.md)).
 
-- **The Scheduler stays the system of record.** The ESS shares its Supabase database through the service key and reads the Scheduler's tables ([ADR-0003](../../docs/adr/0003-scheduler-is-system-of-record.md)). It writes its own `hr_ess_*` tables, and one Scheduler table by one path only: HR's bulk phone reset makes exactly the update the Scheduler's own reset makes on `hr_attendance_devices` (`src/lib/store.js` `revokeActiveDevices`; KP, 16 Oct; [ADR-0018](../../docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
+- **The Scheduler stays the system of record.** The ESS shares its Supabase database through the service key and reads the Scheduler's tables ([ADR-0003](../../docs/adr/0003-scheduler-is-system-of-record.md)). It writes its own `hr_ess_*` tables, and the Scheduler's attendance day only as the Scheduler's own code writes it: through `hr_attendance_apply_override` from the decision functions (ADR-0020), the late-excused fields HR's own excuse-late writes, the shift snapshot `ensureSnapshot` copies onto a day, and `hr_attendance_recompute`. Outside that flow it writes one Scheduler table by one path: HR's bulk phone reset makes exactly the update the Scheduler's own reset makes on `hr_attendance_devices` (`src/lib/store.js` `revokeActiveDevices`; KP, 16 Oct; [ADR-0018](../../docs/adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 - **One sign-in works for both.** The ESS accepts the tokens the Scheduler issues, the portal JWT and the attendance session ([ADR-0006](../../docs/adr/0006-app-calls-scheduler-directly.md)). It never relays calls to the Scheduler.
 - **Stack:** JavaScript (CommonJS) on Express 4, zod, `@supabase/supabase-js`, vitest and supertest, ESLint ([ADR-0008](../../docs/adr/0008-javascript-express.md)). Runs on Node 20 or later.
 
@@ -64,6 +64,17 @@ Wave 2 adds no setting. Its numbers are in the code, each in one place, so a cha
 | The bulk reset's id list | 1 to 500 ids, a 32 kB body | `src/routes/devices.js`, `src/app.js` |
 | Who may use HR's tools | personal details and data requests: hr, hr_executive, ceo, super_admin; phones and mocked-location reports: hr, ceo, super_admin | `src/policy/hrAccess.js` |
 
+Phase 1C adds no setting either:
+
+| What | Value | Where |
+| --- | --- | --- |
+| The monthly request limits | `hr_ess_request_limits`, seeded with KP's numbers and changed by HR through `PUT /api/ess/hr/request-limits/{type}` | `db/migrations/20261106000000_hr_ess_request_limits.sql`, `src/policy/requestLimits.js` |
+| The cut-off | last month open while the IST day of month is 5 or less (decision 6's default; the 5th itself open) | `src/policy/requests.js` `lastMonthOpen`, and `extract(day …) > 5` in `db/migrations/20261106000004_hr_ess_request_functions.sql` |
+| The on-duty morning job | once at boot, then hourly; one process only (fork mode) | `src/jobs/onDuty.js` |
+| The half-day threshold for a fixed day | 240 minutes, the Scheduler's default | `src/policy/attendance.js` `HALF_DAY_MINUTES` |
+| My lists | the last 100 requests | `src/lib/store.js` `LIST_LIMITS.myRequests` |
+| The Inbox | at most 100 requests and 5 "who else is off" names per request | `src/lib/store.js` `LIST_LIMITS.inbox`, `src/routes/approvals.js` `CONTEXT_NAMES` |
+
 ## Endpoints
 
 Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Control: no-store`.
@@ -86,11 +97,21 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `GET /api/ess/attendance/day?date=` | either | `server_now`, my day as stored, its note, HR's remark and my remarks (B1); this month or last month |
 | `POST /api/ess/attendance/mock-location` | either | Report a punch refused for a mocked location (B14); 30 a day per person |
 | `GET /api/ess/hr/mock-location-reports?from=&to=&branch_id=` | portal: hr, ceo, super_admin | The reports, with whose each is |
-| `GET /api/ess/hr/devices?branch_id=&status=`, `POST /api/ess/hr/devices/reset` | portal: hr, ceo, super_admin | Registered phones, and the bulk reset (B8): the Scheduler's own revoke update on every active phone of a branch or a list of people. The one write to a Scheduler table |
+| `GET /api/ess/hr/devices?branch_id=&status=`, `POST /api/ess/hr/devices/reset` | portal: hr, ceo, super_admin | Registered phones, and the bulk reset (B8): the Scheduler's own revoke update on every active phone of a branch or a list of people. The one direct write to a Scheduler table |
+| `POST`, `GET /api/ess/attendance-requests` | either | My attendance requests (C1, C3): on duty, fix a day, excuse a late. `POST` files one (201; 400 the form; 409 `DUPLICATE_REQUEST`, `LIMIT_REACHED`, `REQUEST_CLOSED`); `GET` lists my own, newest first, at most 100 |
+| `POST /api/ess/attendance-requests/{id}/withdraw` | either | Withdraw a pending one (C8): 200 with the request; somebody else's is 404; anything decided is 409 `REQUEST_NOT_PENDING` |
+| `POST`, `GET /api/ess/leave-requests` | either | My leave requests (C2, C4): `cl` (one a month) or `lwp`, whole days. `POST` files one; `GET` lists my own |
+| `POST /api/ess/leave-requests/{id}/withdraw` | either | Withdraw a pending leave request |
+| `GET /api/ess/leave/balances?month=` | either | Allowed, used, pending and remaining for every type (C5), this month or last |
+| `GET /api/ess/approvals?status=` | either | The approvals Inbox (D1) and its counts: a manager sees their reports' pending requests; hr, ceo and super_admin see everybody's and may filter any status; each row carries the month's count, the limit, the day's late marks and who else is off |
+| `POST /api/ess/approvals/{family}/{id}/decide` | either | Approve or reject (D1, H6); a rejection needs a reason. An approval writes the day through the Scheduler's override function, in one transaction with the status and history |
+| `POST /api/ess/approvals/{family}/{id}/archive` | either | Clear a request from my Inbox without deciding it (204); per approver |
+| `POST /api/ess/hr/attendance-requests/{id}/cancel`, `/hr/leave-requests/{id}/cancel` | portal: hr, ceo, super_admin | Cancel an APPROVED request (C8) with a reason, restoring the day it wrote; audited |
+| `GET /api/ess/hr/request-limits`, `PUT /api/ess/hr/request-limits/{type}` | portal: hr, ceo, super_admin | The monthly limits HR owns (C6); a change is audited |
 
 The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.2.1: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.3.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
 
 ### Staying signed in (task A3)
 
@@ -108,6 +129,14 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 - **HR on somebody else's data.** Nobody resolves their own data request (409 `OWN_REQUEST`) or changes their own date of birth or address (409 `OWN_RECORD`).
 - **The audit trail** (`hr_ess_audit`, `src/lib/audit.js`) records HR's reads and changes of personal details, data-request resolutions and phone resets, with ids, counts and reasons, never the personal data. A read is recorded before the reply and refused (503) if it cannot be; a change is made first and, if its row cannot be written, the entry goes to the pm2 log.
 - **The phone reset** writes only `status`, `revoked_at`, `revoked_by`, `revoked_by_name` (the caller's username, as the Scheduler records it) and `revoke_reason`, only on rows still `active`, in slices of 150 ids.
+
+### Requests, leave and approvals (tasks C1-C12, D1, H6)
+
+- **The forms are the routes'.** `POST /attendance-requests` and `/leave-requests` validate the type, the day's window, the reason and the type's own fields; they check the duplicate and the month's counter before writing. The row goes in pending, with its 'filed' history row written by the database trigger.
+- **The decision is the database's.** `POST /approvals/{family}/{id}/decide` resolves the approver (HR's roles, or the manager on the HR record, attendance sign-in included) and calls the family's function: it locks the request, re-checks everything, writes the day through `hr_attendance_apply_override` (or the late-excused fields, as HR's own excuse does), and writes the status and history in the same transaction. The route then copies the shift onto a fixed day (`ensureShiftSnapshot`) and re-counts the month (`hr_attendance_recompute`), the Scheduler controller's own order; both are best effort, so a decision that succeeded is never reported failed.
+- **On duty ahead of time.** An approval for a future day writes nothing; the morning job (`src/jobs/onDuty.js`) writes it as present on the day itself, with `On duty: <place>` as the note. One process only; idempotent; failures go to the pm2 log and to `hr_ess_audit`.
+- **The Inbox.** A manager's list is their direct reports' pending requests (an attendance sign-in may be a manager's); HR's roles see everybody's and may filter by any status. The context is computed in a handful of bounded reads: the month's count per kind, the day's late marks, and who else is off that day.
+- **The limits** live in `hr_ess_request_limits`. `GET /ess/me/capabilities` falls back to the code's defaults before that migration; the request endpoints answer 503 until their own tables and the limits are there.
 
 ### How sign-in is checked
 
@@ -127,9 +156,11 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 403 | `PASSWORD_CHANGE_REQUIRED` | An attendance session signed in with HR's first-time password, before the person chose their own |
 | 403 | `SIGN_IN_NOT_FRESH` | Keeping a sign-in made more than 10 minutes ago |
 | 403 | `PORTAL_LOGIN_REQUIRED`, `HR_ACCESS_DENIED`, `ATTENDANCE_OVERRIDE_DENIED`, `SENSITIVE_FIELD` | HR's tools refused to this sign-in or role; a self-service change HR must make |
+| 403 | `NOT_AN_APPROVER` | A request that is not this sign-in's to decide or clear: neither HR's roles nor the person's manager on the HR record |
 | 409 | `ALREADY_EXCHANGED` | Keeping a token the ESS minted itself, or a Scheduler sign-in already kept once |
 | 409 | `REFRESH_IN_PROGRESS` | A refresh token traded in less than a minute ago, presented again by the same install: retry with the newest one |
 | 409 | `OWN_REQUEST`, `OWN_RECORD`, `ALREADY_RESOLVED`, `TOO_MANY_OPEN_REQUESTS`, `RECORD_CHANGED` | HR acting on their own data; a request already answered; 5 open requests (counted by the database, too); personal details another save changed meanwhile so that half an emergency contact would be left |
+| 409 | `DUPLICATE_REQUEST`, `LIMIT_REACHED`, `REQUEST_CLOSED`, `REQUEST_WINDOW`, `REQUEST_FUTURE`, `REQUEST_NOT_PENDING`, `ALREADY_DECIDED`, `NOT_LATE`, `TIMES_INCOMPLETE`, `DAY_LOCKED`, `CL_LIMIT`, `CANNOT_CANCEL` | A request cannot move: the same type and day already waits; over the month's limit; last month past the cut-off, or a day before last month; a fix or an excuse for a day that has not happened; a withdraw of something decided; a second decision; an excuse of a day that is not late; a fix leaving no in or out time; a fix on a leave, week-off or holiday; a second CL in the month; a cancel of something not approved |
 | 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included); a session that is not one of the caller's; or no such request, employee or branch |
 | 400 | `INVALID_JSON` | A request body that is not valid JSON |
 | 400 | `BAD_INSTALL_ID`, `BAD_DEVICE_LABEL`, `BAD_IDENTIFIER` | A missing or malformed install id, phone name or sign-in identifier |

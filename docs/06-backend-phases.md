@@ -12,15 +12,15 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (16 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. Phase 1B is built and deployed; its endpoints answer 503 until KP applies its five migrations ([05-deploy.md](05-deploy.md#migrations-to-apply)).
+**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. Phase 1B is built and deployed; its endpoints answer 503 until KP applies its five migrations ([05-deploy.md](05-deploy.md#migrations-to-apply)). **Phase 1C is built** and waits for its five migrations (6 to 10 in the deploy list): requests, leave, the approvals Inbox, the decision functions, HR's cancel and the limits. Phase 1D is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
 | [0](#phase-0-rvms-set-up) | RVM's own set-up: accounts, data, roles, policy | Runs alongside |
 | [1A](#phase-1a-foundation) | Employee identity, capabilities, health, deploy | **Live, 16 Oct** |
 | [1B](#phase-1b-staying-signed-in-one-field-sign-in-and-the-attendance-extras) | Staying signed in, one-field sign-in, attendance extras, personal details | **Deployed; migrations to apply** |
-| [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals | Next |
-| [1D](#phase-1d-inbox-notifications-and-push) | Notifications and push | |
+| [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals, the limits, the on-duty job | **Built, 19 Oct; migrations to apply** |
+| [1D](#phase-1d-inbox-notifications-and-push) | Notifications and push | Next |
 | [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Gate |
 | [2A](#phase-2a-wall) | The Wall | |
@@ -93,7 +93,7 @@ Not code. It runs alongside the build, and the pilot cannot start without it.
 
 ## Phase 1C: Requests, leave and approvals
 
-The brief's Phase 1, and its core.
+The brief's Phase 1, and its core. **Built 19 Oct 2026; waiting for migrations 6 to 10.**
 
 | Work | Tasks |
 | --- | --- |
@@ -109,12 +109,21 @@ The brief's Phase 1, and its core.
 | This month and last; closed at the cut-off on the 5th | C12 |
 | The approvals Inbox: counts, context (how many of this kind this month, the late count, who else is off that day), decide with a comment, a reason required to reject, archive; HR's approval endpoints | D1, H6 |
 
+**Built, in one place:** `apps/ess-api/src/routes/attendanceRequests.js`, `leaveRequests.js`,
+`approvals.js`, `hrRequests.js`, the policy in `src/policy/requests.js` and `attendance.js`, and
+`src/jobs/onDuty.js`; migrations 6 to 10. The seven SQL functions are the decision itself; the
+routes validate the form, resolve the approver and re-count the month, in the Scheduler
+controller's own order. **The two defaults the build had to choose** (both in
+[04-build-plan.md](04-build-plan.md#phase-1c-requests-leave-and-approvals--built-19-oct-2026)):
+the 5th itself is open for raising and deciding (decision 6), and leave is whole days in this
+phase.
+
 - **You first:**
   - decision 2: does app leave replace the Admin Manager's faculty leave or run alongside it, and does a faculty member's approved app leave also update the faculty leave dates used for batch cover (that writes a Scheduler table)?
-  - decision 6: is the 5th itself open, and can a pending request for last month be decided after the cut-off?
-  - a limit for leave without pay;
+  - decision 6: the build's default is the 5th itself open (see above); change it now if payroll needs the 5th closed.
+  - a limit for leave without pay (none is set; HR can set one through `PUT /api/ess/hr/request-limits/leave_lwp`);
   - the one-CL index confirmed in production (from 1B).
-- **You after:** apply the migrations, including the decision functions.
+- **You after:** apply migrations 6 to 10, in the order in [05-deploy.md](05-deploy.md#migrations-to-apply). Until then every request endpoint answers 503 `MODULE_NOT_INSTALLED`.
 - **Done when:**
   - an employee raises each request type, sees the counter, and withdraws one;
   - the approver decides from the Inbox;
