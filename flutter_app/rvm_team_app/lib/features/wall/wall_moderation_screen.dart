@@ -105,6 +105,72 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
     }
   }
 
+  Future<void> _unhide(WallReport report) async {
+    try {
+      final repo = getIt<EssRepository>();
+      if (report.target == 'comment' && report.commentId != null) {
+        await repo.unhideComment(report.commentId!);
+      } else if (report.postId != null) {
+        await repo.unhidePost(report.postId!);
+      }
+      await _load();
+    } on Failure catch (f) {
+      _snack(f.message);
+    }
+  }
+
+  Future<void> _editAnnouncement(WallAnnouncement a) async {
+    final title = TextEditingController(text: a.title);
+    final body = TextEditingController(text: a.body);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit announcement'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: title, maxLength: 200, decoration: const InputDecoration(labelText: 'Title')),
+              TextField(controller: body, minLines: 3, maxLines: 8, maxLength: 5000, decoration: const InputDecoration(labelText: 'Message')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true || !mounted) return;
+    try {
+      await getIt<EssRepository>().editAnnouncement(a.id, title: title.text.trim(), body: body.text.trim());
+      await _load();
+    } on Failure catch (f) {
+      _snack(f.message);
+    }
+  }
+
+  Future<void> _deleteAnnouncement(WallAnnouncement a) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete this announcement?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await getIt<EssRepository>().deleteAnnouncement(a.id);
+      await _load();
+    } on Failure catch (f) {
+      _snack(f.message);
+    }
+  }
+
   Future<void> _compose() async {
     final created = await showDialog<bool>(context: context, builder: (_) => const _AnnouncementComposer());
     if (created == true) await _load();
@@ -165,6 +231,11 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
                           Expanded(child: OutlinedButton(onPressed: () => _resolve(r, false), child: const Text('Keep'))),
                         ],
                       ),
+                      if (r.targetHidden)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(onPressed: () => _unhide(r), child: const Text('Unhide content')),
+                        ),
                     ],
                   ),
                 ),
@@ -182,7 +253,22 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
                 child: ListTile(
                   title: Text(a.title),
                   subtitle: Text(a.needsAck ? 'Needs acknowledgement' : 'Read-only'),
-                  trailing: TextButton(onPressed: () => _counts(a), child: const Text('Counts')),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton(onPressed: () => _counts(a), child: const Text('Counts')),
+                      PopupMenuButton<String>(
+                        onSelected: (v) {
+                          if (v == 'edit') _editAnnouncement(a);
+                          if (v == 'delete') _deleteAnnouncement(a);
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'edit', child: Text('Edit')),
+                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
           const SizedBox(height: RvmSpacing.md),

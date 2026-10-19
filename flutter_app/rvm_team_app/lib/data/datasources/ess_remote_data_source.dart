@@ -659,5 +659,19 @@ class EssRemoteDataSource with DioExecutor {
   Future<List<ModerationEntry>> moderationLog() => guard(() async =>
       _list(_body(await _dio.get('/wall/hr/moderation-log'))['entries'], ModerationEntry.fromJson));
 
+  Future<WallAnnouncement> editAnnouncement(String id, {required String title, required String body, bool? pinned}) =>
+      guard(() async => WallAnnouncement.fromJson(_obj(_body(await _dio.patch('/wall/announcements/$id', data: {
+            'title': title,
+            'body': body,
+            if (pinned != null) 'pinned': pinned,
+          }))['announcement'])));
+
+  Future<void> deleteAnnouncement(String id) =>
+      guard(() async => _dio.delete('/wall/announcements/$id'));
+
+  Future<void> unhidePost(String id) => guard(() async => _dio.delete('/wall/posts/$id/hide'));
+
+  Future<void> unhideComment(String id) => guard(() async => _dio.delete('/wall/comments/$id/hide'));
+
   Map<String, dynamic> _mapOf(dynamic v) => v is Map ? v.cast<String, dynamic>() : const {};
 }
