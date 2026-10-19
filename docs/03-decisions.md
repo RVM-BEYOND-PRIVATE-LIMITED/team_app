@@ -82,3 +82,11 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 - Every HOD and HoO on the right login role, every portal login linked to its HR record, and no shared desk logins.
 - A privacy and location policy page that names a grievance officer.
 - From the brand designer: master logo files and an "rvm TEAM" lockup. Pages 9 and 10 of the brand guidelines also need fixing.
+
+## 19 Oct 2026 - Phase 2A and 1E decisions (KP)
+
+- The ESS's files live in its own private Supabase bucket, `ESS` (created by KP, 19 Oct). Employee photos stay in the Scheduler's `documents` bucket, where the HR record's path lives; wall photos, praise photos and later ESS files go to `ESS`.
+- Praise badges are FIXED: not HR-editable. The catalogue ships in code.
+- Staff announcement email has no provider yet: log-only, like push. The Firebase project is issue #1 against Rishi; push stays log-only until it exists.
+- An employee's own photo change needs NO HR approval (audited; the old file is left for cleanup).
+- HR data (date of birth, joining date) is pulled from the HR database; nothing is requested from KP.
