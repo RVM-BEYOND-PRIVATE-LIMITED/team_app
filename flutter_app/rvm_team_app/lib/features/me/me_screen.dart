@@ -76,7 +76,12 @@ class _MeBody extends StatelessWidget {
           children: [
             _Tile(icon: Icons.fingerprint, title: 'Punch in / out', subtitle: 'Geofenced punch, remarks', onTap: () => context.push('/me/punch')),
             _Tile(icon: Icons.today_outlined, title: 'My day', subtitle: 'Today from the server’s clock, HR’s remark', onTap: () => context.push('/me/attendance')),
+            _Tile(icon: Icons.person_outline, title: 'Work profile', subtitle: 'Summary, job and timeline', onTap: () => context.push('/me/profile')),
             _Tile(icon: Icons.badge_outlined, title: 'Personal details', subtitle: 'Blood group, emergency contact', onTap: () => context.push('/me/personal')),
+            _Tile(icon: Icons.folder_open_outlined, title: 'Documents', subtitle: 'Upload and track verification', onTap: () => context.push('/me/documents')),
+            _Tile(icon: Icons.account_balance_outlined, title: 'Bank details', subtitle: 'Saved with your consent', onTap: () => context.push('/me/bank')),
+            _Tile(icon: Icons.badge, title: 'ID card', subtitle: 'Your employee card and verify link', onTap: () => context.push('/me/id-card')),
+            _Tile(icon: Icons.edit_note, title: 'Profile changes', subtitle: 'Ask HR to correct your record', onTap: () => context.push('/me/change-requests')),
             _Tile(icon: Icons.privacy_tip_outlined, title: 'Data requests', subtitle: 'Correct or delete your data', onTap: () => context.push('/me/data-requests')),
           ],
         ),
@@ -106,10 +111,9 @@ class _MeBody extends StatelessWidget {
         ),
         const SizedBox(height: RvmSpacing.md),
         _Section(
-          title: 'Coming with the new backend',
-          children: const [
-            _PendingTile(icon: Icons.folder_shared_outlined, title: 'Documents', detail: 'Proofs, letters, ID card'),
-            _PendingTile(icon: Icons.support_agent_outlined, title: 'Helpdesk', detail: 'Complaints and tickets'),
+          title: 'Support',
+          children: [
+            _Tile(icon: Icons.support_agent, title: 'Helpdesk', subtitle: 'Raise a ticket and follow its thread', onTap: () => context.push('/helpdesk')),
           ],
         ),
         const SizedBox(height: RvmSpacing.lg),
@@ -206,20 +210,4 @@ class _Tile extends StatelessWidget {
   }
 }
 
-class _PendingTile extends StatelessWidget {
-  const _PendingTile({required this.icon, required this.title, required this.detail});
-  final IconData icon;
-  final String title;
-  final String detail;
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      enabled: false,
-      leading: Icon(icon, color: scheme.onSurfaceVariant),
-      title: Text(title),
-      subtitle: Text('$detail · not available yet'),
-    );
-  }
-}

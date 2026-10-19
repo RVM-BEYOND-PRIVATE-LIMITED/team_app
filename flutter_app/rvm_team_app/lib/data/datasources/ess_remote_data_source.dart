@@ -276,4 +276,281 @@ class EssRemoteDataSource with DioExecutor {
   Future<NotificationSettings> saveNotificationSettings(List<String> disabledCategories) =>
       guard(() async => NotificationSettings.fromJson(_body(await _dio.put('/notifications/settings',
           data: {'disabled_categories': disabledCategories}))));
+
+  // ── 2A: the Wall ─────────────────────────────────────────────────────────
+
+  Future<WallSettings> wallSettings() =>
+      guard(() async => WallSettings.fromJson(_body(await _dio.get('/wall/settings'))));
+
+  Future<WallFeed> wallFeed({String? scope, String? before}) => guard(() async {
+        final data = _body(await _dio.get('/wall/posts', queryParameters: {
+          if (scope != null) 'scope': scope,
+          if (before != null) 'before': before,
+        }));
+        return WallFeed(posts: _list(data['posts'], WallPost.fromJson), truncated: data['truncated'] == true);
+      });
+
+  Future<WallPostDetail> wallPost(String id) =>
+      guard(() async => WallPostDetail.fromJson(_body(await _dio.get('/wall/posts/$id'))));
+
+  Future<WallPost> createWallPost({
+    required String body,
+    String kind = 'post',
+    String? scope,
+    Map<String, dynamic>? poll,
+    List<Map<String, dynamic>>? attachments,
+  }) =>
+      guard(() async => WallPost.fromJson(_obj(_body(await _dio.post('/wall/posts', data: {
+            'kind': kind,
+            'body': body,
+            if (scope != null) 'scope': scope,
+            if (poll != null) 'poll': poll,
+            if (attachments != null && attachments.isNotEmpty) 'attachments': attachments,
+          }))['post'])));
+
+  Future<List<WallReactionGroup>> postReactions(String id) => guard(() async => _list(
+        _body(await _dio.get('/wall/posts/$id/reactions'))['reactions'],
+        WallReactionGroup.fromJson,
+      ));
+
+  Future<List<WallReactionGroup>> commentReactions(String id) => guard(() async => _list(
+        _body(await _dio.get('/wall/comments/$id/reactions'))['reactions'],
+        WallReactionGroup.fromJson,
+      ));
+
+  Future<void> addPollOption(String id, String label) =>
+      guard(() async => _dio.post('/wall/polls/$id/options', data: {'label': label}));
+
+  Future<void> closePoll(String id) => guard(() async => _dio.post('/wall/polls/$id/close'));
+
+  Future<String?> putMyPhoto({required String base64, required String contentType}) => guard(() async {
+        final data = _body(await _dio.put('/me/photo', data: {'photo_base64': base64, 'content_type': contentType}));
+        return _obj(data['employee'])['photo_url']?.toString();
+      });
+
+  Future<void> registerPushDevice({required String token, String? deviceLabel, String? installId}) =>
+      guard(() async => _dio.post('/push-devices', data: {
+            'token': token,
+            if (deviceLabel != null && deviceLabel.isNotEmpty) 'device_label': deviceLabel,
+            if (installId != null && installId.isNotEmpty) 'install_id': installId,
+          }));
+
+  Future<void> revokePushDevice(String id) => guard(() async => _dio.delete('/push-devices/$id'));
+
+  Future<void> deleteWallPost(String id) => guard(() async => _dio.delete('/wall/posts/$id'));
+
+  Future<({WallReactionCounts counts, String? myReaction})> reactToPost(String id, String reaction) =>
+      guard(() async {
+        final data = _body(await _dio.put('/wall/posts/$id/reaction', data: {'reaction': reaction}));
+        return (counts: WallReactionCounts.fromJson(_mapOf(data['counts'])), myReaction: data['my_reaction']?.toString());
+      });
+
+  Future<({WallReactionCounts counts, String? myReaction})> unreactToPost(String id) => guard(() async {
+        final data = _body(await _dio.delete('/wall/posts/$id/reaction'));
+        return (counts: WallReactionCounts.fromJson(_mapOf(data['counts'])), myReaction: null);
+      });
+
+  Future<WallComment> addWallComment({required String postId, required String body, String? parentId}) =>
+      guard(() async => WallComment.fromJson(_obj(_body(await _dio.post('/wall/posts/$postId/comments', data: {
+            'body': body,
+            if (parentId != null) 'parent_id': parentId,
+          }))['comment'])));
+
+  Future<WallPost> createPraise({
+    required String employeeId,
+    required String badge,
+    required String reason,
+    String scope = 'org',
+    List<Map<String, dynamic>>? attachments,
+  }) =>
+      guard(() async => WallPost.fromJson(_obj(_body(await _dio.post('/wall/praise', data: {
+            'employee_id': employeeId,
+            'badge': badge,
+            'reason': reason,
+            'scope': scope,
+            if (attachments != null && attachments.isNotEmpty) 'attachments': attachments,
+          }))['post'])));
+
+  Future<List<WallAnnouncement>> wallAnnouncements() => guard(() async => _list(
+        _body(await _dio.get('/wall/announcements'))['announcements'],
+        WallAnnouncement.fromJson,
+      ));
+
+  Future<void> readAnnouncement(String id) =>
+      guard(() async => _dio.post('/wall/announcements/$id/read'));
+
+  Future<void> ackAnnouncement(String id) =>
+      guard(() async => _dio.post('/wall/announcements/$id/ack'));
+
+  Future<WallCelebrations> wallCelebrations() =>
+      guard(() async => WallCelebrations.fromJson(_body(await _dio.get('/wall/celebrations'))));
+
+  Future<void> sendWish({required String employeeId, required String occasion, required String body}) =>
+      guard(() async => _dio.post('/wall/wishes', data: {
+            'employee_id': employeeId,
+            'occasion': occasion,
+            'body': body,
+          }));
+
+  Future<void> votePoll({required String pollId, required List<String> optionIds}) =>
+      guard(() async => _dio.post('/wall/polls/$pollId/vote', data: {'option_ids': optionIds}));
+
+  // ── 2B: Helpdesk ─────────────────────────────────────────────────────────
+
+  Future<HelpdeskSettings> helpdeskCategories() =>
+      guard(() async => HelpdeskSettings.fromJson(_body(await _dio.get('/helpdesk/categories'))));
+
+  Future<List<HelpdeskTicket>> myTickets({String? status}) => guard(() async => _list(
+        _body(await _dio.get('/helpdesk/tickets', queryParameters: {if (status != null) 'status': status}))['tickets'],
+        HelpdeskTicket.fromJson,
+      ));
+
+  Future<HelpdeskTicket> raiseTicket({
+    required String category,
+    required String subject,
+    required String body,
+    bool anonymous = false,
+  }) =>
+      guard(() async => HelpdeskTicket.fromJson(_obj(_body(await _dio.post('/helpdesk/tickets', data: {
+            'category': category,
+            'subject': subject,
+            'body': body,
+            'anonymous': anonymous,
+          }))['ticket'])));
+
+  Future<HelpdeskTicketDetail> ticket(String id) =>
+      guard(() async => HelpdeskTicketDetail.fromJson(_body(await _dio.get('/helpdesk/tickets/$id'))));
+
+  Future<HelpdeskMessage> addTicketComment({required String id, required String body}) =>
+      guard(() async => HelpdeskMessage.fromJson(
+          _obj(_body(await _dio.post('/helpdesk/tickets/$id/comments', data: {'body': body}))['message'])));
+
+  Future<HelpdeskTicket> ticketAction(String id, String action, {Map<String, dynamic>? data}) =>
+      guard(() async => HelpdeskTicket.fromJson(
+          _obj(_body(await _dio.post('/helpdesk/tickets/$id/$action', data: data ?? const {}))['ticket'])));
+
+  Future<HelpdeskTicket> assignTicket({required String id, required String employeeId, String? note}) =>
+      guard(() async => HelpdeskTicket.fromJson(_obj(_body(await _dio.post('/helpdesk/tickets/$id/assign', data: {
+            'employee_id': employeeId,
+            if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          }))['ticket'])));
+
+  Future<HelpdeskQueue> helpdeskQueue({String? status, String? category}) => guard(() async => HelpdeskQueue.fromJson(
+      _body(await _dio.get('/helpdesk/queue', queryParameters: {
+        if (status != null) 'status': status,
+        if (category != null) 'category': category,
+      }))));
+
+  // ── 2C: documents, change requests, bank details, ID card ────────────────
+
+  Future<DocumentPage> myDocuments() =>
+      guard(() async => DocumentPage.fromJson(_body(await _dio.get('/me/documents'))));
+
+  Future<EssDocument> uploadDocument({
+    required String docType,
+    required String fileName,
+    required String contentType,
+    required String base64,
+    String? remark,
+  }) =>
+      guard(() async => EssDocument.fromJson(_obj(_body(await _dio.post('/me/documents', data: {
+            'doc_type': docType,
+            'file_name': fileName,
+            'content_type': contentType,
+            'data_base64': base64,
+            if (remark != null && remark.trim().isNotEmpty) 'remark': remark.trim(),
+          }))['document'])));
+
+  Future<String?> documentFileUrl(String id) => guard(() async {
+        final data = _body(await _dio.get('/me/documents/$id/file'));
+        return _obj(data['file'])['url']?.toString();
+      });
+
+  Future<List<ChangeRequest>> myChangeRequests() => guard(() async =>
+      _list(_body(await _dio.get('/me/change-requests'))['requests'], ChangeRequest.fromJson));
+
+  Future<ChangeRequest> createChangeRequest({
+    required String field,
+    String? oldValue,
+    required String newValue,
+    required String reason,
+  }) =>
+      guard(() async => ChangeRequest.fromJson(_obj(_body(await _dio.post('/me/change-requests', data: {
+            'field': field,
+            if (oldValue != null) 'old_value': oldValue,
+            'new_value': newValue,
+            'reason': reason,
+          }))['request'])));
+
+  Future<BankDetails?> myBankDetails() => guard(() async {
+        final data = _body(await _dio.get('/me/bank-details'));
+        final bank = _mapOf(data['bank_details']);
+        return bank.isEmpty ? null : BankDetails.fromJson(bank);
+      });
+
+  Future<BankDetails> saveBankDetails({
+    required String bankName,
+    String? branchName,
+    required String accountNumber,
+    required String ifscCode,
+    String? upiId,
+    required String consentName,
+  }) =>
+      guard(() async => BankDetails.fromJson(_obj(_body(await _dio.put('/me/bank-details', data: {
+            'bank_name': bankName,
+            if (branchName != null) 'branch_name': branchName,
+            'account_number': accountNumber,
+            'ifsc_code': ifscCode,
+            if (upiId != null) 'upi_id': upiId,
+            'consent': true,
+            'consent_name': consentName,
+          }))['bank_details'])));
+
+  Future<IdCard> myIdCard() =>
+      guard(() async => IdCard.fromJson(_obj(_body(await _dio.get('/me/id-card'))['card'])));
+
+  Future<WallPost> editWallPost(String id, String body) => guard(() async =>
+      WallPost.fromJson(_obj(_body(await _dio.patch('/wall/posts/$id', data: {'body': body}))['post'])));
+
+  Future<void> deleteWallComment(String id) =>
+      guard(() async => _dio.delete('/wall/comments/$id'));
+
+  Future<WallComment> editWallComment(String id, String body) => guard(() async =>
+      WallComment.fromJson(_obj(_body(await _dio.patch('/wall/comments/$id', data: {'body': body}))['comment'])));
+
+  Future<({WallReactionCounts counts, String? myReaction})> reactToComment(String id, String reaction) =>
+      guard(() async {
+        final data = _body(await _dio.put('/wall/comments/$id/reaction', data: {'reaction': reaction}));
+        return (counts: WallReactionCounts.fromJson(_mapOf(data['counts'])), myReaction: data['my_reaction']?.toString());
+      });
+
+  Future<({WallReactionCounts counts, String? myReaction})> unreactToComment(String id) => guard(() async {
+        final data = _body(await _dio.delete('/wall/comments/$id/reaction'));
+        return (counts: WallReactionCounts.fromJson(_mapOf(data['counts'])), myReaction: null);
+      });
+
+  Future<void> reportPost(String id, {required String reason, String? detail}) =>
+      guard(() async => _dio.post('/wall/posts/$id/reports', data: {
+            'reason': reason,
+            if (detail != null && detail.trim().isNotEmpty) 'detail': detail.trim(),
+          }));
+
+  Future<void> reportComment(String id, {required String reason, String? detail}) =>
+      guard(() async => _dio.post('/wall/comments/$id/reports', data: {
+            'reason': reason,
+            if (detail != null && detail.trim().isNotEmpty) 'detail': detail.trim(),
+          }));
+
+  Future<void> withdrawPollVote(String id) =>
+      guard(() async => _dio.delete('/wall/polls/$id/vote'));
+
+  Future<bool> celebrationOptout() => guard(() async {
+        final data = _body(await _dio.get('/me/celebration-optout'));
+        return _obj(data['celebrations'])['hidden'] == true;
+      });
+
+  Future<void> setCelebrationOptout(bool hidden) =>
+      guard(() async => _dio.put('/me/celebration-optout', data: {'hidden': hidden}));
+
+  Map<String, dynamic> _mapOf(dynamic v) => v is Map ? v.cast<String, dynamic>() : const {};
 }
