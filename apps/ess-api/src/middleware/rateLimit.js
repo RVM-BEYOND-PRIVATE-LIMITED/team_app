@@ -56,6 +56,12 @@ const DEFAULT_LIMITS = Object.freeze({
   wallReactions: Object.freeze({ windowMs: 60 * 1000, limit: 60 }),
   // The Helpdesk (G2): a raise per person per day's bucket, as the Wall's posts have.
   helpdeskTickets: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 20 }),
+  // My Documents (KP 1): uploads per person per day — one file each, so a stuck phone cannot
+  // fill the bucket or HR's review queue.
+  documentsUploads: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 30 }),
+  // The ID card's verification link: opened by whoever the holder shows the card to, with no
+  // token, so it is bounded per address like the sign-in is.
+  idCardVerify: Object.freeze({ windowMs: 60 * 1000, limit: 30 }),
 });
 
 const refuseWith = (message) => (_req, res) => res.status(429).json({ error: message, code: 'RATE_LIMITED' });

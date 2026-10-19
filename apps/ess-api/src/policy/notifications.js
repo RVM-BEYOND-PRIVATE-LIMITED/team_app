@@ -18,6 +18,9 @@ const CATEGORIES = Object.freeze([
   // The Helpdesk's (Phase 2B, G2): a raise telling my team, a reply or a status telling the
   // raiser, and G3's escalations.
   'helpdesk',
+  // My Documents' (Phase 2C, KP 1): a document HR has looked at, and the weekly reminder that
+  // my mandatory documents are still missing.
+  'documents',
 ]);
 
 const QUIET_FROM = '21:00';

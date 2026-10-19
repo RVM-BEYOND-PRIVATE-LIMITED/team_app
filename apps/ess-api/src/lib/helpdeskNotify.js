@@ -127,6 +127,20 @@ async function notifyReopened({ store, ticket, assigneeId, raiserName = null }) 
   }
 }
 
+/** An assignment or reassignment told to the person it went to (KP 5). */
+async function notifyAssigned({ store, ticket, assigneeId, byName = null }) {
+  try {
+    await writeEach(store, [assigneeId], null, () => ({
+      category: 'helpdesk',
+      title: `${ticket.ref} assigned to you`,
+      body: `${byName || 'The team'} assigned ${ticket.ref}: ${ticket.subject} to you.`,
+      data: ticketData(ticket),
+    }));
+  } catch (e) {
+    console.error(`[ess] helpdesk assign notification failed: ${e && e.message ? e.message : e}`);
+  }
+}
+
 /**
  * G3's escalation, one notification per stage (the row's escalation_level gates it in the job):
  *   level 1  the first response is overdue: the category's queue roles are told;
@@ -154,6 +168,7 @@ module.exports = {
   notifyRaised,
   notifyComment,
   notifyClaimed,
+  notifyAssigned,
   notifyStatus,
   notifyClosed,
   notifyReopened,

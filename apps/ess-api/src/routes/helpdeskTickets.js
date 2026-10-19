@@ -1,5 +1,5 @@
 const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
-const { bodyWith, requiredText, idParam, oneQueryValue, invalid } = require('../lib/validate');
+const { bodyWith, requiredText, optionalText, idParam, oneQueryValue, invalid, isUuid, chars } = require('../lib/validate');
 const { LIST_LIMITS } = require('../lib/store');
 const { attachmentsFrom, storeAttachments } = require('../lib/wallKit');
 const {
@@ -9,10 +9,10 @@ const {
 const { recordBefore } = require('../lib/audit');
 const {
   STATUSES, ACTIVE_STATUSES, AGENT_TRANSITIONS, RAISER_CLOSES_FROM, REOPEN_DAYS,
-  RATING_MIN, RATING_MAX, canRead, canAct, seesRaiser, dueTimes, holidaysFor,
+  RATING_MIN, RATING_MAX, canRead, canAct, seesRaiser, dueTimes, holidaysFor, isQueueRole,
 } = require('../policy/helpdesk');
 const {
-  notifyRaised, notifyComment, notifyClaimed, notifyStatus, notifyReopened,
+  notifyRaised, notifyComment, notifyClaimed, notifyAssigned, notifyStatus, notifyReopened,
 } = require('../lib/helpdeskNotify');
 
 /**
@@ -355,6 +355,85 @@ function moveTicketStatus({ store, now }) {
   });
 }
 
+/**
+ * POST /api/ess/helpdesk/tickets/:id/assign { employee_id, note? } — assign it to a named
+ * handler (Phase 2C, KP 5). The team only: the person must hold one of the category's queue
+ * roles, checked through their login (employee → user → users.role), and the ticket must still
+ * be live. The assignment is stamped with who pointed it there (assigned_by_*), the history row
+ * keeps every move (a reassign does not overwrite who had it first), and the thread's `assigned`
+ * event shows it on the screen the raiser and the team read.
+ */
+function assignTicket({ store, now }) {
+  return asyncRoute(async (req, res) => {
+    const { employee } = req.auth;
+    const { row, category } = await loadTicket(store, idParam(req.params.id));
+    const { agent } = assertActor(row, req, category);
+    if (!agent) throw new HttpError(403, 'HELPDESK_AGENT_ONLY', MESSAGES.HELPDESK_AGENT_ONLY);
+    if (!ACTIVE_STATUSES.includes(row.status)) {
+      throw new HttpError(409, 'HELPDESK_NOT_LIVE', MESSAGES.HELPDESK_NOT_LIVE);
+    }
+
+    const form = bodyWith(req, ['employee_id', 'note']);
+    if (typeof form.employee_id !== 'string' || !isUuid(form.employee_id)) {
+      throw invalid(MESSAGES.HELPDESK_ASSIGNEE);
+    }
+    const note = optionalText(form.note);
+    if (note === undefined || (note && chars(note) > 500)) throw invalid(MESSAGES.HELPDESK_ASSIGN_NOTE);
+
+    // The queue's own rule, checked through the login: only a role the category serves can be
+    // handed a ticket (KP 5).
+    const link = await store.getEmployeeLink(form.employee_id.toLowerCase());
+    if (!link || link.is_archived) throw notFound(MESSAGES.HELPDESK_ASSIGNEE_NOT_FOUND);
+    let role = null;
+    if (link.user_id) {
+      const user = await store.getUser(link.user_id);
+      role = user ? user.role : null;
+    }
+    if (!role || !isQueueRole(role, category.queue_roles)) {
+      throw invalid(MESSAGES.HELPDESK_ASSIGNEE_ROLE);
+    }
+
+    // Assigning to the person who already has it is the same assignment: the ticket answers as it is.
+    if (row.assignee_id === link.id) {
+      const people = await peopleForTicket(store, row);
+      return res.json({
+        ticket: await ticketView(store, row, { category, raiser: people.raiser, assignee: people.assignee, me: employee.id, seesName: true }),
+      });
+    }
+
+    const at = now().toISOString();
+    const updated = await store.updateHelpdeskTicket(row.id, {
+      assignee_id: link.id,
+      // The claim stamp the lifecycle's CHECK asks for, kept when the ticket already had one.
+      claimed_at: row.claimed_at ?? at,
+      assigned_by_employee_id: employee.id,
+      assigned_by_name: employee.full_name,
+      assigned_at: at,
+      // A named handler is the team at work: the first response and the open ticket both start.
+      first_response_at: row.first_response_at ?? at,
+      status: row.status === 'open' ? 'in_progress' : row.status,
+      updated_at: at,
+    });
+    await store.createHelpdeskAssignment({
+      ticket_id: row.id,
+      from_employee_id: row.assignee_id ?? null,
+      to_employee_id: link.id,
+      assigned_by_user_id: req.auth.userId,
+      assigned_by_name: employee.full_name,
+      note: note || null,
+      created_at: at,
+    });
+    await store.createHelpdeskMessage(eventRow(row.id, 'assigned', {
+      employee_id: link.id, from: row.assignee_id ?? null,
+    }, at, employee.id));
+    await notifyAssigned({ store, ticket: updated, assigneeId: link.id, byName: employee.full_name });
+    const people = await peopleForTicket(store, updated);
+    res.json({
+      ticket: await ticketView(store, updated, { category, raiser: people.raiser, assignee: people.assignee, me: employee.id, seesName: true }),
+    });
+  });
+}
+
 module.exports = {
   createTicket,
   listMyTickets,
@@ -364,5 +443,6 @@ module.exports = {
   reopenTicket,
   closeTicket,
   claimTicket,
+  assignTicket,
   moveTicketStatus,
 };

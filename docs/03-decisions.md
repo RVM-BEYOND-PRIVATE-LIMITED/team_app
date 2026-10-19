@@ -90,3 +90,13 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 - Staff announcement email has no provider yet: log-only, like push. The Firebase project is issue #1 against Rishi; push stays log-only until it exists.
 - An employee's own photo change needs NO HR approval (audited; the old file is left for cleanup).
 - HR data (date of birth, joining date) is pulled from the HR database; nothing is requested from KP.
+
+## 19 Oct 2026 - Phase 2B and 2C decisions (KP)
+
+- **Helpdesk assign and reassign** (KP 5, the decided version of 2B's open claim rule): the team may hand a live ticket to a named handler with `POST /api/ess/helpdesk/tickets/{id}/assign { employee_id, note? }`, and hand it on again. The assignee must hold the category's own queue role; the history of who had it and who pointed it there is kept in `hr_ess_helpdesk_assignments` (migration 22).
+- **POSH routes to the Internal Committee** (KP 6): `internal_committee` is the `posh` category's only queue role (migration 23). The queue stays EMPTY until RVM appoints the committee and its logins carry that role - on purpose, so a complaint never sits with people who are not the committee.
+- **Document types are fixed in code** (KP 1): resume, identity, certificate, offer, joining, experience, exit and other, plus an ESS-only `others` that must carry a free-text remark saying what the file is. No Aadhaar number is stored.
+- **Identity documents are gated** (KP 2): only HR (the `hr` role), the CEO and super admins open them; an HR Executive may not. Every opening is audited.
+- **Bank details are collected in the app** (KP 3), with explicit consent first (SPDI Rules): the person types their own consent name and the save stamps the moment. The number is masked to everybody but its owner, never in a list response, and every HR read is audited.
+- **A profile-change approval records the decision only** (E3): it never writes `hr_employees`; HR applies the change in the Scheduler by hand, and the request row is the paper trail.
+- **The ID card's QR holds a signed, expiring link** (E7): 90 days, unauthenticated verify route, answering only the name, photo, designation, branch and "active employee".

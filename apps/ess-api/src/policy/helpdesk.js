@@ -79,7 +79,9 @@ const HELPDESK_CATEGORIES = Object.freeze([
   }),
   Object.freeze({
     slug: 'posh', name: 'POSH complaint', is_ticket: true, flow: null,
-    queue_roles: Object.freeze(['hr']), confidential: true, allows_hold: false,
+    // KP 6 (19 Oct 2026): the committee, not HR. The role does not exist in the Scheduler yet,
+    // so the queue stays empty until RVM appoints the committee (see the header).
+    queue_roles: Object.freeze(['internal_committee']), confidential: true, allows_hold: false,
     priority: 'urgent', first_response_hours: 12, resolution_hours: 72,
   }),
   // The brief's "not tickets": the category list links to the flows that exist.

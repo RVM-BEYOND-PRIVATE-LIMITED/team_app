@@ -155,12 +155,32 @@ const COLUMNS = Object.freeze({
   helpdeskCategory: 'id, slug, name, is_ticket, flow, queue_roles, confidential, allows_hold, priority, '
     + 'first_response_hours, resolution_hours, is_active',
   helpdeskTicket: 'id, ref, created_by, category_id, priority, subject, body, attachments, anonymous, branch_id, '
-    + 'status, assignee_id, claimed_at, first_response_at, first_response_due_at, resolution_due_at, resolved_at, '
+    + 'status, assignee_id, claimed_at, assigned_by_employee_id, assigned_by_name, assigned_at, '
+    + 'first_response_at, first_response_due_at, resolution_due_at, resolved_at, '
     + 'closed_at, closed_by_employee_id, closing_reason, rating, reopened_at, escalation_level, created_at, updated_at',
   // What a write needs to know about the row it is about to move.
   helpdeskTicketOwn: 'id, ref, created_by, category_id, status, assignee_id, anonymous, closed_at, resolved_at, '
-    + 'first_response_at, first_response_due_at, resolution_due_at, escalation_level, created_at',
+    + 'assigned_by_employee_id, assigned_at, first_response_at, first_response_due_at, resolution_due_at, '
+    + 'escalation_level, created_at',
   helpdeskMessage: 'id, ticket_id, employee_id, kind, body, event, details, created_at',
+  // Phase 2C. An assignment's history row: who had it before, who it went to, who pointed it.
+  helpdeskAssignment: 'id, ticket_id, from_employee_id, to_employee_id, assigned_by_name, note, created_at',
+  // My Documents: a type as the raise form reads it, and a document as every read shows it.
+  // verified_by_user_id is kept for the record and never sent; the name is what people read.
+  documentType: 'slug, name, is_mandatory, sort, created_at',
+  document: 'id, employee_id, doc_type, file_name, storage_path, content_type, size_bytes, remark, status, '
+    + 'verified_by_name, verified_at, rejection_reason, created_at, updated_at',
+  // Profile-change requests. decided_by_user_id is kept for the record and never sent.
+  changeRequest: 'id, employee_id, field, old_value, new_value, reason, status, decided_by_name, decided_at, '
+    + 'decision_note, created_at, updated_at',
+  // Bank details. The account number is masked before it leaves the server for anybody but its
+  // owner (routes/bankDetails.js), so the whole row only ever exists inside the server.
+  bankDetails: 'employee_id, bank_name, branch_name, account_number, ifsc_code, upi_id, consent_given_at, '
+    + 'consent_name, updated_by_name, created_at, updated_at',
+  // What an assignment's role check needs to know about the person it points at.
+  employeeLink: 'id, user_id, is_archived',
+  // What the ID card shows, from the HR record: the card's own fields and the photo pointer.
+  idCardEmployee: 'id, full_name, employee_code, designation, branch_id, department_id, photo_path, is_archived',
 });
 
 /** The Scheduler's private bucket every HR file lives in (20260830000001:15-16). */
@@ -234,6 +254,9 @@ const REFUSALS = Object.freeze({
   // F5: the same person added to one announcement's audience twice.
   AUDIENCE_KEPT: { code: '23505', name: 'hr_ess_announcement_audience_key' },
   ANNOUNCEMENT_READ_KEPT: { code: '23505', name: 'hr_ess_announcement_reads_key' },
+  // E3: a second open change request for the same field by the same person (the partial unique
+  // index). The route checks first; this is the backstop for two saves made at once.
+  CHANGE_REQUEST_KEPT: { code: '23505', name: 'hr_ess_change_requests_open_field_key' },
 });
 
 const isRefusal = (error, { code, name }) =>
@@ -288,6 +311,13 @@ const LIST_LIMITS = Object.freeze({
   helpdeskTickets: 50,
   helpdeskQueue: 100,
   helpdeskMessages: 200,
+  // Phase 2C: My Documents (a person's own list and HR's per-person list), the change-request
+  // queues, and one ticket's assignment history.
+  documents: 100,
+  hrDocuments: 200,
+  changeRequests: 100,
+  hrChangeRequests: 200,
+  helpdeskAssignments: 50,
 });
 
 /**
@@ -1239,6 +1269,87 @@ function createSupabaseStore(config, { client } = {}) {
     writeAudit: async (row) => {
       await write('hr_ess_audit', (q) => q.insert([row]));
     },
+
+    /* ── Phase 2C: Helpdesk assignment history ── */
+
+    /** One row per assignment, so a reassign does not overwrite who had it first (KP 5). */
+    createHelpdeskAssignment: (row) =>
+      write('hr_ess_helpdesk_assignments', (q) => q.insert([row]).select(COLUMNS.helpdeskAssignment).single()),
+    listHelpdeskAssignments: (ticketId) =>
+      list('hr_ess_helpdesk_assignments', (q) => q.select(COLUMNS.helpdeskAssignment)
+        .eq('ticket_id', ticketId).order('created_at').limit(LIST_LIMITS.helpdeskAssignments + 1)),
+    /** What an assignment needs to know about the person it points at: the login link, to read
+     * the role the queue check needs (routes/helpdeskTickets.js), and nothing else. */
+    getEmployeeLink: (employeeId) => one('hr_employees', COLUMNS.employeeLink, 'id', employeeId),
+    /** What the ID card shows, and whether its holder is still on the record. */
+    getIdCardEmployee: (employeeId) => one('hr_employees', COLUMNS.idCardEmployee, 'id', employeeId),
+
+    /* ── Phase 2C: My Documents ── */
+
+    /** The type list the raise form and every list screen read; seeds live in the migration. */
+    listDocumentTypes: () => list('hr_ess_document_types', (q) => q.select(COLUMNS.documentType).order('sort')),
+    getDocument: (id) => read('hr_ess_documents', (q) => q.select(COLUMNS.document).eq('id', id).maybeSingle()),
+    /** A person's own list, newest first; one more than LIST_LIMITS.documents, to tell a cut list. */
+    listMyDocuments: (employeeId) =>
+      list('hr_ess_documents', (q) => q.select(COLUMNS.document).eq('employee_id', employeeId)
+        .order('created_at', { ascending: false }).limit(LIST_LIMITS.documents + 1)),
+    /** HR's read of one person's record, newest first, one more than the limit. */
+    listDocumentsFor: (employeeId) =>
+      list('hr_ess_documents', (q) => q.select(COLUMNS.document).eq('employee_id', employeeId)
+        .order('created_at', { ascending: false }).limit(LIST_LIMITS.hrDocuments + 1)),
+    /** The one-file-per-upload cap: the count of rows on one person's record. */
+    countDocuments: async (employeeId) => {
+      const rows = await read('hr_ess_documents', (q) => q.select('id').eq('employee_id', employeeId));
+      return (rows || []).length;
+    },
+    /** The ref comes from the column defaults, the status from the database's own CHECK. */
+    createDocument: (row) =>
+      write('hr_ess_documents', (q) => q.insert([row]).select(COLUMNS.document).single()),
+    /** HR's verify or reject: one patch, one row. */
+    updateDocument: (id, patch) =>
+      write('hr_ess_documents', (q) => q.update(patch).eq('id', id).select(COLUMNS.document).maybeSingle()),
+    /** The row and its bucket path in one read, so the delete can remove the file too. */
+    deleteDocument: (id) =>
+      write('hr_ess_documents', (q) => q.delete().eq('id', id).select('id, storage_path').maybeSingle()),
+    /** The weekly reminder's read: which person holds which type, and nothing more. */
+    listDocumentEmployeeTypes: () => list('hr_ess_documents', (q) => q.select('employee_id, doc_type')),
+
+    /* ── Phase 2C: profile-change requests ── */
+
+    getChangeRequest: (id) =>
+      read('hr_ess_change_requests', (q) => q.select(COLUMNS.changeRequest).eq('id', id).maybeSingle()),
+    /** The caller's own asks, newest first (E3). */
+    listMyChangeRequests: (employeeId) =>
+      list('hr_ess_change_requests', (q) => q.select(COLUMNS.changeRequest).eq('employee_id', employeeId)
+        .order('created_at', { ascending: false }).limit(LIST_LIMITS.changeRequests + 1)),
+    /** HR's queue, newest first, optionally held to one status. */
+    listChangeRequests: (statuses) =>
+      list('hr_ess_change_requests', (q) => {
+        const base = q.select(COLUMNS.changeRequest);
+        const filtered = statuses ? base.in('status', statuses) : base;
+        return filtered.order('created_at', { ascending: false }).limit(LIST_LIMITS.hrChangeRequests + 1);
+      }),
+    /** One open ask per field per person: the database's partial unique index holds this, and
+     * REFUSALS.CHANGE_REQUEST_KEPT answers it as the route's 409. */
+    createChangeRequest: (row) =>
+      write('hr_ess_change_requests', (q) => q.insert([row]).select(COLUMNS.changeRequest).single(),
+        REFUSALS.CHANGE_REQUEST_KEPT),
+    /** HR's decision: only an open row moves, so a second decide finds nothing and answers null. */
+    decideChangeRequest: (id, patch) =>
+      write('hr_ess_change_requests', (q) => q.update(patch).eq('id', id).eq('status', 'open')
+        .select(COLUMNS.changeRequest).maybeSingle()),
+
+    /* ── Phase 2C: bank details ── */
+
+    /** One row per person (its primary key), or null while none is saved. */
+    getBankDetails: (employeeId) =>
+      read('hr_ess_bank_details', (q) => q.select(COLUMNS.bankDetails).eq('employee_id', employeeId).maybeSingle()),
+    /** The save: consent already checked by the route; the stamp lands here with it. */
+    upsertBankDetails: (row) =>
+      write('hr_ess_bank_details', (q) => q.upsert([row], { onConflict: 'employee_id' })
+        .select(COLUMNS.bankDetails).single()),
+
+    /* ── the audit trail (health) ── */
 
     /** The health check's read: one row of a small table. `signal` lets the caller give up on it. */
     ping: async ({ signal } = {}) => {

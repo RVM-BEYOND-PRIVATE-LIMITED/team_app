@@ -244,6 +244,15 @@ const REFUSALS = [
     INSERT INTO public.hr_ess_helpdesk_messages (ticket_id, kind) SELECT id, 'event' FROM public.hr_ess_helpdesk_tickets WHERE created_by = e`),
   refusal('a helpdesk subject of two characters', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
     VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'No', 'Six machines in Lab 2 stay on the boot screen.', now(), now())`),
+  // Phase 2C: the Documents', change requests' and bank details' own tables and rules
+  // (db/migrations/20261110000001-3).
+  refusal('a document of an unknown type', "INSERT INTO public.hr_ess_documents (employee_id, doc_type, file_name, storage_path, content_type, size_bytes) VALUES (e, 'passport', 'ID card.pdf', 'documents/' || e || '/id.pdf', 'application/pdf', 1000)", 'foreign_key_violation'),
+  refusal('an others document that does not say what it is', "INSERT INTO public.hr_ess_documents (employee_id, doc_type, file_name, storage_path, content_type, size_bytes) VALUES (e, 'others', 'Something.pdf', 'documents/' || e || '/s.pdf', 'application/pdf', 1000)"),
+  refusal('a change request about a field it does not take', "INSERT INTO public.hr_ess_change_requests (employee_id, field, new_value, reason) VALUES (e, 'email', 'me@example.com', 'It is not my email.')"),
+  refusal('a second open change request for the same field', "INSERT INTO public.hr_ess_change_requests (employee_id, field, new_value, reason) VALUES (e, 'address', 'House 14, Sector 22', 'We moved houses.'), (e, 'address', 'House 15, Sector 22', 'We moved again.')", 'unique_violation'),
+  refusal('an IFSC of the wrong shape', "INSERT INTO public.hr_ess_bank_details (employee_id, bank_name, account_number, ifsc_code, consent_given_at, consent_name) VALUES (e, 'State Bank of India', '1234567890', 'SBIN1234', now(), 'Test Person')"),
+  refusal('an account number with letters in it', "INSERT INTO public.hr_ess_bank_details (employee_id, bank_name, account_number, ifsc_code, consent_given_at, consent_name) VALUES (e, 'State Bank of India', '12345678AB', 'SBIN0001234', now(), 'Test Person')"),
+  refusal('a second bank row for one person', "INSERT INTO public.hr_ess_bank_details (employee_id, bank_name, account_number, ifsc_code, consent_given_at, consent_name) VALUES (e, 'State Bank of India', '1234567890', 'SBIN0001234', now(), 'Test Person'), (e, 'HDFC Bank', '1234567891', 'HDFC0001234', now(), 'Test Person')", 'unique_violation'),
 ];
 
 /** Rows the ESS writes must go in, take their defaults, and follow an employee's deletion. */
@@ -652,6 +661,76 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.hr_ess_helpdesk_messages WHERE ticket_id = ticket) THEN RAISE EXCEPTION 'messages kept'; END IF;
 END $check$;`;
 
+/**
+ * The Documents phase's rows: a document takes its defaults and its review, an `others` upload
+ * says what it is, a change request takes its defaults and its one-open-per-field rule, a bank
+ * row carries its consent and saves in place, an assignment records who moved a ticket, and the
+ * person's deletion takes the rows with it.
+ */
+const DOCUMENTS_ROWS = `DO $check$
+DECLARE
+  e uuid := gen_random_uuid();
+  other uuid := gen_random_uuid();
+  u uuid := gen_random_uuid();
+  ticket uuid;
+  r record;
+BEGIN
+  INSERT INTO public.hr_employees (id) VALUES (e), (other);
+  INSERT INTO public.users (id) VALUES (u);
+
+  -- A document takes its defaults (pending, nothing reviewed yet).
+  INSERT INTO public.hr_ess_documents (employee_id, doc_type, file_name, storage_path, content_type, size_bytes)
+    VALUES (e, 'resume', 'Resume.pdf', 'documents/' || e || '/resume.pdf', 'application/pdf', 400000);
+  SELECT status, remark, verified_at, rejection_reason INTO r
+    FROM public.hr_ess_documents WHERE employee_id = e;
+  IF r.status <> 'pending' OR r.remark IS NOT NULL OR r.verified_at IS NOT NULL OR r.rejection_reason IS NOT NULL THEN
+    RAISE EXCEPTION 'document defaults';
+  END IF;
+
+  -- An "others" upload says what it is; the review stamps verified, and a rejection says why
+  -- and drops the verified time the earlier state held.
+  INSERT INTO public.hr_ess_documents (employee_id, doc_type, file_name, storage_path, content_type, size_bytes, remark)
+    VALUES (e, 'others', 'Sponsorship letter.pdf', 'documents/' || e || '/letter.pdf', 'application/pdf', 250000, 'The marathon sponsorship letter.');
+  UPDATE public.hr_ess_documents SET status = 'verified', verified_by_user_id = u, verified_by_name = 'Test HR', verified_at = now()
+    WHERE employee_id = e AND doc_type = 'others';
+  UPDATE public.hr_ess_documents SET status = 'rejected', verified_by_user_id = u, verified_by_name = 'Test HR', rejection_reason = 'The scan is not readable.'
+    WHERE employee_id = e AND doc_type = 'resume';
+  SELECT verified_at INTO r FROM public.hr_ess_documents WHERE employee_id = e AND doc_type = 'resume';
+  IF r.verified_at IS NOT NULL THEN RAISE EXCEPTION 'a rejection kept its verified time'; END IF;
+
+  -- A change request takes its defaults, is decided, and makes room for the next ask on the field.
+  INSERT INTO public.hr_ess_change_requests (employee_id, field, old_value, new_value, reason)
+    VALUES (e, 'address', 'House 14, Sector 22', 'House 14, Sector 23', 'We moved next door.');
+  SELECT status, decided_at INTO r FROM public.hr_ess_change_requests WHERE employee_id = e;
+  IF r.status <> 'open' OR r.decided_at IS NOT NULL THEN RAISE EXCEPTION 'change request defaults'; END IF;
+  UPDATE public.hr_ess_change_requests SET status = 'approved', decided_by_user_id = u, decided_by_name = 'Test HR',
+      decided_at = now(), decision_note = 'Checked with the office.' WHERE employee_id = e;
+  INSERT INTO public.hr_ess_change_requests (employee_id, field, new_value, reason)
+    VALUES (e, 'address', 'House 14, Sector 24', 'They built the gate.');
+
+  -- A bank row carries its consent, and a save updates it in place.
+  INSERT INTO public.hr_ess_bank_details (employee_id, bank_name, branch_name, account_number, ifsc_code, consent_given_at, consent_name, updated_by_user_id, updated_by_name)
+    VALUES (e, 'State Bank of India', 'Faridabad Sector 21', '1234567890', 'SBIN0001234', now(), 'Test Person', u, 'Test Person');
+  UPDATE public.hr_ess_bank_details SET account_number = '1234567891' WHERE employee_id = e;
+  SELECT account_number INTO r FROM public.hr_ess_bank_details WHERE employee_id = e;
+  IF r.account_number <> '1234567891' THEN RAISE EXCEPTION 'the bank save'; END IF;
+
+  -- An assignment records who the ticket went to, and who pointed it there.
+  INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'low', 'The library printer jams.', 'Every job takes two sheets at a time.', now(), now())
+    RETURNING id INTO ticket;
+  INSERT INTO public.hr_ess_helpdesk_assignments (ticket_id, to_employee_id, assigned_by_user_id, assigned_by_name)
+    VALUES (ticket, other, u, 'Test HR');
+
+  -- The person's deletion takes the documents, the requests, the bank row and the ticket's
+  -- assignment history with it.
+  DELETE FROM public.hr_employees WHERE id = e;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_documents WHERE employee_id = e) THEN RAISE EXCEPTION 'documents kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_change_requests WHERE employee_id = e) THEN RAISE EXCEPTION 'change requests kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_bank_details WHERE employee_id = e) THEN RAISE EXCEPTION 'bank details kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_helpdesk_assignments WHERE ticket_id = ticket) THEN RAISE EXCEPTION 'assignments kept'; END IF;
+END $check$;`;
+
 function check(label, fn) {
   try {
     const problem = fn();
@@ -715,6 +794,7 @@ function main() {
     check('takes the notifications, their defaults and settings, and follows a deleted employee', () => runSql('the notification rows', NOTIFICATIONS));
     check("takes the Wall's rows, their defaults and counters, and follows a deleted employee", () => runSql('the Wall rows', WALL_ROWS));
     check("takes the Helpdesk's rows, their defaults and thread, and follows a deleted employee", () => runSql('the Helpdesk rows', HELPDESK_ROWS));
+    check("takes the Documents' rows, their defaults and review, and follows a deleted employee", () => runSql('the Documents rows', DOCUMENTS_ROWS));
 
     for (const pass of [1, 2]) {
       for (const file of [...rollbacks].reverse()) {

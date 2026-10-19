@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now). **Phase 2A (the Wall) is built on 19 Oct and waits for migrations 13 to 16.** **Phase 2B (the Helpdesk) is built on 19 Oct and waits for migrations 17 and 18.** The pilot gate is next.
+**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now). **Phase 2A (the Wall) is built on 19 Oct and waits for migrations 13 to 16.** **Phase 2B (the Helpdesk) is built on 19 Oct and waits for migrations 17 and 18; its assign-and-reassign delta is built too and waits for 22.** **Phase 2C (documents, profile changes, bank details and the ID card) is built on 19 Oct and waits for migrations 19 to 24.** The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -25,8 +25,8 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Next |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Gate |
 | [2A](#phase-2a-wall) | The Wall | **Built, 19 Oct; migrations 13-16** |
-| [2B](#phase-2b-helpdesk) | The Helpdesk | Built 19 Oct 2026; waits for migrations 17 and 18 |
-| [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | |
+| [2B](#phase-2b-helpdesk) | The Helpdesk | Built 19 Oct 2026; waits for migrations 17 and 18, and 22 for assign |
+| [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | Built 19 Oct 2026; waits for migrations 19 to 24 |
 | [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, multi-level approvals, short leave | |
 | [3](#phase-3-extras-not-in-this-round) | Extras | Not in this round |
 
@@ -282,8 +282,11 @@ in `src/jobs/helpdesk.js`; migrations 17 and 18. What the build chose, for KP to
   by the migration (G1's "HR edits them" is not built);
 - **queue membership is exact** — a role no category names (the CEO's, most staff's) sees an
   empty queue, and a confidential category is seen only by the team it is routed to;
-- **a claim is the only way a ticket gets an assignee** (assign and reassign are not built,
-  decision 7 open), and G6's infra-register mirror is not built (decision 9 open);
+- **assign and reassign came with Phase 2C** (KP, 19 Oct 2026): `POST /api/ess/helpdesk/tickets/{id}/assign`
+  hands a live ticket to a named handler, and can hand it on again; the assignee must hold the
+  category's own queue role, the move is recorded in `hr_ess_helpdesk_assignments` and the ticket
+  says who pointed it there (migration 22). G6's infra-register mirror is not built (decision 9
+  open);
 - **the SLA targets are the build's defaults** and the working-hours calendar is a policy
   constant (09:00–17:30 IST, Monday to Saturday) plus the Scheduler's `hr_holidays`.
 
@@ -314,11 +317,45 @@ The brief's Phase 2.
 
 The letters folder belongs to Phase 3 ([ADR-0013](adr/0013-scope-phases-1-and-2.md)).
 
-- **You first:**
-  - decision 7;
-  - the document types;
-  - may an HR Executive open identity documents?
-  - are bank details collected in the app? If they are, explicit consent is recorded first (SPDI Rules), and they are HR-only.
+**Built 19 Oct 2026, in one place:** `src/routes/documents.js`, `changeRequests.js`,
+`bankDetails.js` and `idCard.js`, the rules in `src/policy/documents.js`, the shared helpers in
+`src/lib/documentsKit.js` and `src/lib/idCardKit.js`, the reminder in `src/jobs/documents.js`, and
+the assign delta in `src/routes/helpdeskTickets.js`; migrations 19 to 24. What the build chose,
+for KP to confirm:
+- **the document types are fixed in code** (`src/policy/documents.js`, seeded by migration 19):
+  resume, identity, certificate, offer, joining, experience, exit and other, plus an ESS-only
+  `others` that must carry a free-text remark saying what the file is. Identity, offer and
+  joining are the mandatory ones the weekly job asks for; no Aadhaar number is stored.
+- **identity documents are gated** (KP 2): only HR (the `hr` role), the CEO and super admins may
+  open one - an HR Executive is 403 `DOCUMENT_IDENTITY_ROLE` - and every opening is audited with
+  the record kept before it. The role set lives in one place (`IDENTITY_ROLES`), and identity
+  rows are dropped from HR's list responses for a reader who cannot open them.
+- **bank details are collected with consent** (KP 3): the person types their own name and the
+  save stamps `consent_given_at`. The account number is masked to everybody but its owner (the
+  last four only), never appears in a list response, and every HR read is audited, even a read
+  that finds nothing.
+- **an approval of a profile change records the decision only** and never writes `hr_employees`
+  (ADR-0003): HR applies the change in the Scheduler by hand; the request row is the paper
+  trail, and the database holds one open request per field per person.
+- **the weekly reminder names the types the person personally lacks** (`src/jobs/documents.js`,
+  the `documents` notification category), so one held document does not hide the rest.
+- **the ID card's QR holds a signed, expiring link** (90 days): `GET /api/ess/id-card/verify/{token}`
+  is unauthenticated, rate-limited per address, and answers 401 `ID_CARD_BAD_TOKEN` for a bad or
+  expired link or a card whose holder has left.
+- **POSH routes to the Internal Committee** (`internal_committee`, migration 23): the queue stays
+  empty until RVM appoints the committee and its logins carry that role.
+
+- **You first:** the three questions the phase asked (the document types, who opens identity
+  documents, whether bank details are collected) were answered by KP on 19 Oct
+  ([03-decisions.md](03-decisions.md)).
+- **You after:** apply migrations 19 to 24, in order ([05-deploy.md](05-deploy.md#migrations-to-apply)).
+  Until 19 to 21 are applied the document, change-request and bank-details endpoints answer 503
+  `MODULE_NOT_INSTALLED`; until 22 the assign endpoint does; until 24 the reminders are logged
+  as failed writes.
+- **Done when:** a person uploads each mandatory document, HR verifies or turns it away with a
+  reason, and the weekly reminder reaches only those still missing one; a change request reaches
+  HR's queue and its answer is recorded; a bank row carries its consent and shows only its last
+  four digits to anybody but its owner; a card's QR link proves an employee without a sign-in.
 
 ## Phase 2D: Leader and faculty views and deeper approvals
 

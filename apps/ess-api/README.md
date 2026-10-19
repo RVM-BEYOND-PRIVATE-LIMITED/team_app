@@ -18,7 +18,7 @@ Run from the repository root (`npm run lint`, `npm test`) or from this folder:
 
 `npm run test:migrations`, from the repository root, runs `db/migrations` against a throwaway Postgres in Docker (`db/test/run-migrations.js`).
 
-`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.7.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
+`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.8.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
 
 Set `SCHEDULER_BACKEND_DIR` to a Scheduler_Backend checkout to also run the drift checks. They compare `src/policy/roles.js` and `src/policy/hrPolicy.js` with the Scheduler's `config/roles.js` and `config/hrPolicy.js`, and the verbatim Scheduler code in `tests/helpers` with its source:
 
@@ -28,9 +28,9 @@ SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test
 
 Without it those checks are skipped, and that includes CI, which cannot read the private Scheduler repository. Run them by hand whenever the Scheduler changes.
 
-Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all sixteen migrations more broadly. CI runs neither yet.
+Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all twenty-four migrations more broadly. CI runs neither yet.
 
-**The suite (19 Oct 2026, Phase 2B):** 2,198 tests in 45 files, the contract included - 1,002 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all eighteen migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's and the Helpdesk's row rules themselves.
+**The suite (19 Oct 2026, Phase 2C):** 2,401 tests in 50 files, the contract included - 1,152 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, plus `helpdeskAssign` for the Phase 2C delta; Phase 2C's are `documents`, `changeRequests`, `bankDetails`, `idCard` and `documentsJob`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all twenty-four migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's, the Helpdesk's and Phase 2C's row rules themselves.
 
 ## Settings
 
@@ -108,6 +108,18 @@ Phase 2A adds the Wall's own limits and windows:
 | The Helpdesk's reads | 50 tickets in my list, 100 in a queue, 200 rows in a thread | `src/lib/store.js` `LIST_LIMITS` |
 | The Helpdesk's clock | once at boot, then hourly: escalation of a past-due live ticket to its team, then the HoO, then the CEO | `src/jobs/helpdesk.js` |
 
+Phase 2C adds the documents', changes', bank's and card's own numbers:
+
+| What | Value | Where |
+| --- | --- | --- |
+| Documents | up to 50 kept per person, each 1 byte to 5 MB decoded | `src/policy/documents.js`, `src/routes/documents.js` |
+| Document uploads | 30 a day per employee | `src/middleware/rateLimit.js` (`documentsUploads`) |
+| A document upload's body | 7 MB (`/api/ess/me/documents`) | `src/app.js` (`LARGE_JSON_BODIES`) |
+| Open change requests | one per field per person, held by the database's partial unique index | `db/migrations/20261110000002_hr_ess_change_requests.sql` |
+| The weekly reminder | once a week, one `documents` notification per person, naming the mandatory types they personally lack | `src/jobs/documents.js` |
+| The ID card's verify link | HMAC-signed from `JWT_SECRET`, 90 days from minting | `src/lib/idCardKit.js` |
+| ID card verifications | 30 a minute per address | `src/middleware/rateLimit.js` (`idCardVerify`) |
+
 ## Endpoints
 
 Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Control: no-store`.
@@ -144,7 +156,7 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `POST /api/ess/push-devices`, `DELETE /api/ess/push-devices/{id}` | either | Register this phone's FCM token (D5), and revoke it on sign-out. One install, one row; the token is never sent back |
 | `GET /api/ess/notifications` | either | My notifications, newest first, with the unread count (D6) |
 | `POST /api/ess/notifications/{id}/read`, `POST /api/ess/notifications/read-all` | either | Mark one (idempotent) or all read |
-| `GET /api/ess/notifications/settings`, `PUT /api/ess/notifications/settings` | either | The categories (`approvals`, `decisions`, `priority_tasks`, then the Wall's six and `helpdesk`) and the quiet hours (D8) |
+| `GET /api/ess/notifications/settings`, `PUT /api/ess/notifications/settings` | either | The categories (`approvals`, `decisions`, `priority_tasks`, then the Wall's six, `helpdesk` and `documents`) and the quiet hours (D8) |
 | `GET /api/ess/me/profile` | either | My Summary, Job, Personal and the safe Timeline, with a 300-second signed photo link (E1, E12, E10) |
 | `PUT /api/ess/me/photo` | either | Change my photo (base64, ≤1 MB, JPEG/PNG/WebP): the private bucket plus the record's pointer, audited (E10) |
 | `GET /api/ess/me/org` | either | My chain to the CEO ("Reports to the CEO (not recorded)"), peers, direct reports and department, with the notice chip (E2, E11) |
@@ -191,14 +203,24 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `POST /api/ess/helpdesk/tickets/{id}/withdraw` | the raiser | Take an open ticket back; anything else is 409 `HELPDESK_NOT_OPEN` |
 | `POST /api/ess/helpdesk/tickets/{id}/reopen` | the raiser | Take a resolved or closed ticket back up, within 7 days; the deadlines start over |
 | `POST /api/ess/helpdesk/tickets/{id}/close` | the raiser | Close it myself: a reason of 3 to 280 characters, an optional rating of 1 to 5 |
-| `POST /api/ess/helpdesk/tickets/{id}/claim` | the team | Take the ticket (G5): names the assignee, counts as the first response, moves open to in progress; no re-assignment (decision 7) |
+| `POST /api/ess/helpdesk/tickets/{id}/claim` | the team | Take the ticket (G5): names the assignee, counts as the first response, moves open to in progress; `assign` hands a live ticket to somebody else |
 | `POST /api/ess/helpdesk/tickets/{id}/status` | the team | Move to `in_progress`, `on_hold` or `resolved`, where the lifecycle allows |
+| `POST /api/ess/helpdesk/tickets/{id}/assign` | the team | Hand a live ticket to a named handler (KP 5): `{ employee_id, note? }`; the assignee must hold the category's queue role; sets `claimed_at` and the first response, moves open to in progress, and the history row in `hr_ess_helpdesk_assignments` keeps who pointed it there |
 | `GET /api/ess/helpdesk/queue` | portal | The team's queue (G5): the tickets of my role's categories, `?status=` and `?category=`; an attendance session is 403 `PORTAL_LOGIN_REQUIRED` |
 | `GET /api/ess/team/off-this-week` | either | Who is off this week: reports, else peers; names and days only (E6) |
+| `GET, POST, DELETE /api/ess/me/documents` | either | My documents (E4): `POST` uploads one base64 (201; the fixed types, `others` with its remark; at most 50 kept, 30 a day), `GET` lists mine newest first, `DELETE` takes one of mine off |
+| `GET /api/ess/hr/employees/{id}/documents` | portal: hr, hr_executive, ceo, super_admin | A person's documents for review (E5); identity rows are hidden from a reader who may not open them |
+| `POST /api/ess/hr/employees/{id}/documents/{docId}/verify`, `/reject` | portal: hr, hr_executive, ceo, super_admin | Verify a document, or reject it with a reason of 3 to 500 characters; a reviewed one refuses a second answer (409 `DOCUMENT_REVIEWED`) |
+| `POST, GET /api/ess/me/change-requests` | either | Ask for my date of birth, address or legal name to be corrected (E3): what the record shows, what it should, the reason; one open request per field (409 `CHANGE_ALREADY_OPEN`) |
+| `GET /api/ess/hr/change-requests`, `POST /api/ess/hr/change-requests/{id}/decide` | portal: hr, ceo, super_admin | HR's queue, and the decision with its note - recorded only, never written to `hr_employees` |
+| `GET, PUT /api/ess/me/bank-details` | either | My salary account (KP 3): saved only with `consent_name` typed (the save stamps `consent_given_at`); `GET` answers `{ bank_details: null }` while nothing is saved |
+| `GET /api/ess/hr/employees/{id}/bank-details` | portal: hr, ceo, super_admin | The account masked to its last four digits; every read audited |
+| `GET /api/ess/me/id-card` | either | My ID card (E7): the HR record's and personal details' name, photo, designation, branch, and its `verify_url` for the QR |
+| `GET /api/ess/id-card/verify/{token}` | none | The QR's signed, expiring link (90 days): name, photo, designation, branch, "active employee". 401 `ID_CARD_BAD_TOKEN` for a bad, expired or archived-holder link |
 
 The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.7.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.8.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
 
 ### Staying signed in (task A3)
 
@@ -252,11 +274,22 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 ### The Helpdesk (tasks G1-G5)
 
 - **The categories are fixed in code** (`src/policy/helpdesk.js`) and seeded by migration 17: the six ticket categories of the brief, plus four rows that link to the flows a ticket is not (leave, WFH, an attendance fix, an asset request). `GET /ess/helpdesk/categories` hands the raise form the same list the server refuses on, so form and server cannot disagree; raising on a link is 400 `HELPDESK_NOT_A_TICKET`. G1's HR-editable categories are not built; a change here is a reviewed code change and a migration re-run.
-- **Routing is exact** (G5): a ticket lands in the queue of the roles its category names, and nowhere else - nobody inherits their way in, and a role no category names (the CEO's, most staff's) is answered an empty queue. **KP to confirm:** the lab has no desk role (IT and lab tickets go to the admin roles) and the Internal Committee has no login (POSH tickets go to HR).
+- **Routing is exact** (G5): a ticket lands in the queue of the roles its category names, and nowhere else - nobody inherits their way in, and a role no category names (the CEO's, most staff's) is answered an empty queue. **KP to confirm:** the lab has no desk role (IT and lab tickets go to the admin roles). **POSH** moved to the Internal Committee with Phase 2 (KP, 19 Oct): migration 23 names `internal_committee` the `posh` row's only queue role, and the queue stays empty until RVM appoints the committee and its logins carry that role.
+- **The team's work** (G5): comment at any status, claim, or - since Phase 2C (KP, 19 Oct) - assign a live ticket to a named handler with `POST .../assign { employee_id, note? }`. The assignee must hold the category's own queue role (`HELPDESK_ASSIGNEE_ROLE`); assigning sets `claimed_at` and the first response, moves open to in progress, and writes the history row in `hr_ess_helpdesk_assignments`, so a reassign never overwrites who had it first; the event row says who pointed it there. Reassigning to the person who has it answers 200 and does nothing.
 - **The lifecycle** (G2) is open, in progress, on hold where the category allows, resolved, closed, plus the raiser's own exits: withdraw while open, close from any live state with a reason of 3 to 280 characters and an optional rating of 1 to 5, and reopen within 7 days - which works the deadlines out again and resets the first response and the escalation. Nothing is deleted: every move is an `event` row in the thread, so the thread is the record. Comments are open at any status, to the raiser and the team.
 - **The SLA** (G3) stores both deadlines, worked out at raise in the raiser's branch's working hours (09:00-17:30 IST, Monday to Saturday, plus the Scheduler's `hr_holidays`); every view carries "overdue by" in working minutes, and `src/jobs/helpdesk.js` escalates a past-due live ticket to its team, then the HoO, then the CEO, one notification per stage. **KP to confirm:** the targets are the build's defaults.
 - **Confidentiality and anonymity** (G4): grievance and POSH are hidden from every list but their team's - HR's oversight does not reach them; an anonymous raise keeps the raiser in the record but out of the team's view (HR's own roles still see the name); and every read of a confidential ticket by anybody but its raiser is written to `hr_ess_audit` as `helpdesk.ticket.read` before the reply, refused if it cannot be recorded.
-- **Notifications** go through `src/lib/helpdeskNotify.js` on the `helpdesk` category (migration 18): a raise tells the team, a claim and a status move tell the raiser, a comment tells the other side, a reopen tells the assignee, the escalation tells its stage. Best effort, as everywhere: a failed write is logged, never raised.
+- **Notifications** go through `src/lib/helpdeskNotify.js` on the `helpdesk` category (migration 18): a raise tells the team, a claim, an assign and a status move tell the raiser and the assignee, a comment tells the other side, a reopen tells the assignee, the escalation tells its stage. Best effort, as everywhere: a failed write is logged, never raised.
+
+### My documents, profile changes, the bank details and the ID card (Phase 2C)
+
+- **The types are fixed in code** (`src/policy/documents.js`) and seeded by migration 19: resume, identity, certificate, offer, joining, experience, exit and other, plus `others`, which must carry a remark of 3 to 500 characters saying what the file is (a database CHECK holds it too). `identity`, `offer` and `joining` are the mandatory ones the weekly job asks for; each is marked on its type row, so KP can turn one off with one UPDATE. No Aadhaar number is stored anywhere.
+- **The upload is the person's own**: base64 in, the file to the ESS bucket's `documents/` path, the row pending. At most 50 documents a person keeps, 5 MB a file, 30 uploads a day; a delete takes one of the person's own off. HR verifies (`POST .../verify` with an empty body) or rejects with a reason of 3 to 500 characters; a reviewed document refuses a second answer (409 `DOCUMENT_REVIEWED`).
+- **Identity documents are gated** (KP 2): only HR (the `hr` role), the CEO and super admins may open one; an HR Executive is 403 `DOCUMENT_IDENTITY_ROLE`. Every opening is audited with the record kept before it, and identity rows are dropped from HR's list responses for a reader who cannot open them.
+- **A profile change is a request, not a write** (E3): the person files what the record shows and what it should read, with a reason of 5 to 1,000 characters; the database holds one open request per field per person. HR decides with a note - the ESS records the decision only and never writes `hr_employees` (ADR-0003); HR applies the change in the Scheduler by hand.
+- **The bank details carry their consent** (KP 3): a save needs `consent: true`, the person's own `consent_name` and stamps `consent_given_at`. The account number is shown to everybody but its owner as `******` plus the last four digits, never appears in a list response, and every HR read is audited with the record kept before it - even a read that finds nothing.
+- **The ID card's QR holds a signed link** (E7): `GET /api/ess/id-card/verify/{token}` takes no sign-in; the token is an HMAC (`src/lib/idCardKit.js`) that expires after 90 days and answers only the holder's name, photo, designation, branch and "active employee". A bad, expired or archived-holder link is 401 `ID_CARD_BAD_TOKEN`, and the route is limited to 30 verifications a minute per address.
+- **The weekly reminder** (`src/jobs/documents.js`, the `documents` notification category from migration 24) goes to every person still missing a mandatory type, and names the types they personally lack - one held document does not hide the rest. A person can turn the category off like any other.
 
 ### How sign-in is checked
 
@@ -285,12 +318,17 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 403 | `NOT_AN_ANNOUNCER`, `MODERATE_DENIED`, `NOT_IN_AUDIENCE` | The Wall: an announcement from a role outside HR, the CEO and super admins; a hide, the report queue or the moderation log from anybody but HR; an announcement that was not sent to this person |
 | 409 | `EDIT_WINDOW_CLOSED`, `ALREADY_WISHED`, `POLL_CLOSED`, `POLL_OPTIONS_LOCKED`, `ALREADY_REPORTED`, `ALREADY_HIDDEN`, `NOT_HIDDEN`, `PIN_LIMIT`, `ACK_CLOSED` | The Wall cannot move as asked: past the 15 minutes; this year's wish is already there; the poll is closed or the option set is frozen; HR already has this person's report; a second hide or a restore of something not hidden; three announcements are pinned; the acknowledgement date has gone |
 | 409 | `HELPDESK_NOT_OPEN`, `HELPDESK_NOT_LIVE`, `HELPDESK_ALREADY_CLAIMED`, `HELPDESK_TRANSITION`, `HELPDESK_NOT_CLOSED`, `HELPDESK_REOPEN_WINDOW` | The Helpdesk ticket cannot move as asked: a withdrawal of anything but an open ticket; a claim of a settled or withdrawn one, or one somebody else has already claimed; a close or status move the lifecycle refuses; a reopen of anything not resolved or closed, or past the 7 days |
+| 403 | `HELPDESK_ASSIGNEE_ROLE` | An assign to somebody who does not hold the category's queue role |
+| 403 | `DOCUMENT_IDENTITY_ROLE` | An identity document opened by somebody but HR (the `hr` role), the CEO and a super admin |
+| 409 | `DOCUMENT_LIMIT`, `DOCUMENT_REVIEWED` | The person already holds 50 documents; a document HR has already verified or turned away |
+| 409 | `CHANGE_ALREADY_OPEN` | A change request filed while another for the same field still waits |
+| 401 | `ID_CARD_BAD_TOKEN` | A verify link that is not valid, has expired, or belongs to somebody who has left |
 | 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included); a session that is not one of the caller's; or no such request, employee or branch |
 | 400 | `INVALID_JSON` | A request body that is not valid JSON |
 | 400 | `BAD_INSTALL_ID`, `BAD_DEVICE_LABEL`, `BAD_IDENTIFIER` | A missing or malformed install id, phone name or sign-in identifier |
 | 400 | `VALIDATION_FAILED`, `DAY_OUT_OF_RANGE` | A field, query or id the endpoint refuses; the message says which |
 | 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB (32 kB for the phone reset's id list, 2 MB for a photo, 7 MB for a Wall post, praise or announcement, or a Helpdesk raise) |
-| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier; 30 mocked-location reports a day per employee, 60 Wall posts and 200 comments a day, 60 reactions a minute, and 20 raised tickets a day (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
+| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier; 30 mocked-location reports a day per employee, 60 Wall posts and 200 comments a day, 60 reactions a minute, 20 raised tickets a day, 30 document uploads a day, and 30 ID-card verifications a minute per address (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
 | 503 | `UNAVAILABLE` | The database could not be reached. Never a 401 |
 | 503 | `MODULE_NOT_INSTALLED` | A table, column or function the ESS needs is missing: the code is live before its migration ([ADR-0021](../../docs/adr/0021-migrations-new-tables-only.md)) |
 | 503 | `MODULE_DISABLED` | `ESS_ENABLED=false` |

@@ -151,7 +151,7 @@ const MESSAGES = Object.freeze({
   PUSH_DEVICE_LABEL: 'Keep the phone name to 80 characters.',
   PUSH_DEVICE_NOT_FOUND: 'That phone was not found.',
   NOTIFICATION_NOT_FOUND: 'That notification was not found.',
-  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls or helpdesk.',
+  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk or documents.',
 
   // E1-E12: Me and My Team.
   PHOTO_FORMAT: 'Send the photo as base64 image data (JPEG, PNG or WebP).',
@@ -260,6 +260,47 @@ const MESSAGES = Object.freeze({
   HELPDESK_NOT_CLOSED: 'Only a resolved or closed ticket can be reopened.',
   HELPDESK_CLOSE_REASON: 'Say why it is closed, in 3 to 280 characters.',
   HELPDESK_RATING: 'Rate the answer from 1 to 5.',
+  HELPDESK_ASSIGNEE: 'Send the employee id of the person to assign the ticket to.',
+  HELPDESK_ASSIGNEE_NOT_FOUND: 'That employee was not found.',
+  HELPDESK_ASSIGNEE_ROLE: "That person is not on this category's team. Only the queue's roles can be assigned a ticket.",
+  HELPDESK_ASSIGN_NOTE: 'Keep the note to 500 characters.',
+
+  // Phase 2C: My Documents (KP 1, KP 2).
+  DOCUMENT_TYPE: 'Choose a document type from the list.',
+  DOCUMENT_FILE: 'Send one file as base64 data (PDF, JPEG or PNG), with its content type.',
+  DOCUMENT_SIZE: 'A document must be up to 5 MB.',
+  DOCUMENT_NAME: 'Give the file a name, up to 200 characters.',
+  DOCUMENT_REMARK: 'Say what this file is, in 3 to 500 characters. The "Other (say what it is)" type needs it.',
+  DOCUMENT_NOT_FOUND: 'That document was not found.',
+  DOCUMENT_LIMIT: 'That is more documents than one record keeps (50). Delete one first.',
+  DOCUMENT_IDENTITY_ROLE: 'Only HR, the CEO and super admins can open an identity document.',
+  DOCUMENT_STATUS: 'Mark the document verified or rejected.',
+  DOCUMENT_REJECT_REASON: 'Say why the document is turned away, in 3 to 500 characters. The employee sees it.',
+  DOCUMENT_REVIEWED: 'That document has already been reviewed.',
+
+  // Phase 2C: profile-change requests (E3).
+  CHANGE_FIELD: 'Choose what to correct: date of birth, address or legal name.',
+  CHANGE_OLD_VALUE: 'Keep "what it says now" to 500 characters.',
+  CHANGE_NEW_VALUE: 'Say what it should read, in 1 to 500 characters.',
+  CHANGE_REASON: 'Say why, in 5 to 1,000 characters.',
+  CHANGE_NOT_FOUND: 'That change request was not found.',
+  CHANGE_ALREADY_OPEN: 'You already have an open request for that. Wait for HR to answer it first.',
+  CHANGE_STATUS_FILTER: 'status must be open, approved, rejected or all.',
+  CHANGE_DECISION: 'Mark the request approved or rejected.',
+  CHANGE_NOTE: 'Keep the note to 1,000 characters.',
+  CHANGE_REJECT_NOTE: 'Say why the request is rejected, in at least 3 characters. The employee sees it.',
+
+  // Phase 2C: bank details (KP 3).
+  BANK_NAME: 'Name the bank, in 2 to 120 characters.',
+  BANK_BRANCH: 'Keep the branch name to 120 characters.',
+  BANK_ACCOUNT: 'The account number must be 8 to 18 digits.',
+  BANK_IFSC: 'The IFSC code must be 11 characters: four letters, a zero, then six letters or digits.',
+  BANK_UPI: 'The UPI ID can be up to 60 characters.',
+  BANK_CONSENT: 'Saving your bank details needs your consent: send consent: true and your name in consent_name.',
+  BANK_CONSENT_NAME: 'Type your name, up to 120 characters, to confirm you are saving these details yourself.',
+
+  // Phase 2C: the ID card's verification link.
+  ID_CARD_BAD_TOKEN: 'That verification link is not valid, or it has expired.',
 });
 
 /** error and code first, and an extra field can never replace either of them. */

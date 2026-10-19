@@ -114,6 +114,7 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
         { category: 'acknowledgements', enabled: true },
         { category: 'polls', enabled: true },
         { category: 'helpdesk', enabled: true },
+        { category: 'documents', enabled: true },
       ],
       quiet_hours: { from: '21:00', to: '08:00' },
     });
@@ -135,6 +136,7 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
       { category: 'acknowledgements', enabled: true },
       { category: 'polls', enabled: true },
       { category: 'helpdesk', enabled: true },
+      { category: 'documents', enabled: true },
     ]);
     expect(db.tables.hr_ess_notification_settings).toEqual([
       expect.objectContaining({ employee_id: people.attendance.employee.id, disabled_categories: ['approvals'] }),

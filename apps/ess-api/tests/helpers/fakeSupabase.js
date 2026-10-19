@@ -127,10 +127,25 @@ const SCHEMA = {
   hr_ess_helpdesk_categories: ['id', 'slug', 'name', 'is_ticket', 'flow', 'queue_roles', 'confidential', 'allows_hold',
     'priority', 'first_response_hours', 'resolution_hours', 'is_active', 'created_at', 'updated_at'],
   hr_ess_helpdesk_tickets: ['id', 'ref', 'created_by', 'category_id', 'priority', 'subject', 'body', 'attachments',
-    'anonymous', 'branch_id', 'status', 'assignee_id', 'claimed_at', 'first_response_at', 'first_response_due_at',
+    'anonymous', 'branch_id', 'status', 'assignee_id', 'claimed_at', 'assigned_by_employee_id', 'assigned_by_name',
+    'assigned_at', 'first_response_at', 'first_response_due_at',
     'resolution_due_at', 'resolved_at', 'closed_at', 'closed_by_employee_id', 'closing_reason', 'rating', 'reopened_at',
     'escalation_level', 'created_at', 'updated_at'],
   hr_ess_helpdesk_messages: ['id', 'ticket_id', 'employee_id', 'kind', 'body', 'event', 'details', 'created_at'],
+  // 20261110000004_hr_ess_helpdesk_assignment.sql (Phase 2C, KP 5)
+  hr_ess_helpdesk_assignments: ['id', 'ticket_id', 'from_employee_id', 'to_employee_id', 'assigned_by_user_id',
+    'assigned_by_name', 'note', 'created_at'],
+  // 20261110000001_hr_ess_documents.sql (Phase 2C, KP 1, KP 2)
+  hr_ess_document_types: ['slug', 'name', 'is_mandatory', 'sort', 'created_at'],
+  hr_ess_documents: ['id', 'employee_id', 'doc_type', 'file_name', 'storage_path', 'content_type', 'size_bytes',
+    'remark', 'status', 'verified_by_user_id', 'verified_by_name', 'verified_at', 'rejection_reason', 'created_at',
+    'updated_at'],
+  // 20261110000002_hr_ess_change_requests.sql (Phase 2C, E3)
+  hr_ess_change_requests: ['id', 'employee_id', 'field', 'old_value', 'new_value', 'reason', 'status',
+    'decided_by_user_id', 'decided_by_name', 'decided_at', 'decision_note', 'created_at', 'updated_at'],
+  // 20261110000003_hr_ess_bank_details.sql (Phase 2C, KP 3)
+  hr_ess_bank_details: ['employee_id', 'bank_name', 'branch_name', 'account_number', 'ifsc_code', 'upi_id',
+    'consent_given_at', 'consent_name', 'updated_by_user_id', 'updated_by_name', 'created_at', 'updated_at'],
   // The Scheduler's priority tasks, read for push only (20260814000001:30-53)
   priority_tasks: ['id', 'location_id', 'task_date', 'title', 'notes', 'priority', 'due_date', 'assigned_to', 'assigned_by',
     'assigned_by_name', 'assigned_by_role', 'status', 'progress_note', 'completed_by', 'completed_at', 'cancelled_by',
@@ -187,6 +202,10 @@ const UNIQUE = {
   hr_ess_helpdesk_tickets: [
     { name: 'hr_ess_helpdesk_tickets_ref_key', columns: ['ref'] },
   ],
+  // E3: one open ask per field per person (the partial unique index, 20261110000002).
+  hr_ess_change_requests: [
+    { name: 'hr_ess_change_requests_open_field_key', columns: ['employee_id', 'field'], where: (row) => row.status === 'open' },
+  ],
 };
 
 /**
@@ -227,9 +246,10 @@ const CHECKS = {
   // The Helpdesk's shape rules (db/migrations/20261109000001), as the routes rely on them.
   hr_ess_helpdesk_categories: {
     hr_ess_helpdesk_categories_priority_chk: (r) => ['low', 'medium', 'high', 'urgent'].includes(r.priority),
+    // Widened with `internal_committee` by 20261110000005 (KP 6): POSH routes to the committee.
     hr_ess_helpdesk_categories_roles_chk: (r) => (r.queue_roles || []).every((x) => [
       'ceo', 'super_admin', 'hoo', 'hod', 'hod_placement', 'admin_manager', 'admin',
-      'accounts_admin', 'hr', 'hr_executive', 'faculty',
+      'accounts_admin', 'hr', 'hr_executive', 'faculty', 'internal_committee',
     ].includes(x)),
     hr_ess_helpdesk_categories_flow_chk: (r) => (r.is_ticket === true && (r.flow ?? null) === null)
       || (r.is_ticket === false && (r.flow ?? null) !== null),
@@ -251,6 +271,24 @@ const CHECKS = {
     hr_ess_helpdesk_messages_kind_chk: (r) => ['comment', 'event'].includes(r.kind),
     hr_ess_helpdesk_messages_shape_chk: (r) => (r.kind === 'comment' && (r.body ?? null) !== null && (r.event ?? null) === null)
       || (r.kind === 'event' && (r.body ?? null) === null && (r.event ?? null) !== null),
+  },
+  // My Documents' shape rules (db/migrations/20261110000001), as the routes rely on them.
+  hr_ess_documents: {
+    hr_ess_documents_status_chk: (r) => ['pending', 'verified', 'rejected'].includes(r.status),
+    hr_ess_documents_review_chk: (r) => (r.status === 'verified') === ((r.verified_at ?? null) !== null)
+      && (r.status === 'rejected') === ((r.rejection_reason ?? null) !== null),
+    hr_ess_documents_others_remark_chk: (r) => r.doc_type !== 'others' || (r.remark ?? null) !== null,
+  },
+  // The change requests' fields and states (20261110000002).
+  hr_ess_change_requests: {
+    hr_ess_change_requests_field_chk: (r) => ['date_of_birth', 'address', 'legal_name'].includes(r.field),
+    hr_ess_change_requests_status_chk: (r) => ['open', 'approved', 'rejected'].includes(r.status),
+    hr_ess_change_requests_decided_chk: (r) => (r.status === 'open') === ((r.decided_at ?? null) === null),
+  },
+  // The bank details' RBI shapes (20261110000003): the IFSC and the account number.
+  hr_ess_bank_details: {
+    hr_ess_bank_details_account_chk: (r) => /^[0-9]{8,18}$/.test(r.account_number ?? ''),
+    hr_ess_bank_details_ifsc_chk: (r) => /^[A-Z]{4}0[A-Z0-9]{6}$/.test(r.ifsc_code ?? ''),
   },
 };
 
@@ -332,6 +370,12 @@ const TIMESTAMPS = {
 /** The primary key of each table, where it is not `id`. */
 const KEYS = {
   hr_ess_personal_details: ['employee_id'],
+  // One row per person: its primary key is the person (20261110000003).
+  hr_ess_bank_details: ['employee_id'],
+  // The types' slug is their key (20261110000001).
+  hr_ess_document_types: ['slug'],
+  // The celebration opt-out's person key already reads through here.
+  hr_ess_celebration_optouts: ['employee_id'],
 };
 
 /** What the database fills in on insert: the hr_ess_* DEFAULTs in db/migrations. */
@@ -373,6 +417,12 @@ const DEFAULTS = {
   hr_ess_helpdesk_tickets: (at) => ({ attachments: [], anonymous: false, status: 'open', escalation_level: 0,
     created_at: at, updated_at: at }),
   hr_ess_helpdesk_messages: (at) => ({ kind: 'comment', details: {}, created_at: at }),
+  // db/migrations/20261110000001 to 20261110000004 (Phase 2C).
+  hr_ess_document_types: (at) => ({ is_mandatory: false, sort: 0, created_at: at }),
+  hr_ess_documents: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
+  hr_ess_change_requests: (at) => ({ status: 'open', created_at: at, updated_at: at }),
+  hr_ess_bank_details: (at) => ({ branch_name: null, upi_id: null, created_at: at, updated_at: at }),
+  hr_ess_helpdesk_assignments: (at) => ({ note: null, created_at: at }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));

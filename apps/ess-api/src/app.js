@@ -36,6 +36,10 @@ const wallSettings = require('./routes/wallSettings');
 const helpdeskCategories = require('./routes/helpdeskCategories');
 const helpdeskTickets = require('./routes/helpdeskTickets');
 const helpdeskQueue = require('./routes/helpdeskQueue');
+const documents = require('./routes/documents');
+const changeRequests = require('./routes/changeRequests');
+const bankDetails = require('./routes/bankDetails');
+const idCard = require('./routes/idCard');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
@@ -59,6 +63,9 @@ const LARGE_JSON_BODIES = Object.freeze({
   '/wall/announcements': '7mb',
   // G2: a Helpdesk ticket may carry the same five files as a Wall post.
   '/helpdesk/tickets': '7mb',
+  // KP 1 (Phase 2C): one document of up to 5 MB decoded arrives as base64 — about 7 MB on the
+  // wire, the same ceiling the five Wall files take.
+  '/me/documents': '7mb',
 });
 
 /**
@@ -311,6 +318,41 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   // PORTAL_LOGIN_REQUIRED; a portal role that serves no category is answered an empty queue.
   const asHelpdeskQueue = [...asEmployee, requireRoles(PORTAL_ROLES, 'HR_ACCESS_DENIED')];
   api.get('/helpdesk/queue', asHelpdeskQueue, helpdeskQueue.listQueue({ store, now }));
+
+  // KP 5 (Phase 2C): the team assigns a live ticket to a named handler, and reassigns it.
+  api.post('/helpdesk/tickets/:id/assign', asEmployee, helpdeskTickets.assignTicket({ store, now }));
+
+  /* ── Phase 2C: My Documents, profile-change requests, bank details, the ID card ── */
+
+  // KP 1: an upload is one big file, with its own daily bucket on top of the per-employee limit,
+  // as the Wall's posts and the Helpdesk's raises have.
+  const documentsUploadLimiter = createEmployeeLimiter(limit('documentsUploads'));
+  api.get('/me/documents', asEmployee, documents.listMyDocuments({ store }));
+  api.post('/me/documents', asEmployee, documentsUploadLimiter, documents.createMyDocument({ store, now }));
+  api.get('/me/documents/:id/file', asEmployee, documents.getMyDocumentFile({ store }));
+
+  // E3: my change requests, and HR's queue over them.
+  api.get('/me/change-requests', asEmployee, changeRequests.listMyChangeRequests({ store }));
+  api.post('/me/change-requests', asEmployee, changeRequests.createMyChangeRequest({ store, now }));
+  api.get('/hr/change-requests', asHrRecords, changeRequests.listChangeRequests({ store }));
+  api.post('/hr/change-requests/:id/decide', asHrRecords, changeRequests.decideChangeRequest({ store, now }));
+
+  // KP 3: my bank details, and HR's masked, audited read of one person's.
+  api.get('/me/bank-details', asEmployee, bankDetails.getMyBankDetails({ store }));
+  api.put('/me/bank-details', asEmployee, bankDetails.putMyBankDetails({ store, now }));
+  api.get('/hr/employees/:id/bank-details', asHrRecords, bankDetails.getEmployeeBankDetails({ store }));
+
+  // KP 1, KP 2: HR's desk over one person's documents.
+  api.get('/hr/employees/:id/documents', asHrRecords, documents.listEmployeeDocuments({ store }));
+  api.get('/hr/employees/:id/documents/:documentId/file', asHrRecords, documents.getEmployeeDocumentFile({ store }));
+  api.post('/hr/employees/:id/documents/:documentId/verify', asHrRecords, documents.verifyEmployeeDocument({ store, now }));
+  api.post('/hr/employees/:id/documents/:documentId/reject', asHrRecords, documents.rejectEmployeeDocument({ store, now }));
+  api.delete('/hr/employees/:id/documents/:documentId', asHrRecords, documents.deleteEmployeeDocument({ store }));
+
+  // The ID card: the holder's own card, and the verification link, which takes no token at all
+  // and is limited per address instead (as the sign-in is).
+  api.get('/me/id-card', asEmployee, idCard.getMyIdCard({ store, config, now }));
+  api.get('/id-card/verify/:token', createIpLimiter(limit('idCardVerify')), idCard.verifyIdCard({ store, config, now }));
 
   app.use('/api/ess', api);
 

@@ -283,6 +283,51 @@ applied the Helpdesk's notifications are logged as failed writes and nothing els
 end, with the deadlines, the "overdue by" and the escalations to prove the SLA works; a
 confidential ticket is seen by nobody it should not be, with the audit trail to show for it.
 
+### Phase 2C: documents, profile changes and the ID card — built 19 Oct 2026
+
+The brief's documents, profile changes and ID card, built to this plan and waiting for its
+migrations (19 to 24 below). Everything is in `apps/ess-api` and
+`db/migrations/20261110000001` to `20261110000006`. The Helpdesk's assign-and-reassign delta
+(KP, 19 Oct) came with it and waits for migration 22.
+
+| Work | How, with no Scheduler change | Tasks | State |
+| --- | --- | --- | --- |
+| My documents | `hr_ess_documents` behind `POST/GET/DELETE /api/ess/me/documents`: the fixed types (resume, identity, certificate, offer, joining, experience, exit, other, plus `others` with its required remark), base64 in, the ESS bucket out (`documents/`), at most 50 a person, 30 uploads a day, each row pending until HR answers | E4 | Built |
+| HR's review | `GET /api/ess/hr/employees/{id}/documents`, and `POST .../documents/{docId}/verify` and `/reject` (a rejection says why, 3 to 500 characters); a reviewed document refuses a second answer with 409 `DOCUMENT_REVIEWED`; delete is a plain 204, no status check | E4, E5 | Built |
+| Identity documents gated | Only hr, ceo and super_admin may open one (`src/policy/documents.js` `IDENTITY_ROLES`, the one place the rule lives); an HR Executive is 403 `DOCUMENT_IDENTITY_ROLE`; every opening is audited with the record kept before it; identity rows are dropped from list responses for a reader who cannot open them; no Aadhaar number is stored | E4 | Built |
+| The weekly reminder | `src/jobs/documents.js`, weekly: one `documents` notification per person still missing a mandatory type, naming the types they personally lack (one held document does not hide the rest); migration 24 adds the category | E4 | Built |
+| Profile changes as requests | `hr_ess_change_requests` behind `POST/GET /api/ess/me/change-requests` and `GET /api/ess/hr/change-requests`, `POST .../{id}/decide`: the three fields (date of birth, address, legal name), old and new value, one open request per field per person (the database refuses the second); the decision is recorded only, never written to `hr_employees` | E3 | Built |
+| Bank details | `hr_ess_bank_details` behind `GET/PUT /api/ess/me/bank-details` and HR's `GET /api/ess/hr/employees/{id}/bank-details`: one row per person, saved only with the consent name typed and stamped; masked to everybody but its owner (the last four); never in a list response; every HR read audited | KP 3 | Built |
+| The ID card | `GET /api/ess/me/id-card` (the card from the HR record and the personal details) and `GET /api/ess/id-card/verify/{token}`: an unauthenticated, HMAC-signed, 90-day verify link in the QR, answering only name, photo, designation, branch and "active employee"; 401 `ID_CARD_BAD_TOKEN` for a bad, expired or archived-holder link; 30 verifies a minute per address | E7 | Built |
+| Assign and reassign | `POST /api/ess/helpdesk/tickets/{id}/assign` (`{ employee_id, note? }`): live tickets only; the assignee must hold the category's queue role (`HELPDESK_ASSIGNEE_ROLE`); sets `claimed_at`, the first response, open to in progress; the history row lands in `hr_ess_helpdesk_assignments` (migration 22); POSH's queue moves to `internal_committee` (migration 23) | KP 5, KP 6 | Built |
+
+**What the build had to choose, for KP to confirm:**
+- **the document types are fixed in code** and seeded by migration 19, mandatory ones marked on
+  the type row (`identity`, `offer`, `joining`) so KP can turn one off with one UPDATE;
+- **`others` is the ESS's own escape hatch** and must say what the file is (a remark of 3 to 500
+  characters, held by a database CHECK too);
+- **bank details are HR-read-only**: HR sees the masked number with an audit entry, never the
+  whole row;
+- **the verify link's 90 days and its 30-a-minute limit are policy constants**
+  (`src/lib/idCardKit.js`, `src/middleware/rateLimit.js`), for KP to confirm.
+
+**Tests:** the suite is 2,401 in 50 files, the contract at 0.8.0 with 1,152 contract checks
+(every route's every documented status provoked, Wave 8 included). Phase 2C's own files are
+`documents`, `changeRequests`, `bankDetails`, `idCard`, `helpdeskAssign` and `documentsJob`.
+`npm run test:migrations` applies all twenty-four migrations and their rollbacks twice and runs
+the new tables' row rules themselves (unknown types, the `others` remark, the one-open request,
+the bank shapes, the cascades).
+
+**You after:** apply migrations 19 to 24, in order ([05-deploy.md](05-deploy.md#migrations-to-apply)).
+Until 19 to 21 are applied the document, change-request and bank-details endpoints answer 503
+`MODULE_NOT_INSTALLED`; until 22 the assign endpoint does; until 24 the reminders are logged as
+failed writes.
+
+**Done when:** a person uploads each mandatory document, HR verifies or turns it away with a
+reason, and the weekly reminder reaches only those still missing one; a change request reaches
+HR's queue and its answer is recorded; a bank row carries its consent and shows only its last
+four digits to anybody but its owner; a card's QR link proves an employee without a sign-in.
+
 ## Out of scope: each needs a Scheduler change
 
 These were in the gap report or found in STEP 1. They stay as they are unless KP decides to change the Scheduler separately.
@@ -320,7 +365,7 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **All twelve were applied on 19 Oct 2026.**
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **All twelve were applied on 19 Oct 2026; 13 to 24 are still to be applied.**
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
@@ -342,6 +387,12 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 16 | [`20261108000004_hr_ess_notification_categories.sql`](../db/migrations/20261108000004_hr_ess_notification_categories.sql) | [`20261108000004_hr_ess_notification_categories.sql`](../db/rollbacks/20261108000004_hr_ess_notification_categories.sql): puts both CHECKs back to the three Phase 1 categories (and needs the Wall's notification rows deleted first; the rollback file says how) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `mentions`, `replies`, `praise`, `announcements`, `acknowledgements` and `polls`, as migration 12's comment said Phase 2 would | F8: the Wall's notifications are logged as failed writes; the app's settings screen still shows the Phase 1 categories |
 | 17 | [`20261109000001_hr_ess_helpdesk.sql`](../db/migrations/20261109000001_hr_ess_helpdesk.sql) | [`20261109000001_hr_ess_helpdesk.sql`](../db/rollbacks/20261109000001_hr_ess_helpdesk.sql): drops the messages, the tickets and the categories, then the ref sequence | The Helpdesk: `hr_ess_helpdesk_categories` (the six ticket categories and the four flow links, each with its queue roles, `confidential`, `allows_hold`, priority and SLA hours, seeded by `ON CONFLICT DO NOTHING` so a re-run changes nothing); `hr_ess_helpdesk_tickets` (`ref` `HD-0001` onwards from `hr_ess_helpdesk_ticket_ref_seq`, the raiser kept even on an anonymous ticket, the raiser's branch for the calendar, the two stored deadlines, the escalation level, and the state CHECK: a closed ticket knows when and why, a rating only stands on a closed one, an assignee has a claim stamp); `hr_ess_helpdesk_messages` (the thread: a comment has words, an `event` row has a name). Five indexes (the raiser's list, the job's two active walks, the category, the thread) | G1-G5: every Helpdesk endpoint, `GET /api/ess/helpdesk/categories` included, answers 503 `MODULE_NOT_INSTALLED` |
 | 18 | [`20261109000002_hr_ess_notification_categories.sql`](../db/migrations/20261109000002_hr_ess_notification_categories.sql) | [`20261109000002_hr_ess_notification_categories.sql`](../db/rollbacks/20261109000002_hr_ess_notification_categories.sql): puts both CHECKs back to the nine categories before it (only while the tables are still there, as 16's rollback does) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `helpdesk` as well, as migration 16 did for the Wall's six | G2, G3: the Helpdesk's notifications are logged as failed writes; a raise, a reply and an escalation reach nobody |
+| 19 | [`20261110000001_hr_ess_documents.sql`](../db/migrations/20261110000001_hr_ess_documents.sql) | [`20261110000001_hr_ess_documents.sql`](../db/rollbacks/20261110000001_hr_ess_documents.sql): drops the documents, then the types | My Documents: `hr_ess_document_types` (the nine types fixed in code and seeded by `ON CONFLICT DO NOTHING`, the mandatory ones marked on the row) and `hr_ess_documents` (the file's name, the bucket path, the content type, 1 byte to 5 MB, the remark `others` requires, status pending/verified/rejected with its review CHECK: a verified one knows when, a rejected one says why). One index (the person's list, newest first) | E4: every document endpoint answers 503 `MODULE_NOT_INSTALLED` |
+| 20 | [`20261110000002_hr_ess_change_requests.sql`](../db/migrations/20261110000002_hr_ess_change_requests.sql) | [`20261110000002_hr_ess_change_requests.sql`](../db/rollbacks/20261110000002_hr_ess_change_requests.sql): drops the table | `hr_ess_change_requests`: the field (`date_of_birth`, `address` or `legal_name`), what the record shows now and what it should, the reason, and the decision fields matching the status; a partial unique index (`hr_ess_change_requests_open_field_key`) holds one open request per field per person, so an answered one makes room for the next. Two indexes | E3: the change-request endpoints answer 503 |
+| 21 | [`20261110000003_hr_ess_bank_details.sql`](../db/migrations/20261110000003_hr_ess_bank_details.sql) | [`20261110000003_hr_ess_bank_details.sql`](../db/rollbacks/20261110000003_hr_ess_bank_details.sql): drops the table | `hr_ess_bank_details`: one row per person (its primary key), the bank and branch, an account number of 8 to 18 digits, an IFSC of four letters, a zero and six more, and the consent the entry needs (`consent_given_at` NOT NULL, `consent_name`) | KP 3: the bank-details endpoints answer 503 |
+| 22 | [`20261110000004_hr_ess_helpdesk_assignment.sql`](../db/migrations/20261110000004_hr_ess_helpdesk_assignment.sql) | [`20261110000004_hr_ess_helpdesk_assignment.sql`](../db/rollbacks/20261110000004_hr_ess_helpdesk_assignment.sql): drops the assignments table, then the three columns (only while the tickets table is still there, as 18's rollback does) | Additive only: three columns on `hr_ess_helpdesk_tickets` (`assigned_by_employee_id`, `assigned_by_name`, `assigned_at`) and the history `hr_ess_helpdesk_assignments` (one row per assignment, who it went to, who had it before, who pointed it there, and the reassignment's note). One index (the ticket's history, oldest first) | KP 5: the assign endpoint answers 503; a claim stays the only way to take a ticket |
+| 23 | [`20261110000005_hr_ess_posh_queue.sql`](../db/migrations/20261110000005_hr_ess_posh_queue.sql) | [`20261110000005_hr_ess_posh_queue.sql`](../db/rollbacks/20261110000005_hr_ess_posh_queue.sql): moves the POSH row back to HR and puts the narrower CHECK back (only while the table is still there) | One non-additive touch on an `hr_ess_*` table: the queue-roles CHECK is widened to admit `internal_committee` and the seeded `posh` row's queue is moved to it. Nothing outside `hr_ess_helpdesk_categories` changes | KP 6: nothing waits on it; the POSH queue stays empty until RVM appoints the committee |
+| 24 | [`20261110000006_hr_ess_notification_documents.sql`](../db/migrations/20261110000006_hr_ess_notification_documents.sql) | [`20261110000006_hr_ess_notification_documents.sql`](../db/rollbacks/20261110000006_hr_ess_notification_documents.sql): puts both CHECKs back to the ten categories before it (only while the tables are still there) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `documents` as well, as migration 18 did for `helpdesk` | E4: the weekly missing-documents reminder is logged as a failed write; a person cannot turn it off |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 

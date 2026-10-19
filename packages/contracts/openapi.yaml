@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.7.0
+  version: 0.8.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -3071,6 +3071,14 @@ paths:
                       - { category: approvals, enabled: true }
                       - { category: decisions, enabled: true }
                       - { category: priority_tasks, enabled: true }
+                      - { category: mentions, enabled: true }
+                      - { category: replies, enabled: true }
+                      - { category: praise, enabled: true }
+                      - { category: announcements, enabled: true }
+                      - { category: acknowledgements, enabled: true }
+                      - { category: polls, enabled: true }
+                      - { category: helpdesk, enabled: true }
+                      - { category: documents, enabled: true }
                     quiet_hours: { from: '21:00', to: '08:00' }
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
@@ -3111,6 +3119,14 @@ paths:
                       - { category: approvals, enabled: false }
                       - { category: decisions, enabled: true }
                       - { category: priority_tasks, enabled: true }
+                      - { category: mentions, enabled: true }
+                      - { category: replies, enabled: true }
+                      - { category: praise, enabled: true }
+                      - { category: announcements, enabled: true }
+                      - { category: acknowledgements, enabled: true }
+                      - { category: polls, enabled: true }
+                      - { category: helpdesk, enabled: true }
+                      - { category: documents, enabled: true }
                     quiet_hours: { from: '21:00', to: '08:00' }
         '400':
           $ref: '#/components/responses/EssRequestBad'
@@ -6828,6 +6844,1039 @@ paths:
         default:
           $ref: '#/components/responses/EssUnexpected'
 
+  /ess/me/documents:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listMyDocuments
+      tags: [ESS]
+      x-owner: ess
+      summary: My Documents (KP 1)
+      description: |
+        The caller's own record: the document types the upload form reads (the migration's seeded list, KP 1's nine), and their documents newest first, up to 100. Every document answers its facts and its review — never the bucket path (the signed link carries the bytes) and never the reviewer's user id.
+      responses:
+        '200':
+          description: The types, and my documents.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentList'
+              examples:
+                mine:
+                  value:
+                    types:
+                      - { slug: resume, name: Resume, is_mandatory: false, ess_only: false, sort: 10 }
+                      - { slug: identity, name: 'Identity document', is_mandatory: true, ess_only: false, sort: 20 }
+                      - { slug: certificate, name: Certificate, is_mandatory: false, ess_only: false, sort: 30 }
+                      - { slug: offer, name: 'Offer letter', is_mandatory: true, ess_only: false, sort: 40 }
+                      - { slug: joining, name: 'Joining letter', is_mandatory: true, ess_only: false, sort: 50 }
+                      - { slug: experience, name: 'Experience letter', is_mandatory: false, ess_only: false, sort: 60 }
+                      - { slug: exit, name: 'Exit letter', is_mandatory: false, ess_only: false, sort: 70 }
+                      - { slug: other, name: 'Other document', is_mandatory: false, ess_only: false, sort: 80 }
+                      - { slug: others, name: 'Other (say what it is)', is_mandatory: false, ess_only: true, sort: 90 }
+                    documents:
+                      - { id: 'cd100000-0000-4000-8000-000000000001', employee_id: 'e1000000-0000-4000-8000-000000000011', doc_type: resume, file_name: my-resume.pdf, content_type: application/pdf, size_bytes: 120000, remark: null, status: pending, verified_by_name: null, verified_at: null, rejection_reason: null, created_at: '2026-10-16T05:00:00.000Z', updated_at: '2026-10-16T05:00:00.000Z' }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    post:
+      operationId: createMyDocument
+      tags: [ESS]
+      x-owner: ess
+      summary: Upload one document (KP 1)
+      description: |
+        One file per call: its type (from the fixed list in policy — the ESS refuses an unknown `doc_type`), a name, its base64 bytes and content type (PDF, JPEG or PNG), up to 5 MB decoded. The `others` type must say what the file is, in a remark of 3 to 500 characters. No Aadhaar number is stored — the row is the file and what the person says it is.
+
+        One person keeps at most 50 documents: 409 `DOCUMENT_LIMIT` past that, delete one first. The uploads have their own bucket: 30 a day per employee, on top of the ESS-wide limits.
+
+        The row starts `pending`; HR verifies it or turns it away (KP 1's desk below).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUpload'
+            examples:
+              resume:
+                value:
+                  doc_type: resume
+                  file_name: my-resume.pdf
+                  content_type: application/pdf
+                  data_base64: JVBERi0xLjQgdGVzdCBieXRlcyBmb3IgdGhlIEVTUw==
+      responses:
+        '201':
+          description: Uploaded, pending HR's review.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResult'
+              examples:
+                uploaded:
+                  value:
+                    document:
+                      id: 'cd100000-0000-4000-8000-000000000001'
+                      employee_id: 'e1000000-0000-4000-8000-000000000011'
+                      doc_type: resume
+                      file_name: my-resume.pdf
+                      content_type: application/pdf
+                      size_bytes: 30
+                      remark: null
+                      status: pending
+                      verified_by_name: null
+                      verified_at: null
+                      rejection_reason: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T05:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '409':
+          $ref: '#/components/responses/EssDocumentsConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/documents/{id}/file:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The document's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getMyDocumentFile
+      tags: [ESS]
+      x-owner: ess
+      summary: Open one of my documents
+      description: |
+        A 300-second signed link to the file in the ESS's private bucket — never the bytes, never the path. Somebody else's document is 404, the same as a missing one.
+      responses:
+        '200':
+          description: The link, with the file's name and type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentFile'
+              examples:
+                link:
+                  value:
+                    file:
+                      url: 'https://storage.test/ESS/documents/e1000000-0000-4000-8000-000000000011/6f0a3c1e-8b2d-4c5a-9e7f-1d2b3a4c5d6f.pdf?token=test-signed&expires=300'
+                      name: my-resume.pdf
+                      content_type: application/pdf
+                      expires_in: 300
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          $ref: '#/components/responses/EssDocumentsNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/employees/{id}/documents:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The employee's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listEmployeeDocuments
+      tags: [ESS]
+      x-owner: ess
+      summary: One person's record at HR's desk (KP 1, KP 2)
+      description: |
+        HR's desk over one person's papers, up to 200. KP 2's gate is applied per row: an identity document is dropped from the list for a reader who may not open one (an `hr_executive`), never shown with the file held back — a list either shows a document exists or does not.
+      responses:
+        '200':
+          description: The types, and the person's documents.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentList'
+              examples:
+                record:
+                  value:
+                    types:
+                      - { slug: resume, name: Resume, is_mandatory: false, ess_only: false, sort: 10 }
+                      - { slug: identity, name: 'Identity document', is_mandatory: true, ess_only: false, sort: 20 }
+                    documents:
+                      - { id: 'cd100000-0000-4000-8000-000000000001', employee_id: 'e1000000-0000-4000-8000-000000000011', doc_type: resume, file_name: my-resume.pdf, content_type: application/pdf, size_bytes: 120000, remark: null, status: pending, verified_by_name: null, verified_at: null, rejection_reason: null, created_at: '2026-10-16T05:00:00.000Z', updated_at: '2026-10-16T05:00:00.000Z' }
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssEmployeeNotFound'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/employees/{id}/documents/{documentId}/file:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The employee's id.
+        schema:
+          type: string
+          format: uuid
+      - name: documentId
+        in: path
+        required: true
+        description: The document's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getEmployeeDocumentFile
+      tags: [ESS]
+      x-owner: ess
+      summary: Open one of a person's documents (KP 2)
+      description: |
+        A 300-second signed link, for HR's desk. KP 2's gate: only `hr`, the `ceo` and `super_admin` may open an identity document — an `hr_executive` is refused with 403 `DOCUMENT_IDENTITY_ROLE`. Every opening, of any type, is written to the audit trail before the link leaves the server (DPDP): a read of somebody's papers is a read of their data.
+      responses:
+        '200':
+          description: The link, audited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentFile'
+              examples:
+                link:
+                  value:
+                    file:
+                      url: 'https://storage.test/ESS/documents/e1000000-0000-4000-8000-000000000011/6f0a3c1e-8b2d-4c5a-9e7f-1d2b3a4c5d6f.pdf?token=test-signed&expires=300'
+                      name: my-resume.pdf
+                      content_type: application/pdf
+                      expires_in: 300
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssDocumentsForbidden'
+        '404':
+          $ref: '#/components/responses/EssDocumentsNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/employees/{id}/documents/{documentId}/verify:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The employee's id.
+        schema:
+          type: string
+          format: uuid
+      - name: documentId
+        in: path
+        required: true
+        description: The document's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: verifyEmployeeDocument
+      tags: [ESS]
+      x-owner: ess
+      summary: Mark a document verified (KP 1)
+      description: |
+        HR's own desk only (`hr`, `hr_executive`, `super_admin`). A pending document is marked `verified`, with who verified it and when; anything already reviewed is 409 `DOCUMENT_REVIEWED`. The body is empty.
+      responses:
+        '200':
+          description: Verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResult'
+              examples:
+                verified:
+                  value:
+                    document:
+                      id: 'cd100000-0000-4000-8000-000000000001'
+                      employee_id: 'e1000000-0000-4000-8000-000000000011'
+                      doc_type: resume
+                      file_name: my-resume.pdf
+                      content_type: application/pdf
+                      size_bytes: 120000
+                      remark: null
+                      status: verified
+                      verified_by_name: 'Anita Rao'
+                      verified_at: '2026-10-16T06:00:00.000Z'
+                      rejection_reason: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssDocumentsNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssDocumentsConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/employees/{id}/documents/{documentId}/reject:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The employee's id.
+        schema:
+          type: string
+          format: uuid
+      - name: documentId
+        in: path
+        required: true
+        description: The document's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: rejectEmployeeDocument
+      tags: [ESS]
+      x-owner: ess
+      summary: Turn a document away (KP 1)
+      description: |
+        HR's own desk only. A pending document is marked `rejected` with a reason of 3 to 500 characters — the employee sees the reason on their own record. Anything already reviewed is 409 `DOCUMENT_REVIEWED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentReject'
+            examples:
+              blurry:
+                value: { reason: The scan is unreadable; please upload it again. }
+      responses:
+        '200':
+          description: Rejected, with the reason on the row.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResult'
+              examples:
+                rejected:
+                  value:
+                    document:
+                      id: 'cd100000-0000-4000-8000-000000000001'
+                      employee_id: 'e1000000-0000-4000-8000-000000000011'
+                      doc_type: resume
+                      file_name: my-resume.pdf
+                      content_type: application/pdf
+                      size_bytes: 120000
+                      remark: null
+                      status: rejected
+                      verified_by_name: 'Anita Rao'
+                      verified_at: '2026-10-16T06:00:00.000Z'
+                      rejection_reason: The scan is unreadable; please upload it again.
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssDocumentsNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssDocumentsConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/employees/{id}/documents/{documentId}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The employee's id.
+        schema:
+          type: string
+          format: uuid
+      - name: documentId
+        in: path
+        required: true
+        description: The document's id.
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteEmployeeDocument
+      tags: [ESS]
+      x-owner: ess
+      summary: Remove a document and its file (KP 1)
+      description: |
+        HR's own desk only. The row is deleted and its object removed from the ESS's bucket, and the removal is written to the audit trail after it happens. Nothing here deletes by anything but a document id — there is no bulk clear.
+      responses:
+        '204':
+          description: Gone, with its file.
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssDocumentsNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/change-requests:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listMyChangeRequests
+      tags: [ESS]
+      x-owner: ess
+      summary: My profile-change requests (E3)
+      description: |
+        The caller's own asks, newest first, up to 100: the field, what it says now, what it should read, and HR's answer when it has come.
+      responses:
+        '200':
+          description: My asks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequestList'
+              examples:
+                asks:
+                  value:
+                    requests:
+                      - { id: 'ce100000-0000-4000-8000-000000000001', employee_id: 'e1000000-0000-4000-8000-000000000011', field: address, old_value: 'House 12, Sector 21', new_value: 'House 14, Sector 22', reason: The record has the old house number., status: open, decided_by_name: null, decided_at: null, decision_note: null, created_at: '2026-10-16T05:00:00.000Z', updated_at: '2026-10-16T05:00:00.000Z' }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    post:
+      operationId: createMyChangeRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Ask for a correction (E3)
+      description: |
+        One ask at a time per field: a second open request for the same field is 409 `CHANGE_ALREADY_OPEN`. The field is one of `date_of_birth`, `address`, `legal_name`; `old_value` may be left out — "I do not know what it says now" — and the reason (5 to 1,000 characters) is required. Values are text the HR desk reads; the ESS never applies them itself (it records the decision only).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRequestCreate'
+            examples:
+              address:
+                value:
+                  field: address
+                  new_value: House 14, Sector 22
+                  reason: The record has the old house number.
+      responses:
+        '201':
+          description: Asked, waiting for HR.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequestResult'
+              examples:
+                asked:
+                  value:
+                    request:
+                      id: 'ce100000-0000-4000-8000-000000000001'
+                      employee_id: 'e1000000-0000-4000-8000-000000000011'
+                      field: address
+                      old_value: null
+                      new_value: House 14, Sector 22
+                      reason: The record has the old house number.
+                      status: open
+                      decided_by_name: null
+                      decided_at: null
+                      decision_note: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T05:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssChangesBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '409':
+          $ref: '#/components/responses/EssChangesConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/change-requests:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: status
+        in: query
+        required: false
+        description: Hold the queue to one state; `all` or left out is everything.
+        schema:
+          type: string
+          enum: [open, approved, rejected, all]
+    get:
+      operationId: listChangeRequests
+      tags: [ESS]
+      x-owner: ess
+      summary: HR's queue of change requests (E3)
+      description: |
+        HR's desk only (`hr`, `hr_executive`, `super_admin`): every person's asks, newest first, up to 200, optionally held to one state.
+      responses:
+        '200':
+          description: The queue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequestList'
+              examples:
+                queue:
+                  value:
+                    requests:
+                      - { id: 'ce100000-0000-4000-8000-000000000001', employee_id: 'e1000000-0000-4000-8000-000000000011', field: address, old_value: 'House 12, Sector 21', new_value: 'House 14, Sector 22', reason: The record has the old house number., status: open, decided_by_name: null, decided_at: null, decision_note: null, created_at: '2026-10-16T05:00:00.000Z', updated_at: '2026-10-16T05:00:00.000Z' }
+        '400':
+          $ref: '#/components/responses/EssChangesBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/change-requests/{id}/decide:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The change request's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: decideChangeRequest
+      tags: [ESS]
+      x-owner: ess
+      summary: Answer a change request (E3)
+      description: |
+        HR's desk only. `decision` is `approved` or `rejected`; a rejection must say why, in a note of at least 3 characters — the employee sees it on their own record. The ESS records the decision only: it never writes `hr_employees`, because the Scheduler's HR record stays the system of record (ADR-0003); HR applies an approved change there by hand. A second decision is 409 `ALREADY_DECIDED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRequestDecision'
+            examples:
+              approved:
+                value: { decision: approved }
+              rejected:
+                value: { decision: rejected, note: 'Please send a copy of the rent agreement first.' }
+      responses:
+        '200':
+          description: Decided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequestResult'
+              examples:
+                approved:
+                  value:
+                    request:
+                      id: 'ce100000-0000-4000-8000-000000000001'
+                      employee_id: 'e1000000-0000-4000-8000-000000000011'
+                      field: address
+                      old_value: 'House 12, Sector 21'
+                      new_value: House 14, Sector 22
+                      reason: The record has the old house number.
+                      status: approved
+                      decided_by_name: 'Anita Rao'
+                      decided_at: '2026-10-16T06:00:00.000Z'
+                      decision_note: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssChangesBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssChangeNoSuchRequest'
+        '409':
+          $ref: '#/components/responses/EssChangesConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/bank-details:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyBankDetails
+      tags: [ESS]
+      x-owner: ess
+      summary: My bank details (KP 3)
+      description: |
+        The caller's own row, whole — it is theirs — or `null` while none is saved. One row per person; there is no list of bank details anywhere.
+      responses:
+        '200':
+          description: My row, or none yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankDetailsResult'
+              examples:
+                saved:
+                  value:
+                    bank_details:
+                      bank_name: State Bank of India
+                      branch_name: Faridabad Sector 21
+                      account_number: '1234567890'
+                      ifsc_code: SBIN0001234
+                      upi_id: null
+                      consent_given_at: '2026-10-16T05:00:00.000Z'
+                      consent_name: 'Ravi Kumar'
+                      updated_by_name: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T05:00:00.000Z'
+                none:
+                  value:
+                    bank_details: null
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    put:
+      operationId: putMyBankDetails
+      tags: [ESS]
+      x-owner: ess
+      summary: Save my bank details (KP 3)
+      description: |
+        The person keeps their own row. The save carries the consent the entry needs: `consent: true` and the person's own name typed into `consent_name`, which the server stamps with `consent_given_at`. The account number is 8 to 18 digits and the IFSC the RBI's shape (four letters, a zero, six letters or digits); the UPI ID is optional. Nothing is ever deleted by the app — a save replaces the row, keeping its history in `created_at`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankDetailsUpdate'
+            examples:
+              saved:
+                value:
+                  bank_name: State Bank of India
+                  branch_name: Faridabad Sector 21
+                  account_number: '1234567890'
+                  ifsc_code: SBIN0001234
+                  consent: true
+                  consent_name: Ravi Kumar
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankDetailsResult'
+              examples:
+                saved:
+                  value:
+                    bank_details:
+                      bank_name: State Bank of India
+                      branch_name: Faridabad Sector 21
+                      account_number: '1234567890'
+                      ifsc_code: SBIN0001234
+                      upi_id: null
+                      consent_given_at: '2026-10-16T05:00:00.000Z'
+                      consent_name: 'Ravi Kumar'
+                      updated_by_name: 'Ravi Kumar'
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T05:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssBankBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/employees/{id}/bank-details:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The employee's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getEmployeeBankDetails
+      tags: [ESS]
+      x-owner: ess
+      summary: HR reads one person's bank details (KP 3)
+      description: |
+        HR's desk only. The account number is masked to its last four digits — nobody but the owner ever reads the whole number — and the read is written to the audit trail before the reply, a failure to write it refusing the read (DPDP).
+      responses:
+        '200':
+          description: The masked row.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankDetailsResult'
+              examples:
+                masked:
+                  value:
+                    bank_details:
+                      bank_name: State Bank of India
+                      branch_name: Faridabad Sector 21
+                      account_number: '******7890'
+                      ifsc_code: SBIN0001234
+                      upi_id: null
+                      consent_given_at: '2026-10-16T05:00:00.000Z'
+                      consent_name: 'Ravi Kumar'
+                      updated_by_name: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T05:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssDocumentsBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssBankNothing'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/id-card:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyIdCard
+      tags: [ESS]
+      x-owner: ess
+      summary: My staff ID card
+      description: |
+        The card the HR record draws: the name, code, designation, department and branch, the photo as a 300-second signed link, and `verify_url` — the path of the verification link anybody the holder shows the card to may open, with no sign-in at all. The app prefixes its own base URL.
+      responses:
+        '200':
+          description: My card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdCardResult'
+              examples:
+                card:
+                  value:
+                    card:
+                      full_name: Ravi Kumar
+                      employee_code: RVM-011
+                      designation: CAD Faculty
+                      department_name: Technical Training
+                      branch_name: Faridabad
+                      photo_url: 'https://storage.test/documents/hr/photos/faculty.jpg?token=test-signed&expires=300'
+                      verify_url: /api/ess/id-card/verify/eyJlbXBsb3llZV9pZCI6ImUxMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAxMSIsImV4cCI6MTc5MH0.c2lnbmF0dXJl
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/id-card/verify/{token}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The card's verification token, from `verify_url`.
+        schema:
+          type: string
+    get:
+      operationId: verifyIdCard
+      tags: [ESS]
+      x-owner: ess
+      summary: Check a staff ID card, with no sign-in
+      description: |
+        What the card shows, for anybody the holder shows it to — no sign-in of any kind. The link is an HMAC-signed token good for 90 days; a forged, mangled or expired link, or one whose holder has left, is one 401 `ID_CARD_BAD_TOKEN`, so nobody learns which part failed. The answer is only what the card itself shows — the name, code, designation and branch — never a photo, a phone or anything else on the record. The address is rate-limited per IP address: 30 reads a minute.
+      responses:
+        '200':
+          description: The card is good.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdCardVerified'
+              examples:
+                valid:
+                  value:
+                    valid: true
+                    full_name: Ravi Kumar
+                    employee_code: RVM-011
+                    designation: CAD Faculty
+                    branch_name: Faridabad
+        '401':
+          $ref: '#/components/responses/EssIdCardBadToken'
+        '429':
+          $ref: '#/components/responses/EssIdCardRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}/assign:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: assignHelpdeskTicket
+      tags: [ESS]
+      x-owner: ess
+      summary: Assign the ticket to a named handler (KP 5)
+      description: |
+        The team only, and only while the ticket is live (409 `HELPDESK_NOT_LIVE` from anything settled). The person must hold one of the category's queue roles, checked through their login (employee to user to role): 400 `HELPDESK_ASSIGNEE_ROLE` otherwise, and 404 for an id that is nobody or a leaver.
+
+        The assignment is stamped with who pointed it there; the history keeps every move (a reassign does not overwrite who had it first); the thread's `assigned` event shows it on the screen the raiser and the team read; and the person it went to is told. Assigning to the person who already has it is the same assignment: 200 with the ticket as it is. An assignment counts as the first response and moves an `open` ticket to `in_progress`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HelpdeskAssign'
+            examples:
+              assign:
+                value:
+                  employee_id: 'e1000000-0000-4000-8000-000000000002'
+                  note: Rekha has the spares.
+      responses:
+        '200':
+          description: Assigned (or already theirs).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketResult'
+              examples:
+                assigned:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: in_progress
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                      attachments: []
+                      first_response_at: '2026-10-16T06:00:00.000Z'
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: null
+                      closed_at: null
+                      closing_reason: null
+                      rating: null
+                      reopened_at: null
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:00:00.000Z'
+                      mine: false
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssHelpdeskConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
   /users/login:
     post:
       operationId: signInPortal
@@ -10187,7 +11236,7 @@ components:
           format: uuid
         category:
           type: string
-          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk]
+          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents]
         title:
           type: string
           minLength: 1
@@ -10232,7 +11281,7 @@ components:
             properties:
               category:
                 type: string
-                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk]
+                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents]
               enabled:
                 type: boolean
         quiet_hours:
@@ -10255,7 +11304,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk]
+            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents]
 
     PersonCard:
       type: object
@@ -12680,6 +13729,360 @@ components:
           items:
             $ref: '#/components/schemas/HelpdeskCategory'
 
+    HelpdeskAssign:
+      type: object
+      description: The assignment of a ticket to a named handler (KP 5). The note is optional.
+      required: [employee_id]
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+          description: Who takes the ticket — one of the category's queue roles, checked through their login.
+        note:
+          type: string
+          maxLength: 500
+          description: Why, for the history row.
+
+    DocumentType:
+      type: object
+      description: One document type (KP 1) — the fixed list the migration seeds and policy holds, plus whether it is mandatory and whether only the ESS offers it.
+      required: [slug, name, is_mandatory, ess_only, sort]
+      properties:
+        slug:
+          type: string
+          description: The name the upload form sends back as `doc_type`.
+        name:
+          type: string
+        is_mandatory:
+          type: boolean
+          description: 'True: the weekly job reminds anybody whose record lacks it (identity, offer, joining as seeded; KP may change one with an UPDATE).'
+        ess_only:
+          type: boolean
+          description: 'True (`others`): an ESS-only type whose upload must say what the file is, in a remark.'
+        sort:
+          type: integer
+          description: The order the form lists them in.
+
+    Document:
+      type: object
+      description: 'One document, as every read shows it (KP 1): the facts and the review — never the bucket path (the signed link carries the bytes) and never the reviewer''s user id.'
+      required: [id, employee_id, doc_type, file_name, content_type, size_bytes, remark, status, verified_by_name, verified_at, rejection_reason, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        employee_id:
+          type: string
+          format: uuid
+        doc_type:
+          type: string
+          enum: [resume, identity, certificate, offer, joining, experience, exit, other, others]
+        file_name:
+          type: string
+        content_type:
+          type: string
+          description: 'application/pdf, image/jpeg or image/png — what was uploaded.'
+        size_bytes:
+          type: integer
+          description: Up to 5 MB (5,242,880 bytes).
+        remark:
+          type: [string, 'null']
+          description: What the person said the file is; required for `others`.
+        status:
+          type: string
+          enum: [pending, verified, rejected]
+        verified_by_name:
+          type: [string, 'null']
+          description: Who reviewed it, by name.
+        verified_at:
+          type: [string, 'null']
+          format: date-time
+        rejection_reason:
+          type: [string, 'null']
+          description: Why it was turned away — the employee sees it.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DocumentList:
+      type: object
+      description: The types the upload form reads, and the documents (mine, or one person's at HR's desk).
+      required: [types, documents]
+      properties:
+        types:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentType'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+
+    DocumentResult:
+      type: object
+      required: [document]
+      properties:
+        document:
+          $ref: '#/components/schemas/Document'
+
+    DocumentFile:
+      type: object
+      description: A 300-second signed link to one document's bytes — never the path, never the bytes themselves.
+      required: [file]
+      properties:
+        file:
+          type: object
+          required: [url, name, content_type, expires_in]
+          properties:
+            url:
+              type: string
+            name:
+              type: string
+            content_type:
+              type: string
+            expires_in:
+              type: integer
+              description: Seconds the link stays good (300).
+
+    DocumentUpload:
+      type: object
+      description: One file per upload (KP 1). The bytes arrive as base64; the ESS stores them in its private bucket under `documents/`.
+      required: [doc_type, file_name, content_type, data_base64]
+      properties:
+        doc_type:
+          type: string
+          description: A type's slug, from the list every read answers.
+        file_name:
+          type: string
+          maxLength: 200
+        content_type:
+          type: string
+          enum: [application/pdf, image/jpeg, image/png]
+        data_base64:
+          type: string
+          description: The file, base64; up to 5 MB decoded.
+        remark:
+          type: string
+          maxLength: 500
+          description: What the file is, 3 to 500 characters — required for `others`.
+
+    DocumentReject:
+      type: object
+      description: Why a document is turned away (KP 1) — the employee sees it.
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+
+    ChangeRequest:
+      type: object
+      description: One profile-change request (E3) — the ask and HR's answer. The ESS records the decision only; it never writes `hr_employees` (ADR-0003).
+      required: [id, employee_id, field, old_value, new_value, reason, status, decided_by_name, decided_at, decision_note, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        employee_id:
+          type: string
+          format: uuid
+        field:
+          type: string
+          enum: [date_of_birth, address, legal_name]
+        old_value:
+          type: [string, 'null']
+          description: What the record says now, or null when the person does not know.
+        new_value:
+          type: string
+          description: What it should read.
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [open, approved, rejected]
+        decided_by_name:
+          type: [string, 'null']
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        decision_note:
+          type: [string, 'null']
+          description: HR's note; a rejection's says why, and the employee sees it.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ChangeRequestList:
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeRequest'
+
+    ChangeRequestResult:
+      type: object
+      required: [request]
+      properties:
+        request:
+          $ref: '#/components/schemas/ChangeRequest'
+
+    ChangeRequestCreate:
+      type: object
+      description: One ask (E3). `old_value` may be left out — "I do not know what it says now".
+      required: [field, new_value, reason]
+      properties:
+        field:
+          type: string
+          enum: [date_of_birth, address, legal_name]
+        old_value:
+          type: string
+          maxLength: 500
+        new_value:
+          type: string
+          minLength: 1
+          maxLength: 500
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 1000
+
+    ChangeRequestDecision:
+      type: object
+      description: HR's answer (E3). A rejection must say why in the note; an approval's note stays optional.
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, rejected]
+        note:
+          type: string
+          maxLength: 1000
+
+    BankDetails:
+      type: object
+      description: One person's bank details (KP 3). Its owner reads it whole; HR reads the account number masked to its last four digits.
+      required: [bank_name, branch_name, account_number, ifsc_code, upi_id, consent_given_at, consent_name, updated_by_name, created_at, updated_at]
+      properties:
+        bank_name:
+          type: string
+        branch_name:
+          type: [string, 'null']
+        account_number:
+          type: string
+          description: 8 to 18 digits, whole for its owner; `******` plus the last four for HR.
+        ifsc_code:
+          type: string
+          description: The RBI's shape — four letters, a zero, six letters or digits.
+        upi_id:
+          type: [string, 'null']
+        consent_given_at:
+          type: string
+          format: date-time
+          description: When the owner consented, stamped by the server at the save.
+        consent_name:
+          type: string
+          description: The name the owner typed to consent — the proof the entry was made knowingly.
+        updated_by_name:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BankDetailsResult:
+      type: object
+      description: The row, or `null` while none is saved.
+      required: [bank_details]
+      properties:
+        bank_details:
+          oneOf:
+            - $ref: '#/components/schemas/BankDetails'
+            - type: 'null'
+
+    BankDetailsUpdate:
+      type: object
+      description: 'The save (KP 3). The consent is the entry''s proof: `consent: true` and the person''s own name.'
+      required: [bank_name, account_number, ifsc_code, consent, consent_name]
+      properties:
+        bank_name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        branch_name:
+          type: string
+          maxLength: 120
+        account_number:
+          type: string
+          description: 8 to 18 digits; spaces are ignored.
+        ifsc_code:
+          type: string
+          description: Four letters, a zero, six letters or digits; lower case is accepted and stored upper.
+        upi_id:
+          type: string
+          maxLength: 60
+        consent:
+          type: boolean
+          description: Must be true; anything else is refused.
+        consent_name:
+          type: string
+          maxLength: 120
+
+    IdCard:
+      type: object
+      description: The staff ID card (Phase 2C), drawn from the HR record.
+      required: [full_name, employee_code, designation, department_name, branch_name, photo_url, verify_url]
+      properties:
+        full_name:
+          type: string
+        employee_code:
+          type: string
+        designation:
+          type: [string, 'null']
+        department_name:
+          type: [string, 'null']
+        branch_name:
+          type: [string, 'null']
+        photo_url:
+          type: [string, 'null']
+          description: A 300-second signed link, or null for no photo.
+        verify_url:
+          type: string
+          description: The path of the verification link (the app prefixes its base URL); the token is HMAC-signed and good for 90 days.
+
+    IdCardResult:
+      type: object
+      required: [card]
+      properties:
+        card:
+          $ref: '#/components/schemas/IdCard'
+
+    IdCardVerified:
+      type: object
+      description: What the card shows, to whoever the holder shows it to — nothing else on the record.
+      required: [valid, full_name, employee_code, designation, branch_name]
+      properties:
+        valid:
+          type: boolean
+        full_name:
+          type: string
+        employee_code:
+          type: string
+        designation:
+          type: [string, 'null']
+        branch_name:
+          type: [string, 'null']
+
     HelpdeskTicketCreate:
       type: object
       description: A raise (G2). Attachments arrive as the Wall's do — up to five, each up to 1 MB decoded.
@@ -13180,7 +14583,7 @@ components:
 
     EssNotificationCategories:
       value:
-        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls or helpdesk.'
+        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk or documents.'
         code: VALIDATION_FAILED
 
     EssNotificationNotFound:
@@ -13512,6 +14915,166 @@ components:
       value:
         error: That is more tickets than the Helpdesk allows one person in a day. Try again tomorrow.
         code: RATE_LIMITED
+
+    EssDocumentType:
+      value:
+        error: Choose a document type from the list.
+        code: VALIDATION_FAILED
+
+    EssDocumentFile:
+      value:
+        error: Send one file as base64 data (PDF, JPEG or PNG), with its content type.
+        code: VALIDATION_FAILED
+
+    EssDocumentSize:
+      value:
+        error: A document must be up to 5 MB.
+        code: VALIDATION_FAILED
+
+    EssDocumentName:
+      value:
+        error: Give the file a name, up to 200 characters.
+        code: VALIDATION_FAILED
+
+    EssDocumentRemark:
+      value:
+        error: 'Say what this file is, in 3 to 500 characters. The "Other (say what it is)" type needs it.'
+        code: VALIDATION_FAILED
+
+    EssDocumentRejectReason:
+      value:
+        error: Say why the document is turned away, in 3 to 500 characters. The employee sees it.
+        code: VALIDATION_FAILED
+
+    EssDocumentLimit:
+      value:
+        error: That is more documents than one record keeps (50). Delete one first.
+        code: DOCUMENT_LIMIT
+
+    EssDocumentReviewed:
+      value:
+        error: That document has already been reviewed.
+        code: DOCUMENT_REVIEWED
+
+    EssDocumentIdentityRole:
+      value:
+        error: Only HR, the CEO and super admins can open an identity document.
+        code: DOCUMENT_IDENTITY_ROLE
+
+    EssDocumentNotFound:
+      value:
+        error: That document was not found.
+        code: NOT_FOUND
+
+    EssChangeField:
+      value:
+        error: 'Choose what to correct: date of birth, address or legal name.'
+        code: VALIDATION_FAILED
+
+    EssChangeOldValue:
+      value:
+        error: Keep "what it says now" to 500 characters.
+        code: VALIDATION_FAILED
+
+    EssChangeNewValue:
+      value:
+        error: Say what it should read, in 1 to 500 characters.
+        code: VALIDATION_FAILED
+
+    EssChangeReason:
+      value:
+        error: Say why, in 5 to 1,000 characters.
+        code: VALIDATION_FAILED
+
+    EssChangeAlreadyOpen:
+      value:
+        error: You already have an open request for that. Wait for HR to answer it first.
+        code: CHANGE_ALREADY_OPEN
+
+    EssChangeStatusFilter:
+      value:
+        error: status must be open, approved, rejected or all.
+        code: VALIDATION_FAILED
+
+    EssChangeDecision:
+      value:
+        error: Mark the request approved or rejected.
+        code: VALIDATION_FAILED
+
+    EssChangeNote:
+      value:
+        error: Keep the note to 1,000 characters.
+        code: VALIDATION_FAILED
+
+    EssChangeRejectNote:
+      value:
+        error: Say why the request is rejected, in at least 3 characters. The employee sees it.
+        code: VALIDATION_FAILED
+
+    EssChangeNotFound:
+      value:
+        error: That change request was not found.
+        code: NOT_FOUND
+
+    EssBankName:
+      value:
+        error: Name the bank, in 2 to 120 characters.
+        code: VALIDATION_FAILED
+
+    EssBankBranch:
+      value:
+        error: Keep the branch name to 120 characters.
+        code: VALIDATION_FAILED
+
+    EssBankAccount:
+      value:
+        error: The account number must be 8 to 18 digits.
+        code: VALIDATION_FAILED
+
+    EssBankIfsc:
+      value:
+        error: 'The IFSC code must be 11 characters: four letters, a zero, then six letters or digits.'
+        code: VALIDATION_FAILED
+
+    EssBankUpi:
+      value:
+        error: The UPI ID can be up to 60 characters.
+        code: VALIDATION_FAILED
+
+    EssBankConsent:
+      value:
+        error: 'Saving your bank details needs your consent: send consent: true and your name in consent_name.'
+        code: VALIDATION_FAILED
+
+    EssBankConsentName:
+      value:
+        error: Type your name, up to 120 characters, to confirm you are saving these details yourself.
+        code: VALIDATION_FAILED
+
+    EssIdCardBadToken:
+      value:
+        error: That verification link is not valid, or it has expired.
+        code: ID_CARD_BAD_TOKEN
+
+    EssHelpdeskAssignee:
+      value:
+        error: Send the employee id of the person to assign the ticket to.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskAssigneeRole:
+      value:
+        error: "That person is not on this category's team. Only the queue's roles can be assigned a ticket."
+        code: VALIDATION_FAILED
+
+    EssHelpdeskAssignNote:
+      value:
+        error: Keep the note to 500 characters.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskAssigneeNotFound:
+      value:
+        error: That employee was not found.
+        code: NOT_FOUND
 
   responses:
 
@@ -14185,6 +15748,12 @@ components:
               $ref: '#/components/examples/EssHelpdeskStatusFilter'
             queueStatus:
               $ref: '#/components/examples/EssHelpdeskQueueStatus'
+            assignee:
+              $ref: '#/components/examples/EssHelpdeskAssignee'
+            assigneeRole:
+              $ref: '#/components/examples/EssHelpdeskAssigneeRole'
+            assignNote:
+              $ref: '#/components/examples/EssHelpdeskAssignNote'
             unknownField:
               $ref: '#/components/examples/EssUnknownField'
             invalidId:
@@ -14217,7 +15786,7 @@ components:
 
     EssHelpdeskNoSuchThing:
       description: |
-        `NOT_FOUND`: no ticket has this id, or the caller may not see it (a ticket somebody may not read is one they cannot find, G4); or no active category has the slug the raise named.
+        `NOT_FOUND`: no ticket has this id, or the caller may not see it (a ticket somebody may not read is one they cannot find, G4); or no active category has the slug the raise named; or the employee an assignment names is nobody, or has left.
       content:
         application/json:
           schema:
@@ -14227,6 +15796,8 @@ components:
               $ref: '#/components/examples/EssHelpdeskCategoryNotFound'
             ticket:
               $ref: '#/components/examples/EssHelpdeskTicketNotFound'
+            assignee:
+              $ref: '#/components/examples/EssHelpdeskAssigneeNotFound'
 
     EssHelpdeskConflict:
       description: |
@@ -14276,5 +15847,213 @@ components:
           examples:
             helpdeskTickets:
               $ref: '#/components/examples/EssHelpdeskTicketsLimit'
+            rateLimited:
+              $ref: '#/components/examples/EssRateLimited'
+
+    EssDocumentsBad:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule — a `doc_type` the fixed list does not hold, a file that is not one PDF/JPEG/PNG of base64, bytes over 5 MB, a name over 200 characters, a remark the `others` type needs or one outside 3 to 500 characters, or a rejection reason outside 3 to 500. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            type:
+              $ref: '#/components/examples/EssDocumentType'
+            file:
+              $ref: '#/components/examples/EssDocumentFile'
+            size:
+              $ref: '#/components/examples/EssDocumentSize'
+            name:
+              $ref: '#/components/examples/EssDocumentName'
+            remark:
+              $ref: '#/components/examples/EssDocumentRemark'
+            rejectReason:
+              $ref: '#/components/examples/EssDocumentRejectReason'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            invalidId:
+              $ref: '#/components/examples/EssInvalidId'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssDocumentsForbidden:
+      description: |
+        Not a reason to sign out. The token is good; this person cannot do this one thing.
+        - `DOCUMENT_IDENTITY_ROLE`: opening an identity document from a role outside `hr`, `ceo` and `super_admin` (KP 2).
+        - `HR_ACCESS_DENIED`, `PORTAL_LOGIN_REQUIRED`: HR's desk routes, from a role outside HR's records.
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            identityRole:
+              $ref: '#/components/examples/EssDocumentIdentityRole'
+            hrAccessDenied:
+              $ref: '#/components/examples/EssHrAccessDenied'
+            portalLoginRequired:
+              $ref: '#/components/examples/EssPortalLoginRequired'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssDocumentsNoSuchThing:
+      description: '`NOT_FOUND`: no document has this id, or it is on somebody else''s record — both the same answer.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            document:
+              $ref: '#/components/examples/EssDocumentNotFound'
+
+    EssDocumentsConflict:
+      description: |
+        The row cannot move as asked; nothing is changed.
+        - `DOCUMENT_LIMIT`: the person already holds 50 documents — delete one first.
+        - `DOCUMENT_REVIEWED`: the document has already been verified or rejected.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            limit:
+              $ref: '#/components/examples/EssDocumentLimit'
+            reviewed:
+              $ref: '#/components/examples/EssDocumentReviewed'
+
+    EssChangesBad:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule — a field that is not one of the three, an `old_value` over 500 characters, a `new_value` of 1 to 500, a reason of 5 to 1,000, a `decision` that is not approved or rejected, a note over 1,000 characters or a rejection note under 3, or a `status` the queue does not take. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            field:
+              $ref: '#/components/examples/EssChangeField'
+            oldValue:
+              $ref: '#/components/examples/EssChangeOldValue'
+            newValue:
+              $ref: '#/components/examples/EssChangeNewValue'
+            reason:
+              $ref: '#/components/examples/EssChangeReason'
+            statusFilter:
+              $ref: '#/components/examples/EssChangeStatusFilter'
+            decision:
+              $ref: '#/components/examples/EssChangeDecision'
+            note:
+              $ref: '#/components/examples/EssChangeNote'
+            rejectNote:
+              $ref: '#/components/examples/EssChangeRejectNote'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            invalidId:
+              $ref: '#/components/examples/EssInvalidId'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssChangesConflict:
+      description: |
+        The request cannot move as asked; nothing is changed.
+        - `CHANGE_ALREADY_OPEN`: a second open ask for the same field by the same person.
+        - `ALREADY_DECIDED`: a second answer to a request HR has already decided.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            alreadyOpen:
+              $ref: '#/components/examples/EssChangeAlreadyOpen'
+            alreadyDecided:
+              $ref: '#/components/examples/EssAlreadyDecided'
+
+    EssChangeNoSuchRequest:
+      description: '`NOT_FOUND`: no change request has this id.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              $ref: '#/components/examples/EssChangeNotFound'
+
+    EssBankBad:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule — a bank name of 2 to 120, a branch name of up to 120, an account number of 8 to 18 digits, the IFSC's RBI shape, a UPI ID of up to 60, or the consent (`consent: true` and the person's own name in `consent_name`). `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            name:
+              $ref: '#/components/examples/EssBankName'
+            branch:
+              $ref: '#/components/examples/EssBankBranch'
+            account:
+              $ref: '#/components/examples/EssBankAccount'
+            ifsc:
+              $ref: '#/components/examples/EssBankIfsc'
+            upi:
+              $ref: '#/components/examples/EssBankUpi'
+            consent:
+              $ref: '#/components/examples/EssBankConsent'
+            consentName:
+              $ref: '#/components/examples/EssBankConsentName'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssBankNothing:
+      description: '`NOT_FOUND`: nobody has saved bank details yet — the person exists, the row does not. The read is still audited.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              value:
+                error: There is nothing at this address.
+                code: NOT_FOUND
+
+    EssIdCardBadToken:
+      description: |
+        `ID_CARD_BAD_TOKEN`: the verification link is not one of ours — not a token, a forged or mangled one, an expired one (90 days), or one whose holder has left. One answer for every failure, so nobody learns which part failed. This address takes no sign-in; there is nothing to sign out.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            badToken:
+              $ref: '#/components/examples/EssIdCardBadToken'
+
+    EssIdCardRateLimited:
+      description: |
+        `RATE_LIMITED`: 30 verification reads a minute from one address, on top of the ESS-wide limits. Wait for `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        RateLimit-Policy:
+          $ref: '#/components/headers/RateLimitPolicy'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
             rateLimited:
               $ref: '#/components/examples/EssRateLimited'
