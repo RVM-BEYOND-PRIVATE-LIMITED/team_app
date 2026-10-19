@@ -32,6 +32,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   String _scope = 'org';
   bool _poll = false;
   bool _multiple = false;
+  bool _anonymous = false;
   DateTime _closes = DateTime.now().add(const Duration(days: 7));
 
   @override
@@ -112,7 +113,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             poll: {
               'options': labels,
               'multiple': _multiple,
-              'anonymous': false,
+              'anonymous': _anonymous,
               'closes_on': _closesIso,
             },
           ));
@@ -199,6 +200,13 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                 value: _multiple,
                 onChanged: (v) => setState(() => _multiple = v),
                 title: const Text('Allow multiple choices'),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _anonymous,
+                onChanged: (v) => setState(() => _anonymous = v),
+                title: const Text('Anonymous poll'),
+                subtitle: const Text('Nobody, HR included, sees who voted.'),
               ),
               OutlinedButton.icon(
                 onPressed: _pickClose,

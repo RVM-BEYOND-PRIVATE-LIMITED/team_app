@@ -623,14 +623,21 @@ class EssRemoteDataSource with DioExecutor {
     bool needsAck = false,
     String? closesOn,
     bool pinned = false,
+    List<String>? employeeIds,
+    List<Map<String, dynamic>>? attachments,
+    String? publishAt,
   }) =>
       guard(() async => WallAnnouncement.fromJson(_obj(_body(await _dio.post('/wall/announcements', data: {
             'title': title,
             'body': body,
-            'audience': {'all': true},
+            'audience': (employeeIds == null || employeeIds.isEmpty)
+                ? {'all': true}
+                : {'employee_ids': employeeIds},
             'needs_ack': needsAck,
             if (closesOn != null) 'closes_on': closesOn,
             'pinned': pinned,
+            if (attachments != null && attachments.isNotEmpty) 'attachments': attachments,
+            if (publishAt != null) 'publish_at': publishAt,
           }))['announcement'])));
 
   Future<List<WallAnnouncement>> hrAnnouncements() => guard(() async =>
