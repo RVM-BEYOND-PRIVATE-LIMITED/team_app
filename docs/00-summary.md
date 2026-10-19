@@ -125,8 +125,8 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 
 ## Next steps
 
-1. **Wave 1 is live; Wave 2 is live (its migrations are applied); Phases 1C and 1D are built (19 Oct).** The ESS has answered at `https://team-api.rvmcad.org` since 16 Oct, deployed on every merge to `main` ([05-deploy.md](05-deploy.md)). All twelve migrations were applied on 19 Oct ([05-deploy.md](05-deploy.md#migrations-to-apply)); the 1C and 1D code goes live when it merges. Phase 1E is next. What is left is listed phase by phase in [06-backend-phases.md](06-backend-phases.md).
-2. **Waves 2 to 4:** Wave 2, Phases 1C, 1D and 1E are built and deployed. The pilot gate and Phase 2 (Wall, Helpdesk, documents/ID card, leader views) remain, all in team_app, with tests for every endpoint, including role-denied and wrong-owner cases.
+1. **Wave 1 is live; Wave 2 is live (its migrations are applied); Phases 1C, 1D and 1E are built and deployed (19 Oct); Phase 2A (the Wall) is built and waits for migrations 13 to 16.** The ESS has answered at `https://team-api.rvmcad.org` since 16 Oct, deployed on every merge to `main` ([05-deploy.md](05-deploy.md)). All twelve migrations were applied on 19 Oct ([05-deploy.md](05-deploy.md#migrations-to-apply)); the 1C and 1D code is live. **You after:** apply the Wall's four migrations, 13 to 16, in order — until then every Wall endpoint but `GET /api/ess/wall/settings` answers 503 `MODULE_NOT_INSTALLED`. The pilot gate and Phase 2B (the Helpdesk) are next; what is left is listed phase by phase in [06-backend-phases.md](06-backend-phases.md).
+2. **Waves 2 to 4:** Wave 2, Phases 1C, 1D, 1E and 2A are built and deployed. The pilot gate and the rest of Phase 2 (Helpdesk, documents/ID card, leader views) remain, all in team_app, with tests for every endpoint, including role-denied and wrong-owner cases.
 3. **Phase 0, from RVM, alongside the build:**
    - a Firebase project;
    - a Google Play organisation account (it needs a D-U-N-S number);

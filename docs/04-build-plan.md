@@ -185,6 +185,59 @@ The brief's Phase 1. Built and tested; waiting for migrations 11 and 12.
 - light KPI reads (H5);
 - the faculty "my day" read (H7).
 
+### Phase 2A: the Wall — built 19 Oct 2026
+
+The brief's Phase 2 community features, built to this plan, tested, and waiting for its migrations
+(13 to 16 below). Everything is in `apps/ess-api` and `db/migrations/20261108000000` to
+`20261108000004`.
+
+| Work | How, with no Scheduler change | Tasks | State |
+| --- | --- | --- | --- |
+| Posts on the organisation wall and one per branch | `hr_ess_wall_posts`: text, up to 5 photos or PDFs (base64 in, the ESS's own bucket `ESS` out, 300-second signed links back), `@RVM-011` mentions, the author's edit inside 15 minutes (`edited: true`) and always-available delete | F1, F9 | Built |
+| Six reactions, comments and one level of replies | `hr_ess_wall_reactions` (one per person per post AND per comment), `hr_ess_wall_comments` (`parent_id`, never a reply of a reply), the counts on the rows rewritten from the tables | F2 | Built |
+| Praise with RVM's badges | `hr_ess_wall_posts` kind `praise`: one of twelve **fixed** badges (KP, 19 Oct: the catalogue ships in code), a reason of up to 280 characters, an optional photo; `GET /api/ess/me/praise` is the receiver's own read. Certificates are Phase 3 | F3 | Built |
+| Polls | kind `poll` with `hr_ess_wall_poll_options` and `hr_ess_wall_poll_votes`: 2 to 10 options, one or many choices, anonymous (nobody, HR included, sees who voted what), a closing day, the option set frozen by the first vote | F4 | Built |
+| Staff announcements | `hr_ess_announcements` plus the resolved audience and the read state in their own tables: audience by branch, department, role or named people, now or scheduled, a closing date, acknowledgement, read and acknowledgement counts for the sender, up to 3 pinned. Email and push are log-only. **The Scheduler's student notices are not touched** | F5 | Built |
+| Celebrations | Birthdays from `hr_ess_personal_details.date_of_birth` (**day and month only, never the year**, hidden for anybody who opts out), work anniversaries and new joiners from `hr_employees.date_of_joining`, and a one-tap wish (a short feed post; one per person per occasion per year) | F6 | Built |
+| Moderation | `hr_ess_wall_reports`: anybody reports, HR's queue and the hide/restore routes with a reason (3 to 200 characters), every action in `hr_ess_audit` as `wall.post.hidden` and its neighbours | F7 | Built |
+| Wall settings | `GET /api/ess/wall/settings`: the rules in `src/policy/wall.js` (everyone posts, only HR/CEO/super admins announce, only HR moderates) with the badge catalogue | F8 | Built |
+| The Wall's clock | `src/jobs/wall.js`, one process: scheduled announcements, acknowledgement reminders inside two days of the close, polls closing (and the voters told) | F4, F5 | Built |
+| The Wall's notification categories | Migration 16 extends the CHECKs on `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` with `mentions`, `replies`, `praise`, `announcements`, `acknowledgements` and `polls`, as migration 12's comment said Phase 2 would | F8 | Built |
+
+**What the build had to choose, for KP to confirm:**
+- **A post's default wall is the author's own branch**, not the organisation's: `scope: 'org'` is
+  explicit. A branch post is refused for any branch but the author's own.
+- **A praise is refused for yourself** ("Praise goes to somebody else"), which F3 does not say and
+  the build had to decide.
+- **Praise on the profile** is `GET /api/ess/me/praise` rather than part of
+  `GET /api/ess/me/profile`, so the profile's shape does not change.
+- **A birthday is day and month only** in every reply; the opt-out is its own table, so HR's
+  personal-details screen is untouched.
+- **Announcement counts are "sent / read / acknowledged"**, resolved once at publication into one
+  row per person; a reader of an announcement that was not sent to them is 403 `NOT_IN_AUDIENCE`.
+- **Only HR moderates and reads the report queue** (`MODERATE_ROLES`); the CEO and super admins
+  read the trail of their own announcements' counts only. Decision 8 said "HR can hide anything".
+- **A hidden comment keeps its place with no words** for everybody but HR and its author; a hidden
+  post is 404 for everybody but its author and HR.
+- **The Wall's own rate limits**: 60 posts and 200 comments a day per employee, 60 reactions a
+  minute.
+
+**Tests:** the suite is 2,069 (41 files), the contract at 0.6.0 with 903 contract checks (every
+route's every documented status provoked, Wave 6 included); the Wall's own files are
+`wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`,
+`wallCelebrations`, `wallModeration` and `wallJob`. `npm run test:migrations` applies all
+sixteen migrations and their rollbacks twice and runs the Wall's row rules themselves.
+
+**You after:** apply migrations 13 to 16, in order ([05-deploy.md](05-deploy.md#migrations-to-apply)).
+Until 13 to 15 are applied the Wall's endpoints answer 503 `MODULE_NOT_INSTALLED` except
+`GET /api/ess/wall/settings`, which is the code's own rules; until 16 is applied the Wall's
+notifications are logged as failed writes and nothing else changes.
+
+**Done when:** posts, praise, polls and announcements work end to end, with notifications from
+Phase 1D; a mention, a reply and praise each reach the phone's Inbox; an announcement's counts
+match who read and acknowledged it; and HR can hide anything with a reason, with the trail to show
+for it.
+
 The decisions listed below shape several of these.
 
 ## Out of scope: each needs a Scheduler change
@@ -240,6 +293,10 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 10 | [`20261106000004_hr_ess_request_functions.sql`](../db/migrations/20261106000004_hr_ess_request_functions.sql) | [`20261106000004_hr_ess_request_functions.sql`](../db/rollbacks/20261106000004_hr_ess_request_functions.sql): drops the seven functions | `hr_ess_decide_attendance_request`, `hr_ess_decide_leave_request`, `hr_ess_withdraw_attendance_request`, `hr_ess_withdraw_leave_request`, `hr_ess_cancel_attendance_request`, `hr_ess_cancel_leave_request`, `hr_ess_on_duty_apply`: each locks the request, re-checks the status, the window, the future-day rule, the cut-off and the one-CL rule, writes the day through the Scheduler's own `hr_attendance_apply_override` (or excuses the late in place), writes the history, and answers an `outcome` the routes map to refusals. Service role only | C7, C8, D1, H6: the decide, withdraw, cancel and archive (archive needs only 9) endpoints answer 503; `hr_ess_on_duty_apply` missing stops the job with a logged line, not the server |
 | 11 | [`20261107000000_hr_ess_push_devices.sql`](../db/migrations/20261107000000_hr_ess_push_devices.sql) | [`20261107000000_hr_ess_push_devices.sql`](../db/rollbacks/20261107000000_hr_ess_push_devices.sql): drops the table | `hr_ess_push_devices`: one row per FCM token, unique, with the phone's label and install id, the last time it was seen and its revocation; the employee's deletion cascades it | D5: the device endpoints answer 503; pushes stop |
 | 12 | [`20261107000001_hr_ess_notifications.sql`](../db/migrations/20261107000001_hr_ess_notifications.sql) | [`20261107000001_hr_ess_notifications.sql`](../db/rollbacks/20261107000001_hr_ess_notifications.sql): drops the settings table, then the notifications table | `hr_ess_notifications` (category, title, body, `data` ids, read time, push bookkeeping with its both-ways CHECK; the unique key that makes one priority-task notification per person) and `hr_ess_notification_settings` (`disabled_categories`, checked against the three categories). Four indexes (person, unread, pending, the task key) | D6, D8: the notification and settings endpoints answer 503; the push job's own writes to it log and retry |
+| 13 | [`20261108000001_hr_ess_wall_posts.sql`](../db/migrations/20261108000001_hr_ess_wall_posts.sql) | [`20261108000001_hr_ess_wall_posts.sql`](../db/rollbacks/20261108000001_hr_ess_wall_posts.sql): drops the wish book, the mentions, the reactions, the votes, the options, the comments and the posts | The feed: `hr_ess_wall_posts` (kind post/praise/wish/poll, scope org/branch, body, up to five attachments, mentions, the badge, the occasion, the poll's shape, the counters, `edited_at`, HR's hide with its reason, the author's `deleted_at`) with its shape CHECKs; `hr_ess_wall_comments` (one level of replies, its own reactions and hide); `hr_ess_wall_poll_options` and `hr_ess_wall_poll_votes`; `hr_ess_wall_reactions` (one per person per post or comment, two partial unique indexes); `hr_ess_wall_mentions`; `hr_ess_wall_wishes` (one per person per occasion per year). Eleven indexes | F1-F4, F6, F9: every Wall endpoint but `GET /api/ess/wall/settings` answers 503 |
+| 14 | [`20261108000002_hr_ess_wall_reports.sql`](../db/migrations/20261108000002_hr_ess_wall_reports.sql) | [`20261108000002_hr_ess_wall_reports.sql`](../db/rollbacks/20261108000002_hr_ess_wall_reports.sql): drops the report queue and the opt-out table | `hr_ess_wall_reports` (post or comment, the reporter's own words, the status and HR's answer; one report per person per thing) and `hr_ess_celebration_optouts` (the birthday switch; no row means it is on). Five indexes | F6, F7: the report, queue, resolve, hide and celebration-opt-out endpoints answer 503 |
+| 15 | [`20261108000003_hr_ess_announcements.sql`](../db/migrations/20261108000003_hr_ess_announcements.sql) | [`20261108000003_hr_ess_announcements.sql`](../db/rollbacks/20261108000003_hr_ess_announcements.sql): drops the read state, the audience and the announcements | `hr_ess_announcements` (title, body, up to five attachments, the audience object, `publish_at` and `published_at`, `needs_ack` with its closing date, `pinned`, the sender's counts, `reminded_at`) with its CHECKs; `hr_ess_announcement_audience` (one row per person, resolved at publication); `hr_ess_announcement_reads` (read and acknowledged times). Six indexes | F5: the announcement endpoints answer 503; the Wall's job logs and waits |
+| 16 | [`20261108000004_hr_ess_notification_categories.sql`](../db/migrations/20261108000004_hr_ess_notification_categories.sql) | [`20261108000004_hr_ess_notification_categories.sql`](../db/rollbacks/20261108000004_hr_ess_notification_categories.sql): puts both CHECKs back to the three Phase 1 categories (and needs the Wall's notification rows deleted first; the rollback file says how) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `mentions`, `replies`, `praise`, `announcements`, `acknowledgements` and `polls`, as migration 12's comment said Phase 2 would | F8: the Wall's notifications are logged as failed writes; the app's settings screen still shows the Phase 1 categories |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 

@@ -151,7 +151,7 @@ const MESSAGES = Object.freeze({
   PUSH_DEVICE_LABEL: 'Keep the phone name to 80 characters.',
   PUSH_DEVICE_NOT_FOUND: 'That phone was not found.',
   NOTIFICATION_NOT_FOUND: 'That notification was not found.',
-  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions or priority_tasks.',
+  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements or polls.',
 
   // E1-E12: Me and My Team.
   PHOTO_FORMAT: 'Send the photo as base64 image data (JPEG, PNG or WebP).',
@@ -161,6 +161,81 @@ const MESSAGES = Object.freeze({
   DEPARTMENT_ID: 'department_id must be a department id.',
   DEPARTMENT_NOT_FOUND: 'That department was not found.',
   TEAM_FILTER: 'filter must be all, not_in, late or on_leave.',
+
+  // F1-F9: the Wall.
+  WALL_POST_BODY: 'Say something in 1 to 2,000 characters.',
+  WALL_POST_KIND: 'Choose a post, praise, a wish or a poll.',
+  WALL_SCOPE: "Choose the wall: 'org' for everybody, or 'branch' with your branch.",
+  WALL_WRONG_BRANCH: 'That is not your branch. A branch post goes on your own branch wall.',
+  WALL_ATTACHMENTS: 'Send up to 5 photos or PDFs, each with its own base64 data and content type.',
+  WALL_POST_NOT_FOUND: 'That post was not found, or it has been removed.',
+  WALL_OWN_POST: 'That is not your post.',
+  WALL_EDIT_WINDOW: 'Posts can be changed for 15 minutes. Ask HR if something must change after that.',
+  WALL_DELETE_ANNOUNCEMENT: 'An announcement cannot be deleted from the Wall. Ask HR.',
+  WALL_HIDE_REASON: 'Say why it is hidden, in 3 to 200 characters.',
+  WALL_NOT_HIDDEN: 'That is not hidden, so there is nothing to restore.',
+
+  // F2: comments, replies and reactions.
+  WALL_COMMENT_BODY: 'Say something in 1 to 1,000 characters.',
+  WALL_COMMENT_NOT_FOUND: 'That comment was not found, or it has been removed.',
+  WALL_OWN_COMMENT: 'That is not your comment.',
+  WALL_REPLY_DEPTH: 'A reply cannot have replies of its own. Reply to the comment above instead.',
+  WALL_REPLY_OTHER_POST: 'That comment is on another post.',
+  WALL_REACTION: 'Choose one of the six reactions: like, love, laugh, clap, insightful or curious.',
+  WALL_REACTION_ANNOUNCEMENT: 'Announcements are not reacted to. Acknowledge them instead.',
+  WALL_REACTIONS_NONE: 'Nobody has reacted yet.',
+
+  // F3: praise, and F6: wishes.
+  WALL_PRAISE_BADGE: 'Choose one of the RVM badges.',
+  WALL_PRAISE_WHY: 'Say why, in 3 to 280 characters.',
+  WALL_PRAISE_SELF: 'Praise goes to somebody else. Ask a colleague to praise you.',
+  WALL_WISH_OCCASION: "A wish is for a birthday or a work anniversary ('birthday' or 'anniversary').",
+  WALL_WISH_SELF: 'Send your own birthday wishes to somebody else — a wish is for a colleague.',
+  WALL_ALREADY_WISHED: 'You have already wished them this year. One wish each is enough.',
+
+  // F4: polls.
+  WALL_POLL_QUESTION: 'Ask a question in 3 to 300 characters.',
+  WALL_POLL_OPTIONS: 'Give 2 to 10 options, each 1 to 120 characters.',
+  WALL_POLL_CLOSES: 'Give the closing day, YYYY-MM-DD, within a year.',
+  WALL_POLL_PAST: 'That closing day has already gone.',
+  WALL_POLL_NOT_POLL: 'That post is not a poll.',
+  WALL_POLL_CLOSED: 'This poll has closed.',
+  WALL_POLL_OPTIONS_LOCKED: 'The options are fixed now that somebody has voted.',
+  WALL_POLL_OPTION_UNKNOWN: 'That is not one of this poll\'s options.',
+  WALL_POLL_SINGLE: 'Choose one option.',
+  WALL_POLL_CHOICE: 'Choose at least one option.',
+
+  // F5: announcements.
+  WALL_ANNOUNCE_DENIED: 'Only HR, the CEO and super admins can post announcements.',
+  WALL_ANNOUNCEMENT_TITLE: 'Give the announcement a title of 3 to 200 characters.',
+  WALL_ANNOUNCEMENT_BODY: 'Write the announcement, in 3 to 5,000 characters.',
+  WALL_ANNOUNCEMENT_AUDIENCE: 'The audience takes all, branch_ids, department_ids, roles or employee_ids.',
+  WALL_ANNOUNCEMENT_PUBLISH: 'publish_at must be a real time, YYYY-MM-DDTHH:MM:SS with an offset.',
+  WALL_ANNOUNCEMENT_PUBLISH_PAST: 'publish_at has already gone. Leave it out to publish now.',
+  WALL_ANNOUNCEMENT_CLOSES: 'An announcement that needs acknowledgement needs a closing day, YYYY-MM-DD.',
+  WALL_ANNOUNCEMENT_CLOSES_PAST: 'The closing day has already gone.',
+  WALL_ANNOUNCEMENT_NOT_FOUND: 'That announcement was not found.',
+  WALL_ANNOUNCEMENT_DELETE: 'Only the person who posted an announcement deletes it.',
+  WALL_ANNOUNCEMENT_PIN_LIMIT: 'Up to 3 announcements can be pinned. Unpin one first.',
+  WALL_ANNOUNCEMENT_ACK: 'That announcement does not need an acknowledgement.',
+  WALL_ANNOUNCEMENT_STATUS: 'status must be all, draft or published.',
+  WALL_ACK_CLOSED: 'This announcement has closed. Ask HR.',
+  WALL_NOT_IN_AUDIENCE: 'That announcement was not sent to you.',
+
+  // F6: celebrations.
+  WALL_CELEBRATIONS: 'look_for_days must be between 1 and 90, or give a single date.',
+
+  // F7, F8: moderation, reports and the rules document.
+  WALL_REPORT_TARGET: 'Report a post or a comment, by post_id or comment_id.',
+  WALL_REPORT_REASON: 'Say what is wrong, in 3 to 280 characters.',
+  WALL_REPORT_DETAIL: 'Keep the detail to 500 characters.',
+  WALL_ALREADY_REPORTED: 'You have already reported this. HR is looking at it.',
+  WALL_REPORT_NOT_FOUND: 'That report was not found, or it has already been answered.',
+  WALL_MODERATE_DENIED: 'Only HR can hide a post or a comment.',
+  WALL_ALREADY_HIDDEN: 'That is already hidden.',
+  WALL_MODERATION_QUEUE: 'status must be open, hidden, kept or all.',
+  MODERATION_LIMIT: 'That is more than the Wall allows one person in a day. Try again tomorrow.',
+  WALL_REACTION_LIMIT: 'That is more reactions than the Wall allows in a minute. Try again in a moment.',
 });
 
 /** error and code first, and an extra field can never replace either of them. */

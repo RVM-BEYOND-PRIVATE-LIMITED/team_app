@@ -124,10 +124,43 @@ const COLUMNS = Object.freeze({
   // E6: a team member's day (never the leave type or the reason).
   teamDay: 'employee_id, day, status, first_in, last_out, late_minutes, late_excused',
   userRole: 'id, role',
+  // F1-F5: the Wall's rows. A post as the feed reads it: hidden_by_user_id and the delete
+  // bookkeeping stay server-side and are never sent. F5's audience list is one jsonb object.
+  wallPost: 'id, employee_id, kind, scope, branch_id, body, attachments, mentions, badge, occasion, '
+    + 'about_employee_id, poll_multiple, poll_anonymous, poll_closes_on, options_locked_at, poll_closed_at, reaction_counts, '
+    + 'comment_count, edited_at, created_at, updated_at, hidden_at, hidden_by_name, hide_reason, deleted_at',
+  // What the viewer may do with one row (F1, F2): the author, the two clocks, and a hint of the
+  // hidden state, and nothing else.
+  wallPostOwn: 'id, employee_id, kind, hidden_at, deleted_at, edited_at, created_at',
+  wallComment: 'id, post_id, employee_id, parent_id, body, mentions, reaction_counts, reply_count, created_at, updated_at, '
+    + 'hidden_at, hidden_by_name, hide_reason, deleted_at, edited_at',
+  wallCommentOwn: 'id, post_id, parent_id, employee_id, hidden_at, deleted_at, edited_at, created_at',
+  wallOption: 'id, post_id, option_key, label, position, created_at',
+  wallVote: 'id, post_id, option_id, voter_employee_id, voted_at',
+  wallReaction: 'id, post_id, comment_id, employee_id, reaction, created_at',
+  wallMention: 'mentioned_id',
+  wallWish: 'post_id, about_id, wisher_id, occasion, year, created_at',
+  wallReport: 'id, reporter_id, post_id, comment_id, reason, detail, status, resolved_by_name, resolved_at, '
+    + 'resolution_note, created_at',
+  // F5: an announcement as the app reads it, with its audience and its counts. The sender's own
+  // list uses the same columns.
+  announcement: 'id, employee_id, title, body, attachments, audience, publish_at, published_at, needs_ack, '
+    + 'closes_on, pinned, read_count, ack_count, reminded_at, created_at, updated_at, edited_at, deleted_at',
+  // F5's audience resolution reads the same card the directory uses, plus the account link so a
+  // role filter can be applied to the people behind the logins.
+  audienceEmployee: 'id, full_name, employee_code, branch_id, department_id, user_id, employment_status, '
+    + 'date_of_joining, date_of_exit',
 });
 
 /** The Scheduler's private bucket every HR file lives in (20260830000001:15-16). */
 const PHOTO_BUCKET = 'documents';
+
+/**
+ * The ESS's own private bucket (KP, 19 Oct 2026): wall photos and PDFs, praise photos and
+ * announcement attachments. Employee photos stay in the Scheduler's `documents` bucket, where the
+ * HR record's path lives (docs/03-decisions.md).
+ */
+const ESS_BUCKET = 'ESS';
 
 /**
  * A missing table or column means the code is live before its migration: merges deploy at
@@ -173,6 +206,23 @@ const REFUSALS = Object.freeze({
   CL_TAKEN: { code: '23505', name: 'uq_hr_staff_attendance_one_cl_a_month' },
   // Archiving a request twice for the same approver: the second is simply already archived.
   ARCHIVE_KEPT: { code: '23505', name: 'hr_ess_request_archives_family_request_id_employee_id_key' },
+  // F2: a second reaction on the same post or comment, by the same person, whatever the emoji:
+  // the route finds it first (getMyReaction), so this is the backstop for two taps at once.
+  ALREADY_REACTED: { code: '23505', name: 'hr_ess_wall_reactions_post_key' },
+  ALREADY_REACTED_COMMENT: { code: '23505', name: 'hr_ess_wall_reactions_comment_key' },
+  // F6: a second wish for the same person, occasion and year.
+  ALREADY_WISHED: { code: '23505', name: 'hr_ess_wall_wishes_key' },
+  // F7: a second report of the same thing by the same person: HR already has the first.
+  ALREADY_REPORTED: { code: '23505', name: 'hr_ess_wall_reports_post_key' },
+  ALREADY_REPORTED_COMMENT: { code: '23505', name: 'hr_ess_wall_reports_comment_key' },
+  // F4: an option the poll already has (the unique key on its key, or on its position).
+  POLL_OPTION_TAKEN: { code: '23505', name: 'hr_ess_wall_poll_options_post_key' },
+  POLL_POSITION_TAKEN: { code: '23505', name: 'hr_ess_wall_poll_options_post_position' },
+  // F4: a second vote on one option by the same person (tapping twice quickly).
+  ALREADY_VOTED: { code: '23505', name: 'hr_ess_wall_poll_votes_option_key' },
+  // F5: the same person added to one announcement's audience twice.
+  AUDIENCE_KEPT: { code: '23505', name: 'hr_ess_announcement_audience_key' },
+  ANNOUNCEMENT_READ_KEPT: { code: '23505', name: 'hr_ess_announcement_reads_key' },
 });
 
 const isRefusal = (error, { code, name }) =>
@@ -211,6 +261,18 @@ const LIST_LIMITS = Object.freeze({
   inbox: 100,
   // The notifications Inbox, newest first.
   notifications: 100,
+  // F1, F2: the Wall's feed and one post's thread. 20 keeps a phone's first paint small; the
+  // app asks for more with ?before=.
+  wallPosts: 20,
+  wallComments: 50,
+  // F3: a person's praise as their profile shows it, and the celebration cards' look-ahead.
+  praiseFor: 20,
+  celebrations: 60,
+  // F5: an announcement sender's own list, and HR's report queue (F7).
+  myAnnouncements: 100,
+  announcementsInbox: 100,
+  reports: 100,
+  moderationLog: 100,
 });
 
 /**
@@ -325,6 +387,9 @@ function createSupabaseStore(config, { client } = {}) {
     getEmployeeName: (employeeId) => one('hr_employees', COLUMNS.employeeName, 'id', employeeId),
     getEmployeeCard: (employeeId) => one('hr_employees', COLUMNS.employeeCard, 'id', employeeId),
     listEmployeeCards: (employeeIds) => readIn('hr_employees', COLUMNS.employeeCard, 'id', employeeIds),
+    /** The staff behind a set of employee codes: what the Wall's @mentions resolve to (F1). */
+    listEmployeeCardsByCodes: (codes) => list('hr_employees', (q) => q.select(COLUMNS.employeeCard)
+      .in('employee_code', codes.length ? codes : [NIL_UUID])),
     /** Everybody whose HR record puts them at this branch, leavers included: their phones are still registered. */
     listEmployeeIdsInBranch: async (branchId) =>
       ((await read('hr_employees', (q) => q.select('id').eq('branch_id', branchId))) || []).map((e) => e.id),
@@ -517,6 +582,8 @@ function createSupabaseStore(config, { client } = {}) {
     /* ── E9: personal details ── */
 
     getPersonalDetails: (employeeId) => one('hr_ess_personal_details', COLUMNS.personal, 'employee_id', employeeId),
+    /** The dates of birth the celebration cards need, and nothing else from these rows (F6). */
+    listPersonalDetailsFor: (employeeIds) => readIn('hr_ess_personal_details', 'employee_id, date_of_birth', 'employee_id', employeeIds),
     /**
      * One row per employee (its primary key). Only the columns in `row` are written: PostgREST's
      * upsert sets just those on a conflict, so a save cannot put back a field somebody else
@@ -741,6 +808,13 @@ function createSupabaseStore(config, { client } = {}) {
       (await read('hr_ess_notifications', (q) => q.select(COLUMNS.taskNotification).eq('employee_id', employeeId)
         .eq('category', 'priority_tasks').gte('created_at', sinceIso))) || [],
 
+    /** The notifications these people already have, for a dedupe the Wall's job can read. */
+    listNotificationsWithData: async (employeeIds, category, key, value) => {
+      const rows = await readIn('hr_ess_notifications', 'id, employee_id, category, data', 'employee_id', employeeIds,
+        (q) => q.eq('category', category));
+      return rows.filter((n) => n.data && String(n.data[key] ?? '') === String(value));
+    },
+
     /* ── D2: the Scheduler's priority tasks, read for push only ── */
 
     /** Tasks assigned to one person, created since the window opens. Broadcast tasks have no assignee. */
@@ -802,6 +876,289 @@ function createSupabaseStore(config, { client } = {}) {
     listLeaveDaysBetween: async (employeeIds, from, to) =>
       readIn('hr_staff_attendance', 'employee_id, day', 'employee_id', employeeIds,
         (q) => q.eq('status', 'leave').gte('day', from).lte('day', to)),
+
+    /* ── F1-F6: the Wall's feed ── */
+
+    /**
+     * One feed page, newest first: the organisation's wall plus the caller's own branch's, or one
+     * branch alone. `before` pages back (`created_at` older than the last row of the page).
+     */
+    listFeedPosts: async ({ branchId, scope = null, before = null, limit }) => {
+      const one = (extra) => read('hr_ess_wall_posts', (q) => {
+        const base = q.select(COLUMNS.wallPost).is('deleted_at', null);
+        return extra(base)
+          .order('created_at', { ascending: false }).limit(limit + 1);
+      });
+      const late = before ? (q) => q.lt('created_at', before) : (q) => q;
+      if (scope === 'branch') return (await one((q) => late(q).eq('scope', 'branch').eq('branch_id', branchId))) || [];
+      if (scope === 'org') return (await one((q) => late(q).eq('scope', 'org'))) || [];
+      // No branch on the HR record: only the organisation's wall can be read.
+      if (!branchId) return (await one((q) => late(q).eq('scope', 'org'))) || [];
+      // The two walls as one feed: the branch's own and the organisation's, merged by time.
+      const [mine, everyone] = await Promise.all([
+        one((q) => late(q).eq('scope', 'branch').eq('branch_id', branchId)),
+        one((q) => late(q).eq('scope', 'org')),
+      ]);
+      return [...(mine || []), ...(everyone || [])]
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+        .slice(0, limit + 1);
+    },
+    getWallPost: (id) => read('hr_ess_wall_posts', (q) => q.select(COLUMNS.wallPost).eq('id', id).maybeSingle()),
+    /** The author and the two clocks, for the edit window and the delete check (F1). */
+    getWallPostOwn: (id) => read('hr_ess_wall_posts', (q) => q.select(COLUMNS.wallPostOwn).eq('id', id).maybeSingle()),
+    createWallPost: (row) => write('hr_ess_wall_posts', (q) => q.insert([row]).select(COLUMNS.wallPost).single()),
+    /** An edit writes the body (or the poll additions) and the edited stamp; null when it was deleted meanwhile. */
+    updateWallPost: (id, patch) =>
+      write('hr_ess_wall_posts', (q) => q.update(patch).eq('id', id).is('deleted_at', null).select(COLUMNS.wallPost).maybeSingle()),
+    /** The first edit stamp wins, so `edited_at` means "has been edited", whoever wrote it (F1). */
+    markWallPostEdited: (id, at) =>
+      write('hr_ess_wall_posts', (q) => q.update({ edited_at: at, updated_at: at }).eq('id', id).is('edited_at', null).select('id').maybeSingle()),
+    /** HR's hide, or an undo: one update, and null when the row is gone (F7). */
+    moderateWallPost: (id, patch) =>
+      write('hr_ess_wall_posts', (q) => q.update(patch).eq('id', id).select(COLUMNS.wallPost).maybeSingle()),
+    /** The author's own delete: the body and the counters are cleared as the stamp goes on (F1). */
+    deleteWallPost: (id, at) => write('hr_ess_wall_posts', (q) => q.update({
+      deleted_at: at,
+      updated_at: at,
+      body: '(deleted)',
+      attachments: [],
+      mentions: [],
+      reaction_counts: {},
+      comment_count: 0,
+    }).eq('id', id).is('deleted_at', null).select('id').maybeSingle()),
+
+    /* ── F4: a poll's options, its votes, and the counters ── */
+
+    createPollOptions: (rows) => write('hr_ess_wall_poll_options', (q) => q.insert(rows).select(COLUMNS.wallOption)),
+    listPollOptions: (postId) =>
+      list('hr_ess_wall_poll_options', (q) => q.select(COLUMNS.wallOption).eq('post_id', postId).order('position')),
+    getPollOption: (id) => read('hr_ess_wall_poll_options', (q) => q.select(COLUMNS.wallOption).eq('id', id).maybeSingle()),
+    listPollVotes: (postId) => list('hr_ess_wall_poll_votes', (q) => q.select(COLUMNS.wallVote).eq('post_id', postId)),
+    /** One person's own votes on one poll: single-choice is zero or one, multiple is any. */
+    listMyPollVotes: (postId, employeeId) =>
+      list('hr_ess_wall_poll_votes', (q) => q.select(COLUMNS.wallVote).eq('post_id', postId).eq('voter_employee_id', employeeId)),
+    /** Recording a vote that is already there is not an error: a second tap on the same option. */
+    createPollVote: async (row) => {
+      const made = await write('hr_ess_wall_poll_votes', (q) => q.insert([row]), REFUSALS.ALREADY_VOTED);
+      return made !== REFUSED;
+    },
+    /** A single-choice vote is changed by deleting the old row and adding the new one. */
+    deletePollVote: (postId, employeeId) =>
+      write('hr_ess_wall_poll_votes', (q) => q.delete().eq('post_id', postId).eq('voter_employee_id', employeeId).select('id')),
+    /** F4: the option set is frozen from the first vote on; this stamps it, once. */
+    lockPollOptions: (postId, at) =>
+      write('hr_ess_wall_posts', (q) => q.update({ options_locked_at: at, updated_at: at })
+        .eq('id', postId).is('options_locked_at', null).select('id').maybeSingle()),
+    /** The poll that closes tonight, for the job (F4). */
+    listPollsClosingOn: (day) => list('hr_ess_wall_posts', (q) => q.select(COLUMNS.wallPost)
+      .eq('kind', 'poll').eq('poll_closes_on', day).is('deleted_at', null).is('hidden_at', null)),
+    /** Who voted: null for an anonymous poll, which is never read out (F4). */
+    listPollVoters: (postId) => list('hr_ess_wall_poll_votes', (q) => q.select(COLUMNS.wallVote).eq('post_id', postId)),
+
+    /* ── F1, F2: comments and their threads ── */
+
+    createWallComment: (row) => write('hr_ess_wall_comments', (q) => q.insert([row]).select(COLUMNS.wallComment).single()),
+    getWallComment: (id) => read('hr_ess_wall_comments', (q) => q.select(COLUMNS.wallComment).eq('id', id).maybeSingle()),
+    getWallCommentOwn: (id) => read('hr_ess_wall_comments', (q) => q.select(COLUMNS.wallCommentOwn).eq('id', id).maybeSingle()),
+    updateWallComment: (id, patch) =>
+      write('hr_ess_wall_comments', (q) => q.update(patch).eq('id', id).is('deleted_at', null).select(COLUMNS.wallComment).maybeSingle()),
+    markWallCommentEdited: (id, at) =>
+      write('hr_ess_wall_comments', (q) => q.update({ edited_at: at, updated_at: at }).eq('id', id).is('edited_at', null).select('id').maybeSingle()),
+    moderateWallComment: (id, patch) =>
+      write('hr_ess_wall_comments', (q) => q.update(patch).eq('id', id).select(COLUMNS.wallComment).maybeSingle()),
+    deleteWallComment: (id, at) => write('hr_ess_wall_comments', (q) => q.update({
+      deleted_at: at,
+      updated_at: at,
+      body: '(deleted)',
+      mentions: [],
+      reaction_counts: {},
+      reply_count: 0,
+    }).eq('id', id).is('deleted_at', null).select('id').maybeSingle()),
+    /** One post's top-level comments and their replies, oldest first (one level, F2). */
+    listThreadComments: async (postId, limit) =>
+      (await read('hr_ess_wall_comments', (q) => q.select(COLUMNS.wallComment).eq('post_id', postId)
+        .order('created_at').limit(limit + 1))) || [],
+    countWallComments: async (postId) => {
+      const rows = await read('hr_ess_wall_comments', (q) => q.select('id').eq('post_id', postId).is('deleted_at', null).is('hidden_at', null));
+      return (rows || []).length;
+    },
+    /** One person's own comment count on a post, for the "already said something" test. */
+    countMyComments: async (postId, employeeId) => {
+      const rows = await read('hr_ess_wall_comments', (q) => q.select('id').eq('post_id', postId).eq('employee_id', employeeId));
+      return (rows || []).length;
+    },
+    /** A counter patch on a post or a comment (reactions, comment and reply counts, body). */
+    saveWallPostCounter: (id, patch) =>
+      write('hr_ess_wall_posts', (q) => q.update(patch).eq('id', id).select('id').maybeSingle()),
+    saveWallCommentCounter: (id, patch) =>
+      write('hr_ess_wall_comments', (q) => q.update(patch).eq('id', id).select('id').maybeSingle()),
+
+    /* ── F2: reactions ── */
+
+    /** One person's own reaction on a post or a comment, whatever it was (one per person). */
+    getMyPostReaction: (postId, employeeId) => read('hr_ess_wall_reactions', (q) => q.select(COLUMNS.wallReaction)
+      .eq('post_id', postId).eq('employee_id', employeeId).maybeSingle()),
+    getMyCommentReaction: (commentId, employeeId) => read('hr_ess_wall_reactions', (q) => q.select(COLUMNS.wallReaction)
+      .eq('comment_id', commentId).eq('employee_id', employeeId).maybeSingle()),
+    /** A second reaction by the same person is simply their first, so the route updates it. */
+    createPostReaction: async (row) => {
+      const made = await write('hr_ess_wall_reactions', (q) => q.insert([row]), REFUSALS.ALREADY_REACTED);
+      return made !== REFUSED;
+    },
+    createCommentReaction: async (row) => {
+      const made = await write('hr_ess_wall_reactions', (q) => q.insert([row]), REFUSALS.ALREADY_REACTED_COMMENT);
+      return made !== REFUSED;
+    },
+    updatePostReaction: (id, reaction) =>
+      write('hr_ess_wall_reactions', (q) => q.update({ reaction }).eq('id', id).select(COLUMNS.wallReaction).maybeSingle()),
+    updateCommentReaction: (id, reaction) =>
+      write('hr_ess_wall_reactions', (q) => q.update({ reaction }).eq('id', id).select(COLUMNS.wallReaction).maybeSingle()),
+    removePostReaction: (id) =>
+      write('hr_ess_wall_reactions', (q) => q.delete().eq('id', id).select('id').maybeSingle()),
+    removeCommentReaction: (id) =>
+      write('hr_ess_wall_reactions', (q) => q.delete().eq('id', id).select('id').maybeSingle()),
+    /** "Who reacted": the people behind one post's or comment's reactions, newest first (F2). */
+    listReactionsForPost: (postId) => list('hr_ess_wall_reactions', (q) => q.select(COLUMNS.wallReaction)
+      .eq('post_id', postId).order('created_at', { ascending: false })),
+    listReactionsForComment: (commentId) => list('hr_ess_wall_reactions', (q) => q.select(COLUMNS.wallReaction)
+      .eq('comment_id', commentId).order('created_at', { ascending: false })),
+
+    /* ── F1, F2: @mentions ── */
+
+    /** The mention rows a post or a comment carries, written as the row goes in. */
+    createWallMentions: (rows) => write('hr_ess_wall_mentions', (q) => q.insert(rows).select(COLUMNS.wallMention)),
+
+    /* ── F6: praise and the wish book ── */
+
+    /** A person's praise, newest first: what the profile's "Praise" strip shows (F3). */
+    listPraiseFor: (employeeId, limit) => list('hr_ess_wall_posts', (q) => q.select(COLUMNS.wallPost)
+      .eq('kind', 'praise').eq('about_employee_id', employeeId).is('deleted_at', null).is('hidden_at', null)
+      .order('created_at', { ascending: false }).limit(limit)),
+    createWallWish: async (row) => {
+      const made = await write('hr_ess_wall_wishes', (q) => q.insert([row]).select('id, post_id'), REFUSALS.ALREADY_WISHED);
+      return made === REFUSED ? null : made;
+    },
+    /** Who has been wished what this year, for the celebration cards (F6). */
+    listWishesFor: (employeeIds, year) => readIn('hr_ess_wall_wishes', COLUMNS.wallWish, 'about_id', employeeIds,
+      (q) => q.eq('year', year)),
+
+    /* ── F7: reports and the moderation log ── */
+
+    /** One report per person per thing: a second tap answers 409, never a second row. */
+    createWallReport: async (row, onComment) => {
+      const made = await write('hr_ess_wall_reports', (q) => q.insert([row]),
+        onComment ? REFUSALS.ALREADY_REPORTED_COMMENT : REFUSALS.ALREADY_REPORTED);
+      return made !== REFUSED;
+    },
+    /** HR's queue: open first, newest first; one more than the limit, so a cut list is known. */
+    listWallReports: async ({ status = null, limit }) =>
+      (await read('hr_ess_wall_reports', (q) => {
+        const base = q.select(COLUMNS.wallReport);
+        return (status ? base.eq('status', status) : base)
+          .order('created_at', { ascending: false }).limit(limit + 1);
+      })) || [],
+    getWallReport: (id) => read('hr_ess_wall_reports', (q) => q.select(COLUMNS.wallReport).eq('id', id).maybeSingle()),
+    /** Answering a report only while it is still open, so two HR people cannot both answer it. */
+    resolveWallReport: (id, patch) =>
+      write('hr_ess_wall_reports', (q) => q.update(patch).eq('id', id).eq('status', 'open').select(COLUMNS.wallReport).maybeSingle()),
+    /** The moderation trail's own rows, from hr_ess_audit (F7). */
+    listModerationLog: (actions, limit) => list('hr_ess_audit', (q) => q.select('id, at, actor_name, action, target_employee_id, details')
+      .in('action', actions).order('at', { ascending: false }).limit(limit)),
+
+    /* ── F5: announcements ── */
+
+    createAnnouncement: (row) => write('hr_ess_announcements', (q) => q.insert([row]).select(COLUMNS.announcement).single()),
+    getAnnouncement: (id) => read('hr_ess_announcements', (q) => q.select(COLUMNS.announcement).eq('id', id).maybeSingle()),
+    updateAnnouncement: (id, patch) => write('hr_ess_announcements', (q) => q.update(patch).eq('id', id).select(COLUMNS.announcement).maybeSingle()),
+    /** A draft is visible to its sender alone until its publish_at; scheduled ones are the job's. */
+    listMyAnnouncements: async (employeeId, limit) =>
+      (await read('hr_ess_announcements', (q) => q.select(COLUMNS.announcement).eq('employee_id', employeeId)
+        .order('created_at', { ascending: false }).limit(limit + 1))) || [],
+    /** The announcements the job must publish: scheduled times that have arrived (F5). */
+    listDueAnnouncements: (atIso, limit) => list('hr_ess_announcements', (q) => q.select(COLUMNS.announcement)
+      .is('published_at', null).is('deleted_at', null).not('publish_at', 'is', null).lte('publish_at', atIso)
+      .order('publish_at', { ascending: true }).limit(limit)),
+    /** The ones needing an acknowledgement whose close is near, for the reminder (F5). */
+    listAckAnnouncementsClosingOn: (day) => list('hr_ess_announcements', (q) => q.select(COLUMNS.announcement)
+      .eq('needs_ack', true).eq('closes_on', day).is('deleted_at', null).not('published_at', 'is', null)),
+    /** An announcement as a reader of the Wall sees it: those published to them, newest first. */
+    listAnnouncementsFor: async (audienceRows, limit) => {
+      const ids = [...new Set((audienceRows || []).map((r) => r.announcement_id).filter(Boolean))];
+      if (!ids.length) return [];
+      const found = await readIn('hr_ess_announcements', COLUMNS.announcement, 'id', ids);
+      // A reader is never shown a draft or a deleted one, whatever their audience row says.
+      return found.filter((a) => a.published_at != null && a.deleted_at == null)
+        .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at))
+        .slice(0, limit + 1);
+    },
+    /** The audience rows for these people, newest first: what each was sent (F5). */
+    listMyAudienceRows: async (employeeId, limit) =>
+      (await read('hr_ess_announcement_audience', (q) => q.select('announcement_id, employee_id, added_at')
+        .eq('employee_id', employeeId).order('added_at', { ascending: false }).limit(limit + 1))) || [],
+    /** Everybody an audience may name, with the account link a role filter needs. */
+    listAudienceEmployees: async () =>
+      (await read('hr_employees', (q) => q.select(COLUMNS.audienceEmployee).eq('is_archived', false))) || [],
+    /** The count of pinned announcements, against MAX_PINNED (F5). */
+    countPinnedAnnouncements: async () => {
+      const rows = await read('hr_ess_announcements', (q) => q.select('id').eq('pinned', true).is('deleted_at', null));
+      return (rows || []).length;
+    },
+    /** An announcement's counts, the sender's own reading (F5). */
+    listAudienceRows: (announcementId) => list('hr_ess_announcement_audience', (q) => q.select('id, announcement_id, employee_id, added_at')
+      .eq('announcement_id', announcementId)),
+    /** A draft publishes once: the update answers null when it was already published. */
+    publishAnnouncement: (id, at) => write('hr_ess_announcements', (q) => q.update({ published_at: at, updated_at: at })
+      .eq('id', id).is('published_at', null).select(COLUMNS.announcement).maybeSingle()),
+    /** One audience row per person; a second save moves on without a row. */
+    addAudienceRows: async (rows) => {
+      const made = await write('hr_ess_announcement_audience', (q) => q.insert(rows), REFUSALS.AUDIENCE_KEPT);
+      return made !== REFUSED;
+    },
+    markAnnouncementReminded: (id, at) => write('hr_ess_announcements', (q) => q.update({ reminded_at: at })
+      .eq('id', id).select('id').maybeSingle()),
+    /** One read row per person per announcement: the first open wins. */
+    getAnnouncementRead: (announcementId, employeeId) => read('hr_ess_announcement_reads',
+      (q) => q.select('id, announcement_id, employee_id, read_at, ack_at').eq('announcement_id', announcementId).eq('employee_id', employeeId).maybeSingle()),
+    listAnnouncementReads: (announcementId) => list('hr_ess_announcement_reads', (q) => q.select('id, announcement_id, employee_id, read_at, ack_at')
+      .eq('announcement_id', announcementId)),
+    createAnnouncementRead: (row) => write('hr_ess_announcement_reads', (q) => q.insert([row]).select('id, announcement_id, employee_id, read_at, ack_at')),
+    /** The acknowledgement button: only while it is still open (the route checks the day). */
+    ackAnnouncement: (announcementId, employeeId, at) => write('hr_ess_announcement_reads',
+      (q) => q.update({ ack_at: at }).eq('announcement_id', announcementId).eq('employee_id', employeeId)
+        .is('ack_at', null).select('id, announcement_id, employee_id, read_at, ack_at').maybeSingle()),
+
+    /* ── F6: the celebration opt-out ── */
+
+    getCelebrationOptout: (employeeId) => read('hr_ess_celebration_optouts', (q) => q.select('employee_id, hidden, updated_at').eq('employee_id', employeeId).maybeSingle()),
+    setCelebrationOptout: (employeeId, hidden, at) => write('hr_ess_celebration_optouts',
+      (q) => q.upsert([{ employee_id: employeeId, hidden, updated_at: at }], { onConflict: 'employee_id' })
+        .select('employee_id, hidden, updated_at').single()),
+    /** Everybody who has asked to be left off the cards. */
+    listCelebrationOptouts: () => list('hr_ess_celebration_optouts', (q) => q.select('employee_id, hidden, updated_at')),
+
+    /* ── F1, F3, F5: the ESS's own bucket (KP, 19 Oct) ── */
+
+    /** A 300-second signed link into the ESS bucket; null on any failure, as the photo link is. */
+    signedEssUrl: async (path, expiresIn = 300) => {
+      if (!path) return null;
+      try {
+        const { data } = await db.storage.from(ESS_BUCKET).createSignedUrl(path, expiresIn);
+        return (data && data.signedUrl) || null;
+      } catch {
+        return null;
+      }
+    },
+    /** Upload bytes under `path`; a storage failure is an outage, never a 500 with a stack. */
+    uploadEssObject: async (path, buffer, contentType) => {
+      const { error } = await db.storage.from(ESS_BUCKET).upload(path, buffer, { contentType, upsert: false });
+      if (error) throw new HttpError(503, 'UNAVAILABLE', MESSAGES.UNAVAILABLE);
+    },
+    /** Best effort: an orphaned file is a cleanup job, not a failed request. */
+    removeEssObjects: async (paths) => {
+      try {
+        await db.storage.from(ESS_BUCKET).remove(paths);
+      } catch { /* nothing reads the object once no row points at it */ }
+    },
 
     /* ── the audit trail ── */
 

@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.5.0
+  version: 0.6.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -3461,6 +3461,2546 @@ paths:
         default:
           $ref: '#/components/responses/EssUnexpected'
 
+  # ── F1-F9: the Wall (Phase 2A). Every route below is the ESS's own; the error codes each one may
+  # send are named on its responses. ──
+
+  /ess/wall/settings:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getWallSettings
+      tags: [ESS]
+      x-owner: ess
+      summary: The Wall's rules (F8)
+      description: |
+        Who may post what, and the numbers every form is built from: everyone posts, comments, reacts, praises and runs polls; only HR, the CEO and super admins post announcements; HR hides anything, with a reason (decision 8). The badges are the fixed catalogue (F3), so the praise picker needs no other call.
+
+        Nothing here is a table: the rules live in the ESS's code (`src/policy/wall.js`), and a change is a reviewed code change.
+      responses:
+        '200':
+          description: The rules, as the server holds them.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallSettings'
+              examples:
+                rules:
+                  value:
+                    post: { everyone: true, max_attachments: 5, max_body: 2000, edit_window_minutes: 15, mentions: employee_code, scopes: [org, branch] }
+                    comment: { everyone: true, max_body: 1000, reply_depth: 1, edit_window_minutes: 15 }
+                    reactions: [like, love, laugh, clap, insightful, curious]
+                    praise:
+                      badges:
+                        - { id: student_first, label: 'Student first', for: teaching }
+                        - { id: mentor, label: Mentor, for: people }
+                      max_reason: 280
+                      photo: true
+                      certificate: false
+                    poll: { min_options: 2, max_options: 10, max_option_chars: 120, multiple: true, anonymous: true, closes_within_days: 365 }
+                    announcement:
+                      everyone: false
+                      roles: [hr, ceo, super_admin]
+                      max_attachments: 5
+                      max_pinned: 3
+                      audience: { scopes: [all, branch_ids, department_ids, roles, employee_ids], roles: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, faculty] }
+                      acknowledgement: true
+                      scheduled: true
+                    moderation: { roles: [hr], reasons: true, reports: true }
+                    celebrations: { enabled: true, opt_out: true, new_joiner_days: 15 }
+                    email: { enabled: false }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/posts:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listWallPosts
+      tags: [ESS]
+      x-owner: ess
+      summary: The wall — the organisation's and my branch's (F1)
+      description: |
+        One page, newest first: the organisation's wall plus the caller's own branch's, or one of them with `scope`. A post standing on another branch is never here.
+
+        `next_before` is the last row's `created_at`: send it back as `before` for the next page, until it comes back null. Deleted posts are left out; a hidden post is left out too, unless the reader is its author or HR (then it carries `hidden: true`).
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          description: '`org` for the organisation wall alone, `branch` for the caller''s own branch alone. Left out: both.'
+          schema:
+            type: string
+            enum: [org, branch]
+        - name: before
+          in: query
+          required: false
+          description: The `next_before` of the page before this one.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: A page of the wall.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallFeed'
+              examples:
+                page:
+                  value:
+                    posts:
+                      - id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                        kind: post
+                        scope: org
+                        branch_id: null
+                        author: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                        mine: false
+                        body: 'Batch 12 has cleared the CAD module. Thanks @RVM-009!'
+                        attachments: []
+                        mentions: []
+                        about: null
+                        edited: false
+                        edited_at: null
+                        created_at: '2026-10-16T05:10:00.000Z'
+                        updated_at: '2026-10-16T05:10:00.000Z'
+                        hidden: false
+                        reactions: { counts: { clap: 4 }, total: 4 }
+                        my_reaction: null
+                        comment_count: 2
+                    next_before: null
+                    truncated: false
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    post:
+      operationId: createWallPost
+      tags: [ESS]
+      x-owner: ess
+      summary: Post, or start a poll (F1, F4)
+      description: |
+        Either token kind: everybody posts (decision 8). `kind` is a `post` or a `poll`; praise and wishes have their own addresses, because they carry their own fields.
+
+        `scope` chooses the wall: `org` for everybody, or `branch` for the caller's own (`branch_id` must be their own branch; **the build's default is the caller's own branch**, for KP to confirm). `body` may carry `@RVM-011`-style mentions of employee codes: the people who hold them hear about it and come back in `mentions`.
+
+        Files arrive as base64 in the JSON body — up to five, each up to 1 MB decoded (nginx allows 12 MB). The reply carries 300-second signed links, never the stored path.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallPostCreate'
+            examples:
+              post:
+                value: { body: 'Batch 12 has cleared the CAD module. Thanks @RVM-009!', scope: org }
+              poll:
+                value:
+                  kind: poll
+                  body: Where should the team lunch be?
+                  poll:
+                    options: [Chaat, Pizza, Dosa]
+                    multiple: false
+                    anonymous: true
+                    closes_on: '2026-11-01'
+      responses:
+        '201':
+          description: Posted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPostResult'
+              examples:
+                post:
+                  value:
+                    post:
+                      id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                      kind: post
+                      scope: org
+                      branch_id: null
+                      author: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      mine: true
+                      body: 'Batch 12 has cleared the CAD module. Thanks @RVM-009!'
+                      attachments: []
+                      mentions: []
+                      about: null
+                      edited: false
+                      edited_at: null
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      updated_at: '2026-10-16T05:10:00.000Z'
+                      hidden: false
+                      reactions: { counts: {}, total: 0 }
+                      my_reaction: null
+                      comment_count: 0
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/posts/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The post's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getWallPost
+      tags: [ESS]
+      x-owner: ess
+      summary: One post, with its comments (F1, F2)
+      description: |
+        The post, its comments and their one level of replies, up to 50 comments (`truncated` says when there are more). A deleted post, or a hidden one the caller may not see, is 404. A hidden comment keeps its place in the thread with no words for everybody but HR and its author.
+      responses:
+        '200':
+          description: The post and its thread.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPostThread'
+              examples:
+                thread:
+                  value:
+                    post:
+                      id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                      kind: post
+                      scope: org
+                      branch_id: null
+                      author: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      mine: false
+                      body: 'Batch 12 has cleared the CAD module.'
+                      attachments: []
+                      mentions: []
+                      about: null
+                      edited: false
+                      edited_at: null
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      updated_at: '2026-10-16T05:10:00.000Z'
+                      hidden: false
+                      reactions: { counts: { clap: 4 }, total: 4 }
+                      my_reaction: null
+                      comment_count: 1
+                      comments:
+                        - id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                          post_id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                          parent_id: null
+                          author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                          mine: false
+                          body: 'Well done to the whole batch.'
+                          mentions: []
+                          reactions: { counts: {}, total: 0 }
+                          my_reaction: null
+                          reply_count: 1
+                          created_at: '2026-10-16T05:20:00.000Z'
+                          updated_at: '2026-10-16T05:20:00.000Z'
+                          edited: false
+                          hidden: false
+                          replies:
+                            - id: 7e6d5c4b-3a2f-4e1d-8c9b-0a1f2e3d4c5b
+                              post_id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                              parent_id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                              author: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                              mine: true
+                              body: 'Thank you, ma''am.'
+                              mentions: []
+                              reactions: { counts: {}, total: 0 }
+                              my_reaction: null
+                              reply_count: 0
+                              created_at: '2026-10-16T05:25:00.000Z'
+                              updated_at: '2026-10-16T05:25:00.000Z'
+                              edited: false
+                              hidden: false
+                              replies: []
+                    truncated: false
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    patch:
+      operationId: editWallPost
+      tags: [ESS]
+      x-owner: ess
+      summary: Edit my post, for 15 minutes (F1)
+      description: |
+        The author's own, and only inside 15 minutes of `created_at`: past that it answers 409 `EDIT_WINDOW_CLOSED` and a change goes through HR. The reply carries `edited: true`, which is what the app shows beside the post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallPostUpdate'
+            examples:
+              edited:
+                value: { body: 'Batch 12 has cleared the CAD module — corrected the batch number.' }
+      responses:
+        '200':
+          description: 'Saved, with `edited: true`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPostResult'
+              examples:
+                edited:
+                  value:
+                    post:
+                      id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                      kind: post
+                      scope: org
+                      branch_id: null
+                      author: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      mine: true
+                      body: 'Batch 12 has cleared the CAD module — corrected the batch number.'
+                      attachments: []
+                      mentions: []
+                      about: null
+                      edited: true
+                      edited_at: '2026-10-16T05:20:00.000Z'
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      updated_at: '2026-10-16T05:20:00.000Z'
+                      hidden: false
+                      reactions: { counts: {}, total: 0 }
+                      my_reaction: null
+                      comment_count: 0
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: deleteWallPost
+      tags: [ESS]
+      x-owner: ess
+      summary: Delete my post (F1)
+      description: |
+        The author's own, at any time. The row stays with its body blanked, so the moderation trail and the comments pointing at it keep their shape; the app shows a stub. Recorded in `hr_ess_audit` as `wall.post.deleted`.
+      responses:
+        '204':
+          description: Deleted.
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/posts/{id}/comments:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: createWallComment
+      tags: [ESS]
+      x-owner: ess
+      summary: Comment, or reply to a comment (F2)
+      description: |
+        Either token kind; everybody comments (decision 8). `parent_id` makes it a reply, and a reply of a reply is refused: one level only. A mention (`@RVM-011`) notifies the person, and a reply notifies the comment's author unless they wrote it themselves.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The post's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallCommentCreate'
+            examples:
+              comment:
+                value: { body: 'Well done to the whole batch.' }
+      responses:
+        '201':
+          description: Commented.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallCommentReply'
+              examples:
+                comment:
+                  value:
+                    comment:
+                      id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                      post_id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                      parent_id: null
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: true
+                      body: 'Well done to the whole batch.'
+                      mentions: []
+                      reactions: { counts: {}, total: 0 }
+                      my_reaction: null
+                      reply_count: 0
+                      created_at: '2026-10-16T05:20:00.000Z'
+                      updated_at: '2026-10-16T05:20:00.000Z'
+                      edited: false
+                      hidden: false
+                      replies: []
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/comments/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The comment's id.
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: editWallComment
+      tags: [ESS]
+      x-owner: ess
+      summary: Edit my comment, for 15 minutes (F2)
+      description: 'The author''s own, and only inside 15 minutes of its `created_at`; past that 409 `EDIT_WINDOW_CLOSED`. The reply carries `edited: true`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallCommentUpdate'
+            examples:
+              edited:
+                value: { body: 'Well done to the whole batch — and their mentors.' }
+      responses:
+        '200':
+          description: 'Saved, with `edited: true`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallCommentReply'
+              examples:
+                edited:
+                  value:
+                    comment:
+                      id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                      post_id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                      parent_id: null
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: true
+                      body: 'Well done to the whole batch — and their mentors.'
+                      mentions: []
+                      reactions: { counts: {}, total: 0 }
+                      my_reaction: null
+                      reply_count: 0
+                      created_at: '2026-10-16T05:20:00.000Z'
+                      updated_at: '2026-10-16T05:25:00.000Z'
+                      edited: true
+                      hidden: false
+                      replies: []
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: deleteWallComment
+      tags: [ESS]
+      x-owner: ess
+      summary: Delete my comment (F2)
+      description: The author's own, at any time. The row stays with its body blanked and the post's count moves down; recorded as `wall.comment.deleted`.
+      responses:
+        '204':
+          description: Deleted.
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/posts/{id}/reaction:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    put:
+      operationId: putPostReaction
+      tags: [ESS]
+      x-owner: ess
+      summary: React to a post (F2)
+      description: |
+        One of the six reactions, one per person per post: tapping a second emoji changes it, and the counts come back rewritten from the reactions table. A hidden post the caller may not see is 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The post's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallReactionChange'
+            examples:
+              clap:
+                value: { reaction: clap }
+      responses:
+        '200':
+          description: Counted, with the caller's own reaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReactionState'
+              examples:
+                reacted:
+                  value: { counts: { clap: 5 }, total: 5, my_reaction: clap }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: deletePostReaction
+      tags: [ESS]
+      x-owner: ess
+      summary: Take my reaction off a post (F2)
+      description: Takes the caller's own reaction off, if there is one; the counts come back without it. A post they never reacted to is not an error.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The post's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The counts after the change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReactionState'
+              examples:
+                off:
+                  value: { counts: { clap: 4 }, total: 4, my_reaction: null }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/posts/{id}/reactions:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listPostReactions
+      tags: [ESS]
+      x-owner: ess
+      summary: Who reacted to a post (F2)
+      description: |
+        Everyone who reacted, grouped by reaction, newest first: what a tap on the count shows. `reaction` narrows it to one of the six.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The post's id.
+          schema:
+            type: string
+            format: uuid
+        - name: reaction
+          in: query
+          required: false
+          description: One of the six, to see just those people.
+          schema:
+            type: string
+            enum: [like, love, laugh, clap, insightful, curious]
+      responses:
+        '200':
+          description: The people behind each reaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReactionsList'
+              examples:
+                whoReacted:
+                  value:
+                    reactions:
+                      - reaction: clap
+                        count: 4
+                        people:
+                          - { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, reacted_at: '2026-10-16T05:30:00.000Z' }
+                          - { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, reacted_at: '2026-10-16T05:25:00.000Z' }
+                    total: 4
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/comments/{id}/reaction:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    put:
+      operationId: putCommentReaction
+      tags: [ESS]
+      x-owner: ess
+      summary: React to a comment (F2)
+      description: The same six, the same one-per-person rule, one level in.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The comment's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallReactionChange'
+            examples:
+              insightful:
+                value: { reaction: insightful }
+      responses:
+        '200':
+          description: Counted, with the caller's own reaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReactionState'
+              examples:
+                reacted:
+                  value: { counts: { insightful: 1 }, total: 1, my_reaction: insightful }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: deleteCommentReaction
+      tags: [ESS]
+      x-owner: ess
+      summary: Take my reaction off a comment (F2)
+      description: Takes the caller's own reaction off, if there is one.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The comment's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The counts after the change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReactionState'
+              examples:
+                off:
+                  value: { counts: {}, total: 0, my_reaction: null }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/comments/{id}/reactions:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listCommentReactions
+      tags: [ESS]
+      x-owner: ess
+      summary: Who reacted to a comment (F2)
+      description: The same reading as a post's, one level in.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The comment's id.
+          schema:
+            type: string
+            format: uuid
+        - name: reaction
+          in: query
+          required: false
+          description: One of the six, to see just those people.
+          schema:
+            type: string
+            enum: [like, love, laugh, clap, insightful, curious]
+      responses:
+        '200':
+          description: The people behind each reaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReactionsList'
+              examples:
+                whoReacted:
+                  value:
+                    reactions:
+                      - reaction: like
+                        count: 1
+                        people:
+                          - { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, reacted_at: '2026-10-16T05:30:00.000Z' }
+                    total: 1
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/praise:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: createPraise
+      tags: [ESS]
+      x-owner: ess
+      summary: Praise a colleague (F3)
+      description: |
+        One of the twelve fixed RVM badges (KP, 19 Oct: the catalogue ships in code), a reason of up to 280 characters, and an optional photo. A certificate PDF is out of scope here — letters are Phase 3. Praise is about somebody else: yourself is refused.
+
+        The praise appears in the feed like any other post, and on the receiver's own screen through `GET /ess/me/praise`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PraiseCreate'
+            examples:
+              mentor:
+                value:
+                  employee_id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                  badge: mentor
+                  reason: 'Stayed back three evenings to get the new batch through their first drawing.'
+      responses:
+        '201':
+          description: Praised, and the receiver hears about it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PraiseResult'
+              examples:
+                praise:
+                  value:
+                    post:
+                      id: 8b1c2d3e-4f50-4a1b-9c8d-7e6f5a4b3c2d
+                      kind: praise
+                      scope: org
+                      branch_id: null
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: true
+                      body: 'Stayed back three evenings to get the new batch through their first drawing.'
+                      attachments: []
+                      mentions: []
+                      about: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011 }
+                      badge: { id: mentor, label: Mentor }
+                      edited: false
+                      edited_at: null
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      updated_at: '2026-10-16T05:10:00.000Z'
+                      hidden: false
+                      reactions: { counts: { like: 3 }, total: 3 }
+                      my_reaction: null
+                      comment_count: 0
+                    badge: { id: mentor, label: Mentor, for: people }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/praise:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listMyPraise
+      tags: [ESS]
+      x-owner: ess
+      summary: Praise for me, or for somebody I name (F3)
+      description: |
+        The praise the caller has received, newest first, up to 20, with the badge catalogue beside it. `employee_id` asks for somebody else's; the profile screen uses its own call with no parameter. Deleted and hidden praise is left out.
+
+        F3 asks for praise to appear on the receiver's profile. It is built as this read rather than folded into `GET /ess/me/profile`, so the profile's shape does not change: the app makes one more call, and the phase's optional profile integration is done. **KP to confirm** this reading.
+      parameters:
+        - name: employee_id
+          in: query
+          required: false
+          description: 'Whose praise to read. Left out: the caller''s own.'
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The praise, and the badges a picker offers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PraiseList'
+              examples:
+                mine:
+                  value:
+                    praise:
+                      - id: 8b1c2d3e-4f50-4a1b-9c8d-7e6f5a4b3c2d
+                        kind: praise
+                        scope: org
+                        branch_id: null
+                        author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                        mine: false
+                        body: 'Stayed back three evenings to get the new batch through their first drawing.'
+                        attachments: []
+                        mentions: []
+                        about: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011 }
+                        badge: { id: mentor, label: Mentor }
+                        edited: false
+                        edited_at: null
+                        created_at: '2026-10-16T05:10:00.000Z'
+                        updated_at: '2026-10-16T05:10:00.000Z'
+                        hidden: false
+                        reactions: { counts: { like: 3 }, total: 3 }
+                        my_reaction: null
+                        comment_count: 0
+                    badges:
+                      - { id: student_first, label: 'Student first', for: teaching }
+                      - { id: mentor, label: Mentor, for: people }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/polls/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getPoll
+      tags: [ESS]
+      x-owner: ess
+      summary: One poll with its results (F4)
+      description: |
+        The poll, open or closed, with its options and their counts and the caller's own votes. An anonymous poll never names a voter, whoever asks.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The poll post's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The poll.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPostResult'
+              examples:
+                poll:
+                  value:
+                    post:
+                      id: 5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d
+                      kind: poll
+                      scope: org
+                      branch_id: null
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: false
+                      body: Where should the team lunch be?
+                      attachments: []
+                      mentions: []
+                      about: null
+                      edited: false
+                      edited_at: null
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      updated_at: '2026-10-16T05:10:00.000Z'
+                      hidden: false
+                      reactions: { counts: {}, total: 0 }
+                      my_reaction: null
+                      comment_count: 0
+                      poll:
+                        multiple: false
+                        anonymous: true
+                        closes_on: '2026-11-01'
+                        closed: false
+                        closed_at: null
+                        options_locked: true
+                        total_votes: 3
+                        my_option_ids: [4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f]
+                        options:
+                          - { id: 4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f, label: Chaat, position: 0, votes: 2 }
+                          - { id: 5e6f7081-2b3c-4d4e-9f0a-1b2c3d4e5f60, label: Pizza, position: 1, votes: 1 }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/polls/{id}/vote:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: votePoll
+      tags: [ESS]
+      x-owner: ess
+      summary: Vote in a poll (F4)
+      description: |
+        One option for a single-choice poll (`WALL_POLL_SINGLE` for more), any number for a multiple-choice one, while the poll is open. The first vote of anybody freezes the option set.
+
+        An anonymous poll records the caller's own vote so it can be shown back and not repeated, and never returns a voter to anybody — HR included.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The poll post's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallPollVote'
+            examples:
+              oneChoice:
+                value: { option_ids: [4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f] }
+      responses:
+        '200':
+          description: Counted, with the whole poll back.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPollVoteResult'
+              examples:
+                voted:
+                  value:
+                    poll:
+                      multiple: false
+                      anonymous: true
+                      closes_on: '2026-11-01'
+                      closed: false
+                      closed_at: null
+                      options_locked: true
+                      total_votes: 3
+                      my_option_ids: [4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f]
+                      options:
+                        - { id: 4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f, label: Chaat, position: 0, votes: 2 }
+                        - { id: 5e6f7081-2b3c-4d4e-9f0a-1b2c3d4e5f60, label: Pizza, position: 1, votes: 1 }
+                    my_option_ids: [4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f]
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: withdrawPollVote
+      tags: [ESS]
+      x-owner: ess
+      summary: Take my vote back (F4)
+      description: Takes the caller's own vote off, while the poll is still open. A closed poll is 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The poll post's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The poll without the caller's vote.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPollVoteResult'
+              examples:
+                withdrawn:
+                  value:
+                    poll:
+                      multiple: false
+                      anonymous: true
+                      closes_on: '2026-11-01'
+                      closed: false
+                      closed_at: null
+                      options_locked: true
+                      total_votes: 2
+                      my_option_ids: []
+                      options:
+                        - { id: 4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f, label: Chaat, position: 0, votes: 2 }
+                        - { id: 5e6f7081-2b3c-4d4e-9f0a-1b2c3d4e5f60, label: Pizza, position: 1, votes: 0 }
+                    my_option_ids: []
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/polls/{id}/options:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: addPollOption
+      tags: [ESS]
+      x-owner: ess
+      summary: Add an option to my poll (F4)
+      description: 'The poll''s author only, while nobody has voted (F4: "options fixed after the first vote") and the poll has not closed. Ten options are the most a poll takes.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The poll post's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallPollOptionAdd'
+            examples:
+              added:
+                value: { label: Idli }
+      responses:
+        '201':
+          description: Added, with the whole poll back.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPollOptionAddResult'
+              examples:
+                added:
+                  value:
+                    option: { id: 6f708192-3c4d-4e5f-9a0b-1c2d3e4f5a60, label: Idli, position: 2, votes: 0 }
+                    poll:
+                      multiple: false
+                      anonymous: true
+                      closes_on: '2026-11-01'
+                      closed: false
+                      closed_at: null
+                      options_locked: false
+                      total_votes: 0
+                      my_option_ids: []
+                      options:
+                        - { id: 4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f, label: Chaat, position: 0, votes: 0 }
+                        - { id: 5e6f7081-2b3c-4d4e-9f0a-1b2c3d4e5f60, label: Pizza, position: 1, votes: 0 }
+                        - { id: 6f708192-3c4d-4e5f-9a0b-1c2d3e4f5a60, label: Idli, position: 2, votes: 0 }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/polls/{id}/close:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: closePoll
+      tags: [ESS]
+      x-owner: ess
+      summary: Close my poll early (F4)
+      description: The poll's author only. The closing day it was due on is kept, so the card can say it closed early; from here nothing can be voted or added, and the results stay readable.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The poll post's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Closed, with the results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPollCloseResult'
+              examples:
+                closed:
+                  value:
+                    poll:
+                      multiple: false
+                      anonymous: true
+                      closes_on: '2026-11-01'
+                      closed: true
+                      closed_at: '2026-10-16T06:30:00.000Z'
+                      options_locked: true
+                      total_votes: 3
+                      my_option_ids: []
+                      options:
+                        - { id: 4d5e6f70-1a2b-4c3d-8e9f-0a1b2c3d4e5f, label: Chaat, position: 0, votes: 2 }
+                        - { id: 5e6f7081-2b3c-4d4e-9f0a-1b2c3d4e5f60, label: Pizza, position: 1, votes: 1 }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/announcements:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listAnnouncements
+      tags: [ESS]
+      x-owner: ess
+      summary: Announcements sent to me (F5)
+      description: |
+        What was sent to the caller, pinned first and then newest first, up to 100, with the caller's own read and acknowledgement times. A scheduled one that has not gone out, and a deleted one, are not here. The audience list is never returned.
+      responses:
+        '200':
+          description: The caller's own announcements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementList'
+              examples:
+                inbox:
+                  value:
+                    announcements:
+                      - id: 6e5d4c3b-2a1f-4e9d-8c7b-6a5f4e3d2c1b
+                        title: Diwali holiday
+                        body: 'The office is closed on 8 November. Attendance is not expected that day.'
+                        attachments: []
+                        author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                        mine: false
+                        audience_label: null
+                        needs_ack: true
+                        closes_on: '2026-11-05'
+                        pinned: false
+                        publish_at: '2026-10-16T05:10:00.000Z'
+                        published_at: '2026-10-16T05:10:00.000Z'
+                        created_at: '2026-10-16T05:10:00.000Z'
+                        edited: false
+                        read_at: null
+                        ack_at: null
+                    truncated: false
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    post:
+      operationId: createAnnouncement
+      tags: [ESS]
+      x-owner: ess
+      summary: Post an announcement, now or scheduled (F5)
+      description: |
+        HR, the CEO and super admins only (decision 8). The audience is `{"all": true}`, or any of `branch_ids`, `department_ids`, `roles`, `employee_ids` — an OR of the people each names — and it is resolved ONCE, at publication, so a new branch or a role change afterwards never silently reaches somebody new.
+
+        `publish_at` in the future schedules it: the row is a draft until the ESS's own clock publishes it, resolves the audience and notifies everybody. `needs_ack` requires `closes_on`, and the sender reads `read` and `acknowledged` counts afterwards. Up to three announcements may be pinned at once.
+
+        Email and push are log-only until RVM has a mail provider and the Firebase project (KP, 19 Oct); the in-app row is written at once either way. Nothing here touches the Scheduler's student notices.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnouncementCreate'
+            examples:
+              holiday:
+                value:
+                  title: Diwali holiday
+                  body: 'The office is closed on 8 November. Attendance is not expected that day.'
+                  needs_ack: true
+                  closes_on: '2026-11-05'
+      responses:
+        '201':
+          description: Posted or scheduled, with the sender's counts (zero while it waits).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementCreated'
+              examples:
+                posted:
+                  value:
+                    announcement:
+                      id: 6e5d4c3b-2a1f-4e9d-8c7b-6a5f4e3d2c1b
+                      title: Diwali holiday
+                      body: 'The office is closed on 8 November. Attendance is not expected that day.'
+                      attachments: []
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: true
+                      audience_label: Everybody
+                      needs_ack: true
+                      closes_on: '2026-11-05'
+                      pinned: false
+                      publish_at: '2026-10-16T05:10:00.000Z'
+                      published_at: '2026-10-16T05:10:00.000Z'
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      edited: false
+                      read_at: null
+                      ack_at: null
+                    counts: { sent: 110, read: 0, acknowledged: 0, not_acknowledged: 110 }
+                    scheduled: false
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/announcements/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The announcement's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAnnouncement
+      tags: [ESS]
+      x-owner: ess
+      summary: One announcement (F5)
+      description: One the caller was sent, or their own draft. Its sender also reads the counts and the audience's label; nobody else does.
+      responses:
+        '200':
+          description: The announcement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementResult'
+              examples:
+                reader:
+                  value:
+                    announcement:
+                      id: 6e5d4c3b-2a1f-4e9d-8c7b-6a5f4e3d2c1b
+                      title: Diwali holiday
+                      body: 'The office is closed on 8 November. Attendance is not expected that day.'
+                      attachments: []
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: false
+                      audience_label: null
+                      needs_ack: true
+                      closes_on: '2026-11-05'
+                      pinned: false
+                      publish_at: '2026-10-16T05:10:00.000Z'
+                      published_at: '2026-10-16T05:10:00.000Z'
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      edited: false
+                      read_at: '2026-10-16T06:00:00.000Z'
+                      ack_at: null
+                sender:
+                  value:
+                    announcement:
+                      id: 6e5d4c3b-2a1f-4e9d-8c7b-6a5f4e3d2c1b
+                      title: Diwali holiday
+                      body: 'The office is closed on 8 November. Attendance is not expected that day.'
+                      attachments: []
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: true
+                      audience_label: Everybody
+                      needs_ack: true
+                      closes_on: '2026-11-05'
+                      pinned: false
+                      publish_at: '2026-10-16T05:10:00.000Z'
+                      published_at: '2026-10-16T05:10:00.000Z'
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      edited: false
+                      read_at: null
+                      ack_at: null
+                      counts: { sent: 110, read: 43, acknowledged: 31, not_acknowledged: 79 }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    patch:
+      operationId: editAnnouncement
+      tags: [ESS]
+      x-owner: ess
+      summary: Edit my announcement, or pin it (F5)
+      description: Its sender's own. A change to the title or the body marks it edited; `pinned` pins or unpins it, and a fourth pin is 409 `PIN_LIMIT`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnouncementUpdate'
+            examples:
+              updated:
+                value: { title: 'Diwali holiday (dates confirmed)' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementResult'
+              examples:
+                updated:
+                  value:
+                    announcement:
+                      id: 6e5d4c3b-2a1f-4e9d-8c7b-6a5f4e3d2c1b
+                      title: 'Diwali holiday (dates confirmed)'
+                      body: 'The office is closed on 8 November. Attendance is not expected that day.'
+                      attachments: []
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: true
+                      audience_label: Everybody
+                      needs_ack: true
+                      closes_on: '2026-11-05'
+                      pinned: false
+                      publish_at: '2026-10-16T05:10:00.000Z'
+                      published_at: '2026-10-16T05:10:00.000Z'
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      edited: true
+                      read_at: null
+                      ack_at: null
+                      counts: { sent: 110, read: 43, acknowledged: 31, not_acknowledged: 79 }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: deleteAnnouncement
+      tags: [ESS]
+      x-owner: ess
+      summary: Take my announcement down (F5)
+      description: Its sender's own. The row stays so the read and acknowledgement record it gathered survives; it simply disappears from everybody's feed.
+      responses:
+        '204':
+          description: Taken down.
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/announcements/{id}/read:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: readAnnouncement
+      tags: [ESS]
+      x-owner: ess
+      summary: Mark an announcement read (F5)
+      description: '204 once the person opens it. Their first open is what the sender''s read count records; opening it again changes nothing. Somebody it was not sent to is 403 `NOT_IN_AUDIENCE`.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The announcement's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Read (or already read).
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/announcements/{id}/ack:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: ackAnnouncement
+      tags: [ESS]
+      x-owner: ess
+      summary: Acknowledge an announcement (F5)
+      description: |
+        The button, for an announcement that asks for one: an announcement that does not is 400 `WALL_ANNOUNCEMENT_ACK`, and one past its closing day is 409 `ACK_CLOSED` (that day itself is open). Marking it read first is not needed: the acknowledgement records both.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The announcement's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Acknowledged, with both times.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcknowledgementSaved'
+              examples:
+                acked:
+                  value: { read_at: '2026-10-16T05:30:00.000Z', ack_at: '2026-10-16T06:30:00.000Z' }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/announcements/{id}/counts:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getAnnouncementCounts
+      tags: [ESS]
+      x-owner: ess
+      summary: An announcement's read and acknowledgement counts (F5)
+      description: Its sender's own, or HR's; anybody else is 403 `NOT_YOURS`. The names behind them are never returned.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The announcement's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: How many it reached, read and acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementCountsResult'
+              examples:
+                counts:
+                  value: { counts: { sent: 110, read: 43, acknowledged: 31, not_acknowledged: 79 }, closes_on: '2026-11-05', needs_ack: true }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/hr/announcements:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listMyAnnouncements
+      tags: [ESS]
+      x-owner: ess
+      summary: The announcements I posted (F5)
+      description: |
+        The sender's own list, drafts and scheduled ones included, newest first. `status=draft` or `published` narrows it. HR, the CEO and super admins only.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: '`draft` for what has not gone out yet, `published` for what has. Left out: everything.'
+          schema:
+            type: string
+            enum: [draft, published]
+      responses:
+        '200':
+          description: The caller's own announcements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementList'
+              examples:
+                mine:
+                  value:
+                    announcements:
+                      - id: 6e5d4c3b-2a1f-4e9d-8c7b-6a5f4e3d2c1b
+                        title: Diwali holiday
+                        body: 'The office is closed on 8 November. Attendance is not expected that day.'
+                        attachments: []
+                        author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                        mine: true
+                        audience_label: Everybody
+                        needs_ack: true
+                        closes_on: '2026-11-05'
+                        pinned: false
+                        publish_at: '2026-10-16T05:10:00.000Z'
+                        published_at: '2026-10-16T05:10:00.000Z'
+                        created_at: '2026-10-16T05:10:00.000Z'
+                        edited: false
+                        read_at: null
+                        ack_at: null
+                    truncated: false
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/celebrations:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listCelebrations
+      tags: [ESS]
+      x-owner: ess
+      summary: Birthdays, anniversaries and new joiners (F6)
+      description: |
+        One call for the Wall's celebration cards: the birthdays and work anniversaries falling inside the window, and the people in their first 15 days.
+
+        **A birthday is day and month only** — the year is never stored in the reply, and a birthday is left out entirely for anybody who opted out (`PUT /ess/me/celebration-optout`); `birthdays_hidden` says how many did, never who. A work anniversary comes from the HR record's date of joining, and `years` is what the card celebrates. Data: `hr_employees.date_of_joining` and the 1B table's date of birth, which HR keeps (KP, 19 Oct).
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: How far ahead to look, 1 to 90 days. 30 by default.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+      responses:
+        '200':
+          description: Today's cards and what is coming.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Celebrations'
+              examples:
+                cards:
+                  value:
+                    today: '2026-10-16'
+                    window_days: 30
+                    birthdays:
+                      - employee: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty', branch_id: 6f5e4d3c-2b1a-4f8e-9d7c-6b5a4f3e2d1c }
+                        date_of_birth: { day: 16, month: 10 }
+                        on: '2026-10-16'
+                        wished_by_me: false
+                        wish_count: 0
+                    anniversaries:
+                      - employee: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager', branch_id: 6f5e4d3c-2b1a-4f8e-9d7c-6b5a4f3e2d1c }
+                        date_of_joining: '2021-10-20'
+                        years: 5
+                        on: '2026-10-20'
+                        wished_by_me: false
+                        wish_count: 0
+                    new_joiners:
+                      - employee: { id: 7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d, full_name: 'Neha Verma', employee_code: RVM-064, designation: 'Counsellor', branch_id: 6f5e4d3c-2b1a-4f8e-9d7c-6b5a4f3e2d1c }
+                        date_of_joining: '2026-10-06'
+                        days: 10
+                    birthdays_hidden: 2
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/wishes:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: createWish
+      tags: [ESS]
+      x-owner: ess
+      summary: Wish somebody (F6)
+      description: |
+        A one-tap wish: a short feed post addressed to the person, marked with its occasion. **One each**: a second wish for the same person, occasion and year is 409 `ALREADY_WISHED`, and the refused one leaves nothing behind. Wishing yourself is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WishCreate'
+            examples:
+              birthday:
+                value: { employee_id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, occasion: birthday, body: 'Many happy returns!' }
+      responses:
+        '201':
+          description: Wished.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallPostResult'
+              examples:
+                wish:
+                  value:
+                    post:
+                      id: 2c3d4e5f-6071-4a2b-8c9d-0e1f2a3b4c5d
+                      kind: wish
+                      scope: org
+                      branch_id: null
+                      author: { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, full_name: 'Asha Sharma', employee_code: RVM-009, designation: 'HR Manager' }
+                      mine: true
+                      body: 'Many happy returns!'
+                      attachments: []
+                      mentions: []
+                      about: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar', employee_code: RVM-011 }
+                      occasion: birthday
+                      edited: false
+                      edited_at: null
+                      created_at: '2026-10-16T05:10:00.000Z'
+                      updated_at: '2026-10-16T05:10:00.000Z'
+                      hidden: false
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/celebration-optout:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getCelebrationOptout
+      tags: [ESS]
+      x-owner: ess
+      summary: Whether my birthday is hidden (F6)
+      description: The caller's own switch. No row means it is on, and the reply says so.
+      responses:
+        '200':
+          description: The switch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CelebrationOptout'
+              examples:
+                on:
+                  value: { celebrations: { hidden: false } }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    put:
+      operationId: putCelebrationOptout
+      tags: [ESS]
+      x-owner: ess
+      summary: Hide my birthday from the cards, or show it (F6)
+      description: The caller's own switch, recorded in `hr_ess_audit` as `celebrations.optout`; the opt-out is the only place a birthday's visibility is decided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CelebrationOptoutUpdate'
+            examples:
+              hidden:
+                value: { hidden: true }
+      responses:
+        '200':
+          description: The switch as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CelebrationOptout'
+              examples:
+                hidden:
+                  value: { celebrations: { hidden: true } }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/posts/{id}/reports:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: reportWallPost
+      tags: [ESS]
+      x-owner: ess
+      summary: Report a post (F7)
+      description: |
+        Anybody may report a post, for HR's queue. One report per person per post: a second is 409 `ALREADY_REPORTED`. Reporting changes nothing on its own — HR hides it with a reason, or leaves it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The post's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallReportCreate'
+            examples:
+              reported:
+                value: { reason: 'This is not for the wall.', detail: 'It names a student.' }
+      responses:
+        '201':
+          description: Reported, for HR to look at.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReportMade'
+              examples:
+                reported:
+                  value: { report: { post_id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c, status: open } }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/comments/{id}/reports:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: reportWallComment
+      tags: [ESS]
+      x-owner: ess
+      summary: Report a comment (F7)
+      description: The same, one level in.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The comment's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallReportCreate'
+            examples:
+              reported:
+                value: { reason: 'This is rude.' }
+      responses:
+        '201':
+          description: Reported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReportMade'
+              examples:
+                reported:
+                  value: { report: { comment_id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d, status: open } }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/hr/reports:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listWallReports
+      tags: [ESS]
+      x-owner: ess
+      summary: HR's report queue (F7)
+      description: What has been reported, newest first, open by default. The reporter's words are here; the reported post itself is only previewed. HR alone.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: '`open` (the default), `hidden` for the ones HR took down, `kept` for the ones it left, or `all`.'
+          schema:
+            type: string
+            enum: [open, hidden, kept, all]
+      responses:
+        '200':
+          description: The queue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReportQueue'
+              examples:
+                queue:
+                  value:
+                    reports:
+                      - id: 1f2e3d4c-5b6a-4f8e-9d7c-6b5a4f3e2d1c
+                        target: post
+                        post_id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c
+                        comment_id: null
+                        target_preview: 'Batch 12 has cleared the CAD module. Thanks @RVM-009!'
+                        target_deleted: false
+                        target_hidden: false
+                        reporter: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: 'Ravi Kumar' }
+                        reason: 'This is not for the wall.'
+                        detail: 'It names a student.'
+                        status: open
+                        resolved_by_name: null
+                        resolved_at: null
+                        resolution_note: null
+                        created_at: '2026-10-16T05:30:00.000Z'
+                    truncated: false
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/hr/reports/{id}/resolve:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: resolveWallReport
+      tags: [ESS]
+      x-owner: ess
+      summary: Answer a report (F7)
+      description: |
+        HR marks what it did: `hidden` (and hides the thing on its own address, with the reason) or `kept`. Answering a report twice is 404: the first answer stands. The answer itself does not hide anything — the hide routes do, and each writes the trail.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The report's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallReportResolve'
+            examples:
+              kept:
+                value: { status: kept, note: 'Nothing wrong with it.' }
+      responses:
+        '200':
+          description: Answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallReportResolved'
+              examples:
+                kept:
+                  value:
+                    report:
+                      id: 1f2e3d4c-5b6a-4f8e-9d7c-6b5a4f3e2d1c
+                      status: kept
+                      resolved_by_name: 'Asha Sharma'
+                      resolved_at: '2026-10-16T06:30:00.000Z'
+                      resolution_note: 'Nothing wrong with it.'
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/hr/moderation-log:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: wallModerationLog
+      tags: [ESS]
+      x-owner: ess
+      summary: The moderation trail (F7)
+      description: |
+        Every hide, restore, deletion and answered report, newest first, out of `hr_ess_audit`: `wall.post.hidden`, `wall.post.restored`, `wall.post.deleted`, `wall.comment.hidden`, `wall.comment.restored`, `wall.comment.deleted`, `wall.report.resolved`. The details carry ids and HR's reason, never a copy of what was hidden. HR alone.
+      responses:
+        '200':
+          description: The trail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModerationLog'
+              examples:
+                trail:
+                  value:
+                    entries:
+                      - id: 73b02d77-c7d2-46cd-be3b-7c2e67beede7
+                        at: '2026-10-16T06:30:00.000Z'
+                        actor_name: 'Asha Sharma'
+                        action: wall.post.hidden
+                        target_employee_id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                        details: { post_id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c, reason: 'Names a student.' }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/posts/{id}/hide:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: hideWallPost
+      tags: [ESS]
+      x-owner: ess
+      summary: Hide a post, with a reason (F7)
+      description: |
+        HR's alone (decision 8: "HR can hide anything, with a reason"). The reason is required, 3 to 200 characters. The post leaves everybody's feed but its author's and HR's; its comments stay, and the hide is written to the trail as `wall.post.hidden`. Hiding an already hidden post is 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The post's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallHideRequest'
+            examples:
+              hidden:
+                value: { reason: 'Names a student.' }
+      responses:
+        '200':
+          description: Hidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallHidden'
+              examples:
+                hidden:
+                  value:
+                    post: { id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c, hidden: true, hidden_by_name: 'Asha Sharma', hide_reason: 'Names a student.' }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: restoreWallPost
+      tags: [ESS]
+      x-owner: ess
+      summary: Take a hide back (F7)
+      description: HR's alone. The post comes back everywhere it was, and the undo is written to the trail as `wall.post.restored`. A post that is not hidden is 409 `NOT_HIDDEN`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The post's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Restored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallHidden'
+              examples:
+                restored:
+                  value:
+                    post: { id: 3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c, hidden: false }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/wall/comments/{id}/hide:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: hideWallComment
+      tags: [ESS]
+      x-owner: ess
+      summary: Hide a comment, with a reason (F7)
+      description: HR's alone. The comment keeps its place in the thread with no words for everybody but HR and its author, and the post's count moves down. Written to the trail as `wall.comment.hidden`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The comment's id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WallHideRequest'
+            examples:
+              hidden:
+                value: { reason: 'Rude.' }
+      responses:
+        '200':
+          description: Hidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallCommentHidden'
+              examples:
+                hidden:
+                  value:
+                    comment: { id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d, hidden: true, hidden_by_name: 'Asha Sharma', hide_reason: 'Rude.' }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    delete:
+      operationId: restoreWallComment
+      tags: [ESS]
+      x-owner: ess
+      summary: Take a comment's hide back (F7)
+      description: HR's alone. Written to the trail as `wall.comment.restored`; a comment that is not hidden is 409 `NOT_HIDDEN`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The comment's id.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Restored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WallCommentHidden'
+              examples:
+                restored:
+                  value:
+                    comment: { id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d, hidden: false }
+        '400':
+          $ref: '#/components/responses/EssWallRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssWallForbidden'
+        '404':
+          $ref: '#/components/responses/EssWallNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssWallConflict'
+        '429':
+          $ref: '#/components/responses/EssWallRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
   /users/login:
     post:
       operationId: signInPortal
@@ -5462,134 +8002,121 @@ paths:
 components:
 
   securitySchemes:
+
     bearer:
       type: http
       scheme: bearer
-      bearerFormat: JWT
-      description: |
-        One header, `Authorization: Bearer <token>`, and two kinds of token, both in the Scheduler's formats. The Scheduler issues them at sign-in; the ESS mints short ones in the same formats for a kept sign-in (below). The app stores whichever it was given last.
-
-        | | Portal JWT | Attendance session |
-        | --- | --- | --- |
-        | Issued by | `POST /users/login`, or `/users/login/verify` when two-factor is on | `POST /hr/my-attendance/password-login`, `/otp/verify` or `/password` |
-        | Who has one | People with a portal login (a `users` row) | Staff with no portal login, on an attendance login HR created |
-        | Lifetime | 64 hours, no refresh | 30 days, no refresh |
-        | Signed with | HS256 over `JWT_SECRET`; no audience, no issuer | HS256 over a key derived from `JWT_SECRET`; audience `rvm-punch` |
-        | Claims | `userId`, `role`, `locationId`, `username`, `locationName`, `isSuperAdmin`; plus `id` (the faculty id) for faculty and HOD | `k: "punch"`, `e` (the hr_employees id), `m: "otp"` or `"pw"` |
-        | Works on | Every Scheduler route its role allows, `/hr/my-attendance/*` and the ESS | `/hr/my-attendance/*` and the ESS only |
-        | Ended by | Expiry, or the account being deleted. Neither a password change nor leaving the company ends it on the Scheduler | Expiry; a password set or reset (401); HR switching the login off (403 `NO_ATTENDANCE_LOGIN`) |
-
-        - An attendance session sent to any other Scheduler route is refused with 401 "Please authenticate", which the sign-out rule reads as "session over". Never send it outside `/hr/my-attendance/*` and the ESS.
-        - The ESS refuses a valid token that is not a staff login with 403 `NOT_AN_EMPLOYEE`: a student token (7 days, `role: "student"`), an admission-undertaking token (issuer `rvmcad-admission-undertaking`), or anything else signed with `JWT_SECRET`.
-        - The ESS is stricter about the header than the Scheduler: it takes only `Bearer <token>` exactly, and accepts HS256 only.
-        - Do not decide anything from the claims except `exp`. Ask `GET /ess/me` and `GET /ess/me/capabilities`.
-        - **Access tokens of a kept sign-in** (`POST /ess/session`, `/ess/session/refresh`) are minted by the ESS in these same two formats and signed the same way, because the Scheduler cannot be changed to accept a new kind (ADR-0006, ADR-0018). They last one hour, carry one more claim, `sid` (the kept sign-in), and keep the original sign-in's `iat`. The Scheduler ignores `sid` and takes them as its own until they expire. The ESS also checks `sid`: once the kept sign-in has ended (signed out, ended from the session list, or refused at a refresh) its access tokens answer 401 `NOT_AUTHENTICATED` on the ESS at once, while on the Scheduler they last out their hour.
+      description: '`Authorization: Bearer <token>`, spelt exactly so: only "Bearer " with a capital B and one space is removed, by both services.'
 
   parameters:
-    DeviceCookie:
-      name: rvm_att_dev
-      in: cookie
+
+    BranchFilter:
+      name: branch_id
+      in: query
       required: false
-      description: |
-        The registered phone's device token, set by the Scheduler on the first accepted punch (see `POST /hr/my-attendance/punch`). Not set by the app: a persistent cookie jar sends it on every `/api/hr/my-attendance` request, because the cookie's path is `/api/hr/my-attendance`. A value that does not match the pattern is ignored, as if no cookie were sent.
+      description: An HR branch (`hr_branches`), not a Scheduler location.
       schema:
         type: string
-        pattern: '^[A-Za-z0-9_-]{20,200}$'
+        format: uuid
+
+    DeviceCookie:
+      name: device_token
+      in: cookie
+      required: false
+      description: The Scheduler's punch cookie, set by its attendance sign-in and sent back on every punch. It belongs to the Scheduler's host; the ESS neither reads nor sets it.
+      schema:
+        type: string
+
     PhoneUserAgent:
       name: User-Agent
       in: header
       required: false
-      description: |
-        While `ATTENDANCE_MOBILE_ONLY` is on (the default; `rules.mobile_only` in `GET /hr/my-attendance` says so) it must contain Android, iPhone, iPad, iPod or Mobile, in any case, or the punch is refused 403 `NOT_MOBILE`. A missing header, and Dart's default "Dart/3.x (dart:io)", are refused. Set it once on the HTTP client.
+      description: The phone's own User-Agent, sent by the app as the punch page's browser sends it. The Scheduler's phone-only reset binds a device to it, so the app sends one that looks like a phone.
       schema:
         type: string
-        examples:
-          - TeamRVM/1.0.0 (Android 14; Mobile)
+
     Month:
       name: month
       in: query
       required: false
-      description: |
-        The month for `days`, `holidays` and `my_remarks`, as YYYY-MM. Defaults to the current IST month. A value that does not match YYYY-MM is ignored; a matching but impossible one (2026-13) answers 500.
+      description: 'A calendar month, `YYYY-MM`. Default: the current month (IST).'
       schema:
         type: string
-        pattern: '^\d{4}-\d{2}$'
-        examples:
-          - '2026-10'
+        pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
 
     EmployeeId:
       name: id
       in: path
       required: true
-      description: The employee's `id` (hr_employees). Not a uuid is 400 `VALIDATION_FAILED`.
+      description: The HR record's id (`hr_employees.id`).
       schema:
         type: string
         format: uuid
+
     FromDay:
       name: from
       in: query
       required: false
-      description: The first IST day, YYYY-MM-DD.
+      description: The first day, `YYYY-MM-DD`, inclusive.
       schema:
         type: string
         format: date
+
     ToDay:
       name: to
       in: query
       required: false
-      description: The last IST day, YYYY-MM-DD.
+      description: The last day, `YYYY-MM-DD`, inclusive.
       schema:
         type: string
         format: date
-    BranchFilter:
-      name: branch_id
-      in: query
-      required: false
-      description: An HR branch's `id` (hr_branches).
-      schema:
-        type: string
-        format: uuid
+
   headers:
-    RetryAfter:
-      description: Seconds until the bucket that refused this request resets.
-      schema:
-        type: integer
-        minimum: 0
-    RateLimitPolicy:
-      description: The bucket that counted the request last, as `<limit>;w=<window seconds>`, for example `300;w=60`.
-      schema:
-        type: string
-    RateLimitLimit:
-      description: That bucket's limit.
-      schema:
-        type: integer
-    RateLimitRemaining:
-      description: Requests left in that bucket's window.
-      schema:
-        type: integer
-    RateLimitReset:
-      description: Seconds until that bucket's window resets.
-      schema:
-        type: integer
-    DeviceCookie:
-      description: |
-        Only on the punch that registered this phone: `rvm_att_dev=<token>; Path=/api/hr/my-attendance; Max-Age=157680000; HttpOnly; SameSite=Strict; Secure`. Keep it in a persistent cookie jar and never clear it.
-      schema:
-        type: string
-    NoStore:
-      description: Always `no-store`; a challenge must never be cached.
-      schema:
-        type: string
-        const: no-store
+
     WwwAuthenticate:
-      description: Always `Bearer` (RFC 6750), naming the scheme that would have worked.
+      description: Always `Bearer` on a 401 (RFC 6750), so the app knows which scheme to send.
       schema:
         type: string
         const: Bearer
 
-  schemas:
+    RetryAfter:
+      description: Seconds to wait before trying again.
+      schema:
+        type: integer
+        minimum: 1
 
-    # ───────────── errors ─────────────
+    RateLimitPolicy:
+      description: The bucket that counted this request, IETF draft 6 (for example `600;w=60`).
+      schema:
+        type: string
+
+    RateLimitLimit:
+      description: How many requests that bucket allows in its window.
+      schema:
+        type: integer
+
+    RateLimitRemaining:
+      description: How many are left in the window.
+      schema:
+        type: integer
+
+    RateLimitReset:
+      description: Seconds until the window resets.
+      schema:
+        type: integer
+
+    NoStore:
+      description: '`no-store`: a reply is about one person, so nothing may cache it.'
+      schema:
+        type: string
+        const: no-store
+
+    DeviceCookie:
+      description: The Scheduler's punch cookie. Set by its attendance sign-in, sent back on every punch, and never touched by the ESS.
+      schema:
+        type: string
+
+  schemas:
 
     Error:
       type: object
@@ -5642,8 +8169,6 @@ components:
       type: string
       description: |
         An HTML page, not JSON: nginx while a process restarts, the Scheduler's catch-all for an unknown path, or Express's default error page for malformed JSON. Never treat it as success and never sign out on it.
-
-    # ───────────── ESS ─────────────
 
     Semver:
       type: [string, 'null']
@@ -6835,7 +9360,7 @@ components:
           format: uuid
         category:
           type: string
-          enum: [approvals, decisions, priority_tasks]
+          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls]
         title:
           type: string
           minLength: 1
@@ -6880,7 +9405,7 @@ components:
             properties:
               category:
                 type: string
-                enum: [approvals, decisions, priority_tasks]
+                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls]
               enabled:
                 type: boolean
         quiet_hours:
@@ -6903,7 +9428,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [approvals, decisions, priority_tasks]
+            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls]
 
     PersonCard:
       type: object
@@ -7155,8 +9680,6 @@ components:
                 type: array
                 items: { type: string, format: date }
 
-    # ───────────── Scheduler: portal sign-in ─────────────
-
     UserRole:
       type: string
       enum: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, faculty]
@@ -7295,8 +9818,6 @@ components:
         new_password:
           type: string
 
-    # ───────────── Scheduler: attendance sign-in ─────────────
-
     AttendancePasswordLoginRequest:
       type: object
       required: [identifier, password]
@@ -7394,8 +9915,6 @@ components:
         password_set:
           type: boolean
           const: true
-
-    # ───────────── Scheduler: attendance ─────────────
 
     MyAttendance:
       oneOf:
@@ -7819,74 +10338,1318 @@ components:
           format: date-time
           description: Present when the remark was saved.
 
-  examples:
+    WallAttachmentInput:
+      type: object
+      description: |
+        One file, as the app sends it: base64 and its content type. Up to five per post, praise or announcement, each up to 1 MB decoded (F9). The bytes go to the ESS's own private bucket; the reply carries a fresh 300-second signed link, never the stored path.
+      required: [data_base64, content_type]
+      properties:
+        data_base64:
+          type: string
+          minLength: 16
+          maxLength: 2100000
+          description: The file, base64. The app compresses a photo under 1 MB before sending it.
+        content_type:
+          type: string
+          enum: [image/jpeg, image/png, image/webp, application/pdf]
+        name:
+          type: string
+          maxLength: 120
+          description: What the file is called, for the app to show. Optional.
 
-    # ───────────── ESS ─────────────
+    WallAttachment:
+      type: object
+      required: [name, content_type, url]
+      properties:
+        name:
+          type: [string, 'null']
+        content_type:
+          type: [string, 'null']
+        url:
+          type: [string, 'null']
+          description: A 300-second signed link into the ESS's private bucket. Null while the bucket cannot be reached; the app then shows the post without its picture.
+
+    WallPerson:
+      type: object
+      description: Somebody a Wall row refers to (its author, who it is about, somebody mentioned).
+      required: [id, full_name, employee_code]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+        designation:
+          type: [string, 'null']
+
+    WallReactionCounts:
+      type: object
+      description: How many of each of the six reactions a post or comment has. A reaction nobody used is absent.
+      additionalProperties: false
+      properties:
+        like: { type: integer, minimum: 1 }
+        love: { type: integer, minimum: 1 }
+        laugh: { type: integer, minimum: 1 }
+        clap: { type: integer, minimum: 1 }
+        insightful: { type: integer, minimum: 1 }
+        curious: { type: integer, minimum: 1 }
+
+    WallReactionKind:
+      type: string
+      enum: [like, love, laugh, clap, insightful, curious]
+      description: One of the six (F2).
+
+    WallReactionPerson:
+      type: object
+      required: [id, full_name, employee_code, reacted_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: [string, 'null']
+        employee_code:
+          type: [string, 'null']
+        reacted_at:
+          type: string
+          format: date-time
+
+    WallReactionGroup:
+      type: object
+      required: [reaction, count, people]
+      properties:
+        reaction:
+          $ref: '#/components/schemas/WallReactionKind'
+        count:
+          type: integer
+          minimum: 1
+        people:
+          type: array
+          description: Who reacted this way, newest first. "Tapping the count shows who reacted" (F2).
+          items:
+            $ref: '#/components/schemas/WallReactionPerson'
+
+    WallReactionsList:
+      type: object
+      required: [reactions, total]
+      properties:
+        reactions:
+          type: array
+          description: One entry per reaction that has people, in the six's order.
+          items:
+            $ref: '#/components/schemas/WallReactionGroup'
+        total:
+          type: integer
+          minimum: 0
+
+    WallReactionState:
+      type: object
+      required: [counts, total]
+      properties:
+        counts:
+          $ref: '#/components/schemas/WallReactionCounts'
+        total:
+          type: integer
+          minimum: 0
+        my_reaction:
+          type: [string, 'null']
+          enum: [like, love, laugh, clap, insightful, curious, null]
+          description: The caller's own reaction, or null. One person has one reaction per post or comment.
+
+    WallPollOption:
+      type: object
+      required: [id, label, position, votes]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        position:
+          type: integer
+          minimum: 0
+          maximum: 9
+        votes:
+          type: integer
+          minimum: 0
+
+    WallPoll:
+      type: object
+      description: A poll's own block (F4). `my_option_ids` is the caller's own vote and nothing about anybody else's; an anonymous poll never names a voter, HR included.
+      required: [multiple, anonymous, closes_on, closed, options_locked, total_votes, my_option_ids, options]
+      properties:
+        multiple:
+          type: boolean
+          description: Whether more than one option may be chosen. False means single choice.
+        anonymous:
+          type: boolean
+          description: True means nobody, HR included, can see who voted what.
+        closes_on:
+          type: string
+          format: date
+          description: The closing day, inclusive; a vote on that day still counts.
+        closed:
+          type: boolean
+          description: True once the closing day has passed or the author closed it early.
+        closed_at:
+          type: [string, 'null']
+          format: date-time
+          description: When its author closed it early; null when it closed by its own date.
+        options_locked:
+          type: boolean
+          description: True from the first vote on; the option set is fixed (F4).
+        total_votes:
+          type: integer
+          minimum: 0
+          description: Every vote cast, so a multiple-choice poll counts one person more than once.
+        my_option_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallPollOption'
+
+    WallComment:
+      type: object
+      description: 'One comment or reply (F2). One level only: a reply''s `replies` is always empty. A hidden comment carries `hidden: true` and no words (F7) for everybody but HR and its author; a deleted one carries `deleted: true`.'
+      properties:
+        id:
+          type: string
+          format: uuid
+        post_id:
+          type: string
+          format: uuid
+        parent_id:
+          type: [string, 'null']
+          format: uuid
+          description: The comment this one replies to; null for a comment on the post.
+        author:
+          oneOf:
+            - $ref: '#/components/schemas/WallPerson'
+            - type: 'null'
+          description: Null for a deleted or hidden-out-of-sight row.
+        mine:
+          type: boolean
+        body:
+          type: [string, 'null']
+          description: Null when the comment is hidden and the caller may not see it.
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallPerson'
+        reactions:
+          $ref: '#/components/schemas/WallReactionState'
+        my_reaction:
+          type: [string, 'null']
+          enum: [like, love, laugh, clap, insightful, curious, null]
+        reply_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        edited:
+          type: boolean
+        hidden:
+          type: boolean
+        deleted:
+          type: boolean
+        deleted_at:
+          type: string
+          format: date-time
+        replies:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallComment'
+
+    WallPost:
+      type: object
+      description: |
+        One feed row: a post, a praise, a wish or a poll (F1-F4, F6). A row the caller may not see is 404, never a partial shape. `deleted: true` is the one exception: the author's own deletion leaves a stub so a thread keeps its shape.
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [post, praise, wish, poll]
+        scope:
+          type: string
+          enum: [org, branch]
+          description: The organisation's wall, or one branch's.
+        branch_id:
+          type: [string, 'null']
+          format: uuid
+          description: The branch a branch post stands on; null for the organisation's wall.
+        author:
+          description: Null for a deleted row, or one the reader may not see.
+          oneOf:
+            - $ref: '#/components/schemas/WallPerson'
+            - type: 'null'
+        mine:
+          type: boolean
+        body:
+          type: [string, 'null']
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallAttachment'
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallPerson'
+        about:
+          oneOf:
+            - $ref: '#/components/schemas/WallPerson'
+            - type: 'null'
+          description: Who a praise or a wish is about.
+        badge:
+          type: [object, 'null']
+          properties:
+            id: { type: string }
+            label: { type: string }
+          description: The praise badge, out of the fixed catalogue `GET /ess/wall/settings` lists (F3).
+        occasion:
+          type: [string, 'null']
+          enum: [birthday, anniversary, null]
+          description: What a wish is for (F6).
+        poll:
+          $ref: '#/components/schemas/WallPoll'
+        reactions:
+          $ref: '#/components/schemas/WallReactionState'
+        my_reaction:
+          type: [string, 'null']
+          enum: [like, love, laugh, clap, insightful, curious, null]
+        comment_count:
+          type: integer
+          minimum: 0
+        edited:
+          type: boolean
+          description: True once the author has edited it inside the 15 minutes (F1).
+        edited_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        hidden:
+          type: boolean
+          description: True when HR hid it (F7). Its author and HR still see the row.
+        comments:
+          type: array
+          description: Only on `GET /ess/wall/posts/{id}`.
+          items:
+            $ref: '#/components/schemas/WallComment'
+        deleted:
+          type: boolean
+        deleted_at:
+          type: string
+          format: date-time
+
+    WallFeed:
+      type: object
+      required: [posts, next_before, truncated]
+      properties:
+        posts:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallPost'
+        next_before:
+          type: [string, 'null']
+          format: date-time
+          description: Send it back as `?before=` for the next page. Null on the last page.
+        truncated:
+          type: boolean
+
+    WallPostCreate:
+      type: object
+      description: A post, or a poll (F1, F4). Praise and wishes have their own addresses, because they carry their own fields.
+      required: [body]
+      properties:
+        kind:
+          type: string
+          enum: [post, poll]
+          default: post
+        body:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Up to 2,000 characters for a post; a poll's body is its question, 3 to 300.
+        scope:
+          type: string
+          enum: [org, branch]
+          default: branch
+          description: The build's default is the author's own branch wall; `org` is everybody's. KP to confirm.
+        branch_id:
+          type: string
+          format: uuid
+          description: 'Only with `scope: branch`, and only the caller''s own branch.'
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/WallAttachmentInput'
+        poll:
+          type: object
+          required: [options, closes_on]
+          properties:
+            options:
+              type: array
+              minItems: 2
+              maxItems: 10
+              items:
+                type: string
+                minLength: 1
+                maxLength: 120
+            multiple:
+              type: boolean
+              default: false
+            anonymous:
+              type: boolean
+              default: false
+            closes_on:
+              type: string
+              format: date
+              description: The closing day, not a day in the past and not more than a year ahead.
+
+    WallPostUpdate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    WallCommentCreate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        parent_id:
+          type: string
+          format: uuid
+          description: The comment being replied to. A reply of a reply is refused.
+
+    WallCommentUpdate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    WallCommentReply:
+      type: object
+      required: [comment]
+      properties:
+        comment:
+          $ref: '#/components/schemas/WallComment'
+
+    WallPostResult:
+      type: object
+      required: [post]
+      properties:
+        post:
+          $ref: '#/components/schemas/WallPost'
+
+    WallPostThread:
+      type: object
+      required: [post, truncated]
+      properties:
+        post:
+          $ref: '#/components/schemas/WallPost'
+        truncated:
+          type: boolean
+          description: True when the post has more comments than the page carries (50).
+
+    WallReactionChange:
+      type: object
+      required: [reaction]
+      properties:
+        reaction:
+          $ref: '#/components/schemas/WallReactionKind'
+
+    PraiseCreate:
+      type: object
+      required: [employee_id, badge, reason]
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+          description: The person praised. Yourself is refused.
+        badge:
+          type: string
+          description: One of the fixed catalogue's ids, from `GET /ess/wall/settings`.
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 280
+        scope:
+          type: string
+          enum: [org, branch]
+          default: org
+        branch_id:
+          type: string
+          format: uuid
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/WallAttachmentInput'
+
+    PraiseResult:
+      type: object
+      required: [post, badge]
+      properties:
+        post:
+          $ref: '#/components/schemas/WallPost'
+        badge:
+          type: [object, 'null']
+          properties:
+            id: { type: string }
+            label: { type: string }
+            for: { type: string }
+
+    PraiseList:
+      type: object
+      required: [praise, badges]
+      properties:
+        praise:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallPost'
+        badges:
+          type: array
+          description: The whole fixed catalogue, so the picker needs no second call (F3).
+          items:
+            type: object
+            required: [id, label, for]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              for: { type: string }
+
+    WallPollVote:
+      type: object
+      required: [option_ids]
+      properties:
+        option_ids:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
+          description: One id for a single-choice poll; any number for a multiple-choice one.
+
+    WallPollVoteResult:
+      type: object
+      required: [poll, my_option_ids]
+      properties:
+        poll:
+          $ref: '#/components/schemas/WallPoll'
+        my_option_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    WallPollCloseResult:
+      type: object
+      required: [poll]
+      properties:
+        poll:
+          $ref: '#/components/schemas/WallPoll'
+
+    WallPollOptionAdd:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+
+    WallPollOptionAddResult:
+      type: object
+      required: [option, poll]
+      properties:
+        option:
+          $ref: '#/components/schemas/WallPollOption'
+        poll:
+          $ref: '#/components/schemas/WallPoll'
+
+    AudienceScope:
+      type: object
+      description: |
+        Who an announcement reaches (F5). `{"all": true}`, or any of the lists — an OR of the people each names. Nothing means everybody. The audience is resolved once, when the announcement is published: a new branch or a role change afterwards never silently reaches somebody new.
+      properties:
+        all:
+          type: boolean
+          const: true
+        branch_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        department_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+        employee_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    Announcement:
+      type: object
+      description: One staff announcement (F5), in the reader's own words. The audience list is never sent; `audience_label` is its staff-facing reading, and the counts are the sender's own.
+      required: [id, title, body, attachments, author, mine, needs_ack, closes_on, pinned, publish_at, published_at, created_at, edited, read_at, ack_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallAttachment'
+        author:
+          description: Null for a deleted row, or one the reader may not see.
+          oneOf:
+            - $ref: '#/components/schemas/WallPerson'
+            - type: 'null'
+        mine:
+          type: boolean
+        audience_label:
+          type: [string, 'null']
+          description: 'A staff-facing reading (Everybody, or Branches: Faridabad). Sent to its sender alone.'
+        needs_ack:
+          type: boolean
+        closes_on:
+          type: [string, 'null']
+          format: date
+          description: The day the acknowledgement closes; the same day is still open.
+        pinned:
+          type: boolean
+        publish_at:
+          type: [string, 'null']
+          format: date-time
+          description: When it went out, or when it will.
+        published_at:
+          type: [string, 'null']
+          format: date-time
+          description: Null while it is still a draft or a scheduled one.
+        created_at:
+          type: string
+          format: date-time
+        edited:
+          type: boolean
+        read_at:
+          type: [string, 'null']
+          format: date-time
+          description: The caller's own first open, or null.
+        ack_at:
+          type: [string, 'null']
+          format: date-time
+        counts:
+          $ref: '#/components/schemas/AnnouncementCounts'
+
+    AnnouncementCounts:
+      type: object
+      description: The sender's own numbers (F5).
+      required: [sent, read, acknowledged, not_acknowledged]
+      properties:
+        sent:
+          type: integer
+          minimum: 0
+          description: How many people the audience resolved to when it was published.
+        read:
+          type: integer
+          minimum: 0
+        acknowledged:
+          type: integer
+          minimum: 0
+        not_acknowledged:
+          type: integer
+          minimum: 0
+
+    AnnouncementCreate:
+      type: object
+      required: [title, body]
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        body:
+          type: string
+          minLength: 3
+          maxLength: 5000
+        audience:
+          $ref: '#/components/schemas/AudienceScope'
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/WallAttachmentInput'
+        needs_ack:
+          type: boolean
+          default: false
+          description: True means a closing date is required, and the audience is asked to acknowledge it.
+        closes_on:
+          type: string
+          format: date
+        publish_at:
+          type: string
+          format: date-time
+          description: In the future, to schedule it. Left out, it goes out at once.
+        pinned:
+          type: boolean
+          default: false
+          description: Up to three at a time.
+
+    AnnouncementUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+        body:
+          type: string
+          minLength: 3
+          maxLength: 5000
+        pinned:
+          type: boolean
+
+    AnnouncementResult:
+      type: object
+      required: [announcement]
+      properties:
+        announcement:
+          $ref: '#/components/schemas/Announcement'
+
+    AnnouncementCreated:
+      type: object
+      required: [announcement, counts, scheduled]
+      properties:
+        announcement:
+          $ref: '#/components/schemas/Announcement'
+        counts:
+          $ref: '#/components/schemas/AnnouncementCounts'
+        scheduled:
+          type: boolean
+          description: True when it waits for its `publish_at`; the counts are all zero then.
+
+    AnnouncementList:
+      type: object
+      required: [announcements, truncated]
+      properties:
+        announcements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Announcement'
+        truncated:
+          type: boolean
+
+    AnnouncementCountsResult:
+      type: object
+      required: [counts, closes_on, needs_ack]
+      properties:
+        counts:
+          $ref: '#/components/schemas/AnnouncementCounts'
+        closes_on:
+          type: [string, 'null']
+          format: date
+        needs_ack:
+          type: boolean
+
+    AcknowledgementSaved:
+      type: object
+      required: [read_at, ack_at]
+      properties:
+        read_at:
+          type: string
+          format: date-time
+        ack_at:
+          type: string
+          format: date-time
+
+    CelebrationPerson:
+      type: object
+      required: [id, full_name, employee_code, designation, branch_id]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+        designation:
+          type: [string, 'null']
+        branch_id:
+          type: [string, 'null']
+          format: uuid
+
+    BirthdayCard:
+      type: object
+      description: A birthday, as day and month only. The year is never stored, sent or derived (F6).
+      required: [employee, date_of_birth, on, wished_by_me, wish_count]
+      properties:
+        employee:
+          $ref: '#/components/schemas/CelebrationPerson'
+        date_of_birth:
+          type: object
+          required: [day, month]
+          properties:
+            day:
+              type: integer
+              minimum: 1
+              maximum: 31
+            month:
+              type: integer
+              minimum: 1
+              maximum: 12
+        on:
+          type: string
+          format: date
+          description: The day this year's mark falls on, inside the asked window.
+        wished_by_me:
+          type: boolean
+        wish_count:
+          type: integer
+          minimum: 0
+
+    AnniversaryCard:
+      type: object
+      required: [employee, date_of_joining, years, on, wished_by_me, wish_count]
+      properties:
+        employee:
+          $ref: '#/components/schemas/CelebrationPerson'
+        date_of_joining:
+          type: string
+          format: date
+        years:
+          type: integer
+          minimum: 0
+          description: How many years, not the date of joining's year on its own.
+        on:
+          type: string
+          format: date
+        wished_by_me:
+          type: boolean
+        wish_count:
+          type: integer
+          minimum: 0
+
+    NewJoinerCard:
+      type: object
+      required: [employee, date_of_joining, days]
+      properties:
+        employee:
+          $ref: '#/components/schemas/CelebrationPerson'
+        date_of_joining:
+          type: string
+          format: date
+        days:
+          type: integer
+          minimum: 0
+          maximum: 15
+
+    Celebrations:
+      type: object
+      required: [today, window_days, birthdays, anniversaries, new_joiners, birthdays_hidden]
+      properties:
+        today:
+          type: string
+          format: date
+          description: The server's IST day, so the cards' "today" is never the phone's.
+        window_days:
+          type: integer
+          minimum: 1
+          maximum: 90
+        birthdays:
+          type: array
+          items:
+            $ref: '#/components/schemas/BirthdayCard'
+        anniversaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnniversaryCard'
+        new_joiners:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewJoinerCard'
+        birthdays_hidden:
+          type: integer
+          minimum: 0
+          description: How many people asked to be left off the birthday cards; never who they are.
+
+    WishCreate:
+      type: object
+      required: [employee_id, occasion, body]
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+          description: Who the wish is for. Yourself is refused.
+        occasion:
+          type: string
+          enum: [birthday, anniversary]
+        body:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    CelebrationOptout:
+      type: object
+      required: [celebrations]
+      properties:
+        celebrations:
+          type: object
+          required: [hidden]
+          properties:
+            hidden:
+              type: boolean
+              description: True means this person's birthday is left off the cards. False is the default, and says so.
+
+    CelebrationOptoutUpdate:
+      type: object
+      required: [hidden]
+      properties:
+        hidden:
+          type: boolean
+
+    WallReportCreate:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 280
+        detail:
+          type: string
+          maxLength: 500
+
+    WallReportMade:
+      type: object
+      required: [report]
+      properties:
+        report:
+          type: object
+          properties:
+            post_id:
+              type: [string, 'null']
+              format: uuid
+            comment_id:
+              type: [string, 'null']
+              format: uuid
+            status:
+              type: string
+              const: open
+
+    WallReport:
+      type: object
+      description: One report on HR's queue (F7). The reporter's words are HR's only copy; the post's is never.
+      required: [id, target, post_id, comment_id, target_preview, target_deleted, target_hidden, reporter, reason, detail, status, resolved_by_name, resolved_at, resolution_note, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        target:
+          type: string
+          enum: [post, comment]
+        post_id:
+          type: [string, 'null']
+          format: uuid
+        comment_id:
+          type: [string, 'null']
+          format: uuid
+        target_preview:
+          type: [string, 'null']
+          description: Up to 140 characters of what was reported. Null once the target row is gone.
+        target_deleted:
+          type: boolean
+        target_hidden:
+          type: boolean
+        reporter:
+          type: object
+          required: [id, full_name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            full_name:
+              type: [string, 'null']
+        reason:
+          type: string
+        detail:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [open, hidden, kept]
+        resolved_by_name:
+          type: [string, 'null']
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+        resolution_note:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+
+    WallReportQueue:
+      type: object
+      required: [reports, truncated]
+      properties:
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallReport'
+        truncated:
+          type: boolean
+
+    WallReportResolve:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [hidden, kept]
+          description: What HR did about it. `hidden` hides the thing; `kept` leaves it.
+        note:
+          type: string
+          maxLength: 200
+
+    WallReportResolved:
+      type: object
+      required: [report]
+      properties:
+        report:
+          type: object
+          required: [id, status, resolved_by_name, resolved_at, resolution_note]
+          properties:
+            id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [hidden, kept]
+            resolved_by_name:
+              type: string
+            resolved_at:
+              type: string
+              format: date-time
+            resolution_note:
+              type: [string, 'null']
+
+    WallHidden:
+      type: object
+      description: 'The answer to a hide or a restore: what happened to that one thing (F7).'
+      required: [post]
+      properties:
+        post:
+          type: object
+          required: [id, hidden]
+          properties:
+            id:
+              type: string
+              format: uuid
+            hidden:
+              type: boolean
+            hidden_by_name:
+              type: string
+            hide_reason:
+              type: string
+
+    WallCommentHidden:
+      type: object
+      required: [comment]
+      properties:
+        comment:
+          type: object
+          required: [id, hidden]
+          properties:
+            id:
+              type: string
+              format: uuid
+            hidden:
+              type: boolean
+            hidden_by_name:
+              type: string
+            hide_reason:
+              type: string
+
+    WallHideRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 200
+
+    ModerationEntry:
+      type: object
+      required: [id, at, actor_name, action, target_employee_id, details]
+      properties:
+        id:
+          type: string
+          format: uuid
+        at:
+          type: string
+          format: date-time
+        actor_name:
+          type: [string, 'null']
+        action:
+          type: string
+          enum: [wall.post.hidden, wall.post.restored, wall.post.deleted, wall.comment.hidden, wall.comment.restored, wall.comment.deleted, wall.report.resolved]
+        target_employee_id:
+          type: [string, 'null']
+          format: uuid
+        details:
+          type: object
+          description: Ids and HR's reason, never a copy of what was hidden.
+
+    ModerationLog:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModerationEntry'
+
+    WallSettings:
+      type: object
+      description: |
+        The Wall's rules, as the server holds them (F8). Nothing here is a table: a change is a reviewed code change. The app renders its forms from this document, so a form and its refusal can never disagree.
+      required: [post, comment, reactions, praise, poll, announcement, moderation, celebrations, email]
+      properties:
+        post:
+          type: object
+          required: [everyone, max_attachments, max_body, edit_window_minutes, mentions, scopes]
+          properties:
+            everyone:
+              type: boolean
+              description: True for every staff login (decision 8).
+            max_attachments: { type: integer }
+            max_body: { type: integer }
+            edit_window_minutes: { type: integer }
+            mentions:
+              type: string
+              enum: [employee_code]
+              description: '@RVM-011: an @ before an employee code.'
+            scopes:
+              type: array
+              items:
+                type: string
+                enum: [org, branch]
+        comment:
+          type: object
+          required: [everyone, max_body, reply_depth, edit_window_minutes]
+          properties:
+            everyone: { type: boolean }
+            max_body: { type: integer }
+            reply_depth:
+              type: integer
+              const: 1
+            edit_window_minutes: { type: integer }
+        reactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WallReactionKind'
+        praise:
+          type: object
+          required: [badges, max_reason, photo, certificate]
+          properties:
+            badges:
+              type: array
+              items:
+                type: object
+                required: [id, label, for]
+                properties:
+                  id: { type: string }
+                  label: { type: string }
+                  for: { type: string }
+            max_reason: { type: integer }
+            photo: { type: boolean }
+            certificate:
+              type: boolean
+              description: False in this phase; letters are Phase 3.
+        poll:
+          type: object
+          required: [min_options, max_options, max_option_chars, multiple, anonymous, closes_within_days]
+          properties:
+            min_options: { type: integer }
+            max_options: { type: integer }
+            max_option_chars: { type: integer }
+            multiple: { type: boolean }
+            anonymous: { type: boolean }
+            closes_within_days: { type: integer }
+        announcement:
+          type: object
+          required: [everyone, roles, max_attachments, max_pinned, audience, acknowledgement, scheduled]
+          properties:
+            everyone:
+              type: boolean
+              description: 'Always false: only the roles below post announcements (decision 8).'
+            roles:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserRole'
+            max_attachments: { type: integer }
+            max_pinned: { type: integer }
+            audience:
+              type: object
+              required: [scopes, roles]
+              properties:
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [all, branch_ids, department_ids, roles, employee_ids]
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UserRole'
+            acknowledgement: { type: boolean }
+            scheduled: { type: boolean }
+        moderation:
+          type: object
+          required: [roles, reasons, reports]
+          properties:
+            roles:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserRole'
+            reasons:
+              type: boolean
+              description: 'True: a hide always carries a reason.'
+            reports: { type: boolean }
+        celebrations:
+          type: object
+          required: [enabled, opt_out, new_joiner_days]
+          properties:
+            enabled: { type: boolean }
+            opt_out: { type: boolean }
+            new_joiner_days: { type: integer }
+        email:
+          type: object
+          required: [enabled]
+          properties:
+            enabled:
+              type: boolean
+              description: 'False until RVM has a mail provider (KP, 19 Oct): announcement mail is written to the log, as push is.'
+
+  examples:
 
     EssSignIn:
       summary: No token
       value:
         error: Please sign in.
         code: NOT_AUTHENTICATED
+
     EssNotAuthenticated:
       summary: An expired token
       value:
         error: Your sign-in has expired. Please sign in again.
         code: NOT_AUTHENTICATED
+
     EssSignInAgain:
       summary: A forged or malformed token, or one whose account is gone
       value:
         error: Please sign in again.
         code: NOT_AUTHENTICATED
+
     EssPasswordChanged:
       summary: An attendance session older than the last password change
       value:
         error: Your password was changed. Please sign in again.
         code: NOT_AUTHENTICATED
+
     EssNotAnEmployee:
       summary: A valid token that is not a staff login
       value:
         error: Team RVM is for staff. Sign in with your staff login.
         code: NOT_AN_EMPLOYEE
+
     EssNotLinked:
       summary: A portal login with no HR record linked
       value:
         error: Your login is not linked to an employee record yet. Ask HR or the tech team to link it.
         code: NOT_LINKED
+
     EssNotActive:
       summary: The employee has left
       value:
         error: Your employee record is no longer active, so Team RVM is closed for this login. Ask HR if this is wrong.
         code: NOT_ACTIVE
+
     EssNoAttendanceLogin:
       summary: The attendance login is missing
       value:
         error: You do not have an attendance login yet. Ask HR to create one for you.
         code: NO_ATTENDANCE_LOGIN
+
     EssAttendanceLoginOff:
       summary: HR switched the attendance login off
       value:
         error: Your attendance login is turned off. Ask HR.
         code: NO_ATTENDANCE_LOGIN
+
     EssPasswordChangeRequired:
       summary: Signed in with HR's first-time password, not yet replaced
       value:
         error: Set your own password first. The password HR gave you only works once.
         code: PASSWORD_CHANGE_REQUIRED
+
     EssRateLimited:
       value:
         error: Too many requests. Wait a minute and try again.
         code: RATE_LIMITED
+
     EssUnavailable:
       summary: The database could not be reached
       value:
         error: The server cannot reach the database right now. Try again in a minute.
         code: UNAVAILABLE
+
     EssModuleDisabled:
       summary: ESS_ENABLED is "false"
       value:
         error: Team RVM is switched off on the server for now. Try again later.
         code: MODULE_DISABLED
+
     EssNotInstalled:
       summary: The code is live before its migration
       value:
@@ -7906,6 +11669,7 @@ components:
           kind: portal
           role: faculty
           user_id: 6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a
+
     SessionTokensAttendance:
       summary: An attendance session kept, or refreshed
       value:
@@ -7919,39 +11683,48 @@ components:
           kind: attendance
           role: null
           user_id: null
+
     EssSignInNotFresh:
       summary: The sign-in is more than 10 minutes old
       value:
         error: To stay signed in on this phone, sign in again and keep the sign-in within 10 minutes.
         code: SIGN_IN_NOT_FRESH
+
     EssAlreadyExchanged:
       value:
         error: This phone is already signed in. There is nothing more to do.
         code: ALREADY_EXCHANGED
+
     EssRefreshInProgress:
       value:
         error: Your sign-in is being renewed. Try again in a moment.
         code: REFRESH_IN_PROGRESS
+
     EssSessionNotFound:
       value:
         error: That sign-in is not one of yours, or it has already ended.
         code: NOT_FOUND
+
     EssBadInstallId:
       value:
         error: The app did not identify this phone correctly. Update the app and try again.
         code: BAD_INSTALL_ID
+
     EssBadDeviceLabel:
       value:
         error: The app sent a phone name the server cannot keep. Update the app and try again.
         code: BAD_DEVICE_LABEL
+
     EssBadIdentifier:
       value:
         error: Enter your phone number, email, employee code or username.
         code: BAD_IDENTIFIER
+
     EssInvalidJson:
       value:
         error: The request body is not valid JSON.
         code: INVALID_JSON
+
     MyPersonalDetails:
       summary: Everything recorded
       value:
@@ -7968,249 +11741,502 @@ components:
           emergency_phone: '9876543210'
           updated_at: '2026-10-16T06:30:00+00:00'
           updated_by_name: Suresh Yadav
+
     EssUnknownField:
       value:
         error: The request has a field the server does not take.
         code: VALIDATION_FAILED
+
     EssBodyNotObject:
       value:
         error: The request body must be a JSON object.
         code: VALIDATION_FAILED
+
     EssInvalidId:
       value:
         error: That is not a valid id.
         code: VALIDATION_FAILED
+
     EssDateFormat:
       value:
         error: Dates must be real days written YYYY-MM-DD.
         code: VALIDATION_FAILED
+
     EssBranchId:
       value:
         error: branch_id must be a branch id.
         code: VALIDATION_FAILED
+
     EssHrAccessDenied:
       summary: A portal role outside HR
       value:
         error: Only HR, the CEO and super admins can open this.
         code: HR_ACCESS_DENIED
+
     EssAttendanceOverrideDenied:
       summary: A portal role outside HR, the CEO and super admins
       value:
         error: Only HR, the CEO and super admins can do this.
         code: ATTENDANCE_OVERRIDE_DENIED
+
     EssPortalLoginRequired:
       summary: HR signed in on an attendance session
       value:
         error: HR tools need your portal login. Sign in with your username or login phone.
         code: PORTAL_LOGIN_REQUIRED
 
-    # ───────────── Scheduler ─────────────
-
     NoTokenProvided:
       summary: No Authorization header (no code)
       value:
         error: No token provided
+
     PleaseAuthenticate:
       summary: A rejected token, or a failed user lookup (no code)
       value:
         error: Please authenticate
+
     PunchPleaseSignIn:
       summary: No caller could be identified (defensive)
       value:
         error: Please sign in.
         code: NOT_AUTHENTICATED
+
     PunchSignInAgain:
       summary: The attendance session's employee record is gone
       value:
         error: Please sign in again.
         code: NOT_AUTHENTICATED
+
     PunchPasswordChanged:
       summary: The attendance session predates the last password change
       value:
         error: Your password was changed. Please sign in again.
         code: NOT_AUTHENTICATED
+
     PunchNotLinked:
       value:
         error: Your login is not linked to an employee record yet. Ask HR or the tech team to link it.
         code: NOT_LINKED
+
     PunchNotActive:
       value:
         error: Your employee record is not active, so punching is closed.
         code: NOT_ACTIVE
+
     NoAttendanceLoginYet:
       value:
         error: You do not have an attendance login yet. Ask HR to create one for you.
         code: NO_ATTENDANCE_LOGIN
+
     NoAttendanceLoginOff:
       value:
         error: Your attendance login is turned off. Ask HR.
         code: NO_ATTENDANCE_LOGIN
+
     HasPortalLogin:
       value:
         error: You have a portal login. Sign in to the portal and use the Punch button at the top.
         code: HAS_PORTAL_LOGIN
+
     NotMainPhone:
       value:
         error: This number is on your employee record as an extra number, not the main one. Ask HR to set it as your main phone number, or sign in with your email.
         code: NOT_MAIN_PHONE
+
     PasswordChangeRequired:
       value:
         error: Set your own password first. The password HR gave you only works once.
         code: PASSWORD_CHANGE_REQUIRED
+
     DeviceNotRegistered:
       value:
         error: Your attendance is registered to a different phone. Ask HR to reset your phone if you have changed it.
         code: DEVICE_NOT_REGISTERED
+
     HrModuleDisabled:
       summary: HR_MODULE_ENABLED=false
       value:
         error: The HR module is currently disabled.
         code: MODULE_DISABLED
+
     PunchNotInstalled:
       value:
         error: Punch attendance is not installed yet. Apply migration 20261020000000_hr_attendance_punch.sql.
         code: MODULE_NOT_INSTALLED
         module: HR
         migration: 20261020000000_hr_attendance_punch.sql
+
     AccountsNotInstalled:
       value:
         error: Attendance logins are not installed yet. Apply migration 20261021000000_hr_attendance_accounts.sql.
         code: MODULE_NOT_INSTALLED
         module: HR
         migration: 20261021000000_hr_attendance_accounts.sql
+
     RulesNotInstalled:
       value:
         error: Shifts and late rules are not installed yet. Apply migration 20261022000000_hr_attendance_shifts.sql.
         code: MODULE_NOT_INSTALLED
         module: HR
         migration: 20261022000000_hr_attendance_shifts.sql
+
     ApiRateLimited:
       summary: 300 a minute across /api (no code)
       value:
         error: Too many requests. Please slow down.
+
     LoginRateLimited:
       summary: 20 in 15 minutes per IP address (no code)
       value:
         error: Too many login attempts. Please try again in 15 minutes.
+
     CodeRequestsRateLimited:
       summary: 10 in 15 minutes per IP address (no code)
       value:
         error: Too many code requests. Wait fifteen minutes and try again.
+
     AttendanceSignInRateLimited:
       summary: 40 in 15 minutes per IP address
       value:
         error: Too many sign-in attempts from this network. Wait fifteen minutes and try again.
         code: RATE_LIMITED
+
     PortalBadCode:
       value:
         error: Enter the six-digit code from the email.
         code: BAD_CODE
+
     PortalNoLiveCode:
       value:
         error: No code is waiting. Request a new one.
         code: NO_LIVE_CODE
+
     PortalCodeExpired:
       value:
         error: That code has expired. Request a new one.
         code: EXPIRED
+
     PortalWrongCode:
       value:
         error: Wrong code. 4 attempts left.
         code: WRONG_CODE
+
     PortalAttemptsExhausted:
       value:
         error: Too many wrong codes. Request a new one.
         code: ATTEMPTS_EXHAUSTED
 
-    # ───────────── C1-C12: requests, leave and approvals ─────────────
-
     EssRequestReason:
       value:
         error: Say the reason, in 5 to 1,000 characters.
         code: VALIDATION_FAILED
+
     EssRequestWindow:
       value:
         error: Requests can be for this month or last month only.
         code: REQUEST_WINDOW
+
     EssRequestClosed:
       value:
         error: Last month's requests closed on the 5th. Ask HR.
         code: REQUEST_CLOSED
+
     EssRequestFuture:
       value:
         error: That day has not happened yet.
         code: REQUEST_FUTURE
+
     EssTimesIncomplete:
       value:
         error: The day would still be missing an in or out time. Ask the employee for the full times.
         code: TIMES_INCOMPLETE
+
     EssDayLocked:
       value:
         error: That day is recorded as leave, a week off or a holiday. Change the day first.
         code: DAY_LOCKED
+
     EssDuplicateRequest:
       value:
         error: You already have a request for that day. Wait for it to be decided.
         code: DUPLICATE_REQUEST
+
     EssLimitReached:
       value:
         error: That is over this type's monthly limit. Check the balance on the form.
         code: LIMIT_REACHED
+
     EssRequestNotFound:
       value:
         error: That request was not found.
         code: NOT_FOUND
+
     EssRequestNotPending:
       value:
         error: Only a pending request can be withdrawn.
         code: REQUEST_NOT_PENDING
+
     EssAlreadyDecided:
       value:
         error: That request has already been decided.
         code: ALREADY_DECIDED
+
     EssNotAnApprover:
       value:
         error: Only the person's manager or HR can decide this request.
         code: NOT_AN_APPROVER
+
     EssNotLate:
       value:
         error: That day is not a late arrival.
         code: NOT_LATE
+
     EssCannotCancel:
       value:
         error: Only an approved request can be cancelled.
         code: CANNOT_CANCEL
+
     EssClTaken:
       value:
         error: This month's CL is already taken. Reject this request, or approve it as leave without pay.
         code: CL_LIMIT
+
     EssBalancesMonth:
       value:
         error: Look at this month or last month.
         code: DAY_OUT_OF_RANGE
 
-    # ───────────── D5-D8: push devices and notifications ─────────────
-
     EssPushToken:
       value:
         error: The phone's push token is missing or not valid.
         code: VALIDATION_FAILED
+
     EssNotificationCategories:
       value:
-        error: 'Choose the notification categories: approvals, decisions or priority_tasks.'
+        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements or polls.'
         code: VALIDATION_FAILED
+
     EssNotificationNotFound:
       value:
         error: That notification was not found.
         code: NOT_FOUND
+
     EssDeviceNotFound:
       value:
         error: That phone was not found.
         code: NOT_FOUND
 
-  responses:
+    EssWallPostBody:
+      value:
+        error: Say something in 1 to 2,000 characters.
+        code: VALIDATION_FAILED
 
-    # ───────────── ESS ─────────────
+    EssWallAttachments:
+      value:
+        error: Send up to 5 photos or PDFs, each with its own base64 data and content type.
+        code: VALIDATION_FAILED
+
+    EssWallScope:
+      value:
+        error: "Choose the wall: 'org' for everybody, or 'branch' with your branch."
+        code: VALIDATION_FAILED
+
+    EssWallWrongBranch:
+      value:
+        error: That is not your branch. A branch post goes on your own branch wall.
+        code: VALIDATION_FAILED
+
+    EssWallPostNotFound:
+      value:
+        error: That post was not found, or it has been removed.
+        code: NOT_FOUND
+
+    EssWallCommentNotFound:
+      value:
+        error: That comment was not found, or it has been removed.
+        code: NOT_FOUND
+
+    EssWallOwnPost:
+      value:
+        error: That is not your post.
+        code: NOT_YOURS
+
+    EssWallOwnComment:
+      value:
+        error: That is not your comment.
+        code: NOT_YOURS
+
+    EssWallEditWindow:
+      value:
+        error: Posts can be changed for 15 minutes. Ask HR if something must change after that.
+        code: EDIT_WINDOW_CLOSED
+
+    EssWallCommentBody:
+      value:
+        error: Say something in 1 to 1,000 characters.
+        code: VALIDATION_FAILED
+
+    EssWallReplyDepth:
+      value:
+        error: A reply cannot have replies of its own. Reply to the comment above instead.
+        code: VALIDATION_FAILED
+
+    EssWallReaction:
+      value:
+        error: 'Choose one of the six reactions: like, love, laugh, clap, insightful or curious.'
+        code: VALIDATION_FAILED
+
+    EssWallPraiseSelf:
+      value:
+        error: Praise goes to somebody else. Ask a colleague to praise you.
+        code: VALIDATION_FAILED
+
+    EssWallPraiseBadge:
+      value:
+        error: Choose one of the RVM badges.
+        code: VALIDATION_FAILED
+
+    EssWallPraiseWhy:
+      value:
+        error: Say why, in 3 to 280 characters.
+        code: VALIDATION_FAILED
+
+    EssWallPollQuestion:
+      value:
+        error: Ask a question in 3 to 300 characters.
+        code: VALIDATION_FAILED
+
+    EssWallPollOptions:
+      value:
+        error: Give 2 to 10 options, each 1 to 120 characters.
+        code: VALIDATION_FAILED
+
+    EssWallPollCloses:
+      value:
+        error: Give the closing day, YYYY-MM-DD, within a year.
+        code: VALIDATION_FAILED
+
+    EssWallPollClosed:
+      value:
+        error: This poll has closed.
+        code: POLL_CLOSED
+
+    EssWallPollLocked:
+      value:
+        error: The options are fixed now that somebody has voted.
+        code: POLL_OPTIONS_LOCKED
+
+    EssWallPollSingle:
+      value:
+        error: Choose one option.
+        code: VALIDATION_FAILED
+
+    EssWallPollChoice:
+      value:
+        error: Choose at least one option.
+        code: VALIDATION_FAILED
+
+    EssWallAnnounceDenied:
+      value:
+        error: Only HR, the CEO and super admins can post announcements.
+        code: NOT_AN_ANNOUNCER
+
+    EssWallAnnounceTitle:
+      value:
+        error: Give the announcement a title of 3 to 200 characters.
+        code: VALIDATION_FAILED
+
+    EssWallAnnounceAudience:
+      value:
+        error: The audience takes all, branch_ids, department_ids, roles or employee_ids.
+        code: VALIDATION_FAILED
+
+    EssWallAnnounceCloses:
+      value:
+        error: An announcement that needs acknowledgement needs a closing day, YYYY-MM-DD.
+        code: VALIDATION_FAILED
+
+    EssWallAnnounceNotFound:
+      value:
+        error: That announcement was not found.
+        code: NOT_FOUND
+
+    EssWallPinLimit:
+      value:
+        error: Up to 3 announcements can be pinned. Unpin one first.
+        code: PIN_LIMIT
+
+    EssWallAckNeeded:
+      value:
+        error: That announcement does not need an acknowledgement.
+        code: VALIDATION_FAILED
+
+    EssWallAckClosed:
+      value:
+        error: This announcement has closed. Ask HR.
+        code: ACK_CLOSED
+
+    EssWallNotInAudience:
+      value:
+        error: That announcement was not sent to you.
+        code: NOT_IN_AUDIENCE
+
+    EssWallAlreadyWished:
+      value:
+        error: You have already wished them this year. One wish each is enough.
+        code: ALREADY_WISHED
+
+    EssWallCelebrations:
+      value:
+        error: look_for_days must be between 1 and 90, or give a single date.
+        code: VALIDATION_FAILED
+
+    EssWallReportReason:
+      value:
+        error: Say what is wrong, in 3 to 280 characters.
+        code: VALIDATION_FAILED
+
+    EssWallAlreadyReported:
+      value:
+        error: You have already reported this. HR is looking at it.
+        code: ALREADY_REPORTED
+
+    EssWallReportNotFound:
+      value:
+        error: That report was not found, or it has already been answered.
+        code: NOT_FOUND
+
+    EssWallModerateDenied:
+      value:
+        error: Only HR can hide a post or a comment.
+        code: MODERATE_DENIED
+
+    EssWallAlreadyHidden:
+      value:
+        error: That is already hidden.
+        code: ALREADY_HIDDEN
+
+    EssWallNotHidden:
+      value:
+        error: That is not hidden, so there is nothing to restore.
+        code: NOT_HIDDEN
+
+    EssWallHideReason:
+      value:
+        error: Say why it is hidden, in 3 to 200 characters.
+        code: VALIDATION_FAILED
+
+    EssWallQueueFilter:
+      value:
+        error: 'status must be open, hidden, kept or all.'
+        code: VALIDATION_FAILED
+
+    EssWallRateLimited:
+      value:
+        error: That is more than the Wall allows one person in a day. Try again tomorrow.
+        code: RATE_LIMITED
+
+  responses:
 
     EssNotAuthenticated:
       description: |
@@ -8503,8 +12529,6 @@ components:
             notFound:
               value: { error: That employee was not found., code: NOT_FOUND }
 
-    # ───────────── Scheduler ─────────────
-
     PunchAuthRejected:
       description: |
         The session is over, or the token was never good. Sign out on each of these, after the one check that the info section describes for "Please authenticate":
@@ -8585,8 +12609,6 @@ components:
               $ref: '#/components/examples/PunchNotInstalled'
             accountsNotInstalled:
               $ref: '#/components/examples/AccountsNotInstalled'
-
-    # ───────────── C1-C12: requests, leave and approvals ─────────────
 
     EssRequestBad:
       description: |
@@ -8684,3 +12706,170 @@ components:
               $ref: '#/components/examples/EssNotActive'
             passwordChangeRequired:
               $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssWallRequestBad:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule (the body, an id, the scope, an attachment, a poll, an audience). `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            postBody:
+              $ref: '#/components/examples/EssWallPostBody'
+            commentBody:
+              $ref: '#/components/examples/EssWallCommentBody'
+            attachments:
+              $ref: '#/components/examples/EssWallAttachments'
+            scope:
+              $ref: '#/components/examples/EssWallScope'
+            wrongBranch:
+              $ref: '#/components/examples/EssWallWrongBranch'
+            reaction:
+              $ref: '#/components/examples/EssWallReaction'
+            replyDepth:
+              $ref: '#/components/examples/EssWallReplyDepth'
+            praiseBadge:
+              $ref: '#/components/examples/EssWallPraiseBadge'
+            praiseWhy:
+              $ref: '#/components/examples/EssWallPraiseWhy'
+            praiseSelf:
+              $ref: '#/components/examples/EssWallPraiseSelf'
+            pollQuestion:
+              $ref: '#/components/examples/EssWallPollQuestion'
+            pollOptions:
+              $ref: '#/components/examples/EssWallPollOptions'
+            pollCloses:
+              $ref: '#/components/examples/EssWallPollCloses'
+            pollSingle:
+              $ref: '#/components/examples/EssWallPollSingle'
+            pollChoice:
+              $ref: '#/components/examples/EssWallPollChoice'
+            announceTitle:
+              $ref: '#/components/examples/EssWallAnnounceTitle'
+            announceAudience:
+              $ref: '#/components/examples/EssWallAnnounceAudience'
+            announceCloses:
+              $ref: '#/components/examples/EssWallAnnounceCloses'
+            ackNeeded:
+              $ref: '#/components/examples/EssWallAckNeeded'
+            celebrations:
+              $ref: '#/components/examples/EssWallCelebrations'
+            reportReason:
+              $ref: '#/components/examples/EssWallReportReason'
+            hideReason:
+              $ref: '#/components/examples/EssWallHideReason'
+            queueFilter:
+              $ref: '#/components/examples/EssWallQueueFilter'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            invalidId:
+              $ref: '#/components/examples/EssInvalidId'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssWallForbidden:
+      description: |
+        Not a reason to sign out. The token is good; this person cannot do this one thing.
+        - `NOT_YOURS`: somebody else's post or comment. Only its author edits or deletes it.
+        - `NOT_AN_ANNOUNCER`: an announcement from a role outside HR, the CEO and super admins (decision 8).
+        - `MODERATE_DENIED`: a hide, the report queue or the moderation log from anybody but HR.
+        - `NOT_IN_AUDIENCE`: an announcement that was not sent to this person.
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notYours:
+              $ref: '#/components/examples/EssWallOwnPost'
+            notYoursComment:
+              $ref: '#/components/examples/EssWallOwnComment'
+            notAnAnnouncer:
+              $ref: '#/components/examples/EssWallAnnounceDenied'
+            moderation:
+              $ref: '#/components/examples/EssWallModerateDenied'
+            notInAudience:
+              $ref: '#/components/examples/EssWallNotInAudience'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssWallNoSuchThing:
+      description: '`NOT_FOUND`: no post, comment, announcement or report has this id, or the caller may not see it (a hidden or deleted row is 404 for everybody but its author and HR).'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            post:
+              $ref: '#/components/examples/EssWallPostNotFound'
+            comment:
+              $ref: '#/components/examples/EssWallCommentNotFound'
+            announcement:
+              $ref: '#/components/examples/EssWallAnnounceNotFound'
+            report:
+              $ref: '#/components/examples/EssWallReportNotFound'
+
+    EssWallConflict:
+      description: |
+        The thing cannot move as asked; nothing is changed.
+        - `EDIT_WINDOW_CLOSED`: past the 15 minutes.
+        - `ALREADY_WISHED`: this year's wish for that person and occasion is already there.
+        - `POLL_CLOSED`, `POLL_OPTIONS_LOCKED`: the poll is closed, or somebody has voted.
+        - `ALREADY_REPORTED`: HR already has this person's report.
+        - `ALREADY_HIDDEN`, `NOT_HIDDEN`: a second hide, or a restore of something not hidden.
+        - `PIN_LIMIT`: three announcements are already pinned.
+        - `ACK_CLOSED`: the acknowledgement date has gone.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            editWindow:
+              $ref: '#/components/examples/EssWallEditWindow'
+            alreadyWished:
+              $ref: '#/components/examples/EssWallAlreadyWished'
+            pollClosed:
+              $ref: '#/components/examples/EssWallPollClosed'
+            pollLocked:
+              $ref: '#/components/examples/EssWallPollLocked'
+            alreadyReported:
+              $ref: '#/components/examples/EssWallAlreadyReported'
+            alreadyHidden:
+              $ref: '#/components/examples/EssWallAlreadyHidden'
+            notHidden:
+              $ref: '#/components/examples/EssWallNotHidden'
+            pinLimit:
+              $ref: '#/components/examples/EssWallPinLimit'
+            ackClosed:
+              $ref: '#/components/examples/EssWallAckClosed'
+
+    EssWallRateLimited:
+      description: |
+        `RATE_LIMITED`: the Wall's own daily buckets — 60 posts (a post, or a praise, or a wish, or an announcement) and 200 comments a day per employee — and 60 reactions a minute, on top of the ESS-wide limits. Wait for `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        RateLimit-Policy:
+          $ref: '#/components/headers/RateLimitPolicy'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            wallPosts:
+              $ref: '#/components/examples/EssWallRateLimited'
+            rateLimited:
+              $ref: '#/components/examples/EssRateLimited'

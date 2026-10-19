@@ -23,6 +23,15 @@ const notifications = require('./routes/notifications');
 const meProfile = require('./routes/meProfile');
 const meOrg = require('./routes/meOrg');
 const team = require('./routes/team');
+const wallPosts = require('./routes/wallPosts');
+const wallComments = require('./routes/wallComments');
+const wallReactions = require('./routes/wallReactions');
+const wallPraise = require('./routes/wallPraise');
+const wallPolls = require('./routes/wallPolls');
+const wallAnnouncements = require('./routes/wallAnnouncements');
+const wallCelebrations = require('./routes/wallCelebrations');
+const wallModeration = require('./routes/wallModeration');
+const wallSettings = require('./routes/wallSettings');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
@@ -38,6 +47,12 @@ const LARGE_JSON_BODIES = Object.freeze({
   '/hr/devices/reset': '32kb',
   // A photo arrives as base64 (the app compresses to under 1 MB first): about 1.4 MB on the wire.
   '/me/photo': '2mb',
+  // F9: a Wall post, a praise or an announcement may carry up to five files, each under 1 MB
+  // decoded, so the same limit as one photo fits five of them at about 7 MB: nginx allows 12 MB
+  // (ADR-0019), and this is the smallest ceiling that takes the full five.
+  '/wall/posts': '7mb',
+  '/wall/praise': '7mb',
+  '/wall/announcements': '7mb',
 });
 
 /**
@@ -196,6 +211,75 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.get('/directory', asEmployee, meOrg.directory({ store }));
   api.get('/team/today', asEmployee, team.teamToday({ store, now }));
   api.get('/team/off-this-week', asEmployee, team.teamOffThisWeek({ store, now }));
+
+  /* ── F1-F9: the Wall (Phase 2A) ── */
+
+  // A post and a comment are the two things one person may do in a burst, so each has its own
+  // daily bucket on top of the per-employee limit, as the mocked-location reports do.
+  const wallPostLimiter = createEmployeeLimiter(limit('wallPosts'), MESSAGES.MODERATION_LIMIT);
+  const wallCommentLimiter = createEmployeeLimiter(limit('wallComments'), MESSAGES.MODERATION_LIMIT);
+  // Reactions are small and fast: a minute's own bucket, so a stuck phone cannot burn a day.
+  const reactionLimiter = createEmployeeLimiter(limit('wallReactions'), MESSAGES.WALL_REACTION_LIMIT);
+
+  // F1, F2: the feed, one post with its thread, the author's edit and delete, and comments.
+  api.get('/wall/posts', asEmployee, wallPosts.listWallPosts({ store, now }));
+  api.post('/wall/posts', asEmployee, wallPostLimiter, wallPosts.createWallPost({ store, now }));
+  api.get('/wall/posts/:id', asEmployee, wallPosts.getWallPost({ store, now }));
+  api.patch('/wall/posts/:id', asEmployee, wallPosts.editWallPost({ store, now }));
+  api.delete('/wall/posts/:id', asEmployee, wallPosts.deleteWallPost({ store, now }));
+  api.post('/wall/posts/:id/comments', asEmployee, wallCommentLimiter, wallComments.createWallComment({ store, now }));
+  api.patch('/wall/comments/:id', asEmployee, wallComments.editWallComment({ store, now }));
+  api.delete('/wall/comments/:id', asEmployee, wallComments.deleteWallComment({ store, now }));
+
+  // F2: the six reactions, on a post or on a comment, with who reacted.
+  api.get('/wall/posts/:id/reactions', asEmployee, wallReactions.listPostReactions({ store }));
+  api.put('/wall/posts/:id/reaction', asEmployee, reactionLimiter, wallReactions.putPostReaction({ store, now }));
+  api.delete('/wall/posts/:id/reaction', asEmployee, reactionLimiter, wallReactions.deletePostReaction({ store, now }));
+  api.get('/wall/comments/:id/reactions', asEmployee, wallReactions.listCommentReactions({ store }));
+  api.put('/wall/comments/:id/reaction', asEmployee, reactionLimiter, wallReactions.putCommentReaction({ store, now }));
+  api.delete('/wall/comments/:id/reaction', asEmployee, reactionLimiter, wallReactions.deleteCommentReaction({ store, now }));
+
+  // F3: praise, in the feed and on the receiver's own read.
+  api.post('/wall/praise', asEmployee, wallPostLimiter, wallPraise.createPraise({ store, now }));
+  api.get('/me/praise', asEmployee, wallPraise.listPraise({ store }));
+
+  // F4: a poll after it is up — voting, one more option before the first vote, closing early.
+  api.get('/wall/polls/:id', asEmployee, wallPolls.getPoll({ store, now }));
+  api.post('/wall/polls/:id/vote', asEmployee, wallPolls.votePoll({ store, now }));
+  api.delete('/wall/polls/:id/vote', asEmployee, wallPolls.withdrawPollVote({ store, now }));
+  api.post('/wall/polls/:id/options', asEmployee, wallPolls.addPollOption({ store, now }));
+  api.post('/wall/polls/:id/close', asEmployee, wallPolls.closePoll({ store, now }));
+
+  // F5: announcements — the sender's tools, and the reader's own list, read state and ack.
+  api.post('/wall/announcements', asEmployee, wallPostLimiter, wallAnnouncements.createAnnouncement({ store, now }));
+  api.get('/wall/announcements', asEmployee, wallAnnouncements.listAnnouncements({ store }));
+  api.get('/wall/hr/announcements', asEmployee, wallAnnouncements.listMyAnnouncements({ store }));
+  api.get('/wall/announcements/:id', asEmployee, wallAnnouncements.getAnnouncement({ store }));
+  api.patch('/wall/announcements/:id', asEmployee, wallAnnouncements.editAnnouncement({ store, now }));
+  api.delete('/wall/announcements/:id', asEmployee, wallAnnouncements.deleteAnnouncement({ store, now }));
+  api.post('/wall/announcements/:id/read', asEmployee, wallAnnouncements.readAnnouncement({ store, now }));
+  api.post('/wall/announcements/:id/ack', asEmployee, wallAnnouncements.ackAnnouncement({ store, now }));
+  api.get('/wall/announcements/:id/counts', asEmployee, wallAnnouncements.announcementCounts({ store }));
+
+  // F6: celebrations, the one-tap wish, and my own birthday switch.
+  api.get('/wall/celebrations', asEmployee, wallCelebrations.listCelebrations({ store, now }));
+  api.post('/wall/wishes', asEmployee, wallPostLimiter, wallCelebrations.createWish({ store, now }));
+  api.get('/me/celebration-optout', asEmployee, wallCelebrations.getOptout({ store }));
+  api.put('/me/celebration-optout', asEmployee, wallCelebrations.putOptout({ store, now }));
+
+  // F7: reporting, HR's queue, the hides with their reasons, and the log they leave.
+  api.post('/wall/posts/:id/reports', asEmployee, wallModeration.reportPost({ store }));
+  api.post('/wall/comments/:id/reports', asEmployee, wallModeration.reportComment({ store }));
+  api.get('/wall/hr/reports', asEmployee, wallModeration.listReports({ store }));
+  api.post('/wall/hr/reports/:id/resolve', asEmployee, wallModeration.resolveReport({ store, now }));
+  api.get('/wall/hr/moderation-log', asEmployee, wallModeration.moderationLog({ store }));
+  api.post('/wall/posts/:id/hide', asEmployee, wallModeration.hidePost({ store, now }));
+  api.delete('/wall/posts/:id/hide', asEmployee, wallModeration.restorePost({ store }));
+  api.post('/wall/comments/:id/hide', asEmployee, wallModeration.hideComment({ store, now }));
+  api.delete('/wall/comments/:id/hide', asEmployee, wallModeration.restoreComment({ store }));
+
+  // F8: the rules document.
+  api.get('/wall/settings', asEmployee, wallSettings.getWallSettings());
 
   app.use('/api/ess', api);
 

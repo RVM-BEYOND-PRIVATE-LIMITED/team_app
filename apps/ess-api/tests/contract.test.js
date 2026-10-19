@@ -10,6 +10,7 @@ const { NOW, SIGNED_AT, TEST_ENV } = require('./helpers/constants');
 const { PORTAL_PEOPLE, INSTALL_ID, OTHER_INSTALL_ID, BRANCH_ID, BRANCH_PUNE_ID, uuid } = require('./helpers/fixtures');
 const C = require('./helpers/contract');
 const H = require('./helpers/sessions');
+const { WAVE_6 } = require('./helpers/wave6');
 
 /**
  * The ESS against packages/contracts/openapi.yaml (ADR-0010): the routes it serves are the ESS
@@ -1270,13 +1271,13 @@ const WAVE_5 = {
 };
 
 describe('the scenario tables', () => {
-  it('cover every route Wave 2 to Wave 5 added', () => {
+  it('cover every route Wave 2 to Wave 6 added', () => {
     const wave1 = ['GET /api/ess/health', 'GET /api/ess/me', 'GET /api/ess/me/capabilities'];
     const served = C.essRoutes(buildApp().app).filter((route) => !wave1.includes(route));
-    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4), ...Object.keys(WAVE_5)].sort()).toEqual(served);
+    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4), ...Object.keys(WAVE_5), ...Object.keys(WAVE_6)].sort()).toEqual(served);
   });
 
-  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5)])('provoke every status %s documents', (route, scenarios) => {
+  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6)])('provoke every status %s documents', (route, scenarios) => {
     const [method, path] = route.split(' ');
     const documented = Object.keys(C.operation(method, path).operation.responses).filter((s) => s !== 'default');
     const provoked = new Set(scenarios.map(([label]) => label.slice(0, 3)));
@@ -1284,7 +1285,7 @@ describe('the scenario tables', () => {
   });
 });
 
-describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5)])('%s', (route, scenarios) => {
+describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6)])('%s', (route, scenarios) => {
   const [method, path] = route.split(' ');
   it.each(scenarios)('%s', async (label, provoke) => {
     quietErrors();

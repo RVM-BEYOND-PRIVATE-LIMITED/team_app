@@ -101,10 +101,17 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
     const res = await request(app).get(SETTINGS).set(bearer(tokens.attendance(people.attendance)));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
+      // Phase 2A added the Wall's six (tasks F1-F8); the order is policy/notifications.js's.
       categories: [
         { category: 'approvals', enabled: true },
         { category: 'decisions', enabled: true },
         { category: 'priority_tasks', enabled: true },
+        { category: 'mentions', enabled: true },
+        { category: 'replies', enabled: true },
+        { category: 'praise', enabled: true },
+        { category: 'announcements', enabled: true },
+        { category: 'acknowledgements', enabled: true },
+        { category: 'polls', enabled: true },
       ],
       quiet_hours: { from: '21:00', to: '08:00' },
     });
@@ -119,6 +126,12 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
       { category: 'approvals', enabled: false },
       { category: 'decisions', enabled: true },
       { category: 'priority_tasks', enabled: true },
+      { category: 'mentions', enabled: true },
+      { category: 'replies', enabled: true },
+      { category: 'praise', enabled: true },
+      { category: 'announcements', enabled: true },
+      { category: 'acknowledgements', enabled: true },
+      { category: 'polls', enabled: true },
     ]);
     expect(db.tables.hr_ess_notification_settings).toEqual([
       expect.objectContaining({ employee_id: people.attendance.employee.id, disabled_categories: ['approvals'] }),
@@ -131,6 +144,7 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
     const token = tokens.attendance(people.attendance);
     const put = (body) => request(app).put(SETTINGS).set(bearer(token)).send(body);
     expectInvalid(await put({ disabled_categories: ['wall'] }), MESSAGES.NOTIFICATION_SETTINGS);
+    expectInvalid(await put({ disabled_categories: ['mentions', 'push'] }), MESSAGES.NOTIFICATION_SETTINGS);
     expectInvalid(await put({ disabled_categories: 'approvals' }), MESSAGES.NOTIFICATION_SETTINGS);
     expectInvalid(await put({ categories: [] }), MESSAGES.UNKNOWN_FIELD);
   });

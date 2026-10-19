@@ -113,9 +113,12 @@ function refusal(label, statement, condition = 'check_violation') {
     sql: `DO $check$
 DECLARE
   e uuid := gen_random_uuid();
+  o uuid := gen_random_uuid();
+  b uuid := gen_random_uuid();
   u uuid := gen_random_uuid();
 BEGIN
-  INSERT INTO public.hr_employees (id) VALUES (e);
+  INSERT INTO public.hr_employees (id) VALUES (e), (o);
+  INSERT INTO public.hr_branches (id) VALUES (b);
   INSERT INTO public.users (id) VALUES (u);
   BEGIN
     ${statement};
@@ -190,6 +193,37 @@ const REFUSALS = [
       VALUES (e, 'priority_tasks', 'Task', 'Do the task.', '{"task_id": "7f000000-0000-4000-8000-000000000001"}'::jsonb),
              (e, 'priority_tasks', 'Task', 'Do the task.', '{"task_id": "7f000000-0000-4000-8000-000000000001"}'::jsonb)`, 'unique_violation'),
   refusal('a notification setting for an unknown category', "INSERT INTO public.hr_ess_notification_settings (employee_id, disabled_categories) VALUES (e, ARRAY['wall'])"),
+  // F1-F7: the Wall's own tables and rules (db/migrations/20261108000001-3).
+  refusal('a wall post of a kind it does not take', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body) VALUES (e, 'notice', 'Hello there.')"),
+  refusal('a branch post with no branch', "INSERT INTO public.hr_ess_wall_posts (employee_id, scope, body) VALUES (e, 'branch', 'Branch note.')"),
+  refusal('an organisation post that names a branch', "INSERT INTO public.hr_ess_wall_posts (employee_id, scope, branch_id, body) VALUES (e, 'org', b, 'Org note.')"),
+  refusal('a praise with no badge', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, about_employee_id) VALUES (e, 'praise', 'Well done.', o)"),
+  refusal('a praise about yourself', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, badge, about_employee_id) VALUES (e, 'praise', 'Well done.', 'mentor', e)"),
+  refusal('a wish with no occasion', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, about_employee_id) VALUES (e, 'wish', 'Many happy returns!', o)"),
+  refusal('a wish over 200 characters', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, occasion, about_employee_id) VALUES (e, 'wish', repeat('x', 201), 'birthday', o)"),
+  refusal('a poll with no closing day', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body) VALUES (e, 'poll', 'Where shall we go?')"),
+  refusal('a praise reason of two characters', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, badge, about_employee_id) VALUES (e, 'praise', 'ok', 'mentor', o)"),
+  refusal('a hidden post with no reason', "INSERT INTO public.hr_ess_wall_posts (employee_id, body, hidden_at, hidden_by_name) VALUES (e, 'Hello.', now(), 'HR')"),
+  refusal('a hide reason of one character', "INSERT INTO public.hr_ess_wall_posts (employee_id, body, hidden_at, hidden_by_name, hide_reason) VALUES (e, 'Hello.', now(), 'HR', 'x')"),
+  refusal('a reaction on both a post and a comment', "INSERT INTO public.hr_ess_wall_reactions (post_id, comment_id, employee_id, reaction) VALUES (gen_random_uuid(), gen_random_uuid(), e, 'like')"),
+  refusal('a reaction that is not one of the six', "INSERT INTO public.hr_ess_wall_reactions (post_id, employee_id, reaction) VALUES (gen_random_uuid(), e, 'wow')"),
+  refusal('a second reaction on the same post by the same person', "INSERT INTO public.hr_ess_wall_posts (id, employee_id, body) VALUES ('a1000000-0000-4000-8000-000000000001', e, 'Hello.'); INSERT INTO public.hr_ess_wall_reactions (post_id, employee_id, reaction) VALUES ('a1000000-0000-4000-8000-000000000001', e, 'like'), ('a1000000-0000-4000-8000-000000000001', e, 'love')", 'unique_violation'),
+  refusal('a second vote by the same person on one option', "INSERT INTO public.hr_ess_wall_posts (id, employee_id, kind, body, poll_closes_on) VALUES ('a1000000-0000-4000-8000-000000000003', e, 'poll', 'Where shall we go?', DATE '2026-11-01'); INSERT INTO public.hr_ess_wall_poll_options (id, post_id, option_key, label, position) VALUES ('a3000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000003', 'o1', 'Chaat', 0); INSERT INTO public.hr_ess_wall_poll_votes (post_id, option_id, voter_employee_id) VALUES ('a1000000-0000-4000-8000-000000000003', 'a3000000-0000-4000-8000-000000000001', e), ('a1000000-0000-4000-8000-000000000003', 'a3000000-0000-4000-8000-000000000001', e)", 'unique_violation'),
+  refusal('a wish for yourself is refused before the wish book', "INSERT INTO public.hr_ess_wall_posts (id, employee_id, kind, body, occasion, about_employee_id) VALUES ('a1000000-0000-4000-8000-000000000004', e, 'wish', 'Happy birthday to me!', 'birthday', e)"),
+  refusal('two wishes for one person in a year', "INSERT INTO public.hr_ess_wall_posts (id, employee_id, kind, body, occasion, about_employee_id) VALUES ('a1000000-0000-4000-8000-000000000005', e, 'wish', 'Many happy returns!', 'birthday', o), ('a1000000-0000-4000-8000-000000000006', e, 'wish', 'And again!', 'birthday', o); INSERT INTO public.hr_ess_wall_wishes (post_id, about_id, wisher_id, occasion, year) VALUES ('a1000000-0000-4000-8000-000000000005', o, e, 'birthday', 2026), ('a1000000-0000-4000-8000-000000000006', o, e, 'birthday', 2026)", 'unique_violation'),
+  refusal('the same person twice in one audience', "INSERT INTO public.hr_ess_announcements (id, employee_id, title, body) VALUES ('a5000000-0000-4000-8000-000000000001', e, 'Diwali holiday', 'The office is closed.'); INSERT INTO public.hr_ess_announcement_audience (announcement_id, employee_id) VALUES ('a5000000-0000-4000-8000-000000000001', e), ('a5000000-0000-4000-8000-000000000001', e)", 'unique_violation'),
+  refusal('the same person twice in one audience\'s read state', "INSERT INTO public.hr_ess_announcements (id, employee_id, title, body) VALUES ('a5000000-0000-4000-8000-000000000002', e, 'Diwali holiday', 'The office is closed.'); INSERT INTO public.hr_ess_announcement_reads (announcement_id, employee_id) VALUES ('a5000000-0000-4000-8000-000000000002', e), ('a5000000-0000-4000-8000-000000000002', e)", 'unique_violation'),
+  refusal('a wish book entry with no post', "INSERT INTO public.hr_ess_wall_wishes (post_id, about_id, wisher_id, occasion, year) VALUES (gen_random_uuid(), o, e, 'birthday', 2026)", 'foreign_key_violation'),
+  refusal('an announcement with a duplicate post id', "INSERT INTO public.hr_ess_announcements (id, employee_id, title, body) VALUES ('a5000000-0000-4000-8000-000000000003', e, 'One', 'The office is closed.'), ('a5000000-0000-4000-8000-000000000003', e, 'Two', 'The office is closed.')", 'unique_violation'),
+  refusal('a report that names both a post and a comment', "INSERT INTO public.hr_ess_wall_reports (reporter_id, post_id, comment_id, reason) VALUES (e, gen_random_uuid(), gen_random_uuid(), 'Not for the wall.')"),
+  refusal('a report with no reason', "INSERT INTO public.hr_ess_wall_reports (reporter_id, post_id, reason) VALUES (e, gen_random_uuid(), 'hm')"),
+  refusal('a resolved report with no resolver', "INSERT INTO public.hr_ess_wall_reports (reporter_id, post_id, reason, status) VALUES (e, gen_random_uuid(), 'Not for the wall.', 'kept')"),
+  refusal('an open report that says it was answered', "INSERT INTO public.hr_ess_wall_reports (reporter_id, post_id, reason, resolved_at, resolved_by_name) VALUES (e, gen_random_uuid(), 'Not for the wall.', now(), 'HR')"),
+  refusal('an announcement that needs an acknowledgement with no closing day', "INSERT INTO public.hr_ess_announcements (employee_id, title, body, needs_ack) VALUES (e, 'Diwali holiday', 'The office is closed.', true)"),
+  refusal('an announcement with a closing day and no acknowledgement', "INSERT INTO public.hr_ess_announcements (employee_id, title, body, closes_on) VALUES (e, 'Diwali holiday', 'The office is closed.', DATE '2026-11-05')"),
+  refusal('an announcement with a title of two characters', "INSERT INTO public.hr_ess_announcements (employee_id, title, body) VALUES (e, 'Hi', 'The office is closed.')"),
+  refusal('an announcement published before it was scheduled', "INSERT INTO public.hr_ess_announcements (employee_id, title, body, publish_at, published_at) VALUES (e, 'Diwali holiday', 'The office is closed.', now(), now() - interval '1 hour')"),
+  refusal('an acknowledgement before the read', "INSERT INTO public.hr_ess_announcements (id, employee_id, title, body) VALUES ('a5000000-0000-4000-8000-000000000004', e, 'Diwali holiday', 'The office is closed.'); INSERT INTO public.hr_ess_announcement_reads (announcement_id, employee_id, read_at, ack_at) VALUES ('a5000000-0000-4000-8000-000000000004', e, now(), now() - interval '1 hour')"),
 ];
 
 /** Rows the ESS writes must go in, take their defaults, and follow an employee's deletion. */
@@ -414,6 +448,92 @@ BEGIN
               WHERE q.id IS NULL) THEN RAISE EXCEPTION 'history kept'; END IF;
 END $check$;`;
 
+/** The Wall's tables as the ESS writes them (tasks F1 to F7): the defaults every row takes, the
+ * counters the routes keep, the wish book's one-each rule, and the cascade when an employee goes. */
+const WALL_ROWS = `DO $check$
+DECLARE
+  e uuid := gen_random_uuid();
+  o uuid := gen_random_uuid();
+  hr uuid := gen_random_uuid();
+  u uuid := gen_random_uuid();
+  b uuid := gen_random_uuid();
+  post uuid;
+  comment uuid;
+  option_id uuid;
+  r record;
+BEGIN
+  INSERT INTO public.hr_employees (id, full_name, branch_id) VALUES (e, 'Test Author', b), (o, 'Test Other', b), (hr, 'Test HR', b);
+  INSERT INTO public.users (id) VALUES (u);
+  INSERT INTO public.hr_branches (id) VALUES (b);
+
+  -- A post takes its defaults (scope, empty attachments, counters) and can be edited and hidden.
+  INSERT INTO public.hr_ess_wall_posts (employee_id, body) VALUES (e, 'A note for the whole team.') RETURNING id INTO post;
+  SELECT scope, attachments, reaction_counts, comment_count, kind INTO r FROM public.hr_ess_wall_posts WHERE id = post;
+  IF r.scope <> 'org' OR r.attachments <> '[]'::jsonb OR r.reaction_counts <> '{}'::jsonb
+     OR r.comment_count <> 0 OR r.kind <> 'post' THEN
+    RAISE EXCEPTION 'post defaults: %, %, %, %, %', r.scope, r.attachments, r.reaction_counts, r.comment_count, r.kind;
+  END IF;
+  UPDATE public.hr_ess_wall_posts SET edited_at = now(), body = 'Corrected.' WHERE id = post;
+  UPDATE public.hr_ess_wall_posts SET hidden_at = now(), hidden_by_user_id = u, hidden_by_name = 'Test HR', hide_reason = 'Not for the wall.' WHERE id = post;
+  UPDATE public.hr_ess_wall_posts SET hidden_at = NULL, hidden_by_user_id = NULL, hidden_by_name = NULL, hide_reason = NULL WHERE id = post;
+
+  -- A comment, its replies and the six reactions; the counters are the routes' own.
+  INSERT INTO public.hr_ess_wall_comments (post_id, employee_id, body) VALUES (post, o, 'Well said.') RETURNING id INTO comment;
+  INSERT INTO public.hr_ess_wall_comments (post_id, employee_id, parent_id, body) VALUES (post, e, comment, 'Thank you.');
+  INSERT INTO public.hr_ess_wall_reactions (post_id, employee_id, reaction) VALUES (post, o, 'clap'), (post, hr, 'love');
+  INSERT INTO public.hr_ess_wall_reactions (comment_id, employee_id, reaction) VALUES (comment, hr, 'like');
+  UPDATE public.hr_ess_wall_posts SET reaction_counts = '{"clap": 1, "love": 1}'::jsonb, comment_count = 2 WHERE id = post;
+  IF (SELECT sum((value)::int) FROM jsonb_each_text((SELECT reaction_counts FROM public.hr_ess_wall_posts WHERE id = post))) <> 2 THEN
+    RAISE EXCEPTION 'the reaction counts';
+  END IF;
+
+  -- A poll with its options and a vote; the option set is frozen by the stamp, and a voter's own
+  -- vote is one row per option.
+  INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, poll_closes_on) VALUES (o, 'poll', 'Where shall we go?', DATE '2026-11-01') RETURNING id INTO post;
+  INSERT INTO public.hr_ess_wall_poll_options (post_id, option_key, label, position) VALUES (post, 'o1', 'Chaat', 0) RETURNING id INTO option_id;
+  INSERT INTO public.hr_ess_wall_poll_options (post_id, option_key, label, position) VALUES (post, 'o2', 'Dosa', 1);
+  INSERT INTO public.hr_ess_wall_poll_votes (post_id, option_id, voter_employee_id) VALUES (post, option_id, e);
+  SELECT voter_employee_id INTO r FROM public.hr_ess_wall_poll_votes WHERE post_id = post;
+  IF r.voter_employee_id <> e THEN RAISE EXCEPTION 'the vote'; END IF;
+  UPDATE public.hr_ess_wall_posts SET options_locked_at = now(), poll_closed_at = now() WHERE id = post;
+
+  -- Praise with a badge the catalogue holds, and a wish the wish book keeps once.
+  INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, badge, about_employee_id) VALUES (hr, 'praise', 'Always helping the batch.', 'mentor', o);
+  INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, occasion, about_employee_id) VALUES (hr, 'wish', 'Many happy returns!', 'birthday', o) RETURNING id INTO post;
+  INSERT INTO public.hr_ess_wall_wishes (post_id, about_id, wisher_id, occasion, year) VALUES (post, o, hr, 'birthday', 2026);
+
+  -- The mentions a post carries, and a report HR answers.
+  INSERT INTO public.hr_ess_wall_mentions (post_id, mentioned_id, mentioned_by_id) VALUES (post, o, hr);
+  INSERT INTO public.hr_ess_wall_reports (reporter_id, post_id, reason) VALUES (o, post, 'Not for the wall.');
+  UPDATE public.hr_ess_wall_reports SET status = 'kept', resolved_by_user_id = u, resolved_by_name = 'Test HR', resolved_at = now() WHERE reporter_id = o;
+
+  -- An announcement: published at once, its audience resolved, a read with an acknowledgement.
+  INSERT INTO public.hr_ess_announcements (employee_id, title, body, needs_ack, closes_on, publish_at, published_at)
+    VALUES (hr, 'Diwali holiday', 'The office is closed on 8 November.', true, DATE '2026-11-05', now(), now()) RETURNING id INTO post;
+  SELECT audience, read_count, ack_count, pinned INTO r FROM public.hr_ess_announcements WHERE id = post;
+  IF r.audience <> '{"all": true}'::jsonb OR r.read_count <> 0 OR r.ack_count <> 0 OR r.pinned THEN
+    RAISE EXCEPTION 'announcement defaults: %, %, %, %', r.audience, r.read_count, r.ack_count, r.pinned;
+  END IF;
+  INSERT INTO public.hr_ess_announcement_audience (announcement_id, employee_id) VALUES (post, e), (post, o);
+  INSERT INTO public.hr_ess_announcement_reads (announcement_id, employee_id, ack_at) VALUES (post, e, now());
+  IF (SELECT count(*) FROM public.hr_ess_announcement_audience WHERE announcement_id = post) <> 2 THEN
+    RAISE EXCEPTION 'the audience rows';
+  END IF;
+
+  -- A birthday opt-out, with its default.
+  INSERT INTO public.hr_ess_celebration_optouts (employee_id) VALUES (e);
+  IF NOT (SELECT hidden FROM public.hr_ess_celebration_optouts WHERE employee_id = e) THEN RAISE EXCEPTION 'opt-out default'; END IF;
+
+  -- The employee's deletion takes every one of their rows with it.
+  DELETE FROM public.hr_employees WHERE id = e;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_wall_posts WHERE employee_id = e) THEN RAISE EXCEPTION 'posts kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_wall_reactions WHERE employee_id = e) THEN RAISE EXCEPTION 'reactions kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_wall_poll_votes WHERE voter_employee_id = e) THEN RAISE EXCEPTION 'votes kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_wall_wishes WHERE wisher_id = e) THEN RAISE EXCEPTION 'wishes kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_celebration_optouts WHERE employee_id = e) THEN RAISE EXCEPTION 'the opt-out kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_wall_comments WHERE employee_id = e) THEN RAISE EXCEPTION 'comments kept'; END IF;
+END $check$;`;
+
 /** The notification tables: defaults, the both-ways push CHECK, the task key, and the cascade. */
 const NOTIFICATIONS = `DO $check$
 DECLARE
@@ -525,6 +645,7 @@ function main() {
     check('takes the rows the ESS writes, fills their defaults, and follows a deleted employee', () => runSql('the accepted rows', ACCEPTED));
     check('the request functions decide, withdraw and cancel as documented', () => runSql('the request flow', REQUEST_FLOW));
     check('takes the notifications, their defaults and settings, and follows a deleted employee', () => runSql('the notification rows', NOTIFICATIONS));
+    check("takes the Wall's rows, their defaults and counters, and follows a deleted employee", () => runSql('the Wall rows', WALL_ROWS));
 
     for (const pass of [1, 2]) {
       for (const file of [...rollbacks].reverse()) {

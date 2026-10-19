@@ -9,8 +9,8 @@ const crypto = require('crypto');
  *   - reads: from().select(columns) with .eq(), .neq(), .in(), .is(), .not(column, 'is', null),
  *     .gte(), .gt(), .lte(), .lt(), .order(), .limit() and .abortSignal(), awaited as a list or
  *     through .maybeSingle() or .single();
- *   - writes: .insert(rows), .upsert(rows, { onConflict }) and .update(patch) with the same
- *     filters, returning rows only when .select(columns) follows, as PostgREST does;
+ *   - writes: .insert(rows), .upsert(rows, { onConflict }), .update(patch) and .delete(), with the
+ *     same filters, returning rows only when .select(columns) follows, as PostgREST does;
  *   - .rpc() for the functions team_app's migrations create, and the BEFORE INSERT triggers they
  *     put on hr_ess_sessions and hr_ess_data_requests (TRIGGERS);
  *   - an unknown table is PGRST205, an unknown function PGRST202; an unknown column selected,
@@ -101,6 +101,28 @@ const SCHEMA = {
   // 20261107000001_hr_ess_notifications.sql
   hr_ess_notifications: ['id', 'employee_id', 'category', 'title', 'body', 'data', 'read_at', 'pushed_at', 'push_mode', 'push_attempts', 'push_error', 'created_at'],
   hr_ess_notification_settings: ['employee_id', 'disabled_categories', 'updated_at'],
+  // 20261108000001_hr_ess_wall_posts.sql
+  hr_ess_wall_posts: ['id', 'employee_id', 'kind', 'scope', 'branch_id', 'body', 'attachments', 'mentions', 'badge',
+    'occasion', 'about_employee_id', 'poll_multiple', 'poll_anonymous', 'poll_closes_on', 'options_locked_at', 'poll_closed_at',
+    'reaction_counts', 'comment_count', 'edited_at', 'created_at', 'updated_at', 'hidden_at', 'hidden_by_user_id',
+    'hidden_by_name', 'hide_reason', 'deleted_at'],
+  hr_ess_wall_comments: ['id', 'post_id', 'employee_id', 'parent_id', 'body', 'mentions', 'reaction_counts', 'reply_count',
+    'edited_at', 'created_at', 'updated_at', 'hidden_at', 'hidden_by_user_id', 'hidden_by_name', 'hide_reason', 'deleted_at'],
+  hr_ess_wall_poll_options: ['id', 'post_id', 'option_key', 'label', 'position', 'created_at'],
+  hr_ess_wall_poll_votes: ['id', 'post_id', 'option_id', 'voter_employee_id', 'voted_at'],
+  hr_ess_wall_reactions: ['id', 'post_id', 'comment_id', 'employee_id', 'reaction', 'created_at'],
+  hr_ess_wall_mentions: ['id', 'post_id', 'comment_id', 'mentioned_id', 'mentioned_by_id', 'created_at'],
+  hr_ess_wall_wishes: ['id', 'post_id', 'about_id', 'wisher_id', 'occasion', 'year', 'created_at'],
+  // 20261108000002_hr_ess_wall_reports.sql
+  hr_ess_wall_reports: ['id', 'reporter_id', 'post_id', 'comment_id', 'reason', 'detail', 'status', 'resolved_by_user_id',
+    'resolved_by_name', 'resolved_at', 'resolution_note', 'created_at'],
+  hr_ess_celebration_optouts: ['employee_id', 'hidden', 'updated_at'],
+  // 20261108000003_hr_ess_announcements.sql
+  hr_ess_announcements: ['id', 'employee_id', 'title', 'body', 'attachments', 'audience', 'publish_at', 'published_at',
+    'needs_ack', 'closes_on', 'pinned', 'read_count', 'ack_count', 'reminded_at', 'created_at', 'updated_at', 'edited_at',
+    'deleted_at'],
+  hr_ess_announcement_audience: ['id', 'announcement_id', 'employee_id', 'added_at'],
+  hr_ess_announcement_reads: ['id', 'announcement_id', 'employee_id', 'read_at', 'ack_at'],
   // The Scheduler's priority tasks, read for push only (20260814000001:30-53)
   priority_tasks: ['id', 'location_id', 'task_date', 'title', 'notes', 'priority', 'due_date', 'assigned_to', 'assigned_by',
     'assigned_by_name', 'assigned_by_role', 'status', 'progress_note', 'completed_by', 'completed_at', 'cancelled_by',
@@ -124,6 +146,35 @@ const UNIQUE = {
   hr_ess_push_devices: [
     { name: 'hr_ess_push_devices_token_key', columns: ['token'] },
   ],
+  // F2, F4, F5, F6, F7: the partial unique indexes, as db/migrations/20261108000001-3 declare them.
+  hr_ess_wall_poll_options: [
+    { name: 'hr_ess_wall_poll_options_post_key', columns: ['post_id', 'option_key'] },
+    { name: 'hr_ess_wall_poll_options_post_position', columns: ['post_id', 'position'] },
+  ],
+  hr_ess_wall_poll_votes: [
+    { name: 'hr_ess_wall_poll_votes_option_key', columns: ['option_id', 'voter_employee_id'] },
+  ],
+  hr_ess_wall_reactions: [
+    { name: 'hr_ess_wall_reactions_post_key', columns: ['post_id', 'employee_id'], where: (row) => row.post_id != null },
+    { name: 'hr_ess_wall_reactions_comment_key', columns: ['comment_id', 'employee_id'], where: (row) => row.comment_id != null },
+  ],
+  hr_ess_wall_mentions: [
+    { name: 'hr_ess_wall_mentions_post_key', columns: ['post_id', 'mentioned_id'], where: (row) => row.post_id != null },
+    { name: 'hr_ess_wall_mentions_comment_key', columns: ['comment_id', 'mentioned_id'], where: (row) => row.comment_id != null },
+  ],
+  hr_ess_wall_wishes: [
+    { name: 'hr_ess_wall_wishes_key', columns: ['about_id', 'wisher_id', 'occasion', 'year'] },
+  ],
+  hr_ess_wall_reports: [
+    { name: 'hr_ess_wall_reports_post_key', columns: ['post_id', 'reporter_id'], where: (row) => row.post_id != null },
+    { name: 'hr_ess_wall_reports_comment_key', columns: ['comment_id', 'reporter_id'], where: (row) => row.comment_id != null },
+  ],
+  hr_ess_announcement_audience: [
+    { name: 'hr_ess_announcement_audience_key', columns: ['announcement_id', 'employee_id'] },
+  ],
+  hr_ess_announcement_reads: [
+    { name: 'hr_ess_announcement_reads_key', columns: ['announcement_id', 'employee_id'] },
+  ],
 };
 
 /**
@@ -134,6 +185,32 @@ const CHECKS = {
   hr_ess_personal_details: {
     hr_ess_personal_details_emergency_chk: (r) => ((r.emergency_name ?? null) === null) === ((r.emergency_phone ?? null) === null)
       && ((r.emergency_relation ?? null) === null || (r.emergency_name ?? null) !== null),
+  },
+  // The Wall's own shape rules (db/migrations/20261108000001-3), as the routes rely on them.
+  hr_ess_wall_posts: {
+    hr_ess_wall_posts_scope_chk: (r) => (r.scope === 'org' && (r.branch_id ?? null) === null)
+      || (r.scope === 'branch' && (r.branch_id ?? null) !== null),
+    hr_ess_wall_posts_shape_chk: (r) => {
+      const badge = r.badge ?? null;
+      const occasion = r.occasion ?? null;
+      const about = r.about_employee_id ?? null;
+      const closes = r.poll_closes_on ?? null;
+      if (r.kind === 'post') return badge === null && occasion === null && about === null && closes === null;
+      if (r.kind === 'praise') return badge !== null && occasion === null && about !== null;
+      if (r.kind === 'wish') return badge === null && occasion !== null && about !== null;
+      if (r.kind === 'poll') return badge === null && occasion === null && about === null && closes !== null;
+      return false;
+    },
+    hr_ess_wall_posts_about_chk: (r) => (r.about_employee_id ?? null) === null || r.about_employee_id !== r.employee_id,
+  },
+  hr_ess_wall_reactions: {
+    hr_ess_wall_reactions_target_chk: (r) => ((r.post_id ?? null) === null) !== ((r.comment_id ?? null) === null),
+  },
+  hr_ess_wall_reports: {
+    hr_ess_wall_reports_target_chk: (r) => ((r.post_id ?? null) === null) !== ((r.comment_id ?? null) === null),
+  },
+  hr_ess_announcements: {
+    hr_ess_announcements_ack_chk: (r) => (r.needs_ack === true) === ((r.closes_on ?? null) !== null),
   },
 };
 
@@ -222,6 +299,23 @@ const DEFAULTS = {
   hr_ess_notifications: (at) => ({ data: {}, push_attempts: 0, created_at: at }),
   hr_ess_notification_settings: (at) => ({ disabled_categories: [], updated_at: at }),
   hr_attendance_overrides: (at) => ({ overridden_at: at }),
+  // db/migrations/20261108000001_hr_ess_wall_posts.sql and the two after it.
+  hr_ess_wall_posts: (at) => ({
+    kind: 'post', scope: 'org', attachments: [], mentions: [], reaction_counts: {}, comment_count: 0,
+    poll_multiple: false, poll_anonymous: false, created_at: at, updated_at: at,
+  }),
+  hr_ess_wall_comments: (at) => ({ mentions: [], reaction_counts: {}, reply_count: 0, created_at: at, updated_at: at }),
+  hr_ess_wall_poll_options: (at) => ({ created_at: at }),
+  hr_ess_wall_poll_votes: (at) => ({ voted_at: at }),
+  hr_ess_wall_reactions: (at) => ({ created_at: at }),
+  hr_ess_wall_mentions: (at) => ({ created_at: at }),
+  hr_ess_wall_wishes: (at) => ({ created_at: at }),
+  hr_ess_wall_reports: (at) => ({ status: 'open', created_at: at }),
+  hr_ess_celebration_optouts: (at) => ({ hidden: true, updated_at: at }),
+  hr_ess_announcements: (at) => ({ attachments: [], audience: { all: true }, publish_at: at, published_at: null,
+    needs_ack: false, pinned: false, read_count: 0, ack_count: 0, created_at: at, updated_at: at }),
+  hr_ess_announcement_audience: (at) => ({ added_at: at }),
+  hr_ess_announcement_reads: (at) => ({ read_at: at }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
@@ -323,6 +417,14 @@ class Query {
   update(patch) {
     this.op = 'update';
     this.values = [clone(patch)];
+    return this;
+  }
+
+  delete(value) {
+    // PostgREST's DELETE, as the Wall uses it: the filters choose the rows, and
+    // .select(columns) afterwards answers them.
+    if (value !== undefined) throw new Error(`delete(${JSON.stringify(value)}) on ${this.table}: the ESS sends no body`);
+    this.op = 'delete';
     return this;
   }
 
@@ -466,6 +568,12 @@ class Query {
     const key = primaryKey(table);
     const at = fake.now().toISOString();
     const sameKey = (a, b, columns) => columns.every((c) => (a[c] ?? null) === (b[c] ?? null));
+
+    if (this.op === 'delete') {
+      const gone = rows.filter((row) => this.matches(row));
+      for (const row of gone) rows.splice(rows.indexOf(row), 1);
+      return { rows: gone.map((row) => clone(row)) };
+    }
 
     if (this.op === 'update') {
       const changed = rows.filter((row) => this.matches(row));

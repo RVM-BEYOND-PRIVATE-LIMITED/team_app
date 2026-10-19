@@ -18,7 +18,7 @@ Run from the repository root (`npm run lint`, `npm test`) or from this folder:
 
 `npm run test:migrations`, from the repository root, runs `db/migrations` against a throwaway Postgres in Docker (`db/test/run-migrations.js`).
 
-`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml`: the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
+`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.6.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
 
 Set `SCHEDULER_BACKEND_DIR` to a Scheduler_Backend checkout to also run the drift checks. They compare `src/policy/roles.js` and `src/policy/hrPolicy.js` with the Scheduler's `config/roles.js` and `config/hrPolicy.js`, and the verbatim Scheduler code in `tests/helpers` with its source:
 
@@ -28,7 +28,9 @@ SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test
 
 Without it those checks are skipped, and that includes CI, which cannot read the private Scheduler repository. Run them by hand whenever the Scheduler changes.
 
-Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all five migrations more broadly. CI runs neither yet.
+Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all sixteen migrations more broadly. CI runs neither yet.
+
+**The suite (19 Oct 2026, Phase 2A):** 2,069 tests in 41 files, the contract included — 903 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all sixteen migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's row rules themselves.
 
 ## Settings
 
@@ -85,6 +87,23 @@ Phase 1D adds no setting either:
 | My notifications | the last 100 | `src/lib/store.js` `LIST_LIMITS.notifications` |
 | FCM | real sends only when all three `FIREBASE_*` settings exist; the log otherwise | `src/lib/fcm.js`, `src/config.js` |
 
+Phase 2A adds the Wall's own limits and windows:
+
+| What | Value | Where |
+| --- | --- | --- |
+| Wall posts, praise, wishes and announcements | 60 a day per employee | `src/middleware/rateLimit.js` (`wallPosts`) |
+| Comments and replies | 200 a day per employee | `wallComments` |
+| Reactions | 60 a minute per employee | `wallReactions` |
+| Photos and PDFs | up to 5 a file's request, each up to 1 MB decoded, in the ESS's own bucket (`ESS`) | `src/lib/wallKit.js`, `src/app.js` (`7mb` for a Wall body) |
+| A post's or comment's edit window | 15 minutes from `created_at`, then `EDIT_WINDOW_CLOSED` | `src/policy/wall.js` |
+| @mentions | `@RVM-011`: an `@` before an employee code, resolved to the staff who hold it | `src/policy/wall.js` `mentionCodes` |
+| Praise badges | a fixed catalogue of 12 (KP, 19 Oct: not HR-editable), in one place | `src/policy/wall.js` `PRAISE_BADGES` |
+| A poll | 2 to 10 options of up to 120 characters, one or many choices, optionally anonymous, closing within a year; the options freeze on the first vote | `src/policy/wall.js`, `src/routes/wallPolls.js` |
+| Pinned announcements | up to 3 at a time | `src/policy/wall.js` `MAX_PINNED` |
+| The Wall's feed, a thread, praise, announcements and reports | the last 20 posts a page (`?before=`), 50 comments a thread, 20 praise, 100 announcements, 100 reports | `src/lib/store.js` `LIST_LIMITS` |
+| The Wall's clock | once at boot, then hourly: scheduled announcements, acknowledgement reminders inside 2 days of the close, polls closing | `src/jobs/wall.js` |
+| Announcement email and push | log-only until RVM has a mail provider and the Firebase project (KP, 19 Oct) | `src/jobs/push.js`, the deploy log |
+
 ## Endpoints
 
 Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Control: no-store`.
@@ -127,6 +146,39 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `GET /api/ess/me/org` | either | My chain to the CEO ("Reports to the CEO (not recorded)"), peers, direct reports and department, with the notice chip (E2, E11) |
 | `GET /api/ess/directory` | either | Colleague search by name or code, filtered by branch or department; email to everyone, phone per the contact rule (E2, E8) |
 | `GET /api/ess/team/today` | either | Team today for managers, the branch for a HoO (E6, H4) |
+| `GET /api/ess/wall/settings` | either | The Wall's rules: who may post what, the fixed badge catalogue, the poll's shape, the audience scopes, the moderation roles, and `email.enabled: false` |
+| `GET /api/ess/wall/posts` | either | The organisation's wall plus the caller's own branch's (or one with `?scope=`), newest first, 20 a page with `next_before` |
+| `POST /api/ess/wall/posts` | either | A post or a poll: `{ kind?, body, scope?, branch_id?, attachments?, poll? }`. Mentions are resolved from `@RVM-011`; files go to the ESS bucket |
+| `GET /api/ess/wall/posts/{id}` | either | One post with its comments and their one level of replies (50 a page) |
+| `PATCH`, `DELETE /api/ess/wall/posts/{id}` | either | The author's own: an edit inside 15 minutes (then `edited: true`), or a delete that blanks the row and keeps the trail |
+| `POST /api/ess/wall/posts/{id}/comments` | either | A comment, or a reply with `parent_id` (one level only) |
+| `PATCH`, `DELETE /api/ess/wall/comments/{id}` | either | The author's own comment or reply, the same 15-minute edit window |
+| `PUT`, `DELETE /api/ess/wall/posts/{id}/reaction` | either | One of the six (`like`, `love`, `laugh`, `clap`, `insightful`, `curious`), one per person; DELETE takes it off |
+| `GET /api/ess/wall/posts/{id}/reactions` | either | Who reacted, grouped by reaction (`?reaction=` narrows it) |
+| `PUT`, `DELETE`, `GET /api/ess/wall/comments/{id}/reaction(s)` | either | The same, one level in |
+| `POST /api/ess/wall/praise` | either | Praise: `{ employee_id, badge, reason, scope?, attachments? }`; the badge is one of the fixed 12, and yourself is refused |
+| `GET /api/ess/me/praise` | either | Praise for me (`?employee_id=` for somebody else's), newest first, with the badge catalogue |
+| `GET /api/ess/wall/polls/{id}` | either | One poll with its options, their counts, and the caller's own votes |
+| `POST`, `DELETE /api/ess/wall/polls/{id}/vote` | either | Vote (`{ option_ids: [...] }`) or take it back, while the poll is open |
+| `POST /api/ess/wall/polls/{id}/options` | either | The author's own: one more option before the first vote |
+| `POST /api/ess/wall/polls/{id}/close` | either | The author's own: close it early, keeping the day it was due on |
+| `POST /api/ess/wall/announcements` | portal, HR/CEO/super admin | An announcement: `{ title, body, audience?, attachments?, needs_ack?, closes_on?, publish_at?, pinned? }`. Now or scheduled; the audience is resolved once, at publication |
+| `GET /api/ess/wall/announcements` | either | What was sent to me, pinned first, with my own read and acknowledgement times |
+| `GET /api/ess/wall/announcements/{id}` | either | One, if it reached me or I sent it (its sender also reads the counts) |
+| `PATCH`, `DELETE /api/ess/wall/announcements/{id}` | portal, the sender | Edit (title, body or `pinned`) or take it down |
+| `POST /api/ess/wall/announcements/{id}/read` | the audience | 204; the first open is what the sender's count records |
+| `POST /api/ess/wall/announcements/{id}/ack` | the audience | The acknowledgement button, inside the closing day |
+| `GET /api/ess/wall/announcements/{id}/counts` | the sender, or HR | `{ sent, read, acknowledged, not_acknowledged }` |
+| `GET /api/ess/wall/hr/announcements` | portal, HR/CEO/super admin | My own announcements, drafts and scheduled ones included (`?status=`) |
+| `GET /api/ess/wall/celebrations` | either | Birthdays (day and month only, never the year, hidden for anyone who opted out), work anniversaries and the last 15 days' joiners |
+| `POST /api/ess/wall/wishes` | either | A one-tap wish: `{ employee_id, occasion, body }`, one per person per occasion per year |
+| `GET`, `PUT /api/ess/me/celebration-optout` | either | Whether my birthday is left off the cards |
+| `POST /api/ess/wall/posts/{id}/reports`, `/comments/{id}/reports` | either | Report something for HR's queue (`{ reason, detail? }`), once per person per thing |
+| `GET /api/ess/wall/hr/reports` | portal, HR | HR's queue: still open by default, `?status=` for the rest |
+| `POST /api/ess/wall/hr/reports/{id}/resolve` | portal, HR | Answer a report: `hidden` or `kept`, with a note |
+| `GET /api/ess/wall/hr/moderation-log` | portal, HR | The moderation trail out of `hr_ess_audit`: hides, restores, deletions and answered reports |
+| `POST`, `DELETE /api/ess/wall/posts/{id}/hide` | portal, HR | Hide a post with a reason (3 to 200 characters), or take the hide back |
+| `POST`, `DELETE /api/ess/wall/comments/{id}/hide` | portal, HR | The same for a comment; its body blanks for everybody but HR and its author |
 | `GET /api/ess/team/off-this-week` | either | Who is off this week: reports, else peers; names and days only (E6) |
 
 The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
@@ -171,6 +223,17 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 - **The org and directory** work from one read of the active staff (~107 rows): chain, peers, reports, department, search. The contact rule is one function (`policy/me.js`): email to everyone, phone to HR's roles and the manager chain above the person only.
 - **Team today and Off this week** read the sheet's day rows; leave types and reasons are never selected. A HoO's view is their branch; a manager's is their reports; nobody's is empty.
 
+### The Wall (tasks F1-F9)
+
+- **The feed** (`hr_ess_wall_posts`, `hr_ess_wall_comments`) is the organisation's wall plus the caller's own branch's. Posts carry text, up to five photos or PDFs (base64 in, ESS bucket out, signed links back), `@RVM-011` mentions and the six reactions; the counts on the row are rewritten from the reaction and comment tables after every change, so the feed is one read. An author edits for 15 minutes and always deletes their own; a delete blanks the row so the trail and the thread keep their shape.
+- **Praise** is a post of kind `praise` with one of the twelve fixed badges, a reason of up to 280 characters and an optional photo; it appears in the feed and in `GET /ess/me/praise`. Certificates are Phase 3. **KP to confirm:** this is the profile integration F3 asked for, built as its own read rather than folded into `GET /ess/me/profile`.
+- **Polls** are posts of kind `poll`: 2 to 10 options, one or many choices, optionally anonymous (the vote rows keep the voter so a person's own choice can be shown back and not repeated, and no reply ever names them, HR's included), closing on a day. The first vote freezes the option set.
+- **Announcements** (`hr_ess_announcements`, `hr_ess_announcement_audience`, `hr_ess_announcement_reads`) are HR's, the CEO's and super admins'. An audience of branches, departments, roles or people is resolved **once**, at publication, into one row per person — that is what makes the read and acknowledgement counts exact and the reminder honest. `publish_at` in the future schedules it; the Wall's job publishes it. Up to three pinned. Email and push are log-only until RVM has a provider.
+- **Celebrations** read `hr_employees.date_of_joining` and the 1B `hr_ess_personal_details.date_of_birth`: **day and month only, never the year**, and nothing for anybody who opted out (`hr_ess_celebration_optouts` carries the switch; HR's personal-details screen is unchanged). A wish is a short feed post with an `hr_ess_wall_wishes` row that makes "one each" a database rule.
+- **Moderation** (`hr_ess_wall_reports`): anybody reports a post or a comment, HR's queue shows it with the reporter's own words, and HR hides or restores with a reason. Every action goes to `hr_ess_audit` as `wall.post.hidden`, `wall.post.restored`, `wall.comment.hidden`, `wall.comment.restored`, `wall.post.deleted`, `wall.comment.deleted` or `wall.report.resolved`; a hidden thing is 404 for everybody but HR and its author.
+- **The rules** are the code's, not a table (F8): `src/policy/wall.js` holds them and `GET /ess/wall/settings` hands the app the same numbers, so a form and its refusal cannot disagree. Everyone posts; only HR, the CEO and super admins announce; only HR moderates.
+- **Notifications**: the Wall writes the in-app rows itself (a mention, a reply to my comment, praise, an announcement, the acknowledgement ask and its reminder, a poll closing) through `src/lib/wallNotify.js`; the Phase 1D push worker delivers them unchanged. Migration 16 extends the two category CHECKs with the six Wall categories (the comment in migration 12 said it would).
+
 ### How sign-in is checked
 
 `src/middleware/employeeAuth.js` (task A1) reads `Authorization: Bearer <token>`. It tries the attendance session first and then the portal JWT, as the Scheduler's `punchAuth` does, and verifies both with HS256 only (`src/lib/tokens.js`). It re-reads the employee on every request. The checks and their order are the Scheduler's `loadEmployee` and `sessionProblem` at `c28b9ca`, including the whole-second `sessions_valid_from` comparison. A portal token is resolved through `hr_employees.user_id`.
@@ -194,12 +257,15 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 409 | `REFRESH_IN_PROGRESS` | A refresh token traded in less than a minute ago, presented again by the same install: retry with the newest one |
 | 409 | `OWN_REQUEST`, `OWN_RECORD`, `ALREADY_RESOLVED`, `TOO_MANY_OPEN_REQUESTS`, `RECORD_CHANGED` | HR acting on their own data; a request already answered; 5 open requests (counted by the database, too); personal details another save changed meanwhile so that half an emergency contact would be left |
 | 409 | `DUPLICATE_REQUEST`, `LIMIT_REACHED`, `REQUEST_CLOSED`, `REQUEST_WINDOW`, `REQUEST_FUTURE`, `REQUEST_NOT_PENDING`, `ALREADY_DECIDED`, `NOT_LATE`, `TIMES_INCOMPLETE`, `DAY_LOCKED`, `CL_LIMIT`, `CANNOT_CANCEL` | A request cannot move: the same type and day already waits; over the month's limit; last month past the cut-off, or a day before last month; a fix or an excuse for a day that has not happened; a withdraw of something decided; a second decision; an excuse of a day that is not late; a fix leaving no in or out time; a fix on a leave, week-off or holiday; a second CL in the month; a cancel of something not approved |
+| 403 | `NOT_YOURS` | The Wall: somebody else's post or comment. Only its author edits or deletes it |
+| 403 | `NOT_AN_ANNOUNCER`, `MODERATE_DENIED`, `NOT_IN_AUDIENCE` | The Wall: an announcement from a role outside HR, the CEO and super admins; a hide, the report queue or the moderation log from anybody but HR; an announcement that was not sent to this person |
+| 409 | `EDIT_WINDOW_CLOSED`, `ALREADY_WISHED`, `POLL_CLOSED`, `POLL_OPTIONS_LOCKED`, `ALREADY_REPORTED`, `ALREADY_HIDDEN`, `NOT_HIDDEN`, `PIN_LIMIT`, `ACK_CLOSED` | The Wall cannot move as asked: past the 15 minutes; this year's wish is already there; the poll is closed or the option set is frozen; HR already has this person's report; a second hide or a restore of something not hidden; three announcements are pinned; the acknowledgement date has gone |
 | 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included); a session that is not one of the caller's; or no such request, employee or branch |
 | 400 | `INVALID_JSON` | A request body that is not valid JSON |
 | 400 | `BAD_INSTALL_ID`, `BAD_DEVICE_LABEL`, `BAD_IDENTIFIER` | A missing or malformed install id, phone name or sign-in identifier |
 | 400 | `VALIDATION_FAILED`, `DAY_OUT_OF_RANGE` | A field, query or id the endpoint refuses; the message says which |
-| 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB (32 kB for the phone reset's id list) |
-| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier; 30 mocked-location reports a day per employee (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
+| 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB (32 kB for the phone reset's id list, 2 MB for a photo, 7 MB for a Wall post, praise or announcement) |
+| 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier; 30 mocked-location reports a day per employee, 60 Wall posts and 200 comments a day, and 60 reactions a minute (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
 | 503 | `UNAVAILABLE` | The database could not be reached. Never a 401 |
 | 503 | `MODULE_NOT_INSTALLED` | A table, column or function the ESS needs is missing: the code is live before its migration ([ADR-0021](../../docs/adr/0021-migrations-new-tables-only.md)) |
 | 503 | `MODULE_DISABLED` | `ESS_ENABLED=false` |

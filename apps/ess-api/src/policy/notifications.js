@@ -9,7 +9,13 @@
  * pushed at night"). The in-app row is written at once regardless; only the phone stays quiet.
  */
 
-const CATEGORIES = Object.freeze(['approvals', 'decisions', 'priority_tasks']);
+const CATEGORIES = Object.freeze([
+  'approvals', 'decisions', 'priority_tasks',
+  // The Wall's own (Phase 2A, F8): a mention, a reply to my comment, praise, an announcement
+  // that reached me, an acknowledgement it asks for (and the reminder), and a poll I voted in
+  // that has closed.
+  'mentions', 'replies', 'praise', 'announcements', 'acknowledgements', 'polls',
+]);
 
 const QUIET_FROM = '21:00';
 const QUIET_TO = '08:00';

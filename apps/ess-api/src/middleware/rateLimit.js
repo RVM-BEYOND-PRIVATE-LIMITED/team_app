@@ -27,6 +27,10 @@ const { signInKey } = require('../policy/signIn');
  *                        person from many addresses gets no further.
  *   mockReports          mocked-location reports (B14), per employee per day, counted apart
  *                        from the per-employee limit.
+ *   wallPosts            Wall posts, praise, wishes and announcements, per employee per day
+ *                        (F1, F3, F5).
+ *   wallComments         comments and replies, per employee per day (F2).
+ *   wallReactions        reactions, per employee per minute: tapping six emoji is normal use.
  *
  * All count in this process's memory, as the Scheduler's limiters do: there is exactly one
  * ESS instance (ADR-0005), and a restart starting the counts again is acceptable.
@@ -43,6 +47,11 @@ const DEFAULT_LIMITS = Object.freeze({
   // Mocked-location reports (B14), per employee per 24 hours. A real person refused for a mocked
   // fix tries a handful of times; a phone stuck in a retry loop must not fill HR's list.
   mockReports: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 30 }),
+  // The Wall (F1, F2): posts and comments per employee per day, so a stuck phone cannot fill the
+  // feed; reactions per minute, because tapping six emoji on one post is normal use.
+  wallPosts: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 60 }),
+  wallComments: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 200 }),
+  wallReactions: Object.freeze({ windowMs: 60 * 1000, limit: 60 }),
 });
 
 const refuseWith = (message) => (_req, res) => res.status(429).json({ error: message, code: 'RATE_LIMITED' });

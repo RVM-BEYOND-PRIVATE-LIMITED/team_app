@@ -109,7 +109,7 @@ The workflow itself also reads `HOST`, `USER` and `SSH_PRIVATE_KEY` (the server 
 
 The deploy never runs a migration ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, after review. Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED` and nothing else changes, so the code can deploy first.
 
-Twelve in all: Wave 2's five, Wave 3's five and Wave 4's two. KP applied them all on 19 Oct 2026; re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
+Sixteen in all: Wave 2's five, Wave 3's five, Wave 4's two and Phase 2A's four. KP applied the first twelve on 19 Oct 2026; 13 to 16 are the Wall and are still to be applied. Re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
 
 | # | Migration | Rollback |
 | --- | --- | --- |
@@ -125,9 +125,13 @@ Twelve in all: Wave 2's five, Wave 3's five and Wave 4's two. KP applied them al
 | 10 | `db/migrations/20261106000004_hr_ess_request_functions.sql` | `db/rollbacks/20261106000004_hr_ess_request_functions.sql` |
 | 11 | `db/migrations/20261107000000_hr_ess_push_devices.sql` | `db/rollbacks/20261107000000_hr_ess_push_devices.sql` |
 | 12 | `db/migrations/20261107000001_hr_ess_notifications.sql` | `db/rollbacks/20261107000001_hr_ess_notifications.sql` |
+| 13 | `db/migrations/20261108000001_hr_ess_wall_posts.sql` | `db/rollbacks/20261108000001_hr_ess_wall_posts.sql` |
+| 14 | `db/migrations/20261108000002_hr_ess_wall_reports.sql` | `db/rollbacks/20261108000002_hr_ess_wall_reports.sql` |
+| 15 | `db/migrations/20261108000003_hr_ess_announcements.sql` | `db/rollbacks/20261108000003_hr_ess_announcements.sql` |
+| 16 | `db/migrations/20261108000004_hr_ess_notification_categories.sql` | `db/rollbacks/20261108000004_hr_ess_notification_categories.sql` |
 
 **Applying them (KP):**
-1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all twelve against a throwaway Postgres and must end "Every migration check passed."
+1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all sixteen against a throwaway Postgres and must end "Every migration check passed."
 2. In the Supabase dashboard, open the SQL editor of the Scheduler's project.
 3. Paste one file whole, from the `main` branch, and run it. Then the next, in the order above. Each is safe to run again if a run is interrupted.
 4. Each file ends by telling PostgREST to reload its schema, so the endpoints work within seconds, with no restart.

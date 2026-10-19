@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now); the pilot gate is next.
+**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now). **Phase 2A (the Wall) is built on 19 Oct and waits for migrations 13 to 16.** The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 | [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | **Built + deployed, 19 Oct; no migrations** |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Next |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Gate |
-| [2A](#phase-2a-wall) | The Wall | |
+| [2A](#phase-2a-wall) | The Wall | **Built, 19 Oct; migrations 13-16** |
 | [2B](#phase-2b-helpdesk) | The Helpdesk | |
 | [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | |
 | [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, multi-level approvals, short leave | |
@@ -223,10 +223,39 @@ The brief's Phase 2.
 | Photos under 1 MB, stored in an ESS storage bucket | F9 |
 | An ESS scheduler for scheduled announcements, acknowledgement reminders and polls closing | F4, F5 |
 
+**Built 19 Oct 2026, in one place:** `src/routes/wallPosts.js`, `wallComments.js`,
+`wallReactions.js`, `wallPraise.js`, `wallPolls.js`, `wallAnnouncements.js`,
+`wallCelebrations.js`, `wallModeration.js`, `wallViews.js` and `wallSettings.js`, the rules in
+`src/policy/wall.js`, the notification writers in `src/lib/wallNotify.js` and
+`src/lib/wallAudience.js`, and the clock in `src/jobs/wall.js`; migrations 13 to 16. What the
+build chose, for KP to confirm:
+- **a post's default wall is the author's own branch** (`scope: 'org'` is explicit), and a branch
+  post must be their own branch;
+- **a praise cannot be given to yourself**;
+- **praise on the receiver's profile** is `GET /api/ess/me/praise`, its own read, so the profile's
+  shape is unchanged;
+- **a birthday is day and month only** in every reply and hidden for anybody who opted out (the
+  opt-out is its own table, `hr_ess_celebration_optouts`);
+- **the twelve badges are fixed in code** (KP, 19 Oct), and a certificate PDF is Phase 3;
+- **only HR moderates** (decision 8): only HR hides anything, reads the report queue and the
+  moderation trail; an announcement's sender reads that announcement's own counts;
+- **a hidden comment keeps its place in the thread with no words** for everybody but HR and its
+  author;
+- **the Wall's job** (`src/jobs/wall.js`, one process) publishes scheduled announcements, reminds
+  those who have not acknowledged inside two days of the close, and tells a closed poll's voters;
+- **announcement email and push are log-only** until RVM has a mail provider and the Firebase
+  project.
+
+The Wall's endpoints answer 503 `MODULE_NOT_INSTALLED` until migrations 13 to 15 are applied
+(`GET /api/ess/wall/settings` is the code's own rules and needs no table); until migration 16 the
+Wall's notifications are logged as failed writes, as push already is.
+
 - **You first:**
-  - the badge list;
-  - an OK for a private storage bucket for the ESS's files in the same Supabase project;
-  - the mail provider and sender address for staff announcements, as team_app secrets (the deploy writes and length-checks them, as it does `FIREBASE_*`);
+  - the badge list (the build ships twelve; KP to change or add any);
+  - an OK for a private storage bucket for the ESS's files in the same Supabase project (the build
+    uses `ESS`, created by KP on 19 Oct);
+  - the mail provider and sender address for staff announcements, as team_app secrets (the deploy
+    would write and length-check them, as it does `FIREBASE_*`);
   - date of birth and joining date loaded for every employee.
 - **Done when:** posts, praise, polls and announcements work end to end, with notifications from Phase 1D.
 

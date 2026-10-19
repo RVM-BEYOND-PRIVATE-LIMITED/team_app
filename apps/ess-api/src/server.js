@@ -9,6 +9,7 @@ const { createSupabaseStore } = require('./lib/store');
 const { createApp } = require('./app');
 const { startOnDutyJob } = require('./jobs/onDuty');
 const { startPushJob } = require('./jobs/push');
+const { startWallJob } = require('./jobs/wall');
 
 let config;
 try {
@@ -33,4 +34,6 @@ app.listen(config.port, config.host, () => {
   startOnDutyJob({ store });
   // Notifications and push (D2, D7, D8): priority tasks in, pushes out; log-only without Firebase.
   startPushJob({ store, config });
+  // The Wall's own clock (F4, F5): scheduled announcements, acknowledgement reminders, poll closes.
+  startWallJob({ store });
 });
