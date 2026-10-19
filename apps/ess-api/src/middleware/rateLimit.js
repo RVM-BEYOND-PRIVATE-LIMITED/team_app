@@ -31,6 +31,8 @@ const { signInKey } = require('../policy/signIn');
  *                        (F1, F3, F5).
  *   wallComments         comments and replies, per employee per day (F2).
  *   wallReactions        reactions, per employee per minute: tapping six emoji is normal use.
+ *   helpdeskTickets      ticket raises, per employee per day (G2): a raise is one form, and a
+ *                        stuck phone must not fill HR's and the teams' queues.
  *
  * All count in this process's memory, as the Scheduler's limiters do: there is exactly one
  * ESS instance (ADR-0005), and a restart starting the counts again is acceptable.
@@ -52,6 +54,8 @@ const DEFAULT_LIMITS = Object.freeze({
   wallPosts: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 60 }),
   wallComments: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 200 }),
   wallReactions: Object.freeze({ windowMs: 60 * 1000, limit: 60 }),
+  // The Helpdesk (G2): a raise per person per day's bucket, as the Wall's posts have.
+  helpdeskTickets: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 20 }),
 });
 
 const refuseWith = (message) => (_req, res) => res.status(429).json({ error: message, code: 'RATE_LIMITED' });

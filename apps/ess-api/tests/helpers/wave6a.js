@@ -263,4 +263,4 @@ const WAVE_6 = {
   ],
 };
 
-module.exports = { WAVE_6, WALL, WALL_COMMENT, WALL_POLL, ANNOUNCEMENT, call, get, post, put, patch, del, drop, as, missing };
+module.exports = { WAVE_6, WALL, WALL_COMMENT, WALL_POLL, ANNOUNCEMENT, call, get, post, put, patch, del, drop, as, missing, shared };

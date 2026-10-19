@@ -240,6 +240,49 @@ for it.
 
 The decisions listed below shape several of these.
 
+### Phase 2B: the Helpdesk — built 19 Oct 2026
+
+The brief's helpdesk, built to this plan, tested, and waiting for its migrations (17 and 18
+below). Everything is in `apps/ess-api` and `db/migrations/20261109000001` and `20261109000002`.
+
+| Work | How, with no Scheduler change | Tasks | State |
+| --- | --- | --- | --- |
+| The category list and the rules document | `hr_ess_helpdesk_categories`: the brief's six ticket categories and the four links to flows that are not tickets (leave, WFH, an attendance fix, an asset request), each with its queue roles, priority, SLA hours and flags; `GET /api/ess/helpdesk/categories` hands the raise form the same list the server refuses on | G1 | Built |
+| Tickets HD-0001 onwards | `hr_ess_helpdesk_tickets`: raise with base64 attachments (as the Wall's), my list, one ticket with its thread; the lifecycle of open, in progress, on hold (where the category allows), resolved, closed and withdrawn; the raiser withdraws an open ticket and closes a settled one with a reason and an optional rating of 1 to 5; reopen within 7 days resets the SLA; nothing is deleted — every move is an `event` row in the thread | G2 | Built |
+| Response times and escalation | The two deadlines are worked out at raise in the raiser's branch's working hours (09:00–17:30 IST, Monday to Saturday, plus `hr_holidays`) and stored, so the job judges them against the clock; each view carries "overdue by" in working minutes; `src/jobs/helpdesk.js` escalates a past-due ticket to its team, then the HoO, then the CEO | G3 | Built |
+| Confidential categories and anonymity | Grievance and POSH are confidential: never in HR oversight's lists, seen only by their team; an anonymous raise hides the raiser from the team (the record keeps them); every read of a confidential ticket by anybody but its raiser is written to `hr_ess_audit` first, and a failed audit refuses the read | G4 | Built |
+| The agents' workspace | `GET /api/ess/helpdesk/queue` (portal sign-ins only): the tickets of the categories the caller's own role serves, exact membership, with `?status=` and `?category=`; comment, claim (which names the assignee and counts as the first response) and the status moves | G5 | Built |
+| The non-ticket links | The category list marks them `is_ticket: false` with their `flow`; raising on one is refused | Brief | Built |
+
+**What the build had to choose, for KP to confirm:**
+- **The lab has no desk role and the Internal Committee has no login**, so IT and lab tickets go
+  to the admin roles and POSH tickets to HR (the category table is fixed in code and seeded by
+  migration 17; HR's own category-editing is not built).
+- **Queue membership is exact** — a role no category names (the CEO's, most staff's) is answered
+  an empty queue, not a refusal, and confidential categories are hidden from every list but their
+  team's.
+- **A claim is the only way a ticket gets an assignee**; assign and reassign are not built
+  (decision 7 open), and G6's infra-register mirror is not built (decision 9 open).
+- **The SLA targets are the build's defaults** (IT and facility 8 and 48 working hours; HR
+  documents and payroll 24 and 72; grievance 12 and 48; POSH 12 and 72), for KP to confirm.
+- **The working-hours calendar is a policy constant** (`src/policy/helpdesk.js`) plus the
+  `hr_holidays` the Scheduler keeps, so a change to RVM's hours is a reviewed code change.
+- **A raise is limited to 20 tickets a day per employee** (the Helpdesk's own bucket, like the
+  Wall's), and comments are not limited beyond the ESS-wide limits.
+
+**Tests:** the suite is 2,198 (45 files), the contract at 0.7.0 with 1,002 contract checks (every
+route's every documented status provoked, Wave 7 included); the Helpdesk's own files are
+`helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`. `npm run test:migrations` applies all
+eighteen migrations and their rollbacks twice and runs the Helpdesk's row rules themselves.
+
+**You after:** apply migrations 17 and 18, in order ([05-deploy.md](05-deploy.md#migrations-to-apply)).
+Until 17 is applied every Helpdesk endpoint answers 503 `MODULE_NOT_INSTALLED`; until 18 is
+applied the Helpdesk's notifications are logged as failed writes and nothing else changes.
+
+**Done when:** a raise reaches the right team's queue and is answered, moved and closed end to
+end, with the deadlines, the "overdue by" and the escalations to prove the SLA works; a
+confidential ticket is seen by nobody it should not be, with the audit trail to show for it.
+
 ## Out of scope: each needs a Scheduler change
 
 These were in the gap report or found in STEP 1. They stay as they are unless KP decides to change the Scheduler separately.
@@ -297,6 +340,8 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 14 | [`20261108000002_hr_ess_wall_reports.sql`](../db/migrations/20261108000002_hr_ess_wall_reports.sql) | [`20261108000002_hr_ess_wall_reports.sql`](../db/rollbacks/20261108000002_hr_ess_wall_reports.sql): drops the report queue and the opt-out table | `hr_ess_wall_reports` (post or comment, the reporter's own words, the status and HR's answer; one report per person per thing) and `hr_ess_celebration_optouts` (the birthday switch; no row means it is on). Five indexes | F6, F7: the report, queue, resolve, hide and celebration-opt-out endpoints answer 503 |
 | 15 | [`20261108000003_hr_ess_announcements.sql`](../db/migrations/20261108000003_hr_ess_announcements.sql) | [`20261108000003_hr_ess_announcements.sql`](../db/rollbacks/20261108000003_hr_ess_announcements.sql): drops the read state, the audience and the announcements | `hr_ess_announcements` (title, body, up to five attachments, the audience object, `publish_at` and `published_at`, `needs_ack` with its closing date, `pinned`, the sender's counts, `reminded_at`) with its CHECKs; `hr_ess_announcement_audience` (one row per person, resolved at publication); `hr_ess_announcement_reads` (read and acknowledged times). Six indexes | F5: the announcement endpoints answer 503; the Wall's job logs and waits |
 | 16 | [`20261108000004_hr_ess_notification_categories.sql`](../db/migrations/20261108000004_hr_ess_notification_categories.sql) | [`20261108000004_hr_ess_notification_categories.sql`](../db/rollbacks/20261108000004_hr_ess_notification_categories.sql): puts both CHECKs back to the three Phase 1 categories (and needs the Wall's notification rows deleted first; the rollback file says how) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `mentions`, `replies`, `praise`, `announcements`, `acknowledgements` and `polls`, as migration 12's comment said Phase 2 would | F8: the Wall's notifications are logged as failed writes; the app's settings screen still shows the Phase 1 categories |
+| 17 | [`20261109000001_hr_ess_helpdesk.sql`](../db/migrations/20261109000001_hr_ess_helpdesk.sql) | [`20261109000001_hr_ess_helpdesk.sql`](../db/rollbacks/20261109000001_hr_ess_helpdesk.sql): drops the messages, the tickets and the categories, then the ref sequence | The Helpdesk: `hr_ess_helpdesk_categories` (the six ticket categories and the four flow links, each with its queue roles, `confidential`, `allows_hold`, priority and SLA hours, seeded by `ON CONFLICT DO NOTHING` so a re-run changes nothing); `hr_ess_helpdesk_tickets` (`ref` `HD-0001` onwards from `hr_ess_helpdesk_ticket_ref_seq`, the raiser kept even on an anonymous ticket, the raiser's branch for the calendar, the two stored deadlines, the escalation level, and the state CHECK: a closed ticket knows when and why, a rating only stands on a closed one, an assignee has a claim stamp); `hr_ess_helpdesk_messages` (the thread: a comment has words, an `event` row has a name). Five indexes (the raiser's list, the job's two active walks, the category, the thread) | G1-G5: every Helpdesk endpoint, `GET /api/ess/helpdesk/categories` included, answers 503 `MODULE_NOT_INSTALLED` |
+| 18 | [`20261109000002_hr_ess_notification_categories.sql`](../db/migrations/20261109000002_hr_ess_notification_categories.sql) | [`20261109000002_hr_ess_notification_categories.sql`](../db/rollbacks/20261109000002_hr_ess_notification_categories.sql): puts both CHECKs back to the nine categories before it (only while the tables are still there, as 16's rollback does) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `helpdesk` as well, as migration 16 did for the Wall's six | G2, G3: the Helpdesk's notifications are logged as failed writes; a raise, a reply and an escalation reach nobody |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 

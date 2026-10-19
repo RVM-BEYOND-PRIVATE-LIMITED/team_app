@@ -123,6 +123,14 @@ const SCHEMA = {
     'deleted_at'],
   hr_ess_announcement_audience: ['id', 'announcement_id', 'employee_id', 'added_at'],
   hr_ess_announcement_reads: ['id', 'announcement_id', 'employee_id', 'read_at', 'ack_at'],
+  // 20261109000001_hr_ess_helpdesk.sql (Phase 2B)
+  hr_ess_helpdesk_categories: ['id', 'slug', 'name', 'is_ticket', 'flow', 'queue_roles', 'confidential', 'allows_hold',
+    'priority', 'first_response_hours', 'resolution_hours', 'is_active', 'created_at', 'updated_at'],
+  hr_ess_helpdesk_tickets: ['id', 'ref', 'created_by', 'category_id', 'priority', 'subject', 'body', 'attachments',
+    'anonymous', 'branch_id', 'status', 'assignee_id', 'claimed_at', 'first_response_at', 'first_response_due_at',
+    'resolution_due_at', 'resolved_at', 'closed_at', 'closed_by_employee_id', 'closing_reason', 'rating', 'reopened_at',
+    'escalation_level', 'created_at', 'updated_at'],
+  hr_ess_helpdesk_messages: ['id', 'ticket_id', 'employee_id', 'kind', 'body', 'event', 'details', 'created_at'],
   // The Scheduler's priority tasks, read for push only (20260814000001:30-53)
   priority_tasks: ['id', 'location_id', 'task_date', 'title', 'notes', 'priority', 'due_date', 'assigned_to', 'assigned_by',
     'assigned_by_name', 'assigned_by_role', 'status', 'progress_note', 'completed_by', 'completed_at', 'cancelled_by',
@@ -175,6 +183,10 @@ const UNIQUE = {
   hr_ess_announcement_reads: [
     { name: 'hr_ess_announcement_reads_key', columns: ['announcement_id', 'employee_id'] },
   ],
+  // G2: the ticket refs are unique, from the sequence the migration declares.
+  hr_ess_helpdesk_tickets: [
+    { name: 'hr_ess_helpdesk_tickets_ref_key', columns: ['ref'] },
+  ],
 };
 
 /**
@@ -211,6 +223,34 @@ const CHECKS = {
   },
   hr_ess_announcements: {
     hr_ess_announcements_ack_chk: (r) => (r.needs_ack === true) === ((r.closes_on ?? null) !== null),
+  },
+  // The Helpdesk's shape rules (db/migrations/20261109000001), as the routes rely on them.
+  hr_ess_helpdesk_categories: {
+    hr_ess_helpdesk_categories_priority_chk: (r) => ['low', 'medium', 'high', 'urgent'].includes(r.priority),
+    hr_ess_helpdesk_categories_roles_chk: (r) => (r.queue_roles || []).every((x) => [
+      'ceo', 'super_admin', 'hoo', 'hod', 'hod_placement', 'admin_manager', 'admin',
+      'accounts_admin', 'hr', 'hr_executive', 'faculty',
+    ].includes(x)),
+    hr_ess_helpdesk_categories_flow_chk: (r) => (r.is_ticket === true && (r.flow ?? null) === null)
+      || (r.is_ticket === false && (r.flow ?? null) !== null),
+  },
+  hr_ess_helpdesk_tickets: {
+    hr_ess_helpdesk_tickets_status_chk: (r) => ['open', 'in_progress', 'on_hold', 'resolved', 'closed', 'withdrawn'].includes(r.status),
+    hr_ess_helpdesk_tickets_priority_chk: (r) => ['low', 'medium', 'high', 'urgent'].includes(r.priority),
+    hr_ess_helpdesk_tickets_state_chk: (r) => {
+      const closed = r.status === 'closed';
+      const hasClose = (r.closed_at ?? null) !== null && (r.closing_reason ?? null) !== null;
+      const rating = r.rating ?? null;
+      return (closed === hasClose)
+        && ((r.status === 'resolved') === ((r.resolved_at ?? null) !== null))
+        && (rating === null || r.status === 'closed')
+        && ((r.assignee_id ?? null) === null || (r.claimed_at ?? null) !== null);
+    },
+  },
+  hr_ess_helpdesk_messages: {
+    hr_ess_helpdesk_messages_kind_chk: (r) => ['comment', 'event'].includes(r.kind),
+    hr_ess_helpdesk_messages_shape_chk: (r) => (r.kind === 'comment' && (r.body ?? null) !== null && (r.event ?? null) === null)
+      || (r.kind === 'event' && (r.body ?? null) === null && (r.event ?? null) !== null),
   },
 };
 
@@ -253,6 +293,17 @@ const TRIGGERS = {
   },
   hr_ess_leave_requests(fake, row) {
     return filedHistory(fake, 'hr_ess_leave_request_history', row);
+  },
+  // The ticket ref, from hr_ess_helpdesk_ticket_ref_seq (20261109000001): the column default
+  // 'HD-' + four digits. The stand-in has no sequence, so it takes one past the highest ref the
+  // table holds.
+  hr_ess_helpdesk_tickets(fake, row) {
+    if (row.ref != null) return null;
+    const top = fake.rows('hr_ess_helpdesk_tickets')
+      .map((r) => Number.parseInt(String(r.ref || '').replace(/^HD-/, ''), 10) || 0)
+      .reduce((a, b) => Math.max(a, b), 0);
+    row.ref = `HD-${String(top + 1).padStart(4, '0')}`;
+    return null;
   },
 };
 
@@ -316,6 +367,12 @@ const DEFAULTS = {
     needs_ack: false, pinned: false, read_count: 0, ack_count: 0, created_at: at, updated_at: at }),
   hr_ess_announcement_audience: (at) => ({ added_at: at }),
   hr_ess_announcement_reads: (at) => ({ read_at: at }),
+  // db/migrations/20261109000001_hr_ess_helpdesk.sql (Phase 2B).
+  hr_ess_helpdesk_categories: (at) => ({ is_ticket: true, queue_roles: [], confidential: false, allows_hold: false,
+    priority: 'medium', is_active: true, created_at: at, updated_at: at }),
+  hr_ess_helpdesk_tickets: (at) => ({ attachments: [], anonymous: false, status: 'open', escalation_level: 0,
+    created_at: at, updated_at: at }),
+  hr_ess_helpdesk_messages: (at) => ({ kind: 'comment', details: {}, created_at: at }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));

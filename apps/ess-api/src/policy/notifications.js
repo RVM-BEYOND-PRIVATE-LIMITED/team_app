@@ -15,6 +15,9 @@ const CATEGORIES = Object.freeze([
   // that reached me, an acknowledgement it asks for (and the reminder), and a poll I voted in
   // that has closed.
   'mentions', 'replies', 'praise', 'announcements', 'acknowledgements', 'polls',
+  // The Helpdesk's (Phase 2B, G2): a raise telling my team, a reply or a status telling the
+  // raiser, and G3's escalations.
+  'helpdesk',
 ]);
 
 const QUIET_FROM = '21:00';

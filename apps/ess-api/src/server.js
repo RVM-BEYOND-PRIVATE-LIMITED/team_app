@@ -10,6 +10,7 @@ const { createApp } = require('./app');
 const { startOnDutyJob } = require('./jobs/onDuty');
 const { startPushJob } = require('./jobs/push');
 const { startWallJob } = require('./jobs/wall');
+const { startHelpdeskJob } = require('./jobs/helpdesk');
 
 let config;
 try {
@@ -36,4 +37,6 @@ app.listen(config.port, config.host, () => {
   startPushJob({ store, config });
   // The Wall's own clock (F4, F5): scheduled announcements, acknowledgement reminders, poll closes.
   startWallJob({ store });
+  // The Helpdesk's escalations (G3): first response, resolution and the CEO's stage, hourly.
+  startHelpdeskJob({ store });
 });

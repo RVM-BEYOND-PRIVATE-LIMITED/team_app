@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now). **Phase 2A (the Wall) is built on 19 Oct and waits for migrations 13 to 16.** The pilot gate is next.
+**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now). **Phase 2A (the Wall) is built on 19 Oct and waits for migrations 13 to 16.** **Phase 2B (the Helpdesk) is built on 19 Oct and waits for migrations 17 and 18.** The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Next |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Gate |
 | [2A](#phase-2a-wall) | The Wall | **Built, 19 Oct; migrations 13-16** |
-| [2B](#phase-2b-helpdesk) | The Helpdesk | |
+| [2B](#phase-2b-helpdesk) | The Helpdesk | Built 19 Oct 2026; waits for migrations 17 and 18 |
 | [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | |
 | [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, multi-level approvals, short leave | |
 | [3](#phase-3-extras-not-in-this-round) | Extras | Not in this round |
@@ -273,9 +273,31 @@ The brief's Phase 2.
 | Lab and facility tickets also added to the Admin Manager's infra register, if decision 9 says yes | G6 |
 | Leave, attendance fixes and asset requests are not tickets: the category list links to those flows | Brief |
 
+**Built 19 Oct 2026, in one place:** `src/routes/helpdeskCategories.js`, `helpdeskTickets.js`
+and `helpdeskQueue.js`, the rules in `src/policy/helpdesk.js`, the shared views in
+`src/lib/helpdeskKit.js`, the notification writers in `src/lib/helpdeskNotify.js` and the clock
+in `src/jobs/helpdesk.js`; migrations 17 and 18. What the build chose, for KP to confirm:
+- **the lab has no desk role and the Internal Committee has no login**, so IT and lab tickets
+  route to the admin roles and POSH tickets to HR; the category list is fixed in code and seeded
+  by the migration (G1's "HR edits them" is not built);
+- **queue membership is exact** — a role no category names (the CEO's, most staff's) sees an
+  empty queue, and a confidential category is seen only by the team it is routed to;
+- **a claim is the only way a ticket gets an assignee** (assign and reassign are not built,
+  decision 7 open), and G6's infra-register mirror is not built (decision 9 open);
+- **the SLA targets are the build's defaults** and the working-hours calendar is a policy
+  constant (09:00–17:30 IST, Monday to Saturday) plus the Scheduler's `hr_holidays`.
+
+The Helpdesk's endpoints answer 503 `MODULE_NOT_INSTALLED` until migration 17 is applied; until
+18 is applied its notifications are logged as failed writes, as push already is.
+
 - **You first:**
   - decisions 7 (where HR and the agents work on the web: in the app, or a small web page served by team_app) and 9 (the infra register writes a Scheduler table);
-  - the category list and who each one goes to.
+  - an OK for the fixed category table and its SLA hours, as seeded by migration 17;
+  - the escalation job running once (`src/jobs/helpdesk.js`, hourly at present).
+
+- **Done when:** a raise reaches the right team's queue, is answered, moved and closed end to
+  end; a past-due ticket escalates to the HoO and then the CEO; a confidential ticket is seen by
+  nobody it should not be, with the audit trail to show for it.
 
 ## Phase 2C: Documents, profile changes and the ID card
 

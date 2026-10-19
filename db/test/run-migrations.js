@@ -224,6 +224,26 @@ const REFUSALS = [
   refusal('an announcement with a title of two characters', "INSERT INTO public.hr_ess_announcements (employee_id, title, body) VALUES (e, 'Hi', 'The office is closed.')"),
   refusal('an announcement published before it was scheduled', "INSERT INTO public.hr_ess_announcements (employee_id, title, body, publish_at, published_at) VALUES (e, 'Diwali holiday', 'The office is closed.', now(), now() - interval '1 hour')"),
   refusal('an acknowledgement before the read', "INSERT INTO public.hr_ess_announcements (id, employee_id, title, body) VALUES ('a5000000-0000-4000-8000-000000000004', e, 'Diwali holiday', 'The office is closed.'); INSERT INTO public.hr_ess_announcement_reads (announcement_id, employee_id, read_at, ack_at) VALUES ('a5000000-0000-4000-8000-000000000004', e, now(), now() - interval '1 hour')"),
+  refusal('a helpdesk ticket with no such category', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, gen_random_uuid(), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', now(), now())`, 'foreign_key_violation'),
+  refusal('a helpdesk ticket in an unknown status', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, status, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', 'lost', now(), now())`),
+  refusal('a helpdesk ticket of an unknown priority', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'top', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', now(), now())`),
+  refusal('a helpdesk ticket closed with no time or reason', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, status, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', 'closed', now(), now())`),
+  refusal('a helpdesk rating of six', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, status, closed_at, closing_reason, rating, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', 'closed', now(), 'Fixed in the end.', 6, now(), now())`),
+  refusal('a helpdesk rating on a ticket that is not closed', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, rating, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', 5, now(), now())`),
+  refusal('a helpdesk comment with no body', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', now(), now());
+    INSERT INTO public.hr_ess_helpdesk_messages (ticket_id, employee_id) SELECT id, e FROM public.hr_ess_helpdesk_tickets WHERE created_by = e`),
+  refusal('a helpdesk event with no event name', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', now(), now());
+    INSERT INTO public.hr_ess_helpdesk_messages (ticket_id, kind) SELECT id, 'event' FROM public.hr_ess_helpdesk_tickets WHERE created_by = e`),
+  refusal('a helpdesk subject of two characters', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'No', 'Six machines in Lab 2 stay on the boot screen.', now(), now())`),
 ];
 
 /** Rows the ESS writes must go in, take their defaults, and follow an employee's deletion. */
@@ -584,6 +604,54 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.hr_ess_push_devices WHERE employee_id = e) THEN RAISE EXCEPTION 'devices kept'; END IF;
 END $check$;`;
 
+/**
+ * The Helpdesk's rows: a ticket takes its defaults and its HD- number from the sequence, the
+ * thread takes comments and events, a claim stamps the assignee, a close takes a reason and a
+ * rating, and the raiser's deletion takes the ticket and its thread with it.
+ */
+const HELPDESK_ROWS = `DO $check$
+DECLARE
+  e uuid := gen_random_uuid();
+  other uuid := gen_random_uuid();
+  ticket uuid;
+  new_ref text;
+  r record;
+  threads integer;
+BEGIN
+  INSERT INTO public.hr_employees (id) VALUES (e), (other);
+
+  -- A ticket takes its defaults (open, empty attachments, not anonymous, escalation 0) and its
+  -- HD- number from the sequence.
+  INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', now(), now())
+    RETURNING id, ref INTO ticket, new_ref;
+  SELECT status, attachments, anonymous, escalation_level INTO r
+    FROM public.hr_ess_helpdesk_tickets WHERE id = ticket;
+  IF r.status <> 'open' OR r.attachments <> '[]'::jsonb OR r.anonymous OR r.escalation_level <> 0 THEN
+    RAISE EXCEPTION 'ticket defaults: %, %, %, %', r.status, r.attachments, r.anonymous, r.escalation_level;
+  END IF;
+  IF new_ref NOT SIMILAR TO 'HD-[0-9]{4,}' THEN RAISE EXCEPTION 'the ref: %', new_ref; END IF;
+
+  -- The thread: the event rows the server writes and the comments people write.
+  INSERT INTO public.hr_ess_helpdesk_messages (ticket_id, kind, event, details) VALUES (ticket, 'event', 'opened', '{}');
+  INSERT INTO public.hr_ess_helpdesk_messages (ticket_id, employee_id, kind, body) VALUES (ticket, other, 'comment', 'Replacing the switch today.');
+  SELECT count(*) INTO threads FROM public.hr_ess_helpdesk_messages WHERE ticket_id = ticket;
+  IF threads <> 2 THEN RAISE EXCEPTION 'the thread rows'; END IF;
+
+  -- A claim stamps the assignee, and the ticket moves to in progress.
+  UPDATE public.hr_ess_helpdesk_tickets SET assignee_id = other, claimed_at = now(), status = 'in_progress' WHERE id = ticket;
+
+  -- A close knows when, why and how the answer was.
+  UPDATE public.hr_ess_helpdesk_tickets SET status = 'closed', closed_at = now(), closing_reason = 'Fixed in the end.', rating = 5 WHERE id = ticket;
+  SELECT rating INTO r FROM public.hr_ess_helpdesk_tickets WHERE id = ticket;
+  IF r.rating <> 5 THEN RAISE EXCEPTION 'the rating'; END IF;
+
+  -- The raiser's deletion takes the ticket and its whole thread with it.
+  DELETE FROM public.hr_employees WHERE id = e;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_helpdesk_tickets WHERE created_by = e) THEN RAISE EXCEPTION 'tickets kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_helpdesk_messages WHERE ticket_id = ticket) THEN RAISE EXCEPTION 'messages kept'; END IF;
+END $check$;`;
+
 function check(label, fn) {
   try {
     const problem = fn();
@@ -646,6 +714,7 @@ function main() {
     check('the request functions decide, withdraw and cancel as documented', () => runSql('the request flow', REQUEST_FLOW));
     check('takes the notifications, their defaults and settings, and follows a deleted employee', () => runSql('the notification rows', NOTIFICATIONS));
     check("takes the Wall's rows, their defaults and counters, and follows a deleted employee", () => runSql('the Wall rows', WALL_ROWS));
+    check("takes the Helpdesk's rows, their defaults and thread, and follows a deleted employee", () => runSql('the Helpdesk rows', HELPDESK_ROWS));
 
     for (const pass of [1, 2]) {
       for (const file of [...rollbacks].reverse()) {

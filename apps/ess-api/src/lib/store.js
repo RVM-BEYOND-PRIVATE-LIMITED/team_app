@@ -150,6 +150,17 @@ const COLUMNS = Object.freeze({
   // role filter can be applied to the people behind the logins.
   audienceEmployee: 'id, full_name, employee_code, branch_id, department_id, user_id, employment_status, '
     + 'date_of_joining, date_of_exit',
+  // Phase 2B: the Helpdesk's rows. A ticket as every read shows it: the whole row minus nothing
+  // sensitive — the raiser is hidden by the views, never by the columns.
+  helpdeskCategory: 'id, slug, name, is_ticket, flow, queue_roles, confidential, allows_hold, priority, '
+    + 'first_response_hours, resolution_hours, is_active',
+  helpdeskTicket: 'id, ref, created_by, category_id, priority, subject, body, attachments, anonymous, branch_id, '
+    + 'status, assignee_id, claimed_at, first_response_at, first_response_due_at, resolution_due_at, resolved_at, '
+    + 'closed_at, closed_by_employee_id, closing_reason, rating, reopened_at, escalation_level, created_at, updated_at',
+  // What a write needs to know about the row it is about to move.
+  helpdeskTicketOwn: 'id, ref, created_by, category_id, status, assignee_id, anonymous, closed_at, resolved_at, '
+    + 'first_response_at, first_response_due_at, resolution_due_at, escalation_level, created_at',
+  helpdeskMessage: 'id, ticket_id, employee_id, kind, body, event, details, created_at',
 });
 
 /** The Scheduler's private bucket every HR file lives in (20260830000001:15-16). */
@@ -273,6 +284,10 @@ const LIST_LIMITS = Object.freeze({
   announcementsInbox: 100,
   reports: 100,
   moderationLog: 100,
+  // Phase 2B: the Helpdesk. A raiser's own list, a team's queue page, and one ticket's thread.
+  helpdeskTickets: 50,
+  helpdeskQueue: 100,
+  helpdeskMessages: 200,
 });
 
 /**
@@ -1158,6 +1173,64 @@ function createSupabaseStore(config, { client } = {}) {
       try {
         await db.storage.from(ESS_BUCKET).remove(paths);
       } catch { /* nothing reads the object once no row points at it */ }
+    },
+
+    /* ── Phase 2B: the Helpdesk (docs/06, G1 to G5) ── */
+
+    /** The category list the raise form and the queue read; seeds live in the migration. */
+    listHelpdeskCategories: () =>
+      list('hr_ess_helpdesk_categories', (q) => q.select(COLUMNS.helpdeskCategory).order('id')),
+    getHelpdeskCategoryBySlug: (slug) =>
+      read('hr_ess_helpdesk_categories', (q) => q.select(COLUMNS.helpdeskCategory).eq('slug', slug).maybeSingle()),
+    getHelpdeskCategoryById: (id) =>
+      read('hr_ess_helpdesk_categories', (q) => q.select(COLUMNS.helpdeskCategory).eq('id', id).maybeSingle()),
+
+    /** The raise: the ref comes from the column default, not from here. */
+    createHelpdeskTicket: (row) =>
+      write('hr_ess_helpdesk_tickets', (q) => q.insert([row]).select(COLUMNS.helpdeskTicket).single()),
+    getHelpdeskTicket: (id) =>
+      read('hr_ess_helpdesk_tickets', (q) => q.select(COLUMNS.helpdeskTicket).eq('id', id).maybeSingle()),
+    /** What a transition needs to know about the row it is about to move. */
+    getHelpdeskTicketOwn: (id) =>
+      read('hr_ess_helpdesk_tickets', (q) => q.select(COLUMNS.helpdeskTicketOwn).eq('id', id).maybeSingle()),
+    /** A raiser's own list, newest first, optionally held to one status. */
+    listMyHelpdeskTickets: (employeeId, statuses, limit) =>
+      list('hr_ess_helpdesk_tickets', (q) => {
+        const base = q.select(COLUMNS.helpdeskTicket).eq('created_by', employeeId);
+        const filtered = statuses ? base.in('status', statuses) : base;
+        return filtered.order('created_at', { ascending: false }).limit(limit + 1);
+      }),
+    /** A queue page: the team's categories and statuses, newest first. Callers pass the
+     * category ids their roles serve, so the store stays policy-free. */
+    listHelpdeskQueue: (categoryIds, statuses, limit) =>
+      list('hr_ess_helpdesk_tickets', (q) => {
+        const base = q.select(COLUMNS.helpdeskTicket).in('category_id', categoryIds).in('status', statuses);
+        return base.order('created_at', { ascending: false }).limit(limit + 1);
+      }),
+    /** One patch, one row: claim, status moves, close, reopen and the job's escalation stamp. */
+    updateHelpdeskTicket: (id, patch) =>
+      write('hr_ess_helpdesk_tickets', (q) => q.update(patch).eq('id', id).select(COLUMNS.helpdeskTicket).maybeSingle()),
+
+    /** A ticket's thread, oldest first, one page with a has-more marker. */
+    listHelpdeskMessages: (ticketId, limit) =>
+      list('hr_ess_helpdesk_messages', (q) => q.select(COLUMNS.helpdeskMessage)
+        .eq('ticket_id', ticketId).order('created_at').limit(limit + 1)),
+    /** Comment, withdraw, reopen, close and status all leave a message row; nothing deletes one. */
+    createHelpdeskMessage: (row) =>
+      write('hr_ess_helpdesk_messages', (q) => q.insert([row]).select(COLUMNS.helpdeskMessage).single()),
+
+    /** The job's read: every open or in-progress ticket, for the overdue checks. */
+    listActiveHelpdeskTickets: (statuses, limit) =>
+      list('hr_ess_helpdesk_tickets', (q) => q.select(COLUMNS.helpdeskTicketOwn)
+        .in('status', statuses).order('created_at').limit(limit)),
+
+    /** Employee ids whose login holds one of `roles`, for the queue-role notifications. */
+    listEmployeeIdsForRoles: async (roles) => {
+      const users = await readIn('users', COLUMNS.userRole, 'role', roles);
+      if (!users.length) return [];
+      const links = await readIn('hr_employees', COLUMNS.employeeForUser, 'user_id',
+        users.map((u) => u.id));
+      return links.map((l) => l.id);
     },
 
     /* ── the audit trail ── */

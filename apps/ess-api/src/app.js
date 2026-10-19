@@ -9,6 +9,7 @@ const { sessionRoutes } = require('./routes/sessions');
 const { signInResolveRoute } = require('./routes/signIn');
 const { requireRoles } = require('./middleware/requireRoles');
 const { HR_RECORD_ROLES, ATTENDANCE_ROLES } = require('./policy/hrAccess');
+const { PORTAL_ROLES } = require('./policy/helpdesk');
 const dataRequests = require('./routes/dataRequests');
 const personal = require('./routes/personal');
 const mockLocation = require('./routes/mockLocation');
@@ -32,6 +33,9 @@ const wallAnnouncements = require('./routes/wallAnnouncements');
 const wallCelebrations = require('./routes/wallCelebrations');
 const wallModeration = require('./routes/wallModeration');
 const wallSettings = require('./routes/wallSettings');
+const helpdeskCategories = require('./routes/helpdeskCategories');
+const helpdeskTickets = require('./routes/helpdeskTickets');
+const helpdeskQueue = require('./routes/helpdeskQueue');
 
 /** How long the health check waits for the database before it answers db 'unavailable'. */
 const HEALTH_DB_TIMEOUT_MS = 2000;
@@ -53,6 +57,8 @@ const LARGE_JSON_BODIES = Object.freeze({
   '/wall/posts': '7mb',
   '/wall/praise': '7mb',
   '/wall/announcements': '7mb',
+  // G2: a Helpdesk ticket may carry the same five files as a Wall post.
+  '/helpdesk/tickets': '7mb',
 });
 
 /**
@@ -280,6 +286,31 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
 
   // F8: the rules document.
   api.get('/wall/settings', asEmployee, wallSettings.getWallSettings());
+
+  /* ── G1-G5: the Helpdesk (Phase 2B) ── */
+
+  // G2: a raise is one form, with its own daily bucket on top of the per-employee limit, as the
+  // Wall's posts have.
+  const helpdeskRaiseLimiter = createEmployeeLimiter(limit('helpdeskTickets'), MESSAGES.HELPDESK_TICKETS_LIMIT);
+
+  // G1: the category list and the rules document, for the raise form.
+  api.get('/helpdesk/categories', asEmployee, helpdeskCategories.listHelpdeskCategoriesRoute({ store }));
+
+  // G2: the raise, the raiser's own list, one ticket with its thread, and the moves both sides make.
+  api.post('/helpdesk/tickets', asEmployee, helpdeskRaiseLimiter, helpdeskTickets.createTicket({ store, now }));
+  api.get('/helpdesk/tickets', asEmployee, helpdeskTickets.listMyTickets({ store, now }));
+  api.get('/helpdesk/tickets/:id', asEmployee, helpdeskTickets.getTicket({ store, now }));
+  api.post('/helpdesk/tickets/:id/comments', asEmployee, helpdeskTickets.createComment({ store, now }));
+  api.post('/helpdesk/tickets/:id/withdraw', asEmployee, helpdeskTickets.withdrawTicket({ store, now }));
+  api.post('/helpdesk/tickets/:id/reopen', asEmployee, helpdeskTickets.reopenTicket({ store, now }));
+  api.post('/helpdesk/tickets/:id/close', asEmployee, helpdeskTickets.closeTicket({ store, now }));
+  api.post('/helpdesk/tickets/:id/claim', asEmployee, helpdeskTickets.claimTicket({ store, now }));
+  api.post('/helpdesk/tickets/:id/status', asEmployee, helpdeskTickets.moveTicketStatus({ store, now }));
+
+  // G5: the team's queue. A portal screen, so an attendance session is refused with
+  // PORTAL_LOGIN_REQUIRED; a portal role that serves no category is answered an empty queue.
+  const asHelpdeskQueue = [...asEmployee, requireRoles(PORTAL_ROLES, 'HR_ACCESS_DENIED')];
+  api.get('/helpdesk/queue', asHelpdeskQueue, helpdeskQueue.listQueue({ store, now }));
 
   app.use('/api/ess', api);
 

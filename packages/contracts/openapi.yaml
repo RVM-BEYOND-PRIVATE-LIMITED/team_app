@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.6.0
+  version: 0.7.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -6001,6 +6001,833 @@ paths:
         default:
           $ref: '#/components/responses/EssUnexpected'
 
+  /ess/helpdesk/categories:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listHelpdeskCategories
+      tags: [ESS]
+      x-owner: ess
+      summary: The Helpdesk's category list and its rules (G1)
+      description: |
+        Either token kind. The ten rows the migration seeds (six ticket categories and four links to flows that are not tickets), and the rules a raise form reads: the reopen window (7 days), the rating range (1 to 5), and whether anonymous raising and attachments are on.
+
+        A non-ticket row carries its `flow`: the app opens that flow instead of a raise form, and raising on one is 400 `HELPDESK_NOT_A_TICKET` (as `POST /ess/helpdesk/tickets` documents). The categories are fixed in code and seeded by the migration, so the form and the server's refusals can never disagree.
+      responses:
+        '200':
+          description: The categories and the rules document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskCategories'
+              examples:
+                defaults:
+                  value:
+                    categories:
+                      - { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      - { id: 'ca100000-0000-4000-8000-000000000006', slug: posh, name: 'POSH complaint', is_ticket: true, flow: null, confidential: true, allows_hold: false, priority: urgent, first_response_hours: 12, resolution_hours: 72 }
+                      - { id: 'ca100000-0000-4000-8000-000000000007', slug: leave_link, name: Leave, is_ticket: false, flow: leave, confidential: false, allows_hold: false, priority: medium, first_response_hours: 24, resolution_hours: 72 }
+                    settings:
+                      categories:
+                        - { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium }
+                        - { id: 'ca100000-0000-4000-8000-000000000006', slug: posh, name: 'POSH complaint', is_ticket: true, flow: null, confidential: true, allows_hold: false, priority: urgent }
+                      reopen_days: 7
+                      rating: { min: 1, max: 5 }
+                      anonymous: true
+                      attachments: true
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: raiseHelpdeskTicket
+      tags: [ESS]
+      x-owner: ess
+      summary: Raise a ticket (G2)
+      description: |
+        Either token kind, on any staff employee. `category` is a slug from `GET /ess/helpdesk/categories`; raising on a non-ticket row is 400 `HELPDESK_NOT_A_TICKET`, and an unknown or inactive slug is 404 `NOT_FOUND` with "That category was not found.".
+
+        The subject and the body are 3 to 200 and 3 to 2,000 characters. `anonymous: true` hides the raiser's name from the team that answers (HR's own roles still see it); the deadlines are worked out at raise, on the raiser's branch's working calendar, and stored. Files arrive as the Wall's attachments do: up to five, each up to 1 MB decoded, and the reply carries 300-second signed links.
+
+        A raise is one form with its own daily bucket of 20 tickets a day per employee (429 `RATE_LIMITED` with the Helpdesk's own words), on top of the ESS-wide limits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HelpdeskTicketCreate'
+            examples:
+              raise:
+                value: { category: it_lab, subject: 'The lab PCs will not start.', body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.' }
+              anonymous:
+                value: { category: grievance, subject: 'A matter to raise quietly.', body: 'The details, written for HR alone.', anonymous: true }
+      responses:
+        '201':
+          description: Raised, with its deadlines and its `opened` event already in the thread.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketResult'
+              examples:
+                raised:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: open
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: null
+                      attachments: []
+                      first_response_at: null
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: null
+                      closed_at: null
+                      closing_reason: null
+                      rating: null
+                      reopened_at: null
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T05:00:00.000Z'
+                      mine: true
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssHelpdeskRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    get:
+      operationId: listMyHelpdeskTickets
+      tags: [ESS]
+      x-owner: ess
+      summary: My tickets, newest first (G2)
+      description: |
+        Either token kind: the tickets the caller raised, newest first, up to 50. `status` holds the list to one of the six states, or `all` (or left out) for everything. Each carries the "overdue by" a live ticket is past its current deadline, in working minutes.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: 'One status, or `all` for everything. Left out: everything.'
+          schema:
+            $ref: '#/components/schemas/HelpdeskStatus'
+      responses:
+        '200':
+          description: A page of the caller's own tickets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketList'
+              examples:
+                mine:
+                  value:
+                    tickets:
+                      - id: 'cb100000-0000-4000-8000-000000000001'
+                        ref: HD-0001
+                        category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                        priority: medium
+                        subject: The lab PCs will not start.
+                        body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                        status: in_progress
+                        anonymous: false
+                        raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                        assignee: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                        attachments: []
+                        first_response_at: '2026-10-16T06:00:00.000Z'
+                        first_response_due_at: '2026-10-17T04:00:00.000Z'
+                        resolution_due_at: '2026-10-22T09:30:00.000Z'
+                        resolved_at: null
+                        closed_at: null
+                        closing_reason: null
+                        rating: null
+                        reopened_at: null
+                        escalation_level: 0
+                        overdue_minutes: null
+                        created_at: '2026-10-16T05:00:00.000Z'
+                        updated_at: '2026-10-16T06:00:00.000Z'
+                        mine: true
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getHelpdeskTicket
+      tags: [ESS]
+      x-owner: ess
+      summary: One ticket, with its thread (G2, G4)
+      description: |
+        Either token kind. Readable by the ticket's raiser, the category's queue roles exactly, and — never on a confidential category — HR's oversight roles. Whoever may not read it is told 404, as if it were not there.
+
+        The thread is the comments (up to 200) and the `event` rows the server wrote as the ticket moved. An anonymous ticket hides its raiser from the team; HR's own roles and the raiser themself still see the name. A confidential ticket read by anybody but its raiser is written to the audit trail first, and a failed audit refuses the read.
+      responses:
+        '200':
+          description: The ticket and its thread.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskThread'
+              examples:
+                thread:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: in_progress
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                      attachments: []
+                      first_response_at: '2026-10-16T06:00:00.000Z'
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: null
+                      closed_at: null
+                      closing_reason: null
+                      rating: null
+                      reopened_at: null
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:00:00.000Z'
+                      mine: false
+                    messages:
+                      - id: 'cc100000-0000-4000-8000-000000000001'
+                        ticket_id: 'cb100000-0000-4000-8000-000000000001'
+                        kind: event
+                        body: null
+                        event: opened
+                        details: {}
+                        author: null
+                        created_at: '2026-10-16T05:00:00.000Z'
+                      - id: 'cc100000-0000-4000-8000-000000000002'
+                        ticket_id: 'cb100000-0000-4000-8000-000000000001'
+                        kind: comment
+                        body: 'Checked the switch; two ports are dead. Replacing it today.'
+                        event: null
+                        details: {}
+                        author: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                        created_at: '2026-10-16T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}/comments:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: addHelpdeskComment
+      tags: [ESS]
+      x-owner: ess
+      summary: Comment on a ticket (G5)
+      description: |
+        Either token kind, by the ticket's raiser or one of the category's queue roles — at any status; a settled ticket keeps its thread open to both sides. Whoever reads the ticket but is neither is 403 `HELPDESK_AGENT_ONLY`, and whoever may not read it is 404.
+
+        A queue member's first comment is the ticket's first response if none has been recorded; the team hears about it by notification. Comments are not limited beyond the ESS-wide limits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HelpdeskCommentCreate'
+            examples:
+              comment:
+                value: { body: 'Checked the switch; two ports are dead. Replacing it today.' }
+      responses:
+        '201':
+          description: Commented.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskMessageResult'
+              examples:
+                commented:
+                  value:
+                    message:
+                      id: 'cc100000-0000-4000-8000-000000000002'
+                      ticket_id: 'cb100000-0000-4000-8000-000000000001'
+                      kind: comment
+                      body: 'Checked the switch; two ports are dead. Replacing it today.'
+                      event: null
+                      details: {}
+                      author: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                      created_at: '2026-10-16T06:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}/withdraw:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: withdrawHelpdeskTicket
+      tags: [ESS]
+      x-owner: ess
+      summary: Take an open ticket back (G2)
+      description: |
+        The ticket's raiser only, and only from `open`: a ticket somebody has picked up cannot be withdrawn (409 `HELPDESK_NOT_OPEN`). Nothing is deleted — the ticket stands in the thread as a `withdrawn` event.
+      responses:
+        '200':
+          description: Withdrawn.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketResult'
+              examples:
+                withdrawn:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: withdrawn
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: null
+                      attachments: []
+                      first_response_at: null
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: null
+                      closed_at: null
+                      closing_reason: null
+                      rating: null
+                      reopened_at: null
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:10:00.000Z'
+                      mine: true
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssHelpdeskConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}/reopen:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: reopenHelpdeskTicket
+      tags: [ESS]
+      x-owner: ess
+      summary: Take a settled ticket back up (G2)
+      description: |
+        The ticket's raiser only, and only from `resolved` or `closed`, within 7 days of the settle (409 `HELPDESK_NOT_CLOSED` from anything else, 409 `HELPDESK_REOPEN_WINDOW` once the 7 days are gone).
+
+        The reopen is a fresh ticket to the SLA: the deadlines are worked out again, the first response and the escalation start over, and the closed episode stays in the thread as events.
+      responses:
+        '200':
+          description: Reopened, open and on the clock again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketResult'
+              examples:
+                reopened:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: open
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                      attachments: []
+                      first_response_at: null
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: null
+                      closed_at: null
+                      closing_reason: null
+                      rating: null
+                      reopened_at: '2026-10-16T06:20:00.000Z'
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:20:00.000Z'
+                      mine: true
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssHelpdeskConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}/close:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: closeHelpdeskTicket
+      tags: [ESS]
+      x-owner: ess
+      summary: Close the ticket myself (G2)
+      description: |
+        The ticket's raiser only, from any live status or `resolved` — a ticket can be closed without waiting for the team (409 `HELPDESK_TRANSITION` from `closed` or `withdrawn`). The reason is 3 to 280 characters; `rating`, if sent, is 1 to 5.
+
+        Closing records who closed it, when, and why; the ticket may be reopened within 7 days.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HelpdeskCloseCreate'
+            examples:
+              close:
+                value: { closing_reason: 'Fixed it myself: the UPS plug had come loose.', rating: 4 }
+      responses:
+        '200':
+          description: Closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketResult'
+              examples:
+                closed:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: closed
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: null
+                      attachments: []
+                      first_response_at: null
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: null
+                      closed_at: '2026-10-16T06:30:00.000Z'
+                      closing_reason: 'Fixed it myself: the UPS plug had come loose.'
+                      rating: 4
+                      reopened_at: null
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:30:00.000Z'
+                      mine: true
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssHelpdeskConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}/claim:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: claimHelpdeskTicket
+      tags: [ESS]
+      x-owner: ess
+      summary: Take the ticket (G5)
+      description: |
+        A member of the category's queue roles only, and only while the ticket is live — `open`, `in_progress` or `on_hold` (409 `HELPDESK_NOT_LIVE` from anything settled). A claim by somebody else already stands: 409 `HELPDESK_ALREADY_CLAIMED`. A second claim by the same person is the same claim: 200 with the ticket as it is.
+
+        The claim names the assignee, counts as the first response, and moves an `open` ticket to `in_progress`. There is no re-assignment in this build (decision 7).
+      responses:
+        '200':
+          description: Claimed (or already the caller's own claim).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketResult'
+              examples:
+                claimed:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: in_progress
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                      attachments: []
+                      first_response_at: '2026-10-16T06:00:00.000Z'
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: null
+                      closed_at: null
+                      closing_reason: null
+                      rating: null
+                      reopened_at: null
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:00:00.000Z'
+                      mine: false
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssHelpdeskConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/tickets/{id}/status:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The ticket's id.
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: moveHelpdeskTicketStatus
+      tags: [ESS]
+      x-owner: ess
+      summary: Move the ticket along the lifecycle (G2, G5)
+      description: |
+        A member of the category's queue roles only. `status` is one of `in_progress`, `on_hold` or `resolved`; a category that does not put tickets on hold refuses `on_hold` with 400 `HELPDESK_HOLD`, and a move the lifecycle does not allow (`resolved` back to `in_progress`, anything from a settled or withdrawn ticket) is 409 `HELPDESK_TRANSITION`.
+
+        Resolving stamps `resolved_at`; the raiser may then close it, or reopen it within 7 days. Every move is an `event` row in the thread, and the raiser hears about it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HelpdeskStatusUpdate'
+            examples:
+              resolve:
+                value: { status: resolved }
+      responses:
+        '200':
+          description: Moved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskTicketResult'
+              examples:
+                resolved:
+                  value:
+                    ticket:
+                      id: 'cb100000-0000-4000-8000-000000000001'
+                      ref: HD-0001
+                      category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                      priority: medium
+                      subject: The lab PCs will not start.
+                      body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                      status: resolved
+                      anonymous: false
+                      raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                      assignee: { id: 'e1000000-0000-4000-8000-000000000002', full_name: 'Anita Rao', employee_code: RVM-002, designation: 'System Admin' }
+                      attachments: []
+                      first_response_at: '2026-10-16T06:00:00.000Z'
+                      first_response_due_at: '2026-10-17T04:00:00.000Z'
+                      resolution_due_at: '2026-10-22T09:30:00.000Z'
+                      resolved_at: '2026-10-16T06:40:00.000Z'
+                      closed_at: null
+                      closing_reason: null
+                      rating: null
+                      reopened_at: null
+                      escalation_level: 0
+                      overdue_minutes: null
+                      created_at: '2026-10-16T05:00:00.000Z'
+                      updated_at: '2026-10-16T06:40:00.000Z'
+                      mine: false
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHelpdeskForbidden'
+        '404':
+          $ref: '#/components/responses/EssHelpdeskNoSuchThing'
+        '409':
+          $ref: '#/components/responses/EssHelpdeskConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/helpdesk/queue:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listHelpdeskQueue
+      tags: [ESS]
+      x-owner: ess
+      summary: The team's queue (G5)
+      description: |
+        A portal login only: an attendance session is 403 `PORTAL_LOGIN_REQUIRED`, and a portal role outside the eleven staff roles is 403 `HR_ACCESS_DENIED`. The queue shows the tickets of the categories the caller's own role serves — membership is exact, so a role no category names (the CEO's, most staff's) is answered an empty queue with its (empty) category list, not a refusal. A confidential category is seen only by the team it is routed to.
+
+        Left alone the queue is the live work (`open`, `in_progress`, `on_hold`); `status` holds it to one of its five work statuses or `all`. `category` narrows it to one of the caller's own categories by slug. Each ticket carries the "overdue by" it is past its current deadline, in working minutes.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: 'One of the work statuses, or `all`. Left out: the live work.'
+          schema:
+            type: string
+            enum: [open, in_progress, on_hold, resolved, closed, all]
+        - name: category
+          in: query
+          required: false
+          description: One of the caller's own categories, by slug.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The queue, and the categories the caller's role serves.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpdeskQueue'
+              examples:
+                queue:
+                  value:
+                    tickets:
+                      - id: 'cb100000-0000-4000-8000-000000000001'
+                        ref: HD-0001
+                        category: { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+                        priority: medium
+                        subject: The lab PCs will not start.
+                        body: 'Six machines in Lab 2 stay on the boot screen; the morning batch is waiting.'
+                        status: open
+                        anonymous: false
+                        raised_by: { id: 'e1000000-0000-4000-8000-000000000011', full_name: 'Ravi Kumar', employee_code: RVM-011, designation: 'CAD Faculty' }
+                        assignee: null
+                        attachments: []
+                        first_response_at: null
+                        first_response_due_at: '2026-10-17T04:00:00.000Z'
+                        resolution_due_at: '2026-10-22T09:30:00.000Z'
+                        resolved_at: null
+                        closed_at: null
+                        closing_reason: null
+                        rating: null
+                        reopened_at: null
+                        escalation_level: 0
+                        overdue_minutes: 30
+                        created_at: '2026-10-16T05:00:00.000Z'
+                        updated_at: '2026-10-16T05:00:00.000Z'
+                        mine: false
+                    categories:
+                      - { id: 'ca100000-0000-4000-8000-000000000001', slug: it_lab, name: 'IT and lab equipment', is_ticket: true, flow: null, confidential: false, allows_hold: true, priority: medium, first_response_hours: 8, resolution_hours: 48 }
+        '400':
+          $ref: '#/components/responses/EssHelpdeskRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssHrForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
   /users/login:
     post:
       operationId: signInPortal
@@ -9360,7 +10187,7 @@ components:
           format: uuid
         category:
           type: string
-          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls]
+          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk]
         title:
           type: string
           minLength: 1
@@ -9405,7 +10232,7 @@ components:
             properties:
               category:
                 type: string
-                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls]
+                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk]
               enabled:
                 type: boolean
         quiet_hours:
@@ -9428,7 +10255,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls]
+            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk]
 
     PersonCard:
       type: object
@@ -11571,6 +12398,346 @@ components:
               type: boolean
               description: 'False until RVM has a mail provider (KP, 19 Oct): announcement mail is written to the log, as push is.'
 
+    HelpdeskPerson:
+      type: object
+      description: Somebody a Helpdesk row names (its raiser or its assignee) — as the Wall shows an author.
+      required: [id, full_name, employee_code]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+        designation:
+          type: [string, 'null']
+
+    HelpdeskCategory:
+      type: object
+      description: One Helpdesk category (G1) — a ticket kind to raise, or a link to a flow that is not a ticket.
+      required: [id, slug, name, is_ticket, flow, confidential, allows_hold, priority, first_response_hours, resolution_hours]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          description: The name the raise form sends back as `category`.
+        name:
+          type: string
+        is_ticket:
+          type: boolean
+          description: 'True: raisable as a ticket. False: a link — the app opens `flow` instead.'
+        flow:
+          type: [string, 'null']
+          enum: [leave, wfh, attendance_fix, assets, null]
+          description: The flow a non-ticket row links to; null on a ticket category.
+        confidential:
+          type: boolean
+          description: 'True (grievance, POSH): never in HR oversight''s lists, and every read by anybody but its raiser is audited.'
+        allows_hold:
+          type: boolean
+          description: 'True: the team may put its tickets on hold.'
+        priority:
+          $ref: '#/components/schemas/HelpdeskPriority'
+        first_response_hours:
+          type: integer
+          description: The first-response SLA, in working hours.
+        resolution_hours:
+          type: integer
+          description: The resolution SLA, in working hours.
+
+    HelpdeskSettingsCategory:
+      type: object
+      description: One category as the rules document restates it, for the form's checks.
+      required: [id, slug, name, is_ticket, flow, confidential, allows_hold, priority]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        is_ticket:
+          type: boolean
+        flow:
+          type: [string, 'null']
+          enum: [leave, wfh, attendance_fix, assets, null]
+        confidential:
+          type: boolean
+        allows_hold:
+          type: boolean
+        priority:
+          $ref: '#/components/schemas/HelpdeskPriority'
+
+    HelpdeskSettings:
+      type: object
+      description: The rules around a raise (G1), so the app never works them out for itself.
+      required: [categories, reopen_days, rating, anonymous, attachments]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpdeskSettingsCategory'
+        reopen_days:
+          type: integer
+          description: How long after settling a ticket may be reopened (7).
+        rating:
+          type: object
+          required: [min, max]
+          properties:
+            min: { type: integer }
+            max: { type: integer }
+        anonymous:
+          type: boolean
+          description: 'True: the raise form offers `anonymous`.'
+        attachments:
+          type: boolean
+          description: 'True: a raise may carry files.'
+
+    HelpdeskCategories:
+      type: object
+      required: [categories, settings]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpdeskCategory'
+        settings:
+          $ref: '#/components/schemas/HelpdeskSettings'
+
+    HelpdeskPriority:
+      type: string
+      enum: [low, medium, high, urgent]
+
+    HelpdeskStatus:
+      type: string
+      description: A ticket's state on the lifecycle (G2).
+      enum: [open, in_progress, on_hold, resolved, closed, withdrawn]
+
+    HelpdeskTicket:
+      type: object
+      description: One ticket, as every read shows it (G2, G4). An anonymous ticket hides `raised_by` from the team; HR's own roles and the raiser see it.
+      required: [id, ref, category, priority, subject, body, status, anonymous, raised_by, assignee, attachments, first_response_at, first_response_due_at, resolution_due_at, resolved_at, closed_at, closing_reason, rating, reopened_at, escalation_level, overdue_minutes, created_at, updated_at, mine]
+      properties:
+        id:
+          type: string
+          format: uuid
+        ref:
+          type: string
+          description: The human label (`HD-0001`), handed out by the migration's trigger.
+        category:
+          $ref: '#/components/schemas/HelpdeskCategory'
+        priority:
+          $ref: '#/components/schemas/HelpdeskPriority'
+        subject:
+          type: string
+        body:
+          type: string
+        status:
+          $ref: '#/components/schemas/HelpdeskStatus'
+        anonymous:
+          type: boolean
+        raised_by:
+          oneOf:
+            - $ref: '#/components/schemas/HelpdeskPerson'
+            - type: 'null'
+          description: Null on an anonymous ticket read by the team.
+        assignee:
+          oneOf:
+            - $ref: '#/components/schemas/HelpdeskPerson'
+            - type: 'null'
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/WallAttachment'
+        first_response_at:
+          type: [string, 'null']
+          format: date-time
+          description: The team's first act — a claim, a comment or a move.
+        first_response_due_at:
+          type: string
+          format: date-time
+          description: The first-response deadline, worked out at raise on the raiser's branch's calendar.
+        resolution_due_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+        closed_at:
+          type: [string, 'null']
+          format: date-time
+        closing_reason:
+          type: [string, 'null']
+        rating:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 5
+        reopened_at:
+          type: [string, 'null']
+          format: date-time
+        escalation_level:
+          type: integer
+          description: 0 on time; 1 (the queue reminded), 2 (HoO) or 3 (CEO) as the job escalates a past-due ticket.
+        overdue_minutes:
+          type: [integer, 'null']
+          description: The working minutes a live ticket is past the deadline it is now breaching; null when on time.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        mine:
+          type: boolean
+          description: 'True: the caller raised it.'
+
+    HelpdeskTicketList:
+      type: object
+      required: [tickets]
+      properties:
+        tickets:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/HelpdeskTicket'
+
+    HelpdeskMessage:
+      type: object
+      description: One thread row — a comment somebody wrote, or an `event` the server wrote as the ticket moved.
+      required: [id, ticket_id, kind, body, event, details, author, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticket_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [comment, event]
+        body:
+          type: [string, 'null']
+          description: A comment's words; null on an event.
+        event:
+          type: [string, 'null']
+          description: 'On an event: opened, claimed, status_changed, withdrawn, closed or reopened.'
+        details:
+          type: object
+          additionalProperties: true
+          description: The event's facts (from, to, reason, rating, who claimed).
+        author:
+          oneOf:
+            - $ref: '#/components/schemas/HelpdeskPerson'
+            - type: 'null'
+          description: A comment's writer; null on an event.
+        created_at:
+          type: string
+          format: date-time
+
+    HelpdeskThread:
+      type: object
+      required: [ticket, messages]
+      properties:
+        ticket:
+          $ref: '#/components/schemas/HelpdeskTicket'
+        messages:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/HelpdeskMessage'
+
+    HelpdeskTicketResult:
+      type: object
+      required: [ticket]
+      properties:
+        ticket:
+          $ref: '#/components/schemas/HelpdeskTicket'
+
+    HelpdeskMessageResult:
+      type: object
+      required: [message]
+      properties:
+        message:
+          $ref: '#/components/schemas/HelpdeskMessage'
+
+    HelpdeskQueue:
+      type: object
+      description: The team's queue (G5) — the tickets of the categories the caller's role serves, and those categories for the filter chips.
+      required: [tickets, categories]
+      properties:
+        tickets:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/HelpdeskTicket'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpdeskCategory'
+
+    HelpdeskTicketCreate:
+      type: object
+      description: A raise (G2). Attachments arrive as the Wall's do — up to five, each up to 1 MB decoded.
+      required: [category, subject, body]
+      properties:
+        category:
+          type: string
+          description: A ticket category's slug, from `GET /ess/helpdesk/categories`.
+        subject:
+          type: string
+          minLength: 3
+          maxLength: 200
+        body:
+          type: string
+          minLength: 3
+          maxLength: 2000
+        anonymous:
+          type: boolean
+          default: false
+          description: 'True: hide the raiser''s name from the team that answers.'
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/WallAttachmentInput'
+
+    HelpdeskCommentCreate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    HelpdeskCloseCreate:
+      type: object
+      description: A raiser's close (G2) — why, and optionally how the answer was.
+      required: [closing_reason]
+      properties:
+        closing_reason:
+          type: string
+          minLength: 3
+          maxLength: 280
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+
+    HelpdeskStatusUpdate:
+      type: object
+      description: A team move (G5). Withdrawal and reopening have their own addresses; `open` is where the claim starts from.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [in_progress, on_hold, resolved]
+
   examples:
 
     EssSignIn:
@@ -12013,7 +13180,7 @@ components:
 
     EssNotificationCategories:
       value:
-        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements or polls.'
+        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls or helpdesk.'
         code: VALIDATION_FAILED
 
     EssNotificationNotFound:
@@ -12234,6 +13401,116 @@ components:
     EssWallRateLimited:
       value:
         error: That is more than the Wall allows one person in a day. Try again tomorrow.
+        code: RATE_LIMITED
+
+    EssHelpdeskCategory:
+      value:
+        error: Choose a category from the list.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskCategoryNotFound:
+      value:
+        error: That category was not found.
+        code: NOT_FOUND
+
+    EssHelpdeskNotATicket:
+      value:
+        error: That is a link to another flow, not a ticket. Open the flow instead.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskSubject:
+      value:
+        error: Give the ticket a subject of 3 to 200 characters.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskBody:
+      value:
+        error: Describe the problem in 3 to 2,000 characters.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskAnonymous:
+      value:
+        error: anonymous must be true or false.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskTicketNotFound:
+      value:
+        error: That ticket was not found.
+        code: NOT_FOUND
+
+    EssHelpdeskStatusFilter:
+      value:
+        error: 'status must be open, in_progress, on_hold, resolved, closed, withdrawn or all.'
+        code: VALIDATION_FAILED
+
+    EssHelpdeskQueueStatus:
+      value:
+        error: 'status must be open, in_progress, on_hold, resolved, closed or all.'
+        code: VALIDATION_FAILED
+
+    EssHelpdeskCommentBody:
+      value:
+        error: Write the comment in 1 to 2,000 characters.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskCloseReason:
+      value:
+        error: Say why it is closed, in 3 to 280 characters.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskRating:
+      value:
+        error: Rate the answer from 1 to 5.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskStatus:
+      value:
+        error: Choose in_progress, on_hold or resolved.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskHold:
+      value:
+        error: This category does not put tickets on hold.
+        code: VALIDATION_FAILED
+
+    EssHelpdeskAgentOnly:
+      value:
+        error: Only the team this category is routed to can do this.
+        code: HELPDESK_AGENT_ONLY
+
+    EssHelpdeskNotOpen:
+      value:
+        error: Only an open ticket can be withdrawn.
+        code: HELPDESK_NOT_OPEN
+
+    EssHelpdeskNotLive:
+      value:
+        error: Only a ticket still being worked on can be claimed.
+        code: HELPDESK_NOT_LIVE
+
+    EssHelpdeskAlreadyClaimed:
+      value:
+        error: That ticket is already claimed by somebody else.
+        code: HELPDESK_ALREADY_CLAIMED
+
+    EssHelpdeskTransition:
+      value:
+        error: That ticket cannot move there from where it is.
+        code: HELPDESK_TRANSITION
+
+    EssHelpdeskNotClosed:
+      value:
+        error: Only a resolved or closed ticket can be reopened.
+        code: HELPDESK_NOT_CLOSED
+
+    EssHelpdeskReopenWindow:
+      value:
+        error: Tickets can be reopened for 7 days. Raise a new one instead.
+        code: HELPDESK_REOPEN_WINDOW
+
+    EssHelpdeskTicketsLimit:
+      value:
+        error: That is more tickets than the Helpdesk allows one person in a day. Try again tomorrow.
         code: RATE_LIMITED
 
   responses:
@@ -12871,5 +14148,133 @@ components:
           examples:
             wallPosts:
               $ref: '#/components/examples/EssWallRateLimited'
+            rateLimited:
+              $ref: '#/components/examples/EssRateLimited'
+
+    EssHelpdeskRequestBad:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule (the category, the subject, the body, the comment, the close reason, the rating, a `status` a list or a move does not take). `HELPDESK_NOT_A_TICKET`: a raise on a row that links to a flow. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category:
+              $ref: '#/components/examples/EssHelpdeskCategory'
+            notATicket:
+              $ref: '#/components/examples/EssHelpdeskNotATicket'
+            subject:
+              $ref: '#/components/examples/EssHelpdeskSubject'
+            body:
+              $ref: '#/components/examples/EssHelpdeskBody'
+            anonymous:
+              $ref: '#/components/examples/EssHelpdeskAnonymous'
+            attachments:
+              $ref: '#/components/examples/EssWallAttachments'
+            commentBody:
+              $ref: '#/components/examples/EssHelpdeskCommentBody'
+            closeReason:
+              $ref: '#/components/examples/EssHelpdeskCloseReason'
+            rating:
+              $ref: '#/components/examples/EssHelpdeskRating'
+            status:
+              $ref: '#/components/examples/EssHelpdeskStatus'
+            hold:
+              $ref: '#/components/examples/EssHelpdeskHold'
+            statusFilter:
+              $ref: '#/components/examples/EssHelpdeskStatusFilter'
+            queueStatus:
+              $ref: '#/components/examples/EssHelpdeskQueueStatus'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            invalidId:
+              $ref: '#/components/examples/EssInvalidId'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssHelpdeskForbidden:
+      description: |
+        Not a reason to sign out. The token is good; this person cannot do this one thing.
+        - `HELPDESK_AGENT_ONLY`: a ticket the caller can read (the raiser's or the team's alone) — commenting, claiming, moving, closing or withdrawing it from a role that is neither its raiser nor the category's queue.
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            agentOnly:
+              $ref: '#/components/examples/EssHelpdeskAgentOnly'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssHelpdeskNoSuchThing:
+      description: |
+        `NOT_FOUND`: no ticket has this id, or the caller may not see it (a ticket somebody may not read is one they cannot find, G4); or no active category has the slug the raise named.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category:
+              $ref: '#/components/examples/EssHelpdeskCategoryNotFound'
+            ticket:
+              $ref: '#/components/examples/EssHelpdeskTicketNotFound'
+
+    EssHelpdeskConflict:
+      description: |
+        The ticket cannot move as asked; nothing is changed.
+        - `HELPDESK_NOT_OPEN`: a withdrawal of anything but an open ticket.
+        - `HELPDESK_NOT_CLOSED`: a reopen of anything but a resolved or closed ticket.
+        - `HELPDESK_REOPEN_WINDOW`: a reopen past the 7 days.
+        - `HELPDESK_TRANSITION`: a close or a status move the lifecycle does not allow from where the ticket stands.
+        - `HELPDESK_NOT_LIVE`: a claim on a settled or withdrawn ticket.
+        - `HELPDESK_ALREADY_CLAIMED`: a claim on a ticket somebody else has already taken.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notOpen:
+              $ref: '#/components/examples/EssHelpdeskNotOpen'
+            notClosed:
+              $ref: '#/components/examples/EssHelpdeskNotClosed'
+            reopenWindow:
+              $ref: '#/components/examples/EssHelpdeskReopenWindow'
+            transition:
+              $ref: '#/components/examples/EssHelpdeskTransition'
+            notLive:
+              $ref: '#/components/examples/EssHelpdeskNotLive'
+            alreadyClaimed:
+              $ref: '#/components/examples/EssHelpdeskAlreadyClaimed'
+
+    EssHelpdeskRateLimited:
+      description: |
+        `RATE_LIMITED`: the Helpdesk's own daily bucket — 20 raised tickets a day per employee — on top of the ESS-wide limits. Wait for `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        RateLimit-Policy:
+          $ref: '#/components/headers/RateLimitPolicy'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            helpdeskTickets:
+              $ref: '#/components/examples/EssHelpdeskTicketsLimit'
             rateLimited:
               $ref: '#/components/examples/EssRateLimited'

@@ -101,7 +101,8 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
     const res = await request(app).get(SETTINGS).set(bearer(tokens.attendance(people.attendance)));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
-      // Phase 2A added the Wall's six (tasks F1-F8); the order is policy/notifications.js's.
+      // Phase 2A added the Wall's six (tasks F1-F8); Phase 2B added the Helpdesk's (G2). The
+      // order is policy/notifications.js's.
       categories: [
         { category: 'approvals', enabled: true },
         { category: 'decisions', enabled: true },
@@ -112,6 +113,7 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
         { category: 'announcements', enabled: true },
         { category: 'acknowledgements', enabled: true },
         { category: 'polls', enabled: true },
+        { category: 'helpdesk', enabled: true },
       ],
       quiet_hours: { from: '21:00', to: '08:00' },
     });
@@ -132,6 +134,7 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
       { category: 'announcements', enabled: true },
       { category: 'acknowledgements', enabled: true },
       { category: 'polls', enabled: true },
+      { category: 'helpdesk', enabled: true },
     ]);
     expect(db.tables.hr_ess_notification_settings).toEqual([
       expect.objectContaining({ employee_id: people.attendance.employee.id, disabled_categories: ['approvals'] }),

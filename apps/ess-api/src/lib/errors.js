@@ -151,7 +151,7 @@ const MESSAGES = Object.freeze({
   PUSH_DEVICE_LABEL: 'Keep the phone name to 80 characters.',
   PUSH_DEVICE_NOT_FOUND: 'That phone was not found.',
   NOTIFICATION_NOT_FOUND: 'That notification was not found.',
-  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements or polls.',
+  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls or helpdesk.',
 
   // E1-E12: Me and My Team.
   PHOTO_FORMAT: 'Send the photo as base64 image data (JPEG, PNG or WebP).',
@@ -236,6 +236,30 @@ const MESSAGES = Object.freeze({
   WALL_MODERATION_QUEUE: 'status must be open, hidden, kept or all.',
   MODERATION_LIMIT: 'That is more than the Wall allows one person in a day. Try again tomorrow.',
   WALL_REACTION_LIMIT: 'That is more reactions than the Wall allows in a minute. Try again in a moment.',
+  HELPDESK_TICKETS_LIMIT: 'That is more tickets than the Helpdesk allows one person in a day. Try again tomorrow.',
+
+  // Phase 2B: the Helpdesk (G1 to G5).
+  HELPDESK_CATEGORY: 'Choose a category from the list.',
+  HELPDESK_CATEGORY_NOT_FOUND: 'That category was not found.',
+  HELPDESK_NOT_A_TICKET: 'That is a link to another flow, not a ticket. Open the flow instead.',
+  HELPDESK_SUBJECT: 'Give the ticket a subject of 3 to 200 characters.',
+  HELPDESK_BODY: 'Describe the problem in 3 to 2,000 characters.',
+  HELPDESK_ANONYMOUS: 'anonymous must be true or false.',
+  HELPDESK_TICKET_NOT_FOUND: 'That ticket was not found.',
+  HELPDESK_STATUS_FILTER: 'status must be open, in_progress, on_hold, resolved, closed, withdrawn or all.',
+  HELPDESK_QUEUE_STATUS: 'status must be open, in_progress, on_hold, resolved, closed or all.',
+  HELPDESK_COMMENT_BODY: 'Write the comment in 1 to 2,000 characters.',
+  HELPDESK_NOT_OPEN: 'Only an open ticket can be withdrawn.',
+  HELPDESK_NOT_LIVE: 'Only a ticket still being worked on can be claimed.',
+  HELPDESK_ALREADY_CLAIMED: 'That ticket is already claimed by somebody else.',
+  HELPDESK_AGENT_ONLY: 'Only the team this category is routed to can do this.',
+  HELPDESK_STATUS: 'Choose in_progress, on_hold or resolved.',
+  HELPDESK_HOLD: 'This category does not put tickets on hold.',
+  HELPDESK_TRANSITION: 'That ticket cannot move there from where it is.',
+  HELPDESK_REOPEN_WINDOW: 'Tickets can be reopened for 7 days. Raise a new one instead.',
+  HELPDESK_NOT_CLOSED: 'Only a resolved or closed ticket can be reopened.',
+  HELPDESK_CLOSE_REASON: 'Say why it is closed, in 3 to 280 characters.',
+  HELPDESK_RATING: 'Rate the answer from 1 to 5.',
 });
 
 /** error and code first, and an extra field can never replace either of them. */
