@@ -1,0 +1,24 @@
+name: core_auth
+description: >-
+  Dual-backend session store (plain, no ChangeNotifier): Scheduler bearer token
+  in secure storage + the JobPortal rvm_session cookie via cookie_jar. Implements
+  core_network's SessionStore so the network layer can read tokens/cookies.
+publish_to: none
+version: 0.0.1
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^9.2.2
+  cookie_jar: ^4.0.8
+  core_network:
+    path: ../core_network
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

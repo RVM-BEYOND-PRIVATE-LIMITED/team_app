@@ -1,0 +1,22 @@
+name: core_network
+description: >-
+  Shared dio HTTP layer: one centralized client config building both backend
+  Dio instances (Scheduler = bearer token, JobPortal = rvm_session cookie +
+  {success,data} envelope), interceptors (auth, logging, error mapping), typed
+  Failures, and a connectivity service (connectivity_plus + reachability ping).
+publish_to: none
+version: 0.0.1
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  dio: ^5.7.0
+  dio_cookie_manager: ^3.1.1
+  cookie_jar: ^4.0.8
+  connectivity_plus: ^6.0.5
+  equatable: ^2.0.5
+
+dev_dependencies:
+  test: ^1.25.0

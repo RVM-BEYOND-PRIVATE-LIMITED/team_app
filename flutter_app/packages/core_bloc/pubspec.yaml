@@ -1,0 +1,19 @@
+name: core_bloc
+description: >-
+  Shared bloc building blocks used by every RVM app — the generic LoadBloc<T>
+  (loading/success/empty/failure) driven by core_network's typed Failure.
+publish_to: none
+version: 0.0.1
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+  core_network:
+    path: ../core_network
+
+dev_dependencies:
+  test: ^1.25.0

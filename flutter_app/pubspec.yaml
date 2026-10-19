@@ -1,0 +1,21 @@
+name: team_rvm_flutter
+description: >-
+  The Team RVM employee Flutter app and the shared packages it uses, kept
+  together so the app builds inside team_app.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.6.0
+
+# A Dart pub workspace: one lockfile and one package resolution for the app and
+# the shared packages it depends on (core_network, core_auth, core_bloc,
+# core_ui, domain, data).
+workspace:
+  - rvm_team_app
+  - packages/core_auth
+  - packages/core_bloc
+  - packages/core_network
+  - packages/core_ui
+  - packages/data
+  - packages/domain

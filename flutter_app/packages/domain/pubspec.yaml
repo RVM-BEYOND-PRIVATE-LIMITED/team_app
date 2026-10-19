@@ -1,0 +1,17 @@
+name: domain
+description: >-
+  Pure-Dart app models the UI/blocs consume (jobs, applications, batches,
+  candidate, announcements, auth). No backend/framework deps — data sources in
+  `data/` parse JSON straight into these, so a backend change is absorbed there.
+publish_to: none
+version: 0.0.1
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  equatable: ^2.0.5
+
+dev_dependencies:
+  test: ^1.25.0

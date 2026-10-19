@@ -1,0 +1,19 @@
+# Dart / Flutter workspace artifacts
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+**/.dart_tool/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/GeneratedPluginRegistrant.swift
+**/GeneratedPluginRegistrant.java
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr

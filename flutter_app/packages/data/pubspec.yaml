@@ -1,0 +1,25 @@
+name: data
+description: >-
+  Shared data layer on the provided stack: plain-dio DataSources (no retrofit)
+  that parse JSON into `domain` models, and Repositories that add connectivity
+  checks + typed Failure handling. Reusable by every RVM app (student, and the
+  planned faculty/admin apps).
+publish_to: none
+version: 0.0.1
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  dio: ^5.7.0
+  core_network:
+    path: ../core_network
+  core_auth:
+    path: ../core_auth
+  domain:
+    path: ../domain
+
+dev_dependencies:
+  test: ^1.25.0
+  mocktail: ^1.0.4
