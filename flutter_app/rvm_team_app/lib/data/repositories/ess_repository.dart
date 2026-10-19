@@ -629,9 +629,21 @@ class EssRepository with ConnectivityGuard {
     bool needsAck = false,
     String? closesOn,
     bool pinned = false,
+    List<String>? employeeIds,
+    List<Map<String, dynamic>>? attachments,
+    String? publishAt,
   }) async {
     await ensureOnline();
-    return _remote.createAnnouncement(title: title, body: body, needsAck: needsAck, closesOn: closesOn, pinned: pinned);
+    return _remote.createAnnouncement(
+      title: title,
+      body: body,
+      needsAck: needsAck,
+      closesOn: closesOn,
+      pinned: pinned,
+      employeeIds: employeeIds,
+      attachments: attachments,
+      publishAt: publishAt,
+    );
   }
 
   Future<List<WallAnnouncement>> hrAnnouncements() async {

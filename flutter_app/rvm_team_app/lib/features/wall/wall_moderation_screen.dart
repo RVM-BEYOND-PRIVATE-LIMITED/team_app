@@ -1,12 +1,17 @@
+import 'dart:convert';
+
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/ess_repository.dart';
+import 'package:file_picker/file_picker.dart';
+
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import '../hr/employee_picker.dart';
 
 /// F5/F7/F8: HR's Wall desk — the reports queue, the sender's announcements with their counts, and
 /// the moderation log. Backend: `/api/ess/wall/hr/*` and `/wall/announcements`.
@@ -301,8 +306,12 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
   final _body = TextEditingController();
   bool _needsAck = false;
   bool _pinned = false;
-  DateTime _closes = DateTime.now().add(const Duration(days: 7));
+  bool _everyone = true;
   bool _saving = false;
+  final List<OrgCard> _people = [];
+  final List<Map<String, dynamic>> _attachments = [];
+  DateTime _closes = DateTime.now().add(const Duration(days: 7));
+  DateTime? _publishAt;
 
   @override
   void dispose() {
@@ -311,10 +320,10 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
     super.dispose();
   }
 
-  String get _closesIso =>
-      '${_closes.year.toString().padLeft(4, '0')}-${_closes.month.toString().padLeft(2, '0')}-${_closes.day.toString().padLeft(2, '0')}';
+  String _isoDay(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  Future<void> _pick() async {
+  Future<void> _pickClose() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _closes,
@@ -324,16 +333,63 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
     if (picked != null) setState(() => _closes = picked);
   }
 
+  Future<void> _pickPublish() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _publishAt ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_publishAt ?? DateTime.now()));
+    if (time == null) return;
+    setState(() => _publishAt = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+  }
+
+  Future<void> _addPeople() async {
+    final person = await pickEmployee(context, title: 'Send to…');
+    if (person == null || !mounted) return;
+    if (_people.any((p) => p.id == person.id)) return;
+    setState(() => _people.add(person));
+  }
+
+  Future<void> _attach() async {
+    if (_attachments.length >= 5) return;
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
+    if (result == null) return;
+    for (final file in result.files) {
+      if (_attachments.length >= 5) break;
+      final bytes = file.bytes;
+      final type = switch (file.extension?.toLowerCase()) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'pdf' => 'application/pdf',
+        _ => null,
+      };
+      if (bytes == null || type == null || bytes.length > 1024 * 1024) continue;
+      setState(() => _attachments.add({
+            'data_base64': base64Encode(bytes),
+            'content_type': type,
+            'name': file.name,
+          }));
+    }
+  }
+
   Future<void> _save() async {
     if (_title.text.trim().length < 3 || _body.text.trim().length < 3) return;
+    if (!_everyone && _people.isEmpty) return;
     setState(() => _saving = true);
     try {
       await getIt<EssRepository>().createAnnouncement(
         title: _title.text.trim(),
         body: _body.text.trim(),
         needsAck: _needsAck,
-        closesOn: _needsAck ? _closesIso : null,
+        closesOn: _needsAck ? _isoDay(_closes) : null,
         pinned: _pinned,
+        employeeIds: _everyone ? null : _people.map((p) => p.id).toList(),
+        attachments: _attachments.isEmpty ? null : _attachments,
+        publishAt: _publishAt?.toUtc().toIso8601String(),
       );
       if (mounted) Navigator.pop(context, true);
     } on Failure catch (f) {
@@ -350,9 +406,27 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(controller: _title, maxLength: 200, decoration: const InputDecoration(labelText: 'Title')),
             TextField(controller: _body, minLines: 3, maxLines: 8, maxLength: 5000, decoration: const InputDecoration(labelText: 'Message')),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _everyone,
+              onChanged: (v) => setState(() => _everyone = v),
+              title: const Text('Send to everyone'),
+            ),
+            if (!_everyone) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final p in _people)
+                    InputChip(label: Text(p.fullName), onDeleted: () => setState(() => _people.remove(p))),
+                  ActionChip(avatar: const Icon(Icons.person_add_alt, size: 16), label: const Text('Add people'), onPressed: _addPeople),
+                ],
+              ),
+            ],
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _needsAck,
@@ -360,13 +434,39 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
               title: const Text('Needs acknowledgement'),
             ),
             if (_needsAck)
-              OutlinedButton.icon(onPressed: _pick, icon: const Icon(Icons.event), label: Text('Closes: $_closesIso')),
+              OutlinedButton.icon(onPressed: _pickClose, icon: const Icon(Icons.event), label: Text('Closes: ${_isoDay(_closes)}')),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _pinned,
               onChanged: (v) => setState(() => _pinned = v),
               title: const Text('Pin to the top'),
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _publishAt != null,
+              onChanged: (v) => setState(() => _publishAt = v ? DateTime.now().add(const Duration(minutes: 5)) : null),
+              title: const Text('Publish later'),
+              subtitle: _publishAt == null ? null : Text(_publishAt!.toLocal().toString().split('.').first),
+            ),
+            if (_publishAt != null)
+              OutlinedButton.icon(onPressed: _pickPublish, icon: const Icon(Icons.schedule), label: const Text('Change time')),
+            Row(
+              children: [
+                TextButton.icon(onPressed: _attach, icon: const Icon(Icons.attach_file, size: 18), label: const Text('Attach')),
+              ],
+            ),
+            if (_attachments.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (var i = 0; i < _attachments.length; i++)
+                    InputChip(
+                      label: Text(_attachments[i]['name']?.toString() ?? 'File'),
+                      onDeleted: () => setState(() => _attachments.removeAt(i)),
+                    ),
+                ],
+              ),
           ],
         ),
       ),

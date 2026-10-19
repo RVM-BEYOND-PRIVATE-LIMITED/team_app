@@ -12,8 +12,9 @@ import '../wall/wall_screen.dart';
 /// The five Keka-style tabs: Home · Inbox · Wall · Me · My Team. Each is kept
 /// alive in an [IndexedStack]; role work sits inside Home, Inbox and Me.
 ///
-/// The shell also owns the ESS capabilities read (what this login may see),
-/// shared with the tabs that gate their sections on it.
+/// The backend's capabilities document decides which tabs this login gets
+/// (`tabs`: home, inbox, wall, me, team), so a role that must not see a tab
+/// never gets a destination for it.
 class TeamShell extends StatefulWidget {
   const TeamShell({super.key});
 
@@ -24,6 +25,8 @@ class TeamShell extends StatefulWidget {
 class _TeamShellState extends State<TeamShell> {
   int _index = 0;
 
+  static const _allTabs = ['home', 'inbox', 'wall', 'me', 'team'];
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
@@ -33,28 +36,37 @@ class _TeamShellState extends State<TeamShell> {
   }
 
   Widget _build(BuildContext context) {
+    final caps = context.watch<CapabilitiesBloc>().state.data;
+    final allowed = caps?.tabs ?? _allTabs;
+    final entries = <_ShellTab>[
+      if (allowed.contains('home')) const _ShellTab('Home', Icons.home_outlined, Icons.home, HomeScreen()),
+      if (allowed.contains('inbox')) const _ShellTab('Inbox', Icons.inbox_outlined, Icons.inbox, InboxScreen()),
+      if (allowed.contains('wall')) const _ShellTab('Wall', Icons.forum_outlined, Icons.forum, WallScreen()),
+      if (allowed.contains('me')) const _ShellTab('Me', Icons.person_outline, Icons.person, MeScreen()),
+      if (allowed.contains('team')) const _ShellTab('My Team', Icons.groups_outlined, Icons.groups, MyTeamScreen()),
+    ];
+    final safe = entries.isEmpty
+        ? const [_ShellTab('Home', Icons.home_outlined, Icons.home, HomeScreen())]
+        : entries;
+    final index = _index.clamp(0, safe.length - 1);
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: const [
-          HomeScreen(),
-          InboxScreen(),
-          WallScreen(),
-          MeScreen(),
-          MyTeamScreen(),
-        ],
-      ),
+      body: IndexedStack(index: index, children: [for (final t in safe) t.body]),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
+        selectedIndex: index,
         onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.inbox_outlined), selectedIcon: Icon(Icons.inbox), label: 'Inbox'),
-          NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'Wall'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Me'),
-          NavigationDestination(icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: 'My Team'),
+        destinations: [
+          for (final t in safe)
+            NavigationDestination(icon: Icon(t.icon), selectedIcon: Icon(t.selectedIcon), label: t.label),
         ],
       ),
     );
   }
+}
+
+class _ShellTab {
+  const _ShellTab(this.label, this.icon, this.selectedIcon, this.body);
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final Widget body;
 }
