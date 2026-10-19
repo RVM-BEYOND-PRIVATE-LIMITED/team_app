@@ -190,6 +190,8 @@ void configureDependencies(AuthSession session) {
     ..registerFactory<LoadBloc<TeamOffWeek>>(() => LoadBloc<TeamOffWeek>(() => getIt<EssRepository>().teamOffThisWeek()))
     ..registerFactory<LoadBloc<MyProfile>>(() => LoadBloc<MyProfile>(() => getIt<EssRepository>().myProfile()))
     ..registerFactory<LoadBloc<PraisePage>>(() => LoadBloc<PraisePage>(() => getIt<EssRepository>().myPraise()))
+    // ── Team RVM ESS (2D: leaders) ───────────────────────────────────────
+    ..registerFactory<LoadBloc<LeadersOverview>>(() => LoadBloc<LeadersOverview>(() => getIt<EssRepository>().leadersOverview()))
     // ── Team RVM ESS (1C: requests, leave, approvals) ─────────────────────
     ..registerFactory<RequestsBloc>(() => RequestsBloc(getIt()))
     ..registerFactory<ApprovalsBloc>(() => ApprovalsBloc(getIt()))

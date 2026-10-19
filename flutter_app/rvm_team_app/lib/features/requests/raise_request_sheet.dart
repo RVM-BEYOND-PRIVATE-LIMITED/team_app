@@ -30,6 +30,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   final _place = TextEditingController();
   final _fixIn = TextEditingController();
   final _fixOut = TextEditingController();
+  final _minutes = TextEditingController();
 
   @override
   void dispose() {
@@ -37,6 +38,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     _place.dispose();
     _fixIn.dispose();
     _fixOut.dispose();
+    _minutes.dispose();
     super.dispose();
   }
 
@@ -74,6 +76,14 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       _snack('A fix a day needs a time in or out.');
       return;
     }
+    int? minutes;
+    if (_family == 'attendance' && _type == 'short_leave') {
+      minutes = int.tryParse(_minutes.text.trim());
+      if (minutes == null || minutes < 1 || minutes > 480) {
+        _snack('Short leave is 1 to 480 minutes.');
+        return;
+      }
+    }
     context.read<RequestsBloc>().add(RequestCreateRequested(
           family: _family,
           type: _type,
@@ -82,6 +92,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
           place: _type == 'on_duty' ? _place.text.trim() : null,
           fixIn: _type == 'fix_a_day' && _fixIn.text.trim().isNotEmpty ? _fixIn.text.trim() : null,
           fixOut: _type == 'fix_a_day' && _fixOut.text.trim().isNotEmpty ? _fixOut.text.trim() : null,
+          minutes: minutes,
         ));
     Navigator.of(context).pop();
   }
@@ -94,7 +105,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   Widget build(BuildContext context) {
     final types = _family == 'leave'
         ? const [('cl', 'Casual leave'), ('lwp', 'Leave without pay')]
-        : const [('on_duty', 'On duty'), ('fix_a_day', 'Fix a day'), ('excuse_late', 'Excuse a late')];
+        : const [('on_duty', 'On duty'), ('fix_a_day', 'Fix a day'), ('excuse_late', 'Excuse a late'), ('short_leave', 'Short leave')];
     final submitting = context.select<RequestsBloc, bool>((b) => b.state.submitting);
     return Padding(
       padding: EdgeInsets.only(
@@ -143,6 +154,14 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                 const SizedBox(width: RvmSpacing.sm),
                 Expanded(child: TextField(controller: _fixOut, decoration: const InputDecoration(labelText: 'Out (HH:MM)', border: OutlineInputBorder()))),
               ]),
+            ],
+            if (_type == 'short_leave') ...[
+              const SizedBox(height: RvmSpacing.md),
+              TextField(
+                controller: _minutes,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Minutes (1–480)', border: OutlineInputBorder()),
+              ),
             ],
             if (_type == 'on_duty' || _type == 'fix_a_day') const SizedBox(height: RvmSpacing.md),
             TextField(

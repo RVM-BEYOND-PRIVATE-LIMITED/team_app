@@ -42,6 +42,20 @@ class _HrToolsView extends StatelessWidget {
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.sm, RvmSpacing.md, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ActionChip(label: const Text('Request limits'), onPressed: () => context.push('/hr/request-limits')),
+                ActionChip(label: const Text('Profile changes'), onPressed: () => context.push('/hr/change-requests')),
+                ActionChip(label: const Text('Documents desk'), onPressed: () => context.push('/hr/documents')),
+                ActionChip(label: const Text('Bank read'), onPressed: () => context.push('/hr/bank')),
+                ActionChip(label: const Text('Wall desk'), onPressed: () => context.push('/wall/moderation')),
+              ],
+            ),
+          ),
           BlocBuilder<HrToolsBloc, HrToolsState>(
             buildWhen: (a, b) => a.queue != b.queue,
             builder: (context, state) => Padding(

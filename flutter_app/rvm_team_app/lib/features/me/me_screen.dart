@@ -91,8 +91,11 @@ class _MeBody extends StatelessWidget {
           children: [
             if (perms.canSeeFacultyWork) ...[
               _Tile(icon: Icons.menu_book_outlined, title: 'My batches', subtitle: 'Mark student attendance', onTap: () => context.push('/work/batches')),
+              _Tile(icon: Icons.today_outlined, title: 'My day (faculty)', subtitle: 'Today\'s sessions and indicators', onTap: () => context.push('/work/my-day')),
               _Tile(icon: Icons.insights_outlined, title: 'My indicators', subtitle: 'Attendance health across my sessions', onTap: () => context.push('/work/indicators')),
             ],
+            if (auth.identity?.role == AppRole.ceo || auth.identity?.role == AppRole.superAdmin)
+              _Tile(icon: Icons.insights, title: 'Leaders overview', subtitle: 'Headcount, attendance and the approval queue', onTap: () => context.push('/leaders')),
             if (perms.canSeeHodWork)
               _Tile(icon: Icons.school_outlined, title: 'Faculty Development', subtitle: 'To-do, risk logs, verdicts, comments', onTap: () => context.push('/work/hod')),
             _Tile(icon: Icons.event_note_outlined, title: 'Interviews', subtitle: 'Your next rounds as a panel member', onTap: () => context.push('/work/interviews')),
