@@ -27,8 +27,8 @@ const { ATTENDANCE_OVERRIDE_ROLES } = require('./hrPolicy');
 /** The families the inbox and the decide route work with. */
 const FAMILIES = Object.freeze(['attendance', 'leave']);
 
-/** The offered types of each family in this phase (short_leave is Phase 2; wfh is not offered). */
-const ATTENDANCE_TYPES = Object.freeze(['on_duty', 'fix_a_day', 'excuse_late']);
+/** The offered types of each family in this phase (wfh is not offered). */
+const ATTENDANCE_TYPES = Object.freeze(['on_duty', 'fix_a_day', 'excuse_late', 'short_leave']);
 const LEAVE_TYPES = Object.freeze(['cl', 'lwp']);
 
 const STATUSES = Object.freeze(['pending', 'approved', 'rejected', 'withdrawn', 'cancelled']);
@@ -87,6 +87,23 @@ function countForMonth(rows, type, { written = 0 } = {}) {
   return { used, pending };
 }
 
+/**
+ * C3: short leave counts by minutes, not by requests. `rows` are attendance request rows of the
+ * month carrying `minutes` (the attendance facts read), counted as the other counters are: the
+ * approved minutes are used and the pending ones wait on top, so a form shows both the way the
+ * day-based counters do.
+ */
+function minutesForMonth(rows, type) {
+  let used = 0;
+  let pending = 0;
+  for (const r of rows) {
+    if (r.type !== type || r.minutes == null) continue;
+    if (r.status === 'approved') used += r.minutes;
+    else if (r.status === 'pending') pending += r.minutes;
+  }
+  return { used, pending };
+}
+
 /** The three numbers a form shows, from the counts and the limit (`allowed`; null means none). */
 function balanceOf(allowed, { used, pending }) {
   return {
@@ -127,6 +144,7 @@ function requestView(r, family, { employee = null } = {}) {
     view.place = r.place ?? null;
     view.fix_in = hhmm(r.fix_in);
     view.fix_out = hhmm(r.fix_out);
+    view.minutes = r.minutes ?? null;
   }
   if (employee) view.employee = employeeCardView(employee);
   return view;
@@ -148,6 +166,7 @@ module.exports = {
   windowProblem,
   monthProblem,
   countForMonth,
+  minutesForMonth,
   balanceOf,
   hhmm,
   employeeCardView,

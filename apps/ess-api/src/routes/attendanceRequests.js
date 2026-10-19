@@ -2,16 +2,16 @@ const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
 const { bodyWith, requiredText, optionalText, chars, idParam, invalid } = require('../lib/validate');
 const { istDay, isCalendarDay, monthBounds } = require('../lib/time');
 const { effectiveLimit, requestType } = require('../policy/requestLimits');
-const { ATTENDANCE_TYPES, windowProblem, countForMonth, requestView } = require('../policy/requests');
+const { ATTENDANCE_TYPES, windowProblem, countForMonth, minutesForMonth, requestView } = require('../policy/requests');
 const { notifyApprovers } = require('../lib/notify');
 
 /**
- * Tasks C1 and C3: the employee's attendance requests — on duty, fix a day, excuse a late.
- * Work from home is refused, and short leave is Phase 2 (docs/06-backend-phases.md, Phase 1C).
+ * Tasks C1 and C3, plus Phase 2D's C3: the employee's attendance requests — on duty, fix a day,
+ * excuse a late, short leave. Work from home is refused (docs/06-backend-phases.md, Phase 1C).
  *
  * The route validates the form and the month's window and counter, then writes the row; the
- * decision itself (the day, the late, the CL) is the SQL function's, called by the decide route,
- * because a form cannot write a day and a request in one transaction.
+ * decision itself (the day, the late, the CL, the excused minutes) is the SQL function's, called
+ * by the decide route, because a form cannot write a day and a request in one transaction.
  */
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -25,11 +25,11 @@ function timeOf(v) {
   return TIME_RE.test(s) ? s : undefined;
 }
 
-/** POST /api/ess/attendance-requests { type, day, reason, place?, fix_in?, fix_out? } */
+/** POST /api/ess/attendance-requests { type, day, reason, place?, fix_in?, fix_out?, minutes? } */
 function createMyAttendanceRequest({ store, now }) {
   return asyncRoute(async (req, res) => {
     const { employee } = req.auth;
-    const body = bodyWith(req, ['type', 'day', 'reason', 'place', 'fix_in', 'fix_out']);
+    const body = bodyWith(req, ['type', 'day', 'reason', 'place', 'fix_in', 'fix_out', 'minutes']);
     if (!ATTENDANCE_TYPES.includes(body.type)) throw invalid(MESSAGES.ATTENDANCE_REQUEST_TYPE);
     if (!isCalendarDay(body.day)) throw invalid(MESSAGES.DATE_FORMAT);
     const day = body.day;
@@ -40,13 +40,22 @@ function createMyAttendanceRequest({ store, now }) {
     const fixIn = timeOf(body.fix_in);
     const fixOut = timeOf(body.fix_out);
     if (fixIn === undefined || fixOut === undefined) throw invalid(MESSAGES.REQUEST_TIMES);
+    // C3: a short leave is a whole number of minutes, 1 to 480 (the day's cap the migration checks).
+    const rawMinutes = body.minutes === undefined || body.minutes === null ? null : body.minutes;
+    const minutes = rawMinutes === null || (Number.isInteger(rawMinutes) && rawMinutes >= 1 && rawMinutes <= 480)
+      ? rawMinutes
+      : undefined;
+    if (minutes === undefined) throw invalid(MESSAGES.REQUEST_MINUTES);
     if (body.type === 'on_duty') {
       if (place === undefined || !place || chars(place) > 120) throw invalid(MESSAGES.REQUEST_PLACE);
       if (fixIn || fixOut) throw invalid(MESSAGES.UNKNOWN_FIELD);
+      if (minutes !== null) throw invalid(MESSAGES.UNKNOWN_FIELD);
     } else {
       if (place !== null) throw invalid(MESSAGES.UNKNOWN_FIELD);
       if (body.type === 'fix_a_day' && !fixIn && !fixOut) throw invalid(MESSAGES.REQUEST_TIMES_NEEDED);
       if (body.type === 'excuse_late' && (fixIn || fixOut)) throw invalid(MESSAGES.UNKNOWN_FIELD);
+      if (body.type === 'short_leave' && minutes === null) throw invalid(MESSAGES.REQUEST_MINUTES);
+      if (body.type !== 'short_leave' && minutes !== null) throw invalid(MESSAGES.UNKNOWN_FIELD);
     }
 
     const today = istDay(now());
@@ -64,13 +73,18 @@ function createMyAttendanceRequest({ store, now }) {
     }
 
     // The month's counter, as the form shows it: pending + approved against the limit HR set.
+    // Short leave counts by minutes, the others by requests (policy/requests.js): this very
+    // request's own size is added on, so 180 minutes is exactly the limit, not over it.
     const limits = await store.getRequestLimits();
     const type = requestType(body.type);
     const { from, to } = monthBounds(day);
     const rows = await store.listMyRequestFacts('attendance', employee.id, from, to);
-    const { used, pending } = countForMonth(rows, body.type);
+    const counted = body.type === 'short_leave' ? minutesForMonth(rows, body.type) : countForMonth(rows, body.type);
     const allowed = effectiveLimit(type, limits);
-    if (allowed != null && used + pending >= allowed) {
+    // A day-based request adds one; a short leave adds its own minutes. Refusing when the new
+    // total would be over the limit keeps the old check's edge (used == allowed refuses).
+    const adding = body.type === 'short_leave' ? minutes : 1;
+    if (allowed != null && counted.used + counted.pending + adding > allowed) {
       throw new HttpError(409, 'LIMIT_REACHED', MESSAGES.LIMIT_REACHED);
     }
 
@@ -82,6 +96,7 @@ function createMyAttendanceRequest({ store, now }) {
       place: body.type === 'on_duty' ? place : null,
       fix_in: body.type === 'fix_a_day' ? fixIn : null,
       fix_out: body.type === 'fix_a_day' ? fixOut : null,
+      minutes: body.type === 'short_leave' ? minutes : null,
     });
     // The approver hears about it (best effort; D6/D7).
     await notifyApprovers({ store, requester: employee, request: created, family: 'attendance' });

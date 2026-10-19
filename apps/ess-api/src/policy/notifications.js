@@ -42,6 +42,7 @@ const REQUEST_TYPE_LABELS = Object.freeze({
   on_duty: 'on duty',
   fix_a_day: 'a fix a day',
   excuse_late: 'a late arrival excused',
+  short_leave: 'a short leave',
   cl: 'casual leave',
   lwp: 'leave without pay',
 });

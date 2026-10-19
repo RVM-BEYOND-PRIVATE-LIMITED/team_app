@@ -100,3 +100,9 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 - **Bank details are collected in the app** (KP 3), with explicit consent first (SPDI Rules): the person types their own consent name and the save stamps the moment. The number is masked to everybody but its owner, never in a list response, and every HR read is audited.
 - **A profile-change approval records the decision only** (E3): it never writes `hr_employees`; HR applies the change in the Scheduler by hand, and the request row is the paper trail.
 - **The ID card's QR holds a signed, expiring link** (E7): 90 days, unauthenticated verify route, answering only the name, photo, designation, branch and "active employee".
+
+## 19 Oct 2026 - Phase 2D build defaults (for KP to confirm)
+
+- **Escalation window:** a request still pending after **two IST days** climbs one level of its reporting line per hourly run, recorded once per person in `hr_ess_approval_escalations`; HR is the fallback when the line runs out. It is a policy constant (`src/policy/approvals.js`), not a database setting.
+- **Short leave** (C3) is filed in minutes (1 to 480 a day; **180 a month** seeded in `hr_ess_request_limits`, so HR can change it) and is approved by excusing the late it covers, exactly as an excuse-late is - the Scheduler's own recompute does not know the type.
+- **Still open:** decision 3 (do planned early-leaving minutes protect a day from the 4-hour half-day rule?) and decision 8 (faculty class marking) - H1 is not built until 8 is answered.

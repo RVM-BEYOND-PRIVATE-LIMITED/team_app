@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **KP applied all twelve migrations on 19 Oct**, so Phase 1B's endpoints are live too. **Phase 1C, 1D and 1E are built and deployed** (1E needed no migrations and is live now). **Phase 2A (the Wall) is built on 19 Oct and waits for migrations 13 to 16.** **Phase 2B (the Helpdesk) is built on 19 Oct and waits for migrations 17 and 18; its assign-and-reassign delta is built too and waits for 22.** **Phase 2C (documents, profile changes, bank details and the ID card) is built on 19 Oct and waits for migrations 19 to 24.** The pilot gate is next.
+**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct** and its migrations 25-26 are applied. KP has applied the migrations for 2B (17-18), 2C (19-24) and 2D (25-26); **2A's 13-16 are the only set still to apply**. The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -22,12 +22,11 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 | [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals, the limits, the on-duty job | **Built + deployed, 19 Oct** |
 | [1D](#phase-1d-inbox-notifications-and-push) | Notifications, push, devices, priority tasks | **Built + deployed, 19 Oct** |
 | [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | **Built + deployed, 19 Oct; no migrations** |
+| [2A](#phase-2a-wall) | The Wall | **Built + deployed; migrations 13-16 to apply** |
+| [2B](#phase-2b-helpdesk) | The Helpdesk | **Built + deployed; 17-18 applied** |
+| [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | **Built + deployed; 19-24 applied** |
+| [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, multi-level approvals, short leave | **Built + deployed, 19 Oct; 25-26 applied** |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Next |
-| [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Gate |
-| [2A](#phase-2a-wall) | The Wall | **Built, 19 Oct; migrations 13-16** |
-| [2B](#phase-2b-helpdesk) | The Helpdesk | Built 19 Oct 2026; waits for migrations 17 and 18, and 22 for assign |
-| [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | Built 19 Oct 2026; waits for migrations 19 to 24 |
-| [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, multi-level approvals, short leave | |
 | [3](#phase-3-extras-not-in-this-round) | Extras | Not in this round |
 
 The decisions each phase needs refer to [04-build-plan.md](04-build-plan.md#decisions-still-owed) by number. New questions for KP are written out in full.
@@ -360,6 +359,14 @@ for KP to confirm:
 ## Phase 2D: Leader and faculty views and deeper approvals
 
 The brief's Phase 2.
+
+**Built and deployed 19 Oct 2026; migrations 25-26 applied.**
+
+- **The leaders' overview (H5):** `GET /api/ess/leaders/overview` for the CEO and super admins — headcount, today's attendance states, who is off this week, and the approval queue with the oldest request's age. Counts only: no names, pay or performance ever leave the database.
+- **The faculty "my day" (H7):** `GET /api/ess/me/faculty-day?date=` — today's sessions owned or covered through `faculty_substitutions` (other centres included), each with its times, centre, students and whether it is marked; the remarks still due (`pending_alerts` of type `absent_remarks_missing`); and the indicators card (today's and the month's marked-session percentages, joined/active students, sessions without attendance). Counts only, never a student's name, phone or remarks.
+- **Approval chains (D4):** `GET /api/ess/approvals/{family}/{id}/chain` shows the reporting line a request waits on, each level's skip reason (`same_person`, `not_active`, `on_leave`) and the first level that may decide; `POST .../archive` clears a request from one approver's Inbox without deciding it. An hourly job (`src/jobs/approvals.js`) escalates a request still pending after **two IST days** to the next unskipped level, one level a run, recorded once per person in `hr_ess_approval_escalations` and notified in the `approvals` category; HR is the fallback when the line is exhausted. **KP to confirm the two-day default** — it is the build's constant, not a database setting.
+- **Short leave (C3):** an attendance request type of its own, counted in **minutes** (1 to 480, the day's cap), with a monthly limit of 180 minutes shown beside the other balances; approved through the same decision function. The Scheduler's own `hr_attendance_recompute` does not know the type, so the app works around it exactly as the docs say: the approval excuses the late it covers.
+- **Not built:** faculty class marking (H1) — it waits on decision 8; the approval-chain rules per request type, which need KP's rule first.
 
 | Work | Tasks |
 | --- | --- |

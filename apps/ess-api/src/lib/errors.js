@@ -63,6 +63,7 @@ const MESSAGES = Object.freeze({
   HR_ACCESS_DENIED: 'Only HR, the CEO and super admins can open this.',
   ATTENDANCE_OVERRIDE_DENIED: 'Only HR, the CEO and super admins can do this.',
   PORTAL_LOGIN_REQUIRED: 'HR tools need your portal login. Sign in with your username or login phone.',
+  NOT_FACULTY: 'This view is for teaching staff with a faculty record. Ask HR if yours is missing.',
 
   // Request bodies and query strings.
   BODY_NOT_OBJECT: 'The request body must be a JSON object.',
@@ -117,7 +118,7 @@ const MESSAGES = Object.freeze({
 
   // C1-C12: requests, leave and approvals. The words the contract quotes; the codes the app reads
   // are the keys, except where an outcome shares another endpoint's code (CL_LIMIT, DAY_OUT_OF_RANGE).
-  ATTENDANCE_REQUEST_TYPE: 'Choose the kind of attendance request: on duty, fix a day or excuse a late.',
+  ATTENDANCE_REQUEST_TYPE: 'Choose the kind of attendance request: on duty, fix a day, excuse a late or a short leave.',
   LEAVE_REQUEST_TYPE: 'Choose casual leave or leave without pay.',
   REQUEST_REASON: 'Say the reason, in 5 to 1,000 characters.',
   REQUEST_PLACE: 'Say where the duty is, in 1 to 120 characters.',
@@ -128,6 +129,7 @@ const MESSAGES = Object.freeze({
   REQUEST_CLOSED: "Last month's requests closed on the 5th. Ask HR.",
   DUPLICATE_REQUEST: 'You already have a request for that day. Wait for it to be decided.',
   LIMIT_REACHED: "That is over this type's monthly limit. Check the balance on the form.",
+  REQUEST_MINUTES: 'Give the short leave in whole minutes, from 1 to 480.',
   REQUEST_NOT_FOUND: 'That request was not found.',
   REQUEST_NOT_PENDING: 'Only a pending request can be withdrawn.',
   DECIDE_DECISION: 'Mark the request approved or rejected.',

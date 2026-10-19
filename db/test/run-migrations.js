@@ -253,6 +253,13 @@ const REFUSALS = [
   refusal('an IFSC of the wrong shape', "INSERT INTO public.hr_ess_bank_details (employee_id, bank_name, account_number, ifsc_code, consent_given_at, consent_name) VALUES (e, 'State Bank of India', '1234567890', 'SBIN1234', now(), 'Test Person')"),
   refusal('an account number with letters in it', "INSERT INTO public.hr_ess_bank_details (employee_id, bank_name, account_number, ifsc_code, consent_given_at, consent_name) VALUES (e, 'State Bank of India', '12345678AB', 'SBIN0001234', now(), 'Test Person')"),
   refusal('a second bank row for one person', "INSERT INTO public.hr_ess_bank_details (employee_id, bank_name, account_number, ifsc_code, consent_given_at, consent_name) VALUES (e, 'State Bank of India', '1234567890', 'SBIN0001234', now(), 'Test Person'), (e, 'HDFC Bank', '1234567891', 'HDFC0001234', now(), 'Test Person')", 'unique_violation'),
+  // Phase 2D: the short-leave shapes (20261111000001) and the escalation trail (20261111000002).
+  refusal('a short leave with no minutes', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason) VALUES (e, 'short_leave', DATE '2026-10-16', 'An hour at the bank.')"),
+  refusal('a short leave of no minutes', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, minutes) VALUES (e, 'short_leave', DATE '2026-10-16', 'An hour at the bank.', 0)"),
+  refusal('a short leave of more than a day', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, minutes) VALUES (e, 'short_leave', DATE '2026-10-16', 'An hour at the bank.', 481)"),
+  refusal('an excuse carrying minutes', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, minutes) VALUES (e, 'excuse_late', DATE '2026-10-16', 'The bus broke down.', 60)"),
+  refusal('an escalation of an unknown family', "INSERT INTO public.hr_ess_approval_escalations (family, request_id, to_employee_id, reason) VALUES ('wall', gen_random_uuid(), o, 'Nobody decided it.')"),
+  refusal('a second escalation for the same request and person', "INSERT INTO public.hr_ess_approval_escalations (family, request_id, to_employee_id, reason) VALUES ('attendance', '7d000000-0000-4000-8000-000000000001', o, 'Nobody decided it.'), ('attendance', '7d000000-0000-4000-8000-000000000001', o, 'Nobody decided it.')", 'unique_violation'),
 ];
 
 /** Rows the ESS writes must go in, take their defaults, and follow an employee's deletion. */
@@ -323,6 +330,7 @@ DECLARE
   v_row record;
   r_id uuid;
   second_id uuid;
+  v_sl_day date;
 BEGIN
   INSERT INTO public.hr_employees (id, full_name, branch_id) VALUES (e, 'Test Requester', b);
   INSERT INTO public.hr_employees (id, full_name) VALUES (m, 'Test Manager');
@@ -407,6 +415,27 @@ BEGIN
   IF (SELECT late_excused FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_today - 3) THEN
     RAISE EXCEPTION 'the excuse is not undone';
   END IF;
+
+  -- Short leave (Phase 2D, C3): the approval excuses the late it covers, and the cancel undoes
+  -- it. The day is clamped inside the window, so the check holds on any day of the month.
+  v_sl_day := greatest(v_month, v_today - 5);
+  INSERT INTO public.hr_staff_attendance (employee_id, day, status, source, late_minutes)
+    VALUES (e, v_sl_day, 'present', 'self_punch', 45);
+  INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, minutes)
+    VALUES (e, 'short_leave', v_sl_day, 'An hour at the bank.', 60) RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_attendance_request(r_id, m, u, 'Test Manager', true, NULL, now(), 240);
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the short-leave approval: %', v_out; END IF;
+  SELECT late_excused, late_excused_by_name INTO v_row
+    FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_sl_day;
+  IF NOT v_row.late_excused OR v_row.late_excused_by_name <> 'Test Manager' THEN
+    RAISE EXCEPTION 'the short-leave excuse: %, %', v_row.late_excused, v_row.late_excused_by_name;
+  END IF;
+  v_out := public.hr_ess_cancel_attendance_request(r_id, m, u, 'Test Manager', 'Wrong window.', now());
+  IF v_out ->> 'outcome' <> 'cancelled' THEN RAISE EXCEPTION 'the short-leave cancel: %', v_out; END IF;
+  IF (SELECT late_excused FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_sl_day) THEN
+    RAISE EXCEPTION 'the short-leave excuse is not undone';
+  END IF;
+  DELETE FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_sl_day;
 
   -- Not a late, and the future, are refused; a rejection needs a reason.
   INSERT INTO public.hr_staff_attendance (employee_id, day, status, source) VALUES (e, v_today - 4, 'present', 'self_punch');

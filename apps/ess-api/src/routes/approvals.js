@@ -4,18 +4,24 @@ const { istDay, monthBounds } = require('../lib/time');
 const { LIST_LIMITS } = require('../lib/store');
 const { effectiveLimit, requestType } = require('../policy/requestLimits');
 const { isActive } = require('../policy/employment');
-const { canDecideAny, canDecideRequest, STATUSES, requestView } = require('../policy/requests');
+const { chainEntries, firstUnskipped, mayDecide } = require('../policy/approvals');
+const { canDecideAny, STATUSES, requestView, employeeCardView } = require('../policy/requests');
 const { HALF_DAY_MINUTES, ensureShiftSnapshot, recomputeMonth } = require('../policy/attendance');
 const { notifyDecision } = require('../lib/notify');
 
 /**
- * Tasks D1 and H6: the approvals Inbox and the decision.
+ * Tasks D1 and H6, plus Phase 2D's D4: the approvals Inbox, the decision, the archive, and the
+ * chain one request waits on.
  *
  * Who sees what (decision 1): a manager sees their own direct reports' pending requests, whatever
  * their login role; HR, the CEO and super admins (ATTENDANCE_OVERRIDE_ROLES) see everybody's, may
  * filter by any status, decide any request and later cancel an approved one. An attendance
  * session may be a manager's (the brief: "anyone with direct reports, whatever their login role"),
  * so the manager path accepts both sign-in kinds; the HR-wide path needs the portal role.
+ *
+ * Who decides (D4): the reporting line up from the requester, skipping a level that cannot decide
+ * that day (the requester themselves, not on strength, or on leave), so the FIRST unskipped level
+ * decides -- never a level below it. HR-wide keeps deciding anything, as always.
  *
  * The decide route calls the family's SQL function -- lock, re-check, write the day, write the
  * history, all in one transaction -- and then re-counts the month, with the shift snapshot first
@@ -26,6 +32,20 @@ const { notifyDecision } = require('../lib/notify');
 const CONTEXT_NAMES = 5;
 
 const familyOf = (value) => (value === 'attendance' || value === 'leave' ? value : null);
+
+/**
+ * The requester's reporting line for one day's decision, as the decide, archive and chain views
+ * all judge it: the directory for the chain, and the sheet for who is on leave that day.
+ */
+async function chainFor({ store, requester, day, today }) {
+  const [people, offRows] = await Promise.all([
+    store.listActiveEmployees(),
+    store.listDaysOnLeave([day]),
+  ]);
+  const byId = new Map(people.map((e) => [e.id, e]));
+  const offOnDay = new Set(offRows.map((d) => d.employee_id));
+  return chainEntries(byId, requester, today, offOnDay);
+}
 
 /** GET /api/ess/approvals?status=pending|approved|rejected|withdrawn|cancelled|all */
 function listApprovals({ store, now }) {
@@ -78,8 +98,9 @@ function listApprovals({ store, now }) {
 
     if (!shown.length) return res.json({ counts, requests: [], truncated });
 
-    // The context each request carries: how many of this kind this month, the day's late marks,
-    // and who else is off that day (never the leave's type or reason).
+    // The context each request carries: how much of this kind this month (minutes for a short
+    // leave, count otherwise), the day's late marks, and who else is off that day (never the
+    // leave's type or reason).
     const employeeIds = [...new Set(shown.map((x) => x.row.employee_id))];
     const days = [...new Set(shown.map((x) => x.row.day))];
     const months = [...new Set(shown.map((x) => x.row.day.slice(0, 7)))].sort();
@@ -93,12 +114,15 @@ function listApprovals({ store, now }) {
       store.listLeaveRequestsOnDays(days, ['pending', 'approved']),
     ]);
 
+    // Short leave counts by minutes, every other type by requests (C3), so a short leave's
+    // `type_this_month` is the minutes used and waiting against its 180-minute limit.
     const typeCounts = new Map();
     const addTypeCount = (family, rows) => {
       for (const r of rows) {
         if (r.status !== 'pending' && r.status !== 'approved') continue;
+        const step = family === 'attendance' && r.type === 'short_leave' ? (r.minutes ?? 0) : 1;
         const key = `${family}:${r.employee_id}:${r.type}:${r.day.slice(0, 7)}`;
-        typeCounts.set(key, (typeCounts.get(key) || 0) + 1);
+        typeCounts.set(key, (typeCounts.get(key) || 0) + step);
       }
     };
     addTypeCount('attendance', attendanceCounts);
@@ -163,7 +187,8 @@ function decideRequest({ store, now }) {
     const request = family === 'leave' ? await store.getLeaveRequest(id) : await store.getAttendanceRequest(id);
     if (!request) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
     const requester = await store.getEmployeeById(request.employee_id);
-    if (!canDecideRequest(req.auth, requester)) {
+    const today = istDay(now());
+    if (!requester || !(await mayDecide({ auth: req.auth, entries: await chainFor({ store, requester, day: request.day, today }) }))) {
       throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
     }
 
@@ -221,7 +246,7 @@ function decideRequest({ store, now }) {
 }
 
 /** POST /api/ess/approvals/:family/:id/archive: clear it from MY Inbox, decide nothing. */
-function archiveRequest({ store }) {
+function archiveRequest({ store, now }) {
   return asyncRoute(async (req, res) => {
     const family = familyOf(req.params.family);
     if (!family) throw new HttpError(404, 'NOT_FOUND', MESSAGES.NOT_FOUND);
@@ -230,7 +255,7 @@ function archiveRequest({ store }) {
     const request = family === 'leave' ? await store.getLeaveRequest(id) : await store.getAttendanceRequest(id);
     if (!request) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
     const requester = await store.getEmployeeById(request.employee_id);
-    if (!canDecideRequest(req.auth, requester)) {
+    if (!requester || !(await mayDecide({ auth: req.auth, entries: await chainFor({ store, requester, day: request.day, today: istDay(now()) }) }))) {
       throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
     }
     await store.createArchive({ family, request_id: id, employee_id: req.auth.employee.id });
@@ -238,4 +263,39 @@ function archiveRequest({ store }) {
   });
 }
 
-module.exports = { listApprovals, decideRequest, archiveRequest };
+/**
+ * GET /api/ess/approvals/:family/:id/chain: the reporting line a request waits on, level by
+ * level -- who may decide it now, why each level above is skipped, and whether the HR fallback
+ * is all that is left. The requester may read their own request's chain; so may anybody on it,
+ * and HR-wide as always. Anybody else is refused: a chain is the request's own routing.
+ */
+function requestChain({ store, now }) {
+  return asyncRoute(async (req, res) => {
+    const family = familyOf(req.params.family);
+    if (!family) throw new HttpError(404, 'NOT_FOUND', MESSAGES.NOT_FOUND);
+    const id = idParam(req.params.id);
+    bodyWith(req, []);
+    const request = family === 'leave' ? await store.getLeaveRequest(id) : await store.getAttendanceRequest(id);
+    if (!request) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
+    const requester = await store.getEmployeeById(request.employee_id);
+    if (!requester) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
+    const viewerId = req.auth.employee.id;
+    const entries = await chainFor({ store, requester, day: request.day, today: istDay(now()) });
+    const involved = requester.id === viewerId
+      || entries.some((e) => e.employee.id === viewerId)
+      || canDecideAny(req.auth.kind, req.auth.role);
+    if (!involved) throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
+    const first = firstUnskipped(entries);
+    res.json({
+      request: requestView(request, family, { employee: requester }),
+      chain: entries.map((e) => ({
+        employee: employeeCardView(e.employee),
+        may_decide: Boolean(first && first.employee.id === e.employee.id),
+        skipped: e.skipped,
+      })),
+      hr_fallback: !first,
+    });
+  });
+}
+
+module.exports = { listApprovals, decideRequest, archiveRequest, requestChain };

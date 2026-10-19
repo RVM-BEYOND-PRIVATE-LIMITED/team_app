@@ -2,7 +2,7 @@ const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
 const { bodyWith, requiredText, idParam, oneQueryValue, invalid } = require('../lib/validate');
 const { istDay, isCalendarDay, monthBounds } = require('../lib/time');
 const { REQUEST_TYPES, effectiveLimit } = require('../policy/requestLimits');
-const { LEAVE_TYPES, windowProblem, monthProblem, countForMonth, balanceOf, requestView } = require('../policy/requests');
+const { LEAVE_TYPES, windowProblem, monthProblem, countForMonth, minutesForMonth, balanceOf, requestView } = require('../policy/requests');
 const { notifyApprovers } = require('../lib/notify');
 
 /**
@@ -111,10 +111,13 @@ function myLeaveBalances({ store, now }) {
       let counts = { used: 0, pending: 0 };
       if (t.type === 'on_duty' || t.type === 'fix_a_day' || t.type === 'excuse_late') {
         counts = countForMonth(attendanceFacts, t.type);
+      } else if (t.type === 'short_leave') {
+        // C3: short leave counts by minutes, and the balance shows the minutes used and waiting.
+        counts = minutesForMonth(attendanceFacts, t.type);
       } else if (t.type === 'leave_cl' || t.type === 'leave_lwp') {
         counts = countForMonth(leaveFacts, t.type.slice('leave_'.length), { written: written[t.type] });
       }
-      // short_leave (Phase 2) and wfh (not offered) have nothing filed here yet.
+      // wfh (not offered) has nothing filed here yet.
       return {
         type: t.type,
         offered: t.offered,

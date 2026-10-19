@@ -11,6 +11,7 @@ const { startOnDutyJob } = require('./jobs/onDuty');
 const { startPushJob } = require('./jobs/push');
 const { startWallJob } = require('./jobs/wall');
 const { startHelpdeskJob } = require('./jobs/helpdesk');
+const { startApprovalsJob } = require('./jobs/approvals');
 const { startDocumentsJob } = require('./jobs/documents');
 
 let config;
@@ -40,6 +41,8 @@ app.listen(config.port, config.host, () => {
   startWallJob({ store });
   // The Helpdesk's escalations (G3): first response, resolution and the CEO's stage, hourly.
   startHelpdeskJob({ store });
+  // The approval chains' escalations (D4): pending past the constant climbs the line, hourly.
+  startApprovalsJob({ store });
   // The weekly missing-documents reminder (KP 1): identity, offer and joining papers, at boot
   // and then weekly.
   startDocumentsJob({ store });

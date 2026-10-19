@@ -18,7 +18,7 @@ Run from the repository root (`npm run lint`, `npm test`) or from this folder:
 
 `npm run test:migrations`, from the repository root, runs `db/migrations` against a throwaway Postgres in Docker (`db/test/run-migrations.js`).
 
-`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.8.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
+`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.9.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
 
 Set `SCHEDULER_BACKEND_DIR` to a Scheduler_Backend checkout to also run the drift checks. They compare `src/policy/roles.js` and `src/policy/hrPolicy.js` with the Scheduler's `config/roles.js` and `config/hrPolicy.js`, and the verbatim Scheduler code in `tests/helpers` with its source:
 
@@ -28,9 +28,9 @@ SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test
 
 Without it those checks are skipped, and that includes CI, which cannot read the private Scheduler repository. Run them by hand whenever the Scheduler changes.
 
-Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all twenty-four migrations more broadly. CI runs neither yet.
+Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all twenty-six migrations more broadly. CI runs neither yet.
 
-**The suite (19 Oct 2026, Phase 2C):** 2,401 tests in 50 files, the contract included - 1,152 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, plus `helpdeskAssign` for the Phase 2C delta; Phase 2C's are `documents`, `changeRequests`, `bankDetails`, `idCard` and `documentsJob`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all twenty-four migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's, the Helpdesk's and Phase 2C's row rules themselves.
+**The suite (19 Oct 2026, Phase 2D):** 2,452 tests in 53 files, the contract included - 1,183 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, plus `helpdeskAssign` for the Phase 2C delta; Phase 2C's are `documents`, `changeRequests`, `bankDetails`, `idCard` and `documentsJob`; Phase 2D's are `leaders`, `approvalsChain` and `facultyDay`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all twenty-six migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's, the Helpdesk's, Phase 2C's and Phase 2D's row rules themselves.
 
 ## Settings
 
@@ -120,6 +120,16 @@ Phase 2C adds the documents', changes', bank's and card's own numbers:
 | The ID card's verify link | HMAC-signed from `JWT_SECRET`, 90 days from minting | `src/lib/idCardKit.js` |
 | ID card verifications | 30 a minute per address | `src/middleware/rateLimit.js` (`idCardVerify`) |
 
+Phase 2D adds the leaders', faculty's and escalations' own numbers:
+
+| What | Value | Where |
+| --- | --- | --- |
+| The escalation window | two IST days pending, one level a run, HR the fallback when the line runs out | `src/policy/approvals.js` `ESCALATE_AFTER_DAYS`, `src/jobs/approvals.js` |
+| The escalation job | once at boot, then hourly; 500 pending requests a family a run | `src/jobs/approvals.js` |
+| Short leave | 1 to 480 minutes a day; 180 minutes a month seeded in `hr_ess_request_limits` (HR can change it) | `src/routes/attendanceRequests.js`, migration 25 |
+| A faculty day's window | this month or last month, as the attendance day read | `src/routes/facultyDay.js` |
+| The leaders' overview | counts only; at most 1,000 pending requests are counted | `src/routes/leaders.js` |
+
 ## Endpoints
 
 Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Control: no-store`.
@@ -151,6 +161,7 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `GET /api/ess/approvals?status=` | either | The approvals Inbox (D1) and its counts: a manager sees their reports' pending requests; hr, ceo and super_admin see everybody's and may filter any status; each row carries the month's count, the limit, the day's late marks and who else is off |
 | `POST /api/ess/approvals/{family}/{id}/decide` | either | Approve or reject (D1, H6); a rejection needs a reason. An approval writes the day through the Scheduler's override function, in one transaction with the status and history |
 | `POST /api/ess/approvals/{family}/{id}/archive` | either | Clear a request from my Inbox without deciding it (204); per approver |
+| `GET /api/ess/approvals/{family}/{id}/chain` | either | The reporting line the request waits on (D4): each level, why it is skipped, the first that may decide, `hr_fallback` |
 | `POST /api/ess/hr/attendance-requests/{id}/cancel`, `/hr/leave-requests/{id}/cancel` | portal: hr, ceo, super_admin | Cancel an APPROVED request (C8) with a reason, restoring the day it wrote; audited |
 | `GET /api/ess/hr/request-limits`, `PUT /api/ess/hr/request-limits/{type}` | portal: hr, ceo, super_admin | The monthly limits HR owns (C6); a change is audited |
 | `POST /api/ess/push-devices`, `DELETE /api/ess/push-devices/{id}` | either | Register this phone's FCM token (D5), and revoke it on sign-out. One install, one row; the token is never sent back |
@@ -158,6 +169,8 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `POST /api/ess/notifications/{id}/read`, `POST /api/ess/notifications/read-all` | either | Mark one (idempotent) or all read |
 | `GET /api/ess/notifications/settings`, `PUT /api/ess/notifications/settings` | either | The categories (`approvals`, `decisions`, `priority_tasks`, then the Wall's six, `helpdesk` and `documents`) and the quiet hours (D8) |
 | `GET /api/ess/me/profile` | either | My Summary, Job, Personal and the safe Timeline, with a 300-second signed photo link (E1, E12, E10) |
+| `GET /api/ess/me/faculty-day?date=` | portal, with a faculty record | The faculty "my day" (H7): today's sessions owned or covered, each marked or not, the remarks due, and the indicators card; counts only |
+| `GET /api/ess/leaders/overview` | ceo, super_admin | The organisation in counts (H5): headcount, today's states, off this week, the approval queue; never a name |
 | `PUT /api/ess/me/photo` | either | Change my photo (base64, ≤1 MB, JPEG/PNG/WebP): the private bucket plus the record's pointer, audited (E10) |
 | `GET /api/ess/me/org` | either | My chain to the CEO ("Reports to the CEO (not recorded)"), peers, direct reports and department, with the notice chip (E2, E11) |
 | `GET /api/ess/directory` | either | Colleague search by name or code, filtered by branch or department; email to everyone, phone per the contact rule (E2, E8) |
@@ -291,6 +304,14 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 - **The ID card's QR holds a signed link** (E7): `GET /api/ess/id-card/verify/{token}` takes no sign-in; the token is an HMAC (`src/lib/idCardKit.js`) that expires after 90 days and answers only the holder's name, photo, designation, branch and "active employee". A bad, expired or archived-holder link is 401 `ID_CARD_BAD_TOKEN`, and the route is limited to 30 verifications a minute per address.
 - **The weekly reminder** (`src/jobs/documents.js`, the `documents` notification category from migration 24) goes to every person still missing a mandatory type, and names the types they personally lack - one held document does not hide the rest. A person can turn the category off like any other.
 
+### Leader and faculty views, and the deeper approvals (Phase 2D)
+
+- **The leaders' overview** (`src/routes/leaders.js`, H5) is for the CEO and super admins only, and answers counts: active headcount, today's attendance states, how many people are on leave this IST week, and the pending attendance and leave requests with the oldest one's age. No name, pay or performance value is selected, so none can leak.
+- **The faculty "my day"** (`src/routes/facultyDay.js`, H7) resolves the caller's `users.faculty_id`; a login without one is 403 `NOT_FACULTY`. It reads the batches they own and the ones covered by a `faculty_substitutions` row whose range includes the day (other centres included, never branch-filtered), each with its times, centre, joined-student count and whether `student_attendance` holds a mark for that batch and date. The card adds today's and the month's marked-session percentages (expected sessions come from each batch's weekdays inside its own dates), the joined, not-on-hold student counts, and the remarks still due (`pending_alerts` of type `absent_remarks_missing`). Counts only: no student's name, phone or remarks are read.
+- **The approval chain** (`src/routes/approvals.js`, `src/policy/approvals.js`, D4) walks the reporting line and says why a level is skipped (`same_person`, `not_active`, `on_leave`), who may decide now, and whether only HR's fallback is left. The hourly job (`src/jobs/approvals.js`) escalates a request pending past two IST days to the next unskipped level, once per person (the table's unique key), notifies them in the `approvals` category, and falls back to HR when the line is exhausted. Archiving clears a request from one approver's Inbox only.
+- **Short leave** (C3) is a fourth attendance-request type counted in minutes (1 to 480 a day; 180 a month by default), approved through the same decide function; the approval excuses the late it covers, exactly as an excuse-late does, and HR's cancel restores the day. The monthly limit is a row in `hr_ess_request_limits`, so HR changes it with the limits endpoint.
+- **Not built:** faculty class marking (H1), which waits on decision 8.
+
 ### How sign-in is checked
 
 `src/middleware/employeeAuth.js` (task A1) reads `Authorization: Bearer <token>`. It tries the attendance session first and then the portal JWT, as the Scheduler's `punchAuth` does, and verifies both with HS256 only (`src/lib/tokens.js`). It re-reads the employee on every request. The checks and their order are the Scheduler's `loadEmployee` and `sessionProblem` at `c28b9ca`, including the whole-second `sessions_valid_from` comparison. A portal token is resolved through `hr_employees.user_id`.
@@ -309,6 +330,7 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 403 | `PASSWORD_CHANGE_REQUIRED` | An attendance session signed in with HR's first-time password, before the person chose their own |
 | 403 | `SIGN_IN_NOT_FRESH` | Keeping a sign-in made more than 10 minutes ago |
 | 403 | `PORTAL_LOGIN_REQUIRED`, `HR_ACCESS_DENIED`, `ATTENDANCE_OVERRIDE_DENIED`, `SENSITIVE_FIELD` | HR's tools refused to this sign-in or role; a self-service change HR must make |
+| 403 | `NOT_FACULTY` | A login with no `users.faculty_id` asking for the faculty "my day" (H7) |
 | 403 | `NOT_AN_APPROVER` | A request that is not this sign-in's to decide or clear: neither HR's roles nor the person's manager on the HR record |
 | 409 | `ALREADY_EXCHANGED` | Keeping a token the ESS minted itself, or a Scheduler sign-in already kept once |
 | 409 | `REFRESH_IN_PROGRESS` | A refresh token traded in less than a minute ago, presented again by the same install: retry with the newest one |

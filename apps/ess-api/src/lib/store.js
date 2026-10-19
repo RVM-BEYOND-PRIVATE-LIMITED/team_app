@@ -57,6 +57,15 @@ const COLUMNS = Object.freeze({
   branch: 'id, name',
   department: 'id, name',
   location: 'id, name',
+  // H7 (2D): the faculty "my day" reads. The Scheduler's own columns
+  // (public_schema_backup.sql:1474-1490, 1744-1753, 1775-1797, 2155-2162).
+  batch: 'id, name, faculty_id, start_date, end_date, start_time, end_time, days_of_week, schedule, location_id',
+  substitution: 'id, batch_id, original_faculty_id, substitute_faculty_id, start_date, end_date',
+  batchStudent: 'batch_id, student_id, joined_at',
+  studentAttendance: 'batch_id, student_id, date',
+  holdPeriod: 'student_id, hold_start, hold_end',
+  studentHoldFlag: 'id, is_on_hold, hold_applied_at',
+  pendingRemark: 'id, batch_id, student_id, date, alert_type, is_resolved',
   // password_set_at, and never password_hash: a 'pw' session already proves a hash existed, so
   // whether the person chose their own password is all the first-time check needs.
   attendanceAccount: 'id, employee_id, status, sessions_valid_from, password_set_at',
@@ -85,12 +94,16 @@ const COLUMNS = Object.freeze({
   requestLimit: 'type, limit_count, limit_minutes, updated_at, updated_by_name',
   // C1-C12: a request as the app reads it. day_before and day_written_at stay server-side (HR's
   // cancel reads them inside SQL), and the decided_by and cancelled_by account ids are never sent.
-  attendanceRequest: 'id, employee_id, type, status, day, reason, place, fix_in, fix_out, '
+  attendanceRequest: 'id, employee_id, type, status, day, reason, place, fix_in, fix_out, minutes, '
     + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
   leaveRequest: 'id, employee_id, type, status, day, reason, '
     + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
-  // The counters and duplicate checks read these.
+  // The counters and duplicate checks read these. The leave table has no `minutes` column, so the
+  // attendance family names its own facts (short leave counts by minutes, C3).
   requestFacts: 'id, employee_id, type, status, day',
+  attendanceRequestFacts: 'id, employee_id, type, status, day, minutes',
+  // D4: one escalation as the record reads it; nothing here is secret.
+  approvalEscalation: 'id, family, request_id, from_employee_id, to_employee_id, reason, escalated_at',
   archive: 'id, family, request_id, employee_id',
   // What ensureSnapshot reads before it copies a shift onto a day (attendanceRules.js:214-236).
   daySnapshot: 'id, source, shift_start',
@@ -257,6 +270,8 @@ const REFUSALS = Object.freeze({
   // E3: a second open change request for the same field by the same person (the partial unique
   // index). The route checks first; this is the backstop for two saves made at once.
   CHANGE_REQUEST_KEPT: { code: '23505', name: 'hr_ess_change_requests_open_field_key' },
+  // D4: the escalation job racing itself -- the same person already escalated for this request.
+  ESCALATION_KEPT: { code: '23505', name: 'hr_ess_approval_escalations_family_request_id_to_employee_id_key' },
 });
 
 const isRefusal = (error, { code, name }) =>
@@ -477,6 +492,24 @@ function createSupabaseStore(config, { client } = {}) {
      */
     listEmployeesForSignIn: () => list('hr_employees', (q) => q.select(COLUMNS.employeeForSignIn).eq('is_archived', false)),
     listLocations: () => list('locations', (q) => q.select(COLUMNS.location)),
+
+    /* ── the faculty "my day", H7 (2D): the Scheduler's teaching tables, read only ── */
+
+    listBatchesForFaculty: (facultyId) =>
+      list('batches', (q) => q.select(COLUMNS.batch).eq('faculty_id', facultyId)),
+    listBatchesByIds: (ids) => readIn('batches', COLUMNS.batch, 'id', ids),
+    listSubstitutionsForSubstitute: (facultyId) =>
+      list('faculty_substitutions', (q) => q.select(COLUMNS.substitution).eq('substitute_faculty_id', facultyId)),
+    listBatchStudents: (batchIds) => readIn('batch_students', COLUMNS.batchStudent, 'batch_id', batchIds),
+    listAttendanceForBatchesBetween: (batchIds, from, to) =>
+      readIn('student_attendance', COLUMNS.studentAttendance, 'batch_id', batchIds,
+        (q) => q.gte('date', from).lte('date', to)),
+    listHoldPeriods: (studentIds) => readIn('hold_periods', COLUMNS.holdPeriod, 'student_id', studentIds),
+    listStudentsOnHold: (studentIds) =>
+      readIn('students', COLUMNS.studentHoldFlag, 'id', studentIds, (q) => q.eq('is_on_hold', true)),
+    listPendingRemarksFor: (batchIds, day) =>
+      readIn('pending_alerts', COLUMNS.pendingRemark, 'batch_id', batchIds,
+        (q) => q.eq('date', day).eq('alert_type', 'absent_remarks_missing').eq('is_resolved', false)),
     listAttendanceLogins: () => list('hr_attendance_accounts', (q) => q.select(COLUMNS.attendanceLogin)),
     /** The logins that have a password, asked as a filter, so not one hash leaves the database. */
     listAttendanceLoginsWithPassword: () =>
@@ -677,7 +710,8 @@ function createSupabaseStore(config, { client } = {}) {
      */
     listMyRequestFacts: async (family, employeeId, from, to) => {
       const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
-      return (await read(table, (q) => q.select(COLUMNS.requestFacts).eq('employee_id', employeeId)
+      const columns = family === 'leave' ? COLUMNS.requestFacts : COLUMNS.attendanceRequestFacts;
+      return (await read(table, (q) => q.select(columns).eq('employee_id', employeeId)
         .gte('day', from).lte('day', to))) || [];
     },
     /** Whether the same type+day already waits: the duplicate check before a request goes in. */
@@ -722,7 +756,8 @@ function createSupabaseStore(config, { client } = {}) {
     /** One employee's requests of every status whose day is in from..to, for the context counts. */
     listRequestCountsFor: async ({ family, employeeIds, from, to }) => {
       const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
-      return readIn(table, COLUMNS.requestFacts, 'employee_id', employeeIds, (q) => q.gte('day', from).lte('day', to));
+      const columns = family === 'leave' ? COLUMNS.requestFacts : COLUMNS.attendanceRequestFacts;
+      return readIn(table, columns, 'employee_id', employeeIds, (q) => q.gte('day', from).lte('day', to));
     },
     /** The day rows' late marks for the Inbox's context, for these days. */
     listDayLateMarks: async (days) => {
@@ -777,6 +812,31 @@ function createSupabaseStore(config, { client } = {}) {
     },
     listMyArchives: async (employeeId) =>
       (await read('hr_ess_request_archives', (q) => q.select(COLUMNS.archive).eq('employee_id', employeeId))) || [],
+
+    /* ── D4: the approval chain's escalations ── */
+
+    /**
+     * One family's requests that went pending before `beforeIso`, oldest first: the ones the
+     * escalation job judges and the leaders' overview counts. The facts carry the counter's
+     * columns (minutes for attendance only) plus created_at, and nothing more.
+     */
+    listPendingRequestsSince: async (family, beforeIso, limit) => {
+      const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
+      const columns = family === 'leave'
+        ? `${COLUMNS.requestFacts}, created_at`
+        : `${COLUMNS.attendanceRequestFacts}, created_at`;
+      return (await read(table, (q) => q.select(columns).eq('status', 'pending')
+        .lt('created_at', beforeIso).order('created_at', { ascending: true }).limit(limit))) || [];
+    },
+    /** The escalations recorded for one request, oldest first. */
+    listEscalationsFor: async (family, requestId) =>
+      (await read('hr_ess_approval_escalations', (q) => q.select(COLUMNS.approvalEscalation)
+        .eq('family', family).eq('request_id', requestId).order('escalated_at'))) || [],
+    /** Escalating twice for the same person is the same as once: the unique key answers the second. */
+    createEscalation: async (row) => {
+      const created = await write('hr_ess_approval_escalations', (q) => q.insert([row]), REFUSALS.ESCALATION_KEPT);
+      return created !== REFUSED;
+    },
 
     /* ── the day's shift snapshot, and the month's recompute (policy/attendance.js) ── */
 

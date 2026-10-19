@@ -56,6 +56,18 @@ const SCHEMA = {
   hr_attendance_accounts: ['id', 'employee_id', 'status', 'password_hash', 'password_set_at', 'sessions_valid_from',
     'failed_attempts', 'locked_until', 'last_login_at', 'created_at', 'updated_at'],
   locations: ['id', 'name'],
+  // The Scheduler's teaching tables, read only (H7): batches, substitutions, enrollments,
+  // attendance marks, holds and the remarks due (public_schema_backup.sql:1465-1490, 1706-1797,
+  // 2155-2162).
+  batches: ['id', 'name', 'faculty_id', 'start_date', 'end_date', 'start_time', 'end_time',
+    'days_of_week', 'schedule', 'location_id', 'status'],
+  faculty_substitutions: ['id', 'batch_id', 'original_faculty_id', 'substitute_faculty_id',
+    'start_date', 'end_date', 'notes'],
+  batch_students: ['batch_id', 'student_id', 'joined_at'],
+  student_attendance: ['batch_id', 'student_id', 'date', 'is_present'],
+  hold_periods: ['student_id', 'hold_start', 'hold_end', 'hold_category', 'hold_remarks', 'applied_by'],
+  pending_alerts: ['id', 'batch_id', 'student_id', 'date', 'alert_type', 'is_resolved'],
+  students: ['id', 'name', 'is_on_hold', 'hold_applied_at', 'is_suspended', 'is_banned'],
   // 20261020000000_hr_attendance_punch.sql:77-90
   hr_attendance_devices: ['id', 'employee_id', 'token_hash', 'user_agent', 'bound_ip', 'status', 'bound_at', 'last_seen_at',
     'revoked_at', 'revoked_by', 'revoked_by_name', 'revoke_reason'],
@@ -82,10 +94,11 @@ const SCHEMA = {
     'accuracy_m', 'provider', 'app_version', 'install_id'],
   // db/migrations: 20261106000000_hr_ess_request_limits.sql
   hr_ess_request_limits: ['type', 'limit_count', 'limit_minutes', 'updated_at', 'updated_by_user_id', 'updated_by_name'],
-  // 20261106000001_hr_ess_attendance_requests.sql
+  // 20261106000001_hr_ess_attendance_requests.sql; minutes from 20261111000001 (Phase 2D, C3)
   hr_ess_attendance_requests: ['id', 'employee_id', 'type', 'status', 'day', 'reason', 'place', 'fix_in', 'fix_out',
-    'day_before', 'day_written_at', 'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name', 'decided_at',
-    'decision_note', 'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason', 'created_at', 'updated_at'],
+    'minutes', 'day_before', 'day_written_at', 'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name',
+    'decided_at', 'decision_note', 'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason',
+    'created_at', 'updated_at'],
   hr_ess_attendance_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
     'action', 'note', 'details'],
   // 20261106000002_hr_ess_leave_requests.sql
@@ -96,6 +109,8 @@ const SCHEMA = {
     'action', 'note', 'details'],
   // 20261106000003_hr_ess_request_archives.sql
   hr_ess_request_archives: ['id', 'family', 'request_id', 'employee_id', 'archived_at'],
+  // 20261111000002_hr_ess_approval_escalations.sql (Phase 2D, D4)
+  hr_ess_approval_escalations: ['id', 'family', 'request_id', 'from_employee_id', 'to_employee_id', 'reason', 'escalated_at'],
   // 20261107000000_hr_ess_push_devices.sql
   hr_ess_push_devices: ['id', 'employee_id', 'token', 'platform', 'device_label', 'install_id', 'created_at', 'updated_at', 'last_seen_at', 'revoked_at'],
   // 20261107000001_hr_ess_notifications.sql
@@ -165,6 +180,11 @@ const UNIQUE = {
   ],
   hr_ess_request_archives: [
     { name: 'hr_ess_request_archives_family_request_id_employee_id_key', columns: ['family', 'request_id', 'employee_id'] },
+  ],
+  // D4: one escalation per person per request (20261111000002).
+  hr_ess_approval_escalations: [
+    { name: 'hr_ess_approval_escalations_family_request_id_to_employee_id_key',
+      columns: ['family', 'request_id', 'to_employee_id'] },
   ],
   hr_ess_push_devices: [
     { name: 'hr_ess_push_devices_token_key', columns: ['token'] },
@@ -290,6 +310,10 @@ const CHECKS = {
     hr_ess_bank_details_account_chk: (r) => /^[0-9]{8,18}$/.test(r.account_number ?? ''),
     hr_ess_bank_details_ifsc_chk: (r) => /^[A-Z]{4}0[A-Z0-9]{6}$/.test(r.ifsc_code ?? ''),
   },
+  // D4: the two families an escalation may sit on (20261111000002).
+  hr_ess_approval_escalations: {
+    hr_ess_approval_escalations_family_chk: (r) => ['attendance', 'leave'].includes(r.family),
+  },
 };
 
 /** The first CHECK of CHECKS this row breaks, as Postgres words it, or null. */
@@ -386,6 +410,8 @@ const DEFAULTS = {
   hr_ess_mock_location_reports: (at) => ({ reported_at: at }),
   hr_ess_request_limits: (at) => ({ updated_at: at }),
   hr_ess_attendance_requests: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
+  // D4: the escalation timestamp (20261111000002).
+  hr_ess_approval_escalations: (at) => ({ escalated_at: at }),
   hr_ess_leave_requests: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
   hr_ess_attendance_request_history: (at) => ({ at, details: {} }),
   hr_ess_leave_request_history: (at) => ({ at, details: {} }),
@@ -928,7 +954,8 @@ const FUNCTIONS = {
 
       const days = fake.rows('hr_staff_attendance');
       let written = false;
-      if (r.type === 'excuse_late') {
+      // A short leave is decided exactly as an excuse-late is (20261111000001, C3).
+      if (r.type === 'excuse_late' || r.type === 'short_leave') {
         const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
         if (!dayRow || (dayRow.late_minutes == null && !dayRow.late_excused)) {
           return { data: { outcome: 'not_late' }, error: null };
@@ -1057,7 +1084,8 @@ const FUNCTIONS = {
       if (r.status !== 'approved') return { data: { outcome: 'not_approved', request: clone(r) }, error: null };
       const days = fake.rows('hr_staff_attendance');
       const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
-      if (r.type === 'excuse_late') {
+      // A short leave is cancelled exactly as an excuse-late is (20261111000001, C3).
+      if (r.type === 'excuse_late' || r.type === 'short_leave') {
         if (dayRow && r.day_before) {
           Object.assign(dayRow, {
             late_excused: r.day_before.late_excused ?? false,

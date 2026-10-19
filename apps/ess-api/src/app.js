@@ -10,6 +10,7 @@ const { signInResolveRoute } = require('./routes/signIn');
 const { requireRoles } = require('./middleware/requireRoles');
 const { HR_RECORD_ROLES, ATTENDANCE_ROLES } = require('./policy/hrAccess');
 const { PORTAL_ROLES } = require('./policy/helpdesk');
+const { LEADER_ROLES } = require('./policy/leaders');
 const dataRequests = require('./routes/dataRequests');
 const personal = require('./routes/personal');
 const mockLocation = require('./routes/mockLocation');
@@ -18,11 +19,13 @@ const { attendanceDayRoute } = require('./routes/attendanceDay');
 const attendanceRequests = require('./routes/attendanceRequests');
 const leaveRequests = require('./routes/leaveRequests');
 const approvals = require('./routes/approvals');
+const leaders = require('./routes/leaders');
 const hrRequests = require('./routes/hrRequests');
 const pushDevices = require('./routes/pushDevices');
 const notifications = require('./routes/notifications');
 const meProfile = require('./routes/meProfile');
 const meOrg = require('./routes/meOrg');
+const facultyDay = require('./routes/facultyDay');
 const team = require('./routes/team');
 const wallPosts = require('./routes/wallPosts');
 const wallComments = require('./routes/wallComments');
@@ -195,10 +198,17 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.post('/leave-requests/:id/withdraw', asEmployee, leaveRequests.withdrawMyLeaveRequest({ store, now }));
   api.get('/leave/balances', asEmployee, leaveRequests.myLeaveBalances({ store, now }));
 
-  // D1, H6: the approvals Inbox, the decision, and the archive that clears it for one approver.
+  // D1, H6: the approvals Inbox, the decision, the archive that clears it for one approver, and
+  // D4: the chain one request waits on.
   api.get('/approvals', asEmployee, approvals.listApprovals({ store, now }));
   api.post('/approvals/:family/:id/decide', asEmployee, approvals.decideRequest({ store, now }));
-  api.post('/approvals/:family/:id/archive', asEmployee, approvals.archiveRequest({ store }));
+  api.post('/approvals/:family/:id/archive', asEmployee, approvals.archiveRequest({ store, now }));
+  api.get('/approvals/:family/:id/chain', asEmployee, approvals.requestChain({ store, now }));
+
+  // H5: the leaders' overview. A portal screen (ceo, super_admin), so an attendance session is
+  // refused with PORTAL_LOGIN_REQUIRED before the role check answers HR_ACCESS_DENIED.
+  const asLeader = [...asEmployee, requireRoles(LEADER_ROLES, 'HR_ACCESS_DENIED')];
+  api.get('/leaders/overview', asLeader, leaders.leadersOverview({ store, now }));
 
   // HR's own tools: cancelling an approved request, and the monthly limits.
   api.post('/hr/attendance-requests/:id/cancel', asAttendanceHr, hrRequests.cancelAttendanceRequest({ store, now }));
@@ -221,6 +231,8 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.get('/me/profile', asEmployee, meProfile.myProfile({ store }));
   api.put('/me/photo', asEmployee, meProfile.putMyPhoto({ store, now }));
   api.get('/me/org', asEmployee, meOrg.myOrg({ store }));
+  // H7: the faculty "my day" and the indicators card (Phase 2D).
+  api.get('/me/faculty-day', asEmployee, facultyDay.facultyDayRoute({ store, now }));
   api.get('/directory', asEmployee, meOrg.directory({ store }));
   api.get('/team/today', asEmployee, team.teamToday({ store, now }));
   api.get('/team/off-this-week', asEmployee, team.teamOffThisWeek({ store, now }));

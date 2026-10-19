@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.8.0
+  version: 0.9.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -1856,12 +1856,12 @@ paths:
       description: |
         Either token kind, with the checks of `GET /ess/me`. Files a request about the caller; the decision is `POST /ess/approvals/attendance/{id}/decide`.
 
-        - `type`: `on_duty` (takes `place`), `fix_a_day` (takes `fix_in` and/or `fix_out`, `HH:MM` 24-hour) or `excuse_late`. Work from home is not offered and `short_leave` is Phase 2.
+        - `type`: `on_duty` (takes `place`), `fix_a_day` (takes `fix_in` and/or `fix_out`, `HH:MM` 24-hour), `excuse_late`, or `short_leave` (takes `minutes`, whole minutes 1 to 480). Work from home is not offered.
         - `day`: this month or last month. Last month closes at the payroll cut-off: on the 6th and after, it is 409 `REQUEST_CLOSED`; the 5th itself is open.
         - `reason`: 5 to 1,000 characters. Each type takes exactly its own fields: a field of another type is a 400, never ignored.
         - A `fix_a_day` or an `excuse_late` is for a day that has happened; `on_duty` may be filed ahead (its day is written on the day itself).
         - One pending request per type and day: a second is 409 `DUPLICATE_REQUEST`.
-        - The month's counter is checked before the row goes in: over the limit HR set is 409 `LIMIT_REACHED`. Every form can show allowed, used and remaining from `GET /ess/leave/balances`.
+        - The month's counter is checked before the row goes in: over the limit HR set is 409 `LIMIT_REACHED`. A short leave counts in minutes against its 180-minute limit. Every form can show allowed, used and remaining from `GET /ess/leave/balances`.
       requestBody:
         required: true
         content:
@@ -1872,7 +1872,7 @@ paths:
               properties:
                 type:
                   type: string
-                  enum: [on_duty, fix_a_day, excuse_late]
+                  enum: [on_duty, fix_a_day, excuse_late, short_leave]
                 day:
                   type: string
                   format: date
@@ -1890,11 +1890,18 @@ paths:
                 fix_out:
                   type: [string, 'null']
                   pattern: '^\d{2}:\d{2}$'
+                minutes:
+                  type: [integer, 'null']
+                  minimum: 1
+                  maximum: 480
+                  description: Short leave only, whole minutes 1 to 480. Every other type takes none.
             examples:
               onDuty:
                 value: { type: on_duty, day: 2026-10-15, reason: College drive at the Pune centre., place: Pune centre }
               fixADay:
                 value: { type: fix_a_day, day: 2026-10-15, reason: I forgot to punch out., fix_out: '18:00' }
+              shortLeave:
+                value: { type: short_leave, day: 2026-10-15, reason: A dental appointment at 10., minutes: 90 }
       responses:
         '201':
           description: Filed. It waits for the approver (the manager on the HR record, or HR).
@@ -1919,6 +1926,7 @@ paths:
                       place: Pune centre
                       fix_in: null
                       fix_out: null
+                      minutes: null
                       created_at: '2026-10-14T05:00:00+00:00'
                       decided_at: null
                       decided_by_name: null
@@ -1974,6 +1982,7 @@ paths:
                         place: null
                         fix_in: null
                         fix_out: '18:00'
+                        minutes: null
                         created_at: '2026-10-14T05:00:00+00:00'
                         decided_at: '2026-10-15T05:00:00+00:00'
                         decided_by_name: Priya Sharma
@@ -2039,6 +2048,7 @@ paths:
                       place: Pune centre
                       fix_in: null
                       fix_out: null
+                      minutes: null
                       created_at: '2026-10-14T05:00:00+00:00'
                       decided_at: null
                       decided_by_name: null
@@ -2322,8 +2332,9 @@ paths:
         - A manager sees their own direct reports' requests, whatever their login role (an attendance session included). `status` must be `pending` for them.
         - HR, the CEO and super admins (the Scheduler's `ATTENDANCE_OVERRIDE_ROLES`; an HR Executive is not among them) see everybody's, and may filter by any status: `pending` (the default), `approved`, `rejected`, `withdrawn`, `cancelled` or `all`.
         - `counts` is always the pending count this caller can still decide, archived ones left out.
-        - Each request carries its context: how many of that kind the person has this month (pending + approved), the month's limit, the day's late marks (attendance only), and who else is off that day — never the leave's type or reason, and at most 5 names.
+        - Each request carries its context: how much of that kind the person has this month (pending + approved; minutes for a short leave), the month's limit, the day's late marks (attendance only), and who else is off that day — never the leave's type or reason, and at most 5 names.
         - Archiving (`POST /ess/approvals/{family}/{id}/archive`) clears a request from the caller's own Inbox without deciding it.
+        - The reporting line a request waits on, with who may decide it now, is `GET /ess/approvals/{family}/{id}/chain`.
       parameters:
         - name: status
           in: query
@@ -2354,6 +2365,7 @@ paths:
                         place: null
                         fix_in: null
                         fix_out: null
+                        minutes: null
                         created_at: '2026-10-15T06:30:00+00:00'
                         decided_at: null
                         decided_by_name: null
@@ -2394,7 +2406,7 @@ paths:
       x-owner: ess
       summary: Decide a request — approve or reject (D1, H6)
       description: |
-        The manager on the HR record, or HR, the CEO or a super admin (task D1). An attendance session may decide as a manager; the HR-wide decision needs the portal role.
+        The manager on the HR record, or HR, the CEO or a super admin (task D1). An attendance session may decide as a manager; the HR-wide decision needs the portal role. With multi-level approvals (D4), the FIRST unskipped level of the reporting line may decide -- a level above an active manager may not.
 
         - `decision`: `approve` or `reject`. `note`: up to 1,000 characters; a rejection needs one (at least 3), because the employee is owed the reason.
         - An approval writes the official day through the Scheduler's override function, in one transaction with the request's status and history; a second decision on the same request is 409 `ALREADY_DECIDED` whatever two approvers do at the same moment.
@@ -2457,6 +2469,7 @@ paths:
                       place: Pune centre
                       fix_in: null
                       fix_out: null
+                      minutes: null
                       created_at: '2026-10-14T05:00:00+00:00'
                       decided_at: '2026-10-16T06:30:00+00:00'
                       decided_by_name: Priya Sharma
@@ -2529,6 +2542,156 @@ paths:
         default:
           $ref: '#/components/responses/EssUnexpected'
 
+  /ess/approvals/{family}/{id}/chain:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: requestApprovalChain
+      tags: [ESS]
+      x-owner: ess
+      summary: The reporting line one request waits on (D4)
+      description: |
+        The requester themselves, anybody on their reporting line, and HR-wide callers (`ATTENDANCE_OVERRIDE_ROLES`) may read it; anybody else is 403 `NOT_AN_APPROVER`.
+
+        Each level says who it is, why it is skipped today (`same_person`, `not_active` or `on_leave`), and whether it is the level that may decide now -- the FIRST level that is not skipped. `hr_fallback` is true when every level is skipped, or the requester has no manager on the record: only HR, the CEO and super admins may decide the request then.
+      parameters:
+        - name: family
+          in: path
+          required: true
+          description: '`attendance` or `leave`.'
+          schema:
+            type: string
+            enum: [attendance, leave]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The request's chain, as it stands today.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalChain'
+              examples:
+                firstLevel:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      family: attendance
+                      type: on_duty
+                      status: pending
+                      day: '2026-10-15'
+                      reason: College drive at the Pune centre.
+                      place: Pune centre
+                      fix_in: null
+                      fix_out: null
+                      minutes: null
+                      created_at: '2026-10-14T05:00:00+00:00'
+                      decided_at: null
+                      decided_by_name: null
+                      decision_note: null
+                      cancelled_at: null
+                      cancelled_by_name: null
+                      cancel_reason: null
+                      employee: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: Suresh Yadav, employee_code: RVM-0217 }
+                    chain:
+                      - employee: { id: 7a1c9e2b-3f4d-4c5b-8a9e-2b3c4d5e6f7a, full_name: Priya Sharma, employee_code: RVM-0101 }
+                        may_decide: true
+                        skipped: null
+                      - employee: { id: 8b2d0f3c-4a5e-4d6c-9b0f-3c4d5e6f7a8b, full_name: Arjun Mehta, employee_code: RVM-0004 }
+                        may_decide: false
+                        skipped: null
+                    hr_fallback: false
+                skipped:
+                  value:
+                    request:
+                      id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c
+                      family: leave
+                      type: cl
+                      status: pending
+                      day: '2026-10-16'
+                      reason: Family function in the home town.
+                      created_at: '2026-10-14T05:00:00+00:00'
+                      decided_at: null
+                      decided_by_name: null
+                      decision_note: null
+                      cancelled_at: null
+                      cancelled_by_name: null
+                      cancel_reason: null
+                      employee: { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, full_name: Suresh Yadav, employee_code: RVM-0217 }
+                    chain:
+                      - employee: { id: 7a1c9e2b-3f4d-4c5b-8a9e-2b3c4d5e6f7a, full_name: Priya Sharma, employee_code: RVM-0101 }
+                        may_decide: false
+                        skipped: on_leave
+                      - employee: { id: 8b2d0f3c-4a5e-4d6c-9b0f-3c4d5e6f7a8b, full_name: Arjun Mehta, employee_code: RVM-0004 }
+                        may_decide: true
+                        skipped: null
+                    hr_fallback: false
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssApproverForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/leaders/overview:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: leadersOverview
+      tags: [ESS]
+      x-owner: ess
+      summary: The whole organisation at a glance, in counts only (H5)
+      description: |
+        A portal login whose role is `ceo` or `super_admin`; an attendance session is 403 `PORTAL_LOGIN_REQUIRED`, any other role 403 `HR_ACCESS_DENIED`.
+
+        Counts only: the active headcount, today's attendance states, how many are on leave this IST week, and what waits in the approval queue (with the age of the oldest pending request, in days). No names, no pay, no performance.
+      responses:
+        '200':
+          description: The organisation's numbers for today.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadersOverview'
+              examples:
+                today:
+                  value:
+                    headcount: 212
+                    attendance_today: { in: 104, done: 41, not_in: 17, on_leave: 22, week_off: 27, holiday: 1 }
+                    off_this_week: 46
+                    pending: { attendance: 3, leave: 2, total: 5, oldest_days: 3 }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssLeadersForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
   /ess/hr/attendance-requests/{id}/cancel:
     servers:
       - url: 'https://{essHost}/api'
@@ -2584,6 +2747,7 @@ paths:
                       place: Pune centre
                       fix_in: null
                       fix_out: null
+                      minutes: null
                       created_at: '2026-10-14T05:00:00+00:00'
                       decided_at: '2026-10-16T06:00:00+00:00'
                       decided_by_name: Priya Sharma
@@ -3316,6 +3480,70 @@ paths:
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
           $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/faculty-day:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: myFacultyDay
+      tags: [ESS]
+      x-owner: ess
+      summary: The faculty "my day" and the indicators card (H7)
+      description: |
+        A portal login whose account carries a faculty record (`users.faculty_id`); anybody else is 403 `NOT_FACULTY`, an attendance session included. The day is today (IST) by default; `date` may be any day of this month or last month, as the attendance day read allows.
+
+        Today's sessions are the batches that run this weekday inside their dates (owned, or covered by a substitution whose range includes the day -- substitution batches are not branch-filtered, exactly as the Scheduler's own report leaves them). A session is `marked` when any `student_attendance` row exists for that batch and date. `pending_remarks` counts the unresolved `pending_alerts` of type `absent_remarks_missing` for the day. The indicators card gives today's and this month's marked-session percentages and the joined, not-on-hold student counts. Counts only: no student names, phones, remarks or fees are read or sent.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 'The day, `YYYY-MM-DD`; today (IST) when left out.'
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: The day's sessions and the card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacultyDay'
+              examples:
+                teachingDay:
+                  value:
+                    date: '2026-10-19'
+                    faculty_id: 4d5e6f7a-8b9c-4d0e-9f1a-2b3c4d5e6f7a
+                    sessions:
+                      - { id: 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b, name: CAD Morning Batch, start_time: '09:00:00', end_time: '11:00:00', location_id: 1, location_name: Faridabad, covered: false, students: 14, marked: true }
+                      - { id: 6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c, name: AutoCAD Evening Batch, start_time: '18:00:00', end_time: '20:00:00', location_id: 2, location_name: Pune, covered: true, students: 11, marked: false }
+                    pending_remarks: 3
+                    indicators:
+                      sessions_today: 2
+                      marked_today: 1
+                      today_percentage: 50
+                      month_expected: 34
+                      month_marked: 29
+                      month_percentage: 85
+                      active_students: 23
+                      total_students: 25
+                      sessions_without_attendance: 1
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssFacultyForbidden'
         '429':
           $ref: '#/components/responses/EssRateLimited'
         '503':
@@ -10871,7 +11099,7 @@ components:
     AttendanceRequest:
       type: object
       description: One attendance request as the employee and the approver read it. `employee` is present in an approver's reply, never in the person's own list.
-      required: [id, family, type, status, day, reason, place, fix_in, fix_out, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
+      required: [id, family, type, status, day, reason, place, fix_in, fix_out, minutes, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
       properties:
         id:
           type: string
@@ -10881,7 +11109,7 @@ components:
           enum: [attendance]
         type:
           type: string
-          enum: [on_duty, fix_a_day, excuse_late]
+          enum: [on_duty, fix_a_day, excuse_late, short_leave]
         status:
           type: string
           enum: [pending, approved, rejected, withdrawn, cancelled]
@@ -10900,6 +11128,11 @@ components:
         fix_out:
           type: [string, 'null']
           pattern: '^\d{2}:\d{2}$'
+        minutes:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 480
+          description: A short leave's minutes; null for every other type.
         created_at:
           type: string
           format: date-time
@@ -10986,7 +11219,7 @@ components:
         type_this_month:
           type: integer
           minimum: 0
-          description: This kind of request the person has this month, pending and approved.
+          description: This kind of request the person has this month, pending and approved. For a short leave it is the minutes; for every other type it is the count.
         month_limit:
           type: [integer, 'null']
           description: The month's limit for the type; null means no limit.
@@ -11011,7 +11244,7 @@ components:
     InboxAttendanceRequest:
       type: object
       description: An attendance request in an approver's Inbox, with whose it is and its context.
-      required: [id, family, type, status, day, reason, place, fix_in, fix_out, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason, employee, context]
+      required: [id, family, type, status, day, reason, place, fix_in, fix_out, minutes, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason, employee, context]
       properties:
         id:
           type: string
@@ -11021,7 +11254,7 @@ components:
           enum: [attendance]
         type:
           type: string
-          enum: [on_duty, fix_a_day, excuse_late]
+          enum: [on_duty, fix_a_day, excuse_late, short_leave]
         status:
           type: string
           enum: [pending, approved, rejected, withdrawn, cancelled]
@@ -11040,6 +11273,11 @@ components:
         fix_out:
           type: [string, 'null']
           pattern: '^\d{2}:\d{2}$'
+        minutes:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 480
+          description: A short leave's minutes; null for every other type.
         created_at:
           type: string
           format: date-time
@@ -11138,6 +11376,93 @@ components:
               - $ref: '#/components/schemas/InboxLeaveRequest'
         truncated:
           type: boolean
+
+    ApprovalChainLevel:
+      type: object
+      description: One level of the reporting line, judged for the request's day (D4).
+      required: [employee, may_decide, skipped]
+      properties:
+        employee:
+          $ref: '#/components/schemas/EmployeeCard'
+        may_decide:
+          type: boolean
+          description: True for the FIRST level that is not skipped; false for every other.
+        skipped:
+          description: Why this level cannot decide the request today; null when it may.
+          type: [string, 'null']
+          enum: [same_person, not_active, on_leave, null]
+
+    ApprovalChain:
+      type: object
+      description: The request and its reporting line, first manager first.
+      required: [request, chain, hr_fallback]
+      properties:
+        request:
+          oneOf:
+            - $ref: '#/components/schemas/AttendanceRequest'
+            - $ref: '#/components/schemas/LeaveRequest'
+        chain:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApprovalChainLevel'
+        hr_fallback:
+          type: boolean
+          description: True when every level is skipped, or there is no line at all -- only HR, the CEO and super admins may decide the request then.
+
+    LeadersOverview:
+      type: object
+      description: The organisation's numbers for today, in counts only (H5).
+      required: [headcount, attendance_today, off_this_week, pending]
+      properties:
+        headcount:
+          type: integer
+          minimum: 0
+          description: Everybody not archived.
+        attendance_today:
+          type: object
+          description: Today's states over the active people, as Team today reads them. A person the sheet has no row for reads as not_in.
+          required: [in, done, not_in, on_leave, week_off, holiday]
+          properties:
+            in:
+              type: integer
+              minimum: 0
+            done:
+              type: integer
+              minimum: 0
+            not_in:
+              type: integer
+              minimum: 0
+            on_leave:
+              type: integer
+              minimum: 0
+            week_off:
+              type: integer
+              minimum: 0
+            holiday:
+              type: integer
+              minimum: 0
+        off_this_week:
+          type: integer
+          minimum: 0
+          description: Distinct people the sheet records leave for in this IST week (Monday to Sunday).
+        pending:
+          type: object
+          description: What waits in the approval queue, archived ones left out.
+          required: [attendance, leave, total, oldest_days]
+          properties:
+            attendance:
+              type: integer
+              minimum: 0
+            leave:
+              type: integer
+              minimum: 0
+            total:
+              type: integer
+              minimum: 0
+            oldest_days:
+              type: [integer, 'null']
+              minimum: 0
+              description: How many whole days the oldest pending request has waited; null when nothing waits.
 
     BalanceLine:
       type: object
@@ -11416,6 +11741,85 @@ components:
           maxItems: 50
           items:
             $ref: '#/components/schemas/TimelineEntry'
+
+    FacultyDay:
+      type: object
+      required: [date, faculty_id, sessions, pending_remarks, indicators]
+      properties:
+        date:
+          type: string
+          format: date
+        faculty_id:
+          type: string
+          format: uuid
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacultySession'
+        pending_remarks:
+          type: integer
+          minimum: 0
+        indicators:
+          $ref: '#/components/schemas/FacultyIndicators'
+
+    FacultySession:
+      type: object
+      required: [id, name, start_time, end_time, location_id, location_name, covered, students, marked]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        start_time:
+          type: [string, 'null']
+        end_time:
+          type: [string, 'null']
+        location_id:
+          type: [integer, 'null']
+        location_name:
+          type: [string, 'null']
+        covered:
+          type: boolean
+        students:
+          type: integer
+          minimum: 0
+        marked:
+          type: boolean
+
+    FacultyIndicators:
+      type: object
+      required: [sessions_today, marked_today, today_percentage, month_expected, month_marked, month_percentage, active_students, total_students, sessions_without_attendance]
+      properties:
+        sessions_today:
+          type: integer
+          minimum: 0
+        marked_today:
+          type: integer
+          minimum: 0
+        today_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        month_expected:
+          type: integer
+          minimum: 0
+        month_marked:
+          type: integer
+          minimum: 0
+        month_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        active_students:
+          type: integer
+          minimum: 0
+        total_students:
+          type: integer
+          minimum: 0
+        sessions_without_attendance:
+          type: integer
+          minimum: 0
 
     OrgView:
       type: object
@@ -14355,6 +14759,12 @@ components:
         error: HR tools need your portal login. Sign in with your username or login phone.
         code: PORTAL_LOGIN_REQUIRED
 
+    EssNotFaculty:
+      summary: A staff login with no faculty record
+      value:
+        error: This view is for teaching staff with a faculty record. Ask HR if yours is missing.
+        code: NOT_FACULTY
+
     NoTokenProvided:
       summary: No Authorization header (no code)
       value:
@@ -14535,6 +14945,11 @@ components:
       value:
         error: That is over this type's monthly limit. Check the balance on the form.
         code: LIMIT_REACHED
+
+    EssRequestMinutes:
+      value:
+        error: Give the short leave in whole minutes, from 1 to 480.
+        code: REQUEST_MINUTES
 
     EssRequestNotFound:
       value:
@@ -15452,7 +15867,7 @@ components:
 
     EssRequestBad:
       description: |
-        `VALIDATION_FAILED`: the message says which rule — a type, a day, a reason, a place, a time, a body the ESS cannot read. `INVALID_JSON`, `BAD_REQUEST`: a body it cannot read. `DAY_OUT_OF_RANGE`: a month other than this one and the last.
+        `VALIDATION_FAILED`: the message says which rule — a type, a day, a reason, a place, a time, a minutes, a body the ESS cannot read. `INVALID_JSON`, `BAD_REQUEST`: a body it cannot read. `DAY_OUT_OF_RANGE`: a month other than this one and the last.
       content:
         application/json:
           schema:
@@ -15470,6 +15885,8 @@ components:
               $ref: '#/components/examples/EssNotificationCategories'
             unknownField:
               $ref: '#/components/examples/EssUnknownField'
+            requestMinutes:
+              $ref: '#/components/examples/EssRequestMinutes'
             invalidId:
               $ref: '#/components/examples/EssInvalidId'
             invalidJson:
@@ -15529,7 +15946,7 @@ components:
     EssApproverForbidden:
       description: |
         Not a reason to sign out.
-        - `NOT_AN_APPROVER`: this request is not this caller's to decide or clear.
+        - `NOT_AN_APPROVER`: this request is not this caller's to decide, clear or view the chain of.
         - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
       content:
         application/json:
@@ -15544,6 +15961,54 @@ components:
               $ref: '#/components/examples/EssNotLinked'
             notActive:
               $ref: '#/components/examples/EssNotActive'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssLeadersForbidden:
+      description: |
+        Not a reason to sign out.
+        - `PORTAL_LOGIN_REQUIRED`, `HR_ACCESS_DENIED`: the leaders' overview is a portal screen for `ceo` and `super_admin` only.
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            hrAccessDenied:
+              $ref: '#/components/examples/EssHrAccessDenied'
+            portalLoginRequired:
+              $ref: '#/components/examples/EssPortalLoginRequired'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssFacultyForbidden:
+      description: |
+        Not a reason to sign out.
+        - `NOT_FACULTY`: the caller's account carries no faculty record; teaching staff sign in at the portal (H7).
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFaculty:
+              $ref: '#/components/examples/EssNotFaculty'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
             passwordChangeRequired:
               $ref: '#/components/examples/EssPasswordChangeRequired'
 

@@ -328,6 +328,45 @@ reason, and the weekly reminder reaches only those still missing one; a change r
 HR's queue and its answer is recorded; a bank row carries its consent and shows only its last
 four digits to anybody but its owner; a card's QR link proves an employee without a sign-in.
 
+### Phase 2D: leader and faculty views and deeper approvals — built 19 Oct 2026
+
+The brief's Phase 2 close: the light KPI cards, the faculty "my day", the approval chains and
+short leave, built to this plan and deployed. Everything is in `apps/ess-api`; migrations 25-26
+carry the two database changes.
+
+| Work | How, with no Scheduler change | Tasks | State |
+| --- | --- | --- | --- |
+| The leaders' overview | `GET /api/ess/leaders/overview` for the CEO and super admins: headcount, today's attendance states, who is off this week, and the approval queue with the oldest request's age. Counts only -- no names, pay or performance | H5 | Built |
+| The faculty "my day" | `GET /api/ess/me/faculty-day?date=`: today's sessions owned or covered through `faculty_substitutions` (other centres included), with times, centre, students and a `marked` flag; the unresolved `absent_remarks_missing` alerts; the indicators card (today's and the month's marked-session percentages, joined/active students, sessions without attendance). Counts only | H7 | Built |
+| Approval chains | `GET /api/ess/approvals/{family}/{id}/chain` (each level, its skip reason and the first that may decide; `hr_fallback` when none can) and `POST .../archive` (clear one approver's Inbox without deciding). An hourly job escalates a request pending past the window to the next level, records it and notifies | D4 | Built |
+| Short leave | A fourth attendance-request type, counted in minutes: 1 to 480 a day, 180 a month by default (seeded in `hr_ess_request_limits`). An approval excuses the late it covers, exactly as an excuse-late does; HR's cancel restores it | C3 | Built |
+| Class marking | Not built: it waits on decision 8 | H1 | Decision |
+
+**What the build had to choose, for KP to confirm:**
+- **the escalation window is two IST days**, one level a run, HR the fallback when the line is
+  exhausted -- a policy constant in `src/policy/approvals.js` and the job, not a database setting;
+- **short leave's monthly limit is 180 minutes**, seeded with the other limits so HR can change it
+  with the limits endpoint;
+- **the month's percentage** counts each batch's weekdays inside its own start and end dates, up
+  to the asked day, against the days marked in `student_attendance` -- the Scheduler report's rule,
+  without its branch filter (a substitution batch is never branch-filtered there either);
+- **the HOD domain roster is still not built**: the domain-to-faculty mapping lives in the HOD
+  module, not on the HR record (see Phase 1E).
+
+**Tests:** the suite is 2,452 in 53 files, the contract at 0.9.0 with 1,183 contract checks
+(Wave 9 included). Phase 2D's own files are `leaders`, `approvalsChain`, `facultyDay` and
+`approvals` (the policy and the job). `npm run test:migrations` applies all twenty-six migrations
+and their rollbacks twice.
+
+**You after:** apply migrations 13 to 16 (the Wall's) -- the only set still outstanding; 25-26 are
+applied. Until 13-16 are applied every Wall endpoint but its settings answers 503
+`MODULE_NOT_INSTALLED`.
+
+**Done when:** the CEO sees the organisation in numbers with no name in the reply; a faculty
+member sees today's batches -- including the one they cover -- with what is marked and what is
+not; a request older than two days climbs one level and the person told can see the chain; a
+short leave is counted in minutes and excuses the late it covers.
+
 ## Out of scope: each needs a Scheduler change
 
 These were in the gap report or found in STEP 1. They stay as they are unless KP decides to change the Scheduler separately.
@@ -365,7 +404,7 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **All twelve were applied on 19 Oct 2026; 13 to 24 are still to be applied.**
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 17 to 26; 13 to 16 (the Wall's) are still to be applied.**
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
@@ -393,6 +432,8 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 22 | [`20261110000004_hr_ess_helpdesk_assignment.sql`](../db/migrations/20261110000004_hr_ess_helpdesk_assignment.sql) | [`20261110000004_hr_ess_helpdesk_assignment.sql`](../db/rollbacks/20261110000004_hr_ess_helpdesk_assignment.sql): drops the assignments table, then the three columns (only while the tickets table is still there, as 18's rollback does) | Additive only: three columns on `hr_ess_helpdesk_tickets` (`assigned_by_employee_id`, `assigned_by_name`, `assigned_at`) and the history `hr_ess_helpdesk_assignments` (one row per assignment, who it went to, who had it before, who pointed it there, and the reassignment's note). One index (the ticket's history, oldest first) | KP 5: the assign endpoint answers 503; a claim stays the only way to take a ticket |
 | 23 | [`20261110000005_hr_ess_posh_queue.sql`](../db/migrations/20261110000005_hr_ess_posh_queue.sql) | [`20261110000005_hr_ess_posh_queue.sql`](../db/rollbacks/20261110000005_hr_ess_posh_queue.sql): moves the POSH row back to HR and puts the narrower CHECK back (only while the table is still there) | One non-additive touch on an `hr_ess_*` table: the queue-roles CHECK is widened to admit `internal_committee` and the seeded `posh` row's queue is moved to it. Nothing outside `hr_ess_helpdesk_categories` changes | KP 6: nothing waits on it; the POSH queue stays empty until RVM appoints the committee |
 | 24 | [`20261110000006_hr_ess_notification_documents.sql`](../db/migrations/20261110000006_hr_ess_notification_documents.sql) | [`20261110000006_hr_ess_notification_documents.sql`](../db/rollbacks/20261110000006_hr_ess_notification_documents.sql): puts both CHECKs back to the ten categories before it (only while the tables are still there) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `documents` as well, as migration 18 did for `helpdesk` | E4: the weekly missing-documents reminder is logged as a failed write; a person cannot turn it off |
+| 25 | [`20261111000001_hr_ess_short_leave.sql`](../db/migrations/20261111000001_hr_ess_short_leave.sql) | [`20261111000001_hr_ess_short_leave.sql`](../db/rollbacks/20261111000001_hr_ess_short_leave.sql): puts the three-type CHECKs back, drops the minutes column, and re-creates the decide and cancel functions as migration 10 first wrote them (only while the table is still there) | The ESS's own request table, additively: the type CHECK admits `short_leave`; a `minutes` column (whole minutes 1 to 480) with the shape CHECK extended so only a short leave carries minutes; the decide and cancel functions re-created, the short-leave branch writing the day exactly as an excuse-late does | C3: a short-leave request is refused (503 `MODULE_NOT_INSTALLED`); the other types work |
+| 26 | [`20261111000002_hr_ess_approval_escalations.sql`](../db/migrations/20261111000002_hr_ess_approval_escalations.sql) | [`20261111000002_hr_ess_approval_escalations.sql`](../db/rollbacks/20261111000002_hr_ess_approval_escalations.sql): drops the table | `hr_ess_approval_escalations`: one row per level told -- the family, the request (no foreign key, so the trail outlives it), who it came from and who it went to, the reason and the time; unique on (family, request, person), so a level is escalated once | D4: the chain view still works from the line; the escalation job logs and stops escalating |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 

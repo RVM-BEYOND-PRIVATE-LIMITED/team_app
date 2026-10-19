@@ -63,6 +63,7 @@ describe('POST /api/ess/attendance-requests', () => {
         place: body.place ?? null,
         fix_in: null,
         fix_out: body.fix_out ?? null,
+        minutes: null,
         decided_at: null,
         decided_by_name: null,
         decision_note: null,
@@ -101,7 +102,7 @@ describe('POST /api/ess/attendance-requests', () => {
   it.each([
     ['no type', { day: '2026-10-15', reason: 'Client visit, please.' }, MESSAGES.ATTENDANCE_REQUEST_TYPE],
     ['work from home', { type: 'wfh', day: '2026-10-15', reason: 'Working from home today.' }, MESSAGES.ATTENDANCE_REQUEST_TYPE],
-    ['short leave', { type: 'short_leave', day: '2026-10-15', reason: 'Two hours in the morning.' }, MESSAGES.ATTENDANCE_REQUEST_TYPE],
+    ['a short leave with no minutes', { type: 'short_leave', day: '2026-10-15', reason: 'Two hours in the morning.' }, MESSAGES.REQUEST_MINUTES],
     ['no day', { type: 'on_duty', reason: 'Client visit, please.', place: 'Site' }, MESSAGES.DATE_FORMAT],
     ['a day that is not a date', { type: 'on_duty', day: '2026-02-30', reason: 'Client visit, please.', place: 'Site' }, MESSAGES.DATE_FORMAT],
     ['a short reason', { type: 'on_duty', day: '2026-10-15', reason: 'trip', place: 'Site' }, MESSAGES.REQUEST_REASON],
@@ -214,7 +215,7 @@ describe('GET /api/ess/attendance-requests', () => {
     expect(res.body.requests[0]).toEqual({
       id: REQ(2), family: 'attendance', type: 'excuse_late', status: 'rejected', day: '2026-10-15',
       reason: 'Client visit at the Pune centre.', created_at: '2026-10-14T05:00:00+00:00',
-      place: null, fix_in: null, fix_out: null,
+      place: null, fix_in: null, fix_out: null, minutes: null,
       decided_at: '2026-10-15T05:00:00+00:00', decided_by_name: 'Test Admin Manager', decision_note: 'Not a good reason.',
       cancelled_at: null, cancelled_by_name: null, cancel_reason: null,
     });
