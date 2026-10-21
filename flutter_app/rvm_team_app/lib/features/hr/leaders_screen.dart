@@ -16,7 +16,8 @@ class LeadersScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => getIt<LoadBloc<LeadersOverview>>()..add(const LoadRequested()),
+      create: (_) =>
+          getIt<LoadBloc<LeadersOverview>>()..add(const LoadRequested()),
       child: const _LeadersView(),
     );
   }
@@ -35,42 +36,70 @@ class _LeadersView extends StatelessWidget {
             subtitle: const Text('Organisation at a glance'),
             actions: [
               Builder(
-                builder: (context) => IconButton(
+                builder: (context) => TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
                   tooltip: 'Refresh',
-                  onPressed: () => context.read<LoadBloc<LeadersOverview>>().add(const LoadRefreshed()),
-                  icon: const Icon(Icons.refresh),
+                  onPressed: () => context
+                      .read<LoadBloc<LeadersOverview>>()
+                      .add(const LoadRefreshed()),
                 ),
               ),
             ],
           ),
           Expanded(
-            child: BlocBuilder<LoadBloc<LeadersOverview>, LoadState<LeadersOverview>>(
+            child: BlocBuilder<LoadBloc<LeadersOverview>,
+                LoadState<LeadersOverview>>(
               builder: (context, state) {
-                if (state.status == LoadStatus.loading || state.status == LoadStatus.initial) {
+                if (state.status == LoadStatus.loading ||
+                    state.status == LoadStatus.initial) {
                   return const AppLoading();
                 }
                 if (state.status == LoadStatus.failure) {
                   return AppError(
-                    message: state.failure?.message ?? 'Could not load the overview.',
-                    onRetry: () => context.read<LoadBloc<LeadersOverview>>().add(const LoadRefreshed()),
+                    message: state.failure?.message ??
+                        'Could not load the overview.',
+                    onRetry: () => context
+                        .read<LoadBloc<LeadersOverview>>()
+                        .add(const LoadRefreshed()),
                   );
                 }
                 final o = state.data!;
                 return RefreshIndicator(
-                  onRefresh: () async => context.read<LoadBloc<LeadersOverview>>().add(const LoadRefreshed()),
+                  onRefresh: () async => context
+                      .read<LoadBloc<LeadersOverview>>()
+                      .add(const LoadRefreshed()),
                   child: ListView(
                     padding: const EdgeInsets.all(RvmSpacing.md),
                     children: [
-                      _Kpi(label: 'Headcount', value: '${o.headcount}', icon: Icons.groups_outlined),
+                      _Kpi(
+                          label: 'Headcount',
+                          value: '${o.headcount}',
+                          icon: Icons.groups_outlined),
                       const SizedBox(height: RvmSpacing.sm),
                       Wrap(
                         spacing: RvmSpacing.sm,
                         runSpacing: RvmSpacing.sm,
                         children: [
-                          _Kpi(label: 'In today', value: '${o.inCount + o.doneCount}', icon: Icons.login, width: 160),
-                          _Kpi(label: 'Not in', value: '${o.notIn}', icon: Icons.person_off_outlined, width: 160),
-                          _Kpi(label: 'On leave', value: '${o.onLeave}', icon: Icons.beach_access_outlined, width: 160),
-                          _Kpi(label: 'Off this week', value: '${o.offThisWeek}', icon: Icons.event_busy_outlined, width: 160),
+                          _Kpi(
+                              label: 'In today',
+                              value: '${o.inCount + o.doneCount}',
+                              icon: Icons.login,
+                              width: 160),
+                          _Kpi(
+                              label: 'Not in',
+                              value: '${o.notIn}',
+                              icon: Icons.person_off_outlined,
+                              width: 160),
+                          _Kpi(
+                              label: 'On leave',
+                              value: '${o.onLeave}',
+                              icon: Icons.beach_access_outlined,
+                              width: 160),
+                          _Kpi(
+                              label: 'Off this week',
+                              value: '${o.offThisWeek}',
+                              icon: Icons.event_busy_outlined,
+                              width: 160),
                         ],
                       ),
                       const SizedBox(height: RvmSpacing.md),
@@ -80,12 +109,17 @@ class _LeadersView extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Approval queue', style: Theme.of(context).textTheme.titleMedium),
+                              Text('Approval queue',
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium),
                               const SizedBox(height: RvmSpacing.sm),
-                              Text('${o.pendingTotal} pending · ${o.pendingAttendance} attendance · ${o.pendingLeave} leave'),
+                              Text(
+                                  '${o.pendingTotal} pending · ${o.pendingAttendance} attendance · ${o.pendingLeave} leave'),
                               if (o.oldestDays != null)
-                                Text('Oldest waiting ${o.oldestDays} day${o.oldestDays == 1 ? '' : 's'}',
-                                    style: const TextStyle(color: RvmColors.warning)),
+                                Text(
+                                    'Oldest waiting ${o.oldestDays} day${o.oldestDays == 1 ? '' : 's'}',
+                                    style: const TextStyle(
+                                        color: RvmColors.warning)),
                             ],
                           ),
                         ),
@@ -103,7 +137,11 @@ class _LeadersView extends StatelessWidget {
 }
 
 class _Kpi extends StatelessWidget {
-  const _Kpi({required this.label, required this.value, required this.icon, this.width});
+  const _Kpi(
+      {required this.label,
+      required this.value,
+      required this.icon,
+      this.width});
   final String label;
   final String value;
   final IconData icon;
@@ -125,7 +163,8 @@ class _Kpi extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(label, style: Theme.of(context).textTheme.bodySmall),
-                    Text(value, style: Theme.of(context).textTheme.headlineSmall),
+                    Text(value,
+                        style: Theme.of(context).textTheme.headlineSmall),
                   ],
                 ),
               ),

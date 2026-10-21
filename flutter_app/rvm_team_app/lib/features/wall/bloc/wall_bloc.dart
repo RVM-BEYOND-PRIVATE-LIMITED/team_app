@@ -20,7 +20,12 @@ class WallRefreshed extends WallEvent {
 }
 
 class WallPostCreated extends WallEvent {
-  const WallPostCreated({required this.body, this.kind = 'post', this.scope, this.poll, this.attachments});
+  const WallPostCreated(
+      {required this.body,
+      this.kind = 'post',
+      this.scope,
+      this.poll,
+      this.attachments});
   final String body;
   final String kind;
   final String? scope;
@@ -66,7 +71,8 @@ class WallAnnouncementAcked extends WallEvent {
 }
 
 class WallWished extends WallEvent {
-  const WallWished({required this.employeeId, required this.occasion, required this.body});
+  const WallWished(
+      {required this.employeeId, required this.occasion, required this.body});
   final String employeeId;
   final String occasion;
   final String body;
@@ -96,7 +102,17 @@ class WallState extends Equatable {
   final int actionNonce;
 
   @override
-  List<Object?> get props => [status, posts, settings, announcements, celebrations, failure, submitting, actionFailure, actionNonce];
+  List<Object?> get props => [
+        status,
+        posts,
+        settings,
+        announcements,
+        celebrations,
+        failure,
+        submitting,
+        actionFailure,
+        actionNonce
+      ];
 }
 
 class WallBloc extends Bloc<WallEvent, WallState> {
@@ -115,28 +131,59 @@ class WallBloc extends Bloc<WallEvent, WallState> {
   final EssRepository _repo;
 
   Future<void> _load(Emitter<WallState> emit) async {
-    emit(WallState(status: LoadStatus.loading, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations));
-    try {
-      final settings = state.settings ?? await _repo.wallSettings();
-      final feed = await _repo.wallFeed();
-      final announcements = await _repo.wallAnnouncements();
-      final celebrations = await _repo.wallCelebrations();
+    emit(WallState(
+        status: LoadStatus.loading,
+        posts: state.posts,
+        settings: state.settings,
+        announcements: state.announcements,
+        celebrations: state.celebrations));
+    // These reads return their failure instead of throwing. A debugger set to
+    // stop on exceptions must not open on an expected 503, and a Wall whose
+    // tables have not been migrated must render a retry screen, not crash.
+    final settingsResult =
+        state.settings == null ? await _repo.wallSettingsSafe() : null;
+    final feedResult = await _repo.wallFeedSafe();
+    final feed = feedResult.data;
+    if (feed == null) {
       emit(WallState(
-        status: feed.posts.isEmpty ? LoadStatus.empty : LoadStatus.success,
-        posts: feed.posts,
-        settings: settings,
-        announcements: announcements,
-        celebrations: celebrations,
+        status: LoadStatus.failure,
+        posts: state.posts,
+        settings: state.settings ?? settingsResult?.data,
+        failure: feedResult.failure ??
+            const UnknownFailure('Could not load the Wall. Pull to retry.'),
       ));
-    } on Failure catch (f) {
-      emit(WallState(status: LoadStatus.failure, failure: f, posts: state.posts));
+      return;
     }
+    // Announcements and celebrations are optional sections: if their tables are
+    // not installed, the feed still opens.
+    final announcements =
+        (await _repo.wallAnnouncementsSafe()).data ?? state.announcements;
+    final celebrations =
+        (await _repo.wallCelebrationsSafe()).data ?? state.celebrations;
+    emit(WallState(
+      status: feed.posts.isEmpty ? LoadStatus.empty : LoadStatus.success,
+      posts: feed.posts,
+      settings: state.settings ?? settingsResult?.data,
+      announcements: announcements,
+      celebrations: celebrations,
+    ));
   }
 
   Future<void> _onPost(WallPostCreated e, Emitter<WallState> emit) async {
-    emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, submitting: true));
+    emit(WallState(
+        status: state.status,
+        posts: state.posts,
+        settings: state.settings,
+        announcements: state.announcements,
+        celebrations: state.celebrations,
+        submitting: true));
     try {
-      await _repo.createWallPost(body: e.body, kind: e.kind, scope: e.scope, poll: e.poll, attachments: e.attachments);
+      await _repo.createWallPost(
+          body: e.body,
+          kind: e.kind,
+          scope: e.scope,
+          poll: e.poll,
+          attachments: e.attachments);
       emit(WallState(
         status: state.status,
         posts: state.posts,
@@ -147,18 +194,47 @@ class WallBloc extends Bloc<WallEvent, WallState> {
       ));
       await _load(emit);
     } on Failure catch (f) {
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionFailure: f));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionFailure: f));
     }
   }
 
   Future<void> _onPraise(WallPraiseCreated e, Emitter<WallState> emit) async {
-    emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, submitting: true));
+    emit(WallState(
+        status: state.status,
+        posts: state.posts,
+        settings: state.settings,
+        announcements: state.announcements,
+        celebrations: state.celebrations,
+        submitting: true));
     try {
-      await _repo.createPraise(employeeId: e.employeeId, badge: e.badge, reason: e.reason, scope: e.scope, attachments: e.attachments);
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionNonce: state.actionNonce + 1));
+      await _repo.createPraise(
+          employeeId: e.employeeId,
+          badge: e.badge,
+          reason: e.reason,
+          scope: e.scope,
+          attachments: e.attachments);
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionNonce: state.actionNonce + 1));
       await _load(emit);
     } on Failure catch (f) {
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionFailure: f));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionFailure: f));
     }
   }
 
@@ -171,17 +247,47 @@ class WallBloc extends Bloc<WallEvent, WallState> {
         for (final p in state.posts)
           p.id == e.postId
               ? WallPost(
-                  id: p.id, kind: p.kind, scope: p.scope, branchId: p.branchId, author: p.author, mine: p.mine,
-                  body: p.body, attachments: p.attachments, mentions: p.mentions, about: p.about, edited: p.edited,
-                  editedAt: p.editedAt, createdAt: p.createdAt, updatedAt: p.updatedAt, hidden: p.hidden, deleted: p.deleted,
-                  badgeId: p.badgeId, badgeLabel: p.badgeLabel, occasion: p.occasion,
-                  reactions: result.counts, commentCount: p.commentCount, poll: p.poll, myReaction: result.myReaction,
+                  id: p.id,
+                  kind: p.kind,
+                  scope: p.scope,
+                  branchId: p.branchId,
+                  author: p.author,
+                  mine: p.mine,
+                  body: p.body,
+                  attachments: p.attachments,
+                  mentions: p.mentions,
+                  about: p.about,
+                  edited: p.edited,
+                  editedAt: p.editedAt,
+                  createdAt: p.createdAt,
+                  updatedAt: p.updatedAt,
+                  hidden: p.hidden,
+                  deleted: p.deleted,
+                  badgeId: p.badgeId,
+                  badgeLabel: p.badgeLabel,
+                  occasion: p.occasion,
+                  reactions: result.counts,
+                  commentCount: p.commentCount,
+                  poll: p.poll,
+                  myReaction: result.myReaction,
                 )
               : p,
       ];
-      emit(WallState(status: state.status, posts: posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionNonce: state.actionNonce));
+      emit(WallState(
+          status: state.status,
+          posts: posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionNonce: state.actionNonce));
     } on Failure catch (f) {
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionFailure: f));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionFailure: f));
     }
   }
 
@@ -190,17 +296,36 @@ class WallBloc extends Bloc<WallEvent, WallState> {
       await _repo.votePoll(pollId: e.pollId, optionIds: e.optionIds);
       await _load(emit);
     } on Failure catch (f) {
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionFailure: f));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionFailure: f));
     }
   }
 
   Future<void> _onWish(WallWished e, Emitter<WallState> emit) async {
     try {
-      await _repo.sendWish(employeeId: e.employeeId, occasion: e.occasion, body: e.body);
+      await _repo.sendWish(
+          employeeId: e.employeeId, occasion: e.occasion, body: e.body);
       final celebrations = await _repo.wallCelebrations();
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: celebrations, actionNonce: state.actionNonce + 1));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: celebrations,
+          actionNonce: state.actionNonce + 1));
     } on Failure catch (f) {
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionFailure: f));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionFailure: f));
     }
   }
 
@@ -211,12 +336,29 @@ class WallBloc extends Bloc<WallEvent, WallState> {
         for (final a in state.announcements)
           a.id == id
               ? WallAnnouncement(
-                  id: a.id, title: a.title, body: a.body, attachments: a.attachments, author: a.author, mine: a.mine,
-                  audienceLabel: a.audienceLabel, needsAck: a.needsAck, closesOn: a.closesOn, pinned: a.pinned,
-                  publishedAt: a.publishedAt, createdAt: a.createdAt, readAt: DateTime.now(), ackAt: a.ackAt)
+                  id: a.id,
+                  title: a.title,
+                  body: a.body,
+                  attachments: a.attachments,
+                  author: a.author,
+                  mine: a.mine,
+                  audienceLabel: a.audienceLabel,
+                  needsAck: a.needsAck,
+                  closesOn: a.closesOn,
+                  pinned: a.pinned,
+                  publishedAt: a.publishedAt,
+                  createdAt: a.createdAt,
+                  readAt: DateTime.now(),
+                  ackAt: a.ackAt)
               : a,
       ];
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: list, celebrations: state.celebrations, actionNonce: state.actionNonce));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: list,
+          celebrations: state.celebrations,
+          actionNonce: state.actionNonce));
     } on Failure {
       // Reading is best-effort.
     }
@@ -229,14 +371,37 @@ class WallBloc extends Bloc<WallEvent, WallState> {
         for (final a in state.announcements)
           a.id == id
               ? WallAnnouncement(
-                  id: a.id, title: a.title, body: a.body, attachments: a.attachments, author: a.author, mine: a.mine,
-                  audienceLabel: a.audienceLabel, needsAck: a.needsAck, closesOn: a.closesOn, pinned: a.pinned,
-                  publishedAt: a.publishedAt, createdAt: a.createdAt, readAt: a.readAt ?? DateTime.now(), ackAt: DateTime.now())
+                  id: a.id,
+                  title: a.title,
+                  body: a.body,
+                  attachments: a.attachments,
+                  author: a.author,
+                  mine: a.mine,
+                  audienceLabel: a.audienceLabel,
+                  needsAck: a.needsAck,
+                  closesOn: a.closesOn,
+                  pinned: a.pinned,
+                  publishedAt: a.publishedAt,
+                  createdAt: a.createdAt,
+                  readAt: a.readAt ?? DateTime.now(),
+                  ackAt: DateTime.now())
               : a,
       ];
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: list, celebrations: state.celebrations, actionNonce: state.actionNonce + 1));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: list,
+          celebrations: state.celebrations,
+          actionNonce: state.actionNonce + 1));
     } on Failure catch (f) {
-      emit(WallState(status: state.status, posts: state.posts, settings: state.settings, announcements: state.announcements, celebrations: state.celebrations, actionFailure: f));
+      emit(WallState(
+          status: state.status,
+          posts: state.posts,
+          settings: state.settings,
+          announcements: state.announcements,
+          celebrations: state.celebrations,
+          actionFailure: f));
     }
   }
 }

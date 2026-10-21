@@ -19,9 +19,15 @@ class MyTeamScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider(create: (_) => getIt<TeamTodayBloc>()..add(const TeamTodayLoadRequested())),
-        BlocProvider(create: (_) => getIt<LoadBloc<OrgView>>()..add(const LoadRequested())),
-        BlocProvider(create: (_) => getIt<LoadBloc<TeamOffWeek>>()..add(const LoadRequested())),
+        BlocProvider(
+            create: (_) =>
+                getIt<TeamTodayBloc>()..add(const TeamTodayLoadRequested())),
+        BlocProvider(
+            create: (_) =>
+                getIt<LoadBloc<OrgView>>()..add(const LoadRequested())),
+        BlocProvider(
+            create: (_) =>
+                getIt<LoadBloc<TeamOffWeek>>()..add(const LoadRequested())),
       ],
       child: Scaffold(
         body: Column(
@@ -31,10 +37,10 @@ class MyTeamScreen extends StatelessWidget {
               subtitle: const Text('Your manager, peers and reporting chain'),
               actions: [
                 Builder(
-                  builder: (context) => IconButton(
+                  builder: (context) => TeamHeaderAction(
+                    icon: Icons.search_rounded,
                     tooltip: 'Search colleagues',
                     onPressed: () => context.push('/team/directory'),
-                    icon: const Icon(Icons.search),
                   ),
                 ),
               ],
@@ -42,12 +48,17 @@ class MyTeamScreen extends StatelessWidget {
             Expanded(
               child: RefreshIndicator(
                 onRefresh: () async {
-                  context.read<TeamTodayBloc>().add(const TeamTodayLoadRequested());
+                  context
+                      .read<TeamTodayBloc>()
+                      .add(const TeamTodayLoadRequested());
                   context.read<LoadBloc<OrgView>>().add(const LoadRefreshed());
-                  context.read<LoadBloc<TeamOffWeek>>().add(const LoadRefreshed());
+                  context
+                      .read<LoadBloc<TeamOffWeek>>()
+                      .add(const LoadRefreshed());
                 },
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
+                  padding: const EdgeInsets.fromLTRB(RvmSpacing.md,
+                      RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
                   children: const [
                     _TeamTodayCard(),
                     SizedBox(height: RvmSpacing.md),
@@ -74,15 +85,20 @@ class _TeamTodayCard extends StatelessWidget {
       title: 'Team today',
       child: BlocBuilder<TeamTodayBloc, TeamTodayState>(
         builder: (context, state) {
-          if (state.status == LoadStatus.loading || state.status == LoadStatus.initial) {
-            return const SizedBox(height: 48, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+          if (state.status == LoadStatus.loading ||
+              state.status == LoadStatus.initial) {
+            return const SizedBox(
+                height: 48,
+                child:
+                    Center(child: CircularProgressIndicator(strokeWidth: 2)));
           }
           if (state.status == LoadStatus.failure) {
             return Text(state.failure?.message ?? 'Could not load your team.');
           }
           final data = state.data!;
           if (!data.hasRoster) {
-            return const Text('No direct reports or branch roster for your login.');
+            return const Text(
+                'No direct reports or branch roster for your login.');
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,15 +106,29 @@ class _TeamTodayCard extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 children: [
-                  _FilterChip(label: 'All ${data.all}', selected: state.filter == 'all', value: 'all'),
-                  _FilterChip(label: 'Not in ${data.notIn}', selected: state.filter == 'not_in', value: 'not_in'),
-                  _FilterChip(label: 'Late ${data.late}', selected: state.filter == 'late', value: 'late'),
-                  _FilterChip(label: 'On leave ${data.onLeave}', selected: state.filter == 'on_leave', value: 'on_leave'),
+                  _FilterChip(
+                      label: 'All ${data.all}',
+                      selected: state.filter == 'all',
+                      value: 'all'),
+                  _FilterChip(
+                      label: 'Not in ${data.notIn}',
+                      selected: state.filter == 'not_in',
+                      value: 'not_in'),
+                  _FilterChip(
+                      label: 'Late ${data.late}',
+                      selected: state.filter == 'late',
+                      value: 'late'),
+                  _FilterChip(
+                      label: 'On leave ${data.onLeave}',
+                      selected: state.filter == 'on_leave',
+                      value: 'on_leave'),
                 ],
               ),
               const SizedBox(height: RvmSpacing.sm),
               if (data.people.isEmpty)
-                const Padding(padding: EdgeInsets.only(top: 8), child: Text('Nobody in this filter.'))
+                const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text('Nobody in this filter.'))
               else
                 for (final p in data.people) _TeamRow(person: p),
             ],
@@ -110,7 +140,8 @@ class _TeamTodayCard extends StatelessWidget {
 }
 
 class _FilterChip extends StatelessWidget {
-  const _FilterChip({required this.label, required this.selected, required this.value});
+  const _FilterChip(
+      {required this.label, required this.selected, required this.value});
   final String label;
   final bool selected;
   final String value;
@@ -118,7 +149,8 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) => ChoiceChip(
         label: Text(label),
         selected: selected,
-        onSelected: (_) => context.read<TeamTodayBloc>().add(TeamTodayFiltered(value)),
+        onSelected: (_) =>
+            context.read<TeamTodayBloc>().add(TeamTodayFiltered(value)),
       );
 }
 
@@ -142,9 +174,12 @@ class _TeamRow extends StatelessWidget {
       leading: _Avatar(name: person.card.fullName),
       title: Text(person.card.fullName),
       subtitle: Text([person.card.designation, person.card.department?.name]
-          .where((s) => s != null && s.isNotEmpty).join(' · ')),
+          .where((s) => s != null && s.isNotEmpty)
+          .join(' · ')),
       trailing: person.late
-          ? Text('Late', style: TextStyle(color: RvmColors.danger, fontWeight: FontWeight.w600))
+          ? Text('Late',
+              style: TextStyle(
+                  color: RvmColors.danger, fontWeight: FontWeight.w600))
           : _Chip(label: label, color: color),
     );
   }
@@ -159,10 +194,16 @@ class _OffThisWeekCard extends StatelessWidget {
       title: 'Off this week',
       child: BlocBuilder<LoadBloc<TeamOffWeek>, LoadState<TeamOffWeek>>(
         builder: (context, state) {
-          if (state.status == LoadStatus.loading || state.status == LoadStatus.initial) {
-            return const SizedBox(height: 40, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+          if (state.status == LoadStatus.loading ||
+              state.status == LoadStatus.initial) {
+            return const SizedBox(
+                height: 40,
+                child:
+                    Center(child: CircularProgressIndicator(strokeWidth: 2)));
           }
-          if (state.status == LoadStatus.failure) return Text(state.failure?.message ?? 'Could not load.');
+          if (state.status == LoadStatus.failure) {
+            return Text(state.failure?.message ?? 'Could not load.');
+          }
           final data = state.data;
           if (data == null || data.scope == null || data.people.isEmpty) {
             return const Text('Nobody is on leave this week.');
@@ -191,11 +232,19 @@ class _OrgCardSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<LoadBloc<OrgView>, LoadState<OrgView>>(
       builder: (context, state) {
-        if (state.status == LoadStatus.loading || state.status == LoadStatus.initial) {
-          return const _Panel(title: 'Reporting chain', child: SizedBox(height: 40, child: Center(child: CircularProgressIndicator(strokeWidth: 2))));
+        if (state.status == LoadStatus.loading ||
+            state.status == LoadStatus.initial) {
+          return const _Panel(
+              title: 'Reporting chain',
+              child: SizedBox(
+                  height: 40,
+                  child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2))));
         }
         if (state.status == LoadStatus.failure) {
-          return _Panel(title: 'Reporting chain', child: Text(state.failure?.message ?? 'Could not load.'));
+          return _Panel(
+              title: 'Reporting chain',
+              child: Text(state.failure?.message ?? 'Could not load.'));
         }
         final org = state.data!;
         return Column(
@@ -204,19 +253,33 @@ class _OrgCardSection extends StatelessWidget {
               title: 'Reporting chain',
               child: org.managerChain.isEmpty
                   ? const Text('No manager recorded.')
-                  : Column(children: [for (final m in org.managerChain) _PersonTile(card: m)]),
+                  : Column(children: [
+                      for (final m in org.managerChain) _PersonTile(card: m)
+                    ]),
             ),
             if (org.peers.isNotEmpty) ...[
               const SizedBox(height: RvmSpacing.md),
-              _Panel(title: 'Peers', child: Column(children: [for (final p in org.peers) _PersonTile(card: p)])),
+              _Panel(
+                  title: 'Peers',
+                  child: Column(children: [
+                    for (final p in org.peers) _PersonTile(card: p)
+                  ])),
             ],
             if (org.directReports.isNotEmpty) ...[
               const SizedBox(height: RvmSpacing.md),
-              _Panel(title: 'My reports (${org.directReportCount})', child: Column(children: [for (final p in org.directReports) _PersonTile(card: p)])),
+              _Panel(
+                  title: 'My reports (${org.directReportCount})',
+                  child: Column(children: [
+                    for (final p in org.directReports) _PersonTile(card: p)
+                  ])),
             ],
             if (org.department != null) ...[
               const SizedBox(height: RvmSpacing.md),
-              _Panel(title: org.department!.name, child: Column(children: [for (final p in org.departmentPeople) _PersonTile(card: p)])),
+              _Panel(
+                  title: org.department!.name,
+                  child: Column(children: [
+                    for (final p in org.departmentPeople) _PersonTile(card: p)
+                  ])),
             ],
           ],
         );
@@ -242,7 +305,9 @@ class _PersonTile extends StatelessWidget {
           ],
         ],
       ),
-      subtitle: Text([card.designation, card.email, card.phone].where((s) => s != null && s.isNotEmpty).join(' · ')),
+      subtitle: Text([card.designation, card.email, card.phone]
+          .where((s) => s != null && s.isNotEmpty)
+          .join(' · ')),
     );
   }
 }
@@ -253,7 +318,8 @@ class _Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = name.trim();
-    return CircleAvatar(child: Text(s.isEmpty ? '?' : s.substring(0, 1).toUpperCase()));
+    return CircleAvatar(
+        child: Text(s.isEmpty ? '?' : s.substring(0, 1).toUpperCase()));
   }
 }
 
@@ -264,8 +330,14 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
-        child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(999)),
+        child: Text(label,
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: color, fontWeight: FontWeight.w600)),
       );
 }
 

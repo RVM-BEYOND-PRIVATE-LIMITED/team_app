@@ -1,7 +1,10 @@
+import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../bloc/connectivity_bloc.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+
+import 'team_kit.dart';
 
 /// Centered progress for a loading screen.
 class AppLoading extends StatelessWidget {
@@ -14,7 +17,12 @@ class AppLoading extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
+          const SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+                strokeWidth: 2.4, color: RvmColors.clay),
+          ),
           if (label != null) ...[
             const SizedBox(height: 12),
             Text(label!, style: Theme.of(context).textTheme.bodySmall),
@@ -33,19 +41,28 @@ class AppError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_outlined, size: 40, color: scheme.error),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+            const TeamIconBadge(
+              icon: Icons.cloud_off_outlined,
+              color: RvmColors.danger,
+              background: RvmColors.dangerSoft,
+              size: 56,
+              iconSize: 26,
+              radius: 18,
+            ),
+            const SizedBox(height: 14),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium),
             if (onRetry != null) ...[
               const SizedBox(height: 16),
-              FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
+              FilledButton.tonal(
+                  onPressed: onRetry, child: const Text('Retry')),
             ],
           ],
         ),
@@ -56,24 +73,34 @@ class AppError extends StatelessWidget {
 
 /// Centered empty state.
 class AppEmpty extends StatelessWidget {
-  const AppEmpty({super.key, required this.message, this.icon = Icons.inbox_outlined});
+  const AppEmpty(
+      {super.key, required this.message, this.icon = Icons.inbox_outlined});
   final String message;
   final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 40, color: scheme.onSurfaceVariant),
-            const SizedBox(height: 12),
+            TeamIconBadge(
+              icon: icon,
+              color: RvmColors.muted,
+              background: RvmColors.cream,
+              size: 56,
+              iconSize: 25,
+              radius: 18,
+            ),
+            const SizedBox(height: 14),
             Text(message,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(fontSize: 12, color: RvmColors.muted)),
           ],
         ),
       ),
@@ -91,20 +118,23 @@ class OfflineBanner extends StatelessWidget {
       buildWhen: (a, b) => a.online != b.online,
       builder: (context, state) {
         if (state.online) return const SizedBox.shrink();
-        final scheme = Theme.of(context).colorScheme;
         return Material(
-          color: scheme.errorContainer,
+          color: RvmColors.dangerSoft,
           child: SafeArea(
             bottom: false,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
               child: Row(
                 children: [
-                  Icon(Icons.wifi_off_rounded, size: 16, color: scheme.onErrorContainer),
+                  const Icon(Icons.wifi_off_rounded,
+                      size: 14, color: RvmColors.danger),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('No internet connection',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onErrorContainer)),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontSize: 11, color: RvmColors.danger)),
                   ),
                 ],
               ),

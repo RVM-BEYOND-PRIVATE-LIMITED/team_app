@@ -80,7 +80,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     }
   }
 
-  void _snack(String message) => ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+  void _snack(String message) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
 
   Future<void> _open(EssDocument document) async {
     try {
@@ -90,7 +92,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       await Clipboard.setData(ClipboardData(text: url));
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Secure link copied (valid for 5 minutes).')));
+        ..showSnackBar(const SnackBar(
+            content: Text('Secure link copied (valid for 5 minutes).')));
     } on Failure catch (f) {
       _snack(f.message);
     }
@@ -112,13 +115,19 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
           TeamPageHeader(
             title: 'Documents',
             subtitle: const Text('Upload and track verification'),
-            actions: [IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh))],
+            actions: [
+              TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: _load)
+            ],
           ),
           Expanded(child: _body()),
         ],
       ),
       floatingActionButton: _uploading
-          ? const FloatingActionButton(onPressed: null, child: CircularProgressIndicator())
+          ? const FloatingActionButton(
+              onPressed: null, child: CircularProgressIndicator())
           : FloatingActionButton.extended(
               onPressed: () => _pickType(),
               icon: const Icon(Icons.upload_file),
@@ -135,7 +144,13 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       showDragHandle: true,
       builder: (_) => ListView(
         shrinkWrap: true,
-        children: [for (final t in types) ListTile(title: Text(t.name), subtitle: t.isMandatory ? const Text('Mandatory') : null, onTap: () => Navigator.pop(context, t))],
+        children: [
+          for (final t in types)
+            ListTile(
+                title: Text(t.name),
+                subtitle: t.isMandatory ? const Text('Mandatory') : null,
+                onTap: () => Navigator.pop(context, t))
+        ],
       ),
     );
     if (type != null) await _upload(type);
@@ -143,24 +158,33 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     final page = _page!;
     final held = page.documents.map((d) => d.docType).toSet();
-    final missing = page.types.where((t) => t.isMandatory && !held.contains(t.slug)).toList();
+    final missing = page.types
+        .where((t) => t.isMandatory && !held.contains(t.slug))
+        .toList();
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
+        padding: const EdgeInsets.fromLTRB(
+            RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
         children: [
           if (missing.isNotEmpty) ...[
             Card(
-              color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.4),
+              color: Theme.of(context)
+                  .colorScheme
+                  .errorContainer
+                  .withValues(alpha: 0.4),
               child: Padding(
                 padding: const EdgeInsets.all(RvmSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Still needed', style: Theme.of(context).textTheme.titleMedium),
+                    Text('Still needed',
+                        style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 4),
                     Text(missing.map((t) => t.name).join(', ')),
                   ],
@@ -170,14 +194,21 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             const SizedBox(height: RvmSpacing.md),
           ],
           if (page.documents.isEmpty)
-            const AppEmpty(icon: Icons.folder_open, message: 'No documents uploaded yet.')
+            const AppEmpty(
+                icon: Icons.folder_open, message: 'No documents uploaded yet.')
           else
             for (final d in page.documents) ...[
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.description_outlined),
-                  title: Text(page.types.where((t) => t.slug == d.docType).map((t) => t.name).firstOrNull ?? d.docType),
-                  subtitle: Text([d.fileName, d.rejectionReason].where((s) => s != null && s.isNotEmpty).join(' · ')),
+                  title: Text(page.types
+                          .where((t) => t.slug == d.docType)
+                          .map((t) => t.name)
+                          .firstOrNull ??
+                      d.docType),
+                  subtitle: Text([d.fileName, d.rejectionReason]
+                      .where((s) => s != null && s.isNotEmpty)
+                      .join(' · ')),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -211,8 +242,14 @@ class _DocStatus extends StatelessWidget {
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
-      child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999)),
+      child: Text(label,
+          style: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(color: color, fontWeight: FontWeight.w600)),
     );
   }
 }

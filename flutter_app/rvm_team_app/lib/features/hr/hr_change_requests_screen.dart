@@ -59,25 +59,37 @@ class _HrChangeRequestsScreenState extends State<HrChangeRequestsScreen> {
           controller: controller,
           minLines: 2,
           maxLines: 4,
-          decoration: InputDecoration(hintText: approve ? 'Note (optional)' : 'Reason (required)'),
+          decoration: InputDecoration(
+              hintText: approve ? 'Note (optional)' : 'Reason (required)'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: Text(approve ? 'Approve' : 'Reject')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: Text(approve ? 'Approve' : 'Reject')),
         ],
       ),
     );
     if (note == null || !mounted) return;
     if (!approve && note.length < 3) {
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('A rejection needs a reason.')));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+            const SnackBar(content: Text('A rejection needs a reason.')));
       return;
     }
     try {
-      await getIt<EssRepository>().decideChangeRequest(r.id, approve: approve, note: note);
+      await getIt<EssRepository>()
+          .decideChangeRequest(r.id, approve: approve, note: note);
       await _load();
     } on Failure catch (f) {
       if (mounted) {
-        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(f.message)));
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(f.message)));
       }
     }
   }
@@ -90,7 +102,12 @@ class _HrChangeRequestsScreenState extends State<HrChangeRequestsScreen> {
           TeamPageHeader(
             title: 'Profile changes',
             subtitle: const Text('HR review queue'),
-            actions: [IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh))],
+            actions: [
+              TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: _load)
+            ],
           ),
           Expanded(child: _body()),
         ],
@@ -100,8 +117,13 @@ class _HrChangeRequestsScreenState extends State<HrChangeRequestsScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
-    if (_requests.isEmpty) return const AppEmpty(icon: Icons.edit_note, message: 'No change requests.');
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
+    if (_requests.isEmpty) {
+      return const AppEmpty(
+          icon: Icons.edit_note, message: 'No change requests.');
+    }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.separated(
@@ -118,8 +140,11 @@ class _HrChangeRequestsScreenState extends State<HrChangeRequestsScreen> {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: Text(r.fieldLabel, style: Theme.of(context).textTheme.titleMedium)),
-                      Text(r.status, style: Theme.of(context).textTheme.labelMedium),
+                      Expanded(
+                          child: Text(r.fieldLabel,
+                              style: Theme.of(context).textTheme.titleMedium)),
+                      Text(r.status,
+                          style: Theme.of(context).textTheme.labelMedium),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -130,14 +155,21 @@ class _HrChangeRequestsScreenState extends State<HrChangeRequestsScreen> {
                     const SizedBox(height: RvmSpacing.sm),
                     Row(
                       children: [
-                        Expanded(child: FilledButton(onPressed: () => _decide(r, true), child: const Text('Approve'))),
+                        Expanded(
+                            child: FilledButton(
+                                onPressed: () => _decide(r, true),
+                                child: const Text('Approve'))),
                         const SizedBox(width: RvmSpacing.sm),
-                        Expanded(child: OutlinedButton(onPressed: () => _decide(r, false), child: const Text('Reject'))),
+                        Expanded(
+                            child: OutlinedButton(
+                                onPressed: () => _decide(r, false),
+                                child: const Text('Reject'))),
                       ],
                     ),
                   ],
                   if (r.decisionNote != null)
-                    Text('HR: ${r.decisionNote}${r.decidedByName != null ? ' — ${r.decidedByName}' : ''}',
+                    Text(
+                        'HR: ${r.decisionNote}${r.decidedByName != null ? ' — ${r.decidedByName}' : ''}',
                         style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),

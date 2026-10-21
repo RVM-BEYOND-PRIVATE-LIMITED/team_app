@@ -18,4 +18,14 @@ abstract final class Jwt {
       return const {};
     }
   }
+
+  /// True only when the token carries an `exp` claim that is already in the
+  /// past. A token with no readable `exp` is left to the server to judge, so a
+  /// malformed or opaque token is never treated as expired here.
+  static bool isExpired(String? token, {DateTime? now}) {
+    final exp = decodePayload(token)['exp'];
+    if (exp is! num) return false;
+    return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000)
+        .isBefore(now ?? DateTime.now());
+  }
 }

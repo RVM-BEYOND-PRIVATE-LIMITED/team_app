@@ -17,7 +17,8 @@ class NotificationsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => getIt<NotificationsBloc>()..add(const NotificationsLoadRequested()),
+      create: (_) =>
+          getIt<NotificationsBloc>()..add(const NotificationsLoadRequested()),
       child: const _NotificationsView(),
     );
   }
@@ -35,22 +36,26 @@ class _NotificationsView extends StatelessWidget {
             children: [
               TeamPageHeader(
                 title: 'Notifications',
-                subtitle: Text(state.unread > 0 ? '${state.unread} unread' : 'You are all caught up'),
+                subtitle: Text(state.unread > 0
+                    ? '${state.unread} unread'
+                    : 'You are all caught up'),
                 actions: [
                   Builder(
-                    builder: (context) => IconButton(
+                    builder: (context) => TeamHeaderAction(
+                      icon: Icons.tune_rounded,
                       tooltip: 'Settings',
                       onPressed: () => _openSettings(context),
-                      icon: const Icon(Icons.tune),
                     ),
                   ),
                   Builder(
-                    builder: (context) => IconButton(
+                    builder: (context) => TeamHeaderAction(
+                      icon: Icons.done_all_rounded,
                       tooltip: 'Mark all read',
                       onPressed: state.unread == 0
                           ? null
-                          : () => context.read<NotificationsBloc>().add(const NotificationsReadAllRequested()),
-                      icon: const Icon(Icons.done_all),
+                          : () => context
+                              .read<NotificationsBloc>()
+                              .add(const NotificationsReadAllRequested()),
                     ),
                   ),
                 ],
@@ -64,24 +69,32 @@ class _NotificationsView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, NotificationsState state) {
-    if (state.status == LoadStatus.initial || state.status == LoadStatus.loading) return const AppLoading();
+    if (state.status == LoadStatus.initial ||
+        state.status == LoadStatus.loading) {
+      return const AppLoading();
+    }
     if (state.status == LoadStatus.failure) {
       return AppError(
         message: state.failure?.message ?? 'Could not load notifications.',
-        onRetry: () => context.read<NotificationsBloc>().add(const NotificationsRefreshed()),
+        onRetry: () => context
+            .read<NotificationsBloc>()
+            .add(const NotificationsRefreshed()),
       );
     }
     final page = state.page;
     if (page == null || page.notifications.isEmpty) {
-      return const AppEmpty(icon: Icons.notifications_none, message: 'No notifications yet.');
+      return const AppEmpty(
+          icon: Icons.notifications_none, message: 'No notifications yet.');
     }
     return RefreshIndicator(
-      onRefresh: () async => context.read<NotificationsBloc>().add(const NotificationsRefreshed()),
+      onRefresh: () async =>
+          context.read<NotificationsBloc>().add(const NotificationsRefreshed()),
       child: ListView.separated(
         padding: const EdgeInsets.all(RvmSpacing.md),
         itemCount: page.notifications.length,
         separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.sm),
-        itemBuilder: (context, i) => _NotificationTile(notification: page.notifications[i]),
+        itemBuilder: (context, i) =>
+            _NotificationTile(notification: page.notifications[i]),
       ),
     );
   }
@@ -92,7 +105,8 @@ class _NotificationsView extends StatelessWidget {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) => BlocProvider.value(value: bloc, child: const _SettingsSheet()),
+      builder: (_) =>
+          BlocProvider.value(value: bloc, child: const _SettingsSheet()),
     );
   }
 }
@@ -105,18 +119,35 @@ class _NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
-      color: notification.unread ? scheme.primaryContainer.withValues(alpha: 0.35) : null,
+      color: notification.unread
+          ? scheme.primaryContainer.withValues(alpha: 0.35)
+          : null,
       child: ListTile(
         onTap: notification.unread
-            ? () => context.read<NotificationsBloc>().add(NotificationReadRequested(notification.id))
+            ? () => context
+                .read<NotificationsBloc>()
+                .add(NotificationReadRequested(notification.id))
             : null,
         leading: CircleAvatar(
-          backgroundColor: notification.unread ? scheme.primary : scheme.surfaceContainerHighest,
-          child: Icon(_icon(notification.category), size: 18, color: notification.unread ? scheme.onPrimary : scheme.onSurfaceVariant),
+          backgroundColor: notification.unread
+              ? scheme.primary
+              : scheme.surfaceContainerHighest,
+          child: Icon(_icon(notification.category),
+              size: 18,
+              color: notification.unread
+                  ? scheme.onPrimary
+                  : scheme.onSurfaceVariant),
         ),
-        title: Text(notification.title, style: TextStyle(fontWeight: notification.unread ? FontWeight.w700 : FontWeight.w500)),
-        subtitle: Text(notification.body, maxLines: 2, overflow: TextOverflow.ellipsis),
-        trailing: notification.createdAt == null ? null : Text(_when(notification.createdAt!), style: Theme.of(context).textTheme.labelSmall),
+        title: Text(notification.title,
+            style: TextStyle(
+                fontWeight:
+                    notification.unread ? FontWeight.w700 : FontWeight.w500)),
+        subtitle: Text(notification.body,
+            maxLines: 2, overflow: TextOverflow.ellipsis),
+        trailing: notification.createdAt == null
+            ? null
+            : Text(_when(notification.createdAt!),
+                style: Theme.of(context).textTheme.labelSmall),
       ),
     );
   }
@@ -162,14 +193,19 @@ class _SettingsSheet extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(RvmSpacing.md, 0, RvmSpacing.md, RvmSpacing.sm),
-                child: Text('Notification settings', style: Theme.of(context).textTheme.titleLarge),
+                padding: const EdgeInsets.fromLTRB(
+                    RvmSpacing.md, 0, RvmSpacing.md, RvmSpacing.sm),
+                child: Text('Notification settings',
+                    style: Theme.of(context).textTheme.titleLarge),
               ),
               if (settings == null)
-                const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+                const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()))
               else ...[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: RvmSpacing.md),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: RvmSpacing.md),
                   child: Text(
                     'Quiet hours ${settings.quietFrom ?? '21:00'}–${settings.quietTo ?? '08:00'} IST',
                     style: Theme.of(context).textTheme.bodySmall,
@@ -180,7 +216,9 @@ class _SettingsSheet extends StatelessWidget {
                     value: c.enabled,
                     onChanged: state.savingSettings
                         ? null
-                        : (v) => context.read<NotificationsBloc>().add(NotificationSettingToggled(category: c.category, enabled: v)),
+                        : (v) => context.read<NotificationsBloc>().add(
+                            NotificationSettingToggled(
+                                category: c.category, enabled: v)),
                     title: Text(c.label),
                   ),
               ],

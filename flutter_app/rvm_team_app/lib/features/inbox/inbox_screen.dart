@@ -7,6 +7,7 @@ import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import '../../widgets/team_kit.dart';
 import 'bloc/task_action_bloc.dart';
 
 class InboxScreen extends StatelessWidget {
@@ -17,17 +18,20 @@ class InboxScreen extends StatelessWidget {
     return BlocProvider(
       create: (_) => getIt<InboxBloc>()..add(const LoadRequested()),
       child: Scaffold(
+        backgroundColor: RvmColors.ivory,
         body: Column(
           children: [
             TeamPageHeader(
               title: 'Inbox',
+              eyebrow: 'Priority tasks',
               subtitle: const Text('Priority tasks assigned to you'),
               actions: [
                 Builder(
-                  builder: (context) => IconButton(
+                  builder: (context) => TeamHeaderAction(
+                    icon: Icons.refresh_rounded,
                     tooltip: 'Refresh',
-                    onPressed: () => context.read<InboxBloc>().add(const LoadRefreshed()),
-                    icon: const Icon(Icons.refresh),
+                    onPressed: () =>
+                        context.read<InboxBloc>().add(const LoadRefreshed()),
                   ),
                 ),
               ],
@@ -36,11 +40,15 @@ class InboxScreen extends StatelessWidget {
               child: BlocBuilder<InboxBloc, LoadState<PriorityInbox>>(
                 builder: (context, state) {
                   return switch (state.status) {
-                    LoadStatus.loading || LoadStatus.initial =>
+                    LoadStatus.loading ||
+                    LoadStatus.initial =>
                       const AppLoading(label: 'Loading your tasks'),
                     LoadStatus.failure => AppError(
-                        message: state.failure?.message ?? 'Could not load your inbox.',
-                        onRetry: () => context.read<InboxBloc>().add(const LoadRefreshed()),
+                        message: state.failure?.message ??
+                            'Could not load your inbox.',
+                        onRetry: () => context
+                            .read<InboxBloc>()
+                            .add(const LoadRefreshed()),
                       ),
                     LoadStatus.empty => const AppEmpty(
                         message:
@@ -66,23 +74,54 @@ class _Inbox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: () async => context.read<InboxBloc>().add(const LoadRefreshed()),
+      onRefresh: () async =>
+          context.read<InboxBloc>().add(const LoadRefreshed()),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text('${inbox.outstanding} outstanding · ${inbox.unread} unread',
-                    style: Theme.of(context).textTheme.bodyMedium),
-              ),
-            ],
+          TeamCard(
+            child: Row(
+              children: [
+                const TeamIconBadge(
+                    icon: Icons.flag_outlined, size: 38, iconSize: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${inbox.outstanding} outstanding',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontSize: 13)),
+                      Text('${inbox.unread} unread · assigned to you',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(fontSize: 10.5)),
+                    ],
+                  ),
+                ),
+                TeamPill(
+                  label: inbox.unread > 0 ? '${inbox.unread} new' : 'All read',
+                  tone: inbox.unread > 0
+                      ? TeamPillTone.orange
+                      : TeamPillTone.success,
+                  dense: true,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: RvmSpacing.sm),
+          const SizedBox(height: RvmSpacing.md),
           if (inbox.tasks.isEmpty)
-            const Padding(padding: EdgeInsets.only(top: 40), child: AppEmpty(message: 'No tasks right now.'))
+            const Padding(
+                padding: EdgeInsets.only(top: 40),
+                child: AppEmpty(message: 'No tasks right now.'))
           else
-            for (final t in inbox.tasks) _TaskTile(task: t),
+            for (final t in inbox.tasks) ...[
+              _TaskTile(task: t),
+              const SizedBox(height: 8),
+            ],
         ],
       ),
     );
@@ -95,29 +134,79 @@ class _TaskTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final done = task.isDone;
-    return Card(
-      child: ListTile(
-        onTap: () => _open(context),
-        leading: CircleAvatar(
-          backgroundColor: switch (task.priority) {
-            'urgent' => scheme.errorContainer,
-            'high' => RvmColors.teamSeed.withValues(alpha: 0.16),
-            _ => scheme.surfaceContainerHighest,
-          },
-          child: Icon(done ? Icons.check : Icons.flag_outlined,
-              color: done ? RvmColors.success : scheme.onSurface),
-        ),
-        title: Text(task.title,
-            style: TextStyle(decoration: done ? TextDecoration.lineThrough : null, fontWeight: FontWeight.w600)),
-        subtitle: Text([
-          if (task.locationName != null) task.locationName!,
-          if (task.assignedByName != null) 'by ${task.assignedByName}',
-          task.priority.toUpperCase(),
-          if (task.overdue) 'OVERDUE',
-        ].join(' · ')),
-        trailing: const Icon(Icons.chevron_right),
+    final tone = switch (task.priority) {
+      'urgent' => TeamPillTone.danger,
+      'high' => TeamPillTone.orange,
+      _ => TeamPillTone.neutral,
+    };
+    return TeamCard(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      onTap: () => _open(context),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TeamIconBadge(
+            icon: done ? Icons.check_rounded : Icons.flag_outlined,
+            color: done ? RvmColors.success : RvmColors.clay,
+            background: done ? RvmColors.successSoft : RvmColors.claySoft,
+            size: 34,
+            iconSize: 16,
+            radius: 10,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(task.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(
+                                fontSize: 12.5,
+                                decoration:
+                                    done ? TextDecoration.lineThrough : null,
+                              )),
+                    ),
+                    const SizedBox(width: 6),
+                    if (task.overdue)
+                      const TeamPill(
+                          label: 'Overdue',
+                          tone: TeamPillTone.danger,
+                          dense: true)
+                    else
+                      TeamPill(
+                          label: task.priority.toUpperCase(),
+                          tone: tone,
+                          dense: true),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                    [
+                      if (task.locationName != null) task.locationName!,
+                      if (task.assignedByName != null)
+                        'by ${task.assignedByName}',
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontSize: 10)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right_rounded,
+              size: 18, color: RvmColors.subtle),
+        ],
       ),
     );
   }
@@ -155,25 +244,31 @@ class _TaskSheet extends StatelessWidget {
       builder: (context, state) {
         final busy = state.status == WriteStatus.submitting;
         return Padding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+          padding: EdgeInsets.fromLTRB(
+              20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(task.title, style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: RvmSpacing.xs),
-              Text([
-                if (task.locationName != null) task.locationName!,
-                if (task.assignedByName != null) 'Set by ${task.assignedByName}',
-                if (task.taskDate != null) task.taskDate!,
-              ].join(' · '), style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                  [
+                    if (task.locationName != null) task.locationName!,
+                    if (task.assignedByName != null)
+                      'Set by ${task.assignedByName}',
+                    if (task.taskDate != null) task.taskDate!,
+                  ].join(' · '),
+                  style: Theme.of(context).textTheme.bodySmall),
               if (task.notes != null && task.notes!.isNotEmpty) ...[
                 const SizedBox(height: RvmSpacing.md),
                 Text(task.notes!),
               ],
-              if (task.progressNote != null && task.progressNote!.isNotEmpty) ...[
+              if (task.progressNote != null &&
+                  task.progressNote!.isNotEmpty) ...[
                 const SizedBox(height: RvmSpacing.sm),
-                Text('Progress: ${task.progressNote}', style: Theme.of(context).textTheme.bodySmall),
+                Text('Progress: ${task.progressNote}',
+                    style: Theme.of(context).textTheme.bodySmall),
               ],
               const SizedBox(height: RvmSpacing.lg),
               Row(
@@ -188,7 +283,10 @@ class _TaskSheet extends StatelessWidget {
                   const SizedBox(width: RvmSpacing.sm),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: busy ? null : () => _setStatus(context, task.isDone ? 'open' : 'done'),
+                      onPressed: busy
+                          ? null
+                          : () => _setStatus(
+                              context, task.isDone ? 'open' : 'done'),
                       icon: Icon(task.isDone ? Icons.replay : Icons.check),
                       label: Text(task.isDone ? 'Reopen' : 'Mark done'),
                     ),
@@ -200,11 +298,15 @@ class _TaskSheet extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: TextButton(
-                    onPressed: busy ? null : () => _setStatus(context, 'in_progress'),
+                    onPressed:
+                        busy ? null : () => _setStatus(context, 'in_progress'),
                     child: const Text('Mark in progress'),
                   ),
                 ),
-              if (busy) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator()),
+              if (busy)
+                const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: LinearProgressIndicator()),
             ],
           ),
         );
@@ -212,7 +314,9 @@ class _TaskSheet extends StatelessWidget {
     );
   }
 
-  void _ack(BuildContext context) => context.read<TaskActionBloc>().add(TaskAcknowledged(task.id));
-  void _setStatus(BuildContext context, String status) =>
-      context.read<TaskActionBloc>().add(TaskStatusChanged(id: task.id, status: status));
+  void _ack(BuildContext context) =>
+      context.read<TaskActionBloc>().add(TaskAcknowledged(task.id));
+  void _setStatus(BuildContext context, String status) => context
+      .read<TaskActionBloc>()
+      .add(TaskStatusChanged(id: task.id, status: status));
 }

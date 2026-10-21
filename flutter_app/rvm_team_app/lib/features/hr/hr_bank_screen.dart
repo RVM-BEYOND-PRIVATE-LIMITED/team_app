@@ -61,7 +61,12 @@ class _HrBankScreenState extends State<HrBankScreen> {
           TeamPageHeader(
             title: 'Bank details',
             subtitle: Text(_employee?.fullName ?? 'Pick an employee'),
-            actions: [IconButton(tooltip: 'Choose employee', onPressed: _pick, icon: const Icon(Icons.person_search))],
+            actions: [
+              TeamHeaderAction(
+                  icon: Icons.person_search_rounded,
+                  tooltip: 'Choose employee',
+                  onPressed: _pick)
+            ],
           ),
           Expanded(child: _body()),
         ],
@@ -72,13 +77,22 @@ class _HrBankScreenState extends State<HrBankScreen> {
   Widget _body() {
     if (_employee == null) {
       return Center(
-        child: FilledButton.icon(onPressed: _pick, icon: const Icon(Icons.person_search), label: const Text('Choose an employee')),
+        child: FilledButton.icon(
+            onPressed: _pick,
+            icon: const Icon(Icons.person_search),
+            label: const Text('Choose an employee')),
       );
     }
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     final bank = _bank;
-    if (bank == null) return const AppEmpty(icon: Icons.account_balance_outlined, message: 'No bank details saved.');
+    if (bank == null) {
+      return const AppEmpty(
+          icon: Icons.account_balance_outlined,
+          message: 'No bank details saved.');
+    }
     return ListView(
       padding: const EdgeInsets.all(RvmSpacing.md),
       children: [
@@ -93,14 +107,23 @@ class _HrBankScreenState extends State<HrBankScreen> {
                 _row('Account', bank.accountNumber),
                 _row('IFSC', bank.ifscCode),
                 if (bank.upiId != null) _row('UPI', bank.upiId!),
-                if (bank.consentName != null) _row('Consent', bank.consentName!),
-                if (bank.consentGivenAt != null) _row('Consent at', bank.consentGivenAt!.toLocal().toString().split('.').first),
+                if (bank.consentName != null)
+                  _row('Consent', bank.consentName!),
+                if (bank.consentGivenAt != null)
+                  _row(
+                      'Consent at',
+                      bank.consentGivenAt!
+                          .toLocal()
+                          .toString()
+                          .split('.')
+                          .first),
               ],
             ),
           ),
         ),
         const SizedBox(height: RvmSpacing.md),
-        Text('The account number is masked and this read is audited.', style: Theme.of(context).textTheme.bodySmall),
+        Text('The account number is masked and this read is audited.',
+            style: Theme.of(context).textTheme.bodySmall),
       ],
     );
   }
@@ -110,7 +133,10 @@ class _HrBankScreenState extends State<HrBankScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: 110, child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
+            SizedBox(
+                width: 110,
+                child:
+                    Text(label, style: Theme.of(context).textTheme.bodySmall)),
             Expanded(child: Text(value)),
           ],
         ),

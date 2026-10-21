@@ -65,7 +65,12 @@ class _ChangeRequestsScreenState extends State<ChangeRequestsScreen> {
           TeamPageHeader(
             title: 'Profile changes',
             subtitle: const Text('Ask HR to correct your record'),
-            actions: [IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh))],
+            actions: [
+              TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: _load)
+            ],
           ),
           Expanded(child: _body()),
         ],
@@ -80,14 +85,18 @@ class _ChangeRequestsScreenState extends State<ChangeRequestsScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     if (_requests.isEmpty) {
-      return const AppEmpty(icon: Icons.edit_note, message: 'No change requests yet.');
+      return const AppEmpty(
+          icon: Icons.edit_note, message: 'No change requests yet.');
     }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
+        padding: const EdgeInsets.fromLTRB(
+            RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
         itemCount: _requests.length,
         separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.md),
         itemBuilder: (context, i) {
@@ -100,8 +109,11 @@ class _ChangeRequestsScreenState extends State<ChangeRequestsScreen> {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: Text(r.fieldLabel, style: Theme.of(context).textTheme.titleMedium)),
-                      Text(r.status, style: Theme.of(context).textTheme.labelMedium),
+                      Expanded(
+                          child: Text(r.fieldLabel,
+                              style: Theme.of(context).textTheme.titleMedium)),
+                      Text(r.status,
+                          style: Theme.of(context).textTheme.labelMedium),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -109,7 +121,8 @@ class _ChangeRequestsScreenState extends State<ChangeRequestsScreen> {
                   Text('To: ${r.newValue}'),
                   Text(r.reason, style: Theme.of(context).textTheme.bodySmall),
                   if (r.decisionNote != null)
-                    Text('HR: ${r.decisionNote}${r.decidedByName != null ? ' — ${r.decidedByName}' : ''}',
+                    Text(
+                        'HR: ${r.decisionNote}${r.decidedByName != null ? ' — ${r.decidedByName}' : ''}',
                         style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
@@ -160,7 +173,9 @@ class _NewChangeDialogState extends State<_NewChangeDialog> {
     } on Failure catch (f) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(f.message)));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(f.message)));
     }
   }
 
@@ -176,24 +191,38 @@ class _NewChangeDialogState extends State<_NewChangeDialog> {
               initialValue: _field,
               decoration: const InputDecoration(labelText: 'Field'),
               items: const [
-                DropdownMenuItem(value: 'date_of_birth', child: Text('Date of birth')),
+                DropdownMenuItem(
+                    value: 'date_of_birth', child: Text('Date of birth')),
                 DropdownMenuItem(value: 'address', child: Text('Address')),
-                DropdownMenuItem(value: 'legal_name', child: Text('Legal name')),
+                DropdownMenuItem(
+                    value: 'legal_name', child: Text('Legal name')),
               ],
               onChanged: (v) => setState(() => _field = v ?? _field),
             ),
             const SizedBox(height: 8),
-            TextField(controller: _old, decoration: const InputDecoration(labelText: 'Current value (optional)')),
+            TextField(
+                controller: _old,
+                decoration: const InputDecoration(
+                    labelText: 'Current value (optional)')),
             const SizedBox(height: 8),
-            TextField(controller: _new, decoration: const InputDecoration(labelText: 'Correct value')),
+            TextField(
+                controller: _new,
+                decoration: const InputDecoration(labelText: 'Correct value')),
             const SizedBox(height: 8),
-            TextField(controller: _reason, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Reason')),
+            TextField(
+                controller: _reason,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Reason')),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _saving ? null : _submit, child: const Text('Send')),
+        TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: _saving ? null : _submit, child: const Text('Send')),
       ],
     );
   }

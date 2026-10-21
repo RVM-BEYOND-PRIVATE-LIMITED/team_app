@@ -205,28 +205,36 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
   Future<void> _onProbe(
       TeamAuthProbeRequested e, Emitter<TeamAuthState> emit) async {
     try {
-      var identity =
-          StaffIdentity.fromToken(await _session.readSchedulerToken());
+      var token = await _session.readSchedulerToken();
+      var identity = StaffIdentity.fromToken(token);
+      // The ESS access token (1 hour) replaces the Scheduler one (64 hours) in
+      // the same slot, so a stored token is often spent by the next launch. A
+      // spent token must never be handed to /me/capabilities: the ESS would
+      // answer 401 and the shell would open on an error. Treat it as absent and
+      // restore through the kept sign-in instead.
+      final stale =
+          identity == null || !identity.isTeamMember || Jwt.isExpired(token);
       // Only a device that already holds a session has anything to restore. A
       // fresh install must go straight to the login screen without touching the
       // network: the very first cold-start call can race the OS resolver and
       // surface `Failed host lookup` on the splash screen.
       final hasKeptSignIn = await _session.readEssRefreshToken() != null;
-      if ((identity == null || !identity.isTeamMember) && hasKeptSignIn) {
-        // The Scheduler access token may have expired while the ESS kept sign-in
-        // is still valid. GET /me rotates the refresh token on a 401 and re-mints
-        // a Scheduler-format access token, which is stored back as the session.
+      if (stale && hasKeptSignIn) {
+        // GET /me rotates the refresh token on a 401 and re-mints a
+        // Scheduler-format access token, which is stored back as the session.
         try {
           await _ess.me();
-          identity =
-              StaffIdentity.fromToken(await _session.readSchedulerToken());
+          token = await _session.readSchedulerToken();
+          identity = StaffIdentity.fromToken(token);
         } catch (_) {
           // Offline (connectivity-guarded) or the kept sign-in was refused —
           // fall through to unauthenticated. Never let launch fail on this.
         }
       }
-      if (identity == null || !identity.isTeamMember) {
-        if (identity != null) await _session.signOutScheduler();
+      if (identity == null || !identity.isTeamMember || Jwt.isExpired(token)) {
+        // A dead token would only draw 401s; drop it so the next screen is the
+        // login form, not the shell's error state.
+        if (token != null) await _session.signOutScheduler();
         emit(const TeamAuthState(status: TeamAuthStatus.unauthenticated));
         return;
       }

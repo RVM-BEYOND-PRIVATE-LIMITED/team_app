@@ -10,6 +10,7 @@ import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import '../../widgets/team_kit.dart';
 import 'bloc/wall_bloc.dart';
 import 'create_post_sheet.dart';
 import 'praise_sheet.dart';
@@ -38,7 +39,9 @@ class _WallView extends StatelessWidget {
       listener: (context, state) {
         final msg = state.actionFailure?.message;
         if (msg != null) {
-          ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(msg)));
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(msg)));
         }
       },
       builder: (context, state) => Scaffold(
@@ -51,32 +54,34 @@ class _WallView extends StatelessWidget {
                 Builder(
                   builder: (context) {
                     final caps = context.watch<CapabilitiesBloc>().state.data;
-                    if (caps == null || (!caps.wallModerate && !caps.wallAnnounce)) {
+                    if (caps == null ||
+                        (!caps.wallModerate && !caps.wallAnnounce)) {
                       return const SizedBox.shrink();
                     }
-                    return IconButton(
+                    return TeamHeaderAction(
+                      icon: Icons.shield_outlined,
                       tooltip: 'Wall desk',
                       onPressed: () => context.push('/wall/moderation'),
-                      icon: const Icon(Icons.shield_outlined),
                     );
                   },
                 ),
                 Builder(
-                  builder: (context) => IconButton(
+                  builder: (context) => TeamHeaderAction(
+                    icon: Icons.tune_rounded,
                     tooltip: 'Settings',
                     onPressed: () => showModalBottomSheet<void>(
                       context: context,
                       showDragHandle: true,
                       builder: (_) => const _WallSettingsSheet(),
                     ),
-                    icon: const Icon(Icons.tune),
                   ),
                 ),
                 Builder(
-                  builder: (context) => IconButton(
+                  builder: (context) => TeamHeaderAction(
+                    icon: Icons.refresh_rounded,
                     tooltip: 'Refresh',
-                    onPressed: () => context.read<WallBloc>().add(const WallRefreshed()),
-                    icon: const Icon(Icons.refresh),
+                    onPressed: () =>
+                        context.read<WallBloc>().add(const WallRefreshed()),
                   ),
                 ),
               ],
@@ -107,17 +112,29 @@ class _WallView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, WallState state) {
-    if (state.status == LoadStatus.initial || state.status == LoadStatus.loading) return const AppLoading();
+    if (state.status == LoadStatus.initial ||
+        state.status == LoadStatus.loading) {
+      return const AppLoading();
+    }
     if (state.status == LoadStatus.failure) {
+      final failure = state.failure;
+      if (failure?.code == 'MODULE_NOT_INSTALLED') {
+        return _WallSetupPending(
+          message: failure!.message,
+          onRetry: () => context.read<WallBloc>().add(const WallRefreshed()),
+        );
+      }
       return AppError(
-        message: state.failure?.message ?? 'Could not load the Wall.',
+        message: failure?.message ?? 'Could not load the Wall.',
         onRetry: () => context.read<WallBloc>().add(const WallRefreshed()),
       );
     }
     return RefreshIndicator(
-      onRefresh: () async => context.read<WallBloc>().add(const WallRefreshed()),
+      onRefresh: () async =>
+          context.read<WallBloc>().add(const WallRefreshed()),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
+        padding: const EdgeInsets.fromLTRB(
+            RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
         children: [
           if (state.celebrations != null && !state.celebrations!.isEmpty) ...[
             CelebrationsCard(celebrations: state.celebrations!),
@@ -130,19 +147,26 @@ class _WallView extends StatelessWidget {
           if (state.posts.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 24),
-              child: AppEmpty(icon: Icons.forum_outlined, message: 'The Wall is quiet. Start the first post.'),
+              child: AppEmpty(
+                  icon: Icons.forum_outlined,
+                  message: 'The Wall is quiet. Start the first post.'),
             )
           else
             for (final p in state.posts) ...[
               WallPostCard(
                 post: p,
-                onReact: (reaction) => context.read<WallBloc>().add(WallReacted(postId: p.id, reaction: reaction)),
+                onReact: (reaction) => context
+                    .read<WallBloc>()
+                    .add(WallReacted(postId: p.id, reaction: reaction)),
                 onOpen: () => context.push('/wall/post/${p.id}'),
                 onEdit: p.mine ? () => _editPost(context, p) : null,
                 onDelete: p.mine ? () => _deletePost(context, p) : null,
                 onReport: p.mine ? null : () => _reportPost(context, p),
-                onWhoReacted: (p.reactions?.total ?? 0) > 0 ? () => _whoReacted(context, p.id) : null,
-                onPollChanged: () => context.read<WallBloc>().add(const WallRefreshed()),
+                onWhoReacted: (p.reactions?.total ?? 0) > 0
+                    ? () => _whoReacted(context, p.id)
+                    : null,
+                onPollChanged: () =>
+                    context.read<WallBloc>().add(const WallRefreshed()),
               ),
               const SizedBox(height: RvmSpacing.md),
             ],
@@ -158,10 +182,16 @@ Future<void> _editPost(BuildContext context, WallPost post) async {
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: const Text('Edit post'),
-      content: TextField(controller: controller, minLines: 3, maxLines: 8, maxLength: 2000),
+      content: TextField(
+          controller: controller, minLines: 3, maxLines: 8, maxLength: 2000),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Save')),
+        TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save')),
       ],
     ),
   );
@@ -181,8 +211,12 @@ Future<void> _deletePost(BuildContext context, WallPost post) async {
       title: const Text('Delete this post?'),
       content: const Text('This cannot be undone.'),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Delete')),
+        TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete')),
       ],
     ),
   );
@@ -201,10 +235,21 @@ Future<void> _reportPost(BuildContext context, WallPost post) async {
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: const Text('Report this post'),
-      content: TextField(controller: controller, minLines: 2, maxLines: 4, maxLength: 280, decoration: const InputDecoration(hintText: 'Why are you reporting it?')),
+      content: TextField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 4,
+          maxLength: 280,
+          decoration:
+              const InputDecoration(hintText: 'Why are you reporting it?')),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Report')),
+        TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Report')),
       ],
     ),
   );
@@ -218,9 +263,12 @@ Future<void> _reportPost(BuildContext context, WallPost post) async {
 }
 
 void _snack(BuildContext context, String message) =>
-    ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
 
-void _whoReacted(BuildContext context, String postId) => showModalBottomSheet<void>(
+void _whoReacted(BuildContext context, String postId) =>
+    showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (_) => ReactionBreakdownSheet(postId: postId),
@@ -288,11 +336,15 @@ class _WallSettingsSheetState extends State<_WallSettingsSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(RvmSpacing.md, 0, RvmSpacing.md, RvmSpacing.sm),
-            child: Text('Wall settings', style: Theme.of(context).textTheme.titleLarge),
+            padding: const EdgeInsets.fromLTRB(
+                RvmSpacing.md, 0, RvmSpacing.md, RvmSpacing.sm),
+            child: Text('Wall settings',
+                style: Theme.of(context).textTheme.titleLarge),
           ),
           if (_loading)
-            const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+            const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()))
           else if (_error != null)
             Padding(padding: const EdgeInsets.all(24), child: Text(_error!))
           else
@@ -300,10 +352,58 @@ class _WallSettingsSheetState extends State<_WallSettingsSheet> {
               value: _hidden,
               onChanged: _saving ? null : _toggle,
               title: const Text('Hide my celebrations'),
-              subtitle: const Text('Your birthday and anniversary stay off the Wall and out of the feed.'),
+              subtitle: const Text(
+                  'Your birthday and anniversary stay off the Wall and out of the feed.'),
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The ESS answers 503 MODULE_NOT_INSTALLED while the Wall's database update
+/// has not been applied. That is a setup wait, not a network error, so it gets
+/// the Wall's own card with the server's explanation and a retry.
+class _WallSetupPending extends StatelessWidget {
+  const _WallSetupPending({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(RvmSpacing.lg),
+      children: [
+        const SizedBox(height: RvmSpacing.xl),
+        const Center(
+          child: TeamIconBadge(
+            icon: Icons.construction_rounded,
+            color: RvmColors.warning,
+            background: RvmColors.warningSoft,
+            size: 64,
+            iconSize: 30,
+            radius: 20,
+          ),
+        ),
+        const SizedBox(height: RvmSpacing.md),
+        Text('The Wall is being set up',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: RvmSpacing.sm),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: RvmColors.muted),
+        ),
+        const SizedBox(height: RvmSpacing.lg),
+        TeamPrimaryButton(
+            label: 'Try again',
+            icon: Icons.refresh_rounded,
+            onPressed: onRetry),
+      ],
     );
   }
 }

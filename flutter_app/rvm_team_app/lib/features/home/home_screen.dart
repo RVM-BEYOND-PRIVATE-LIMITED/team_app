@@ -12,33 +12,40 @@ import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import '../../widgets/team_kit.dart';
+import '../attendance/bloc/punch_bloc.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          const OfflineBanner(),
-          Expanded(
-            child: BlocBuilder<TeamAuthBloc, TeamAuthState>(
-              builder: (context, auth) {
-                final identity = auth.identity;
-                final perms = TeamPermissions.forRole(identity?.role ?? AppRole.unknown);
-                return RefreshIndicator(
+    return BlocBuilder<TeamAuthBloc, TeamAuthState>(
+      builder: (context, auth) {
+        final identity = auth.identity;
+        final perms =
+            TeamPermissions.forRole(identity?.role ?? AppRole.unknown);
+        return Scaffold(
+          backgroundColor: RvmColors.ivory,
+          body: Column(
+            children: [
+              const OfflineBanner(),
+              Expanded(
+                child: RefreshIndicator(
+                  color: RvmColors.clay,
                   onRefresh: () async {},
                   child: ListView(
                     padding: EdgeInsets.zero,
                     children: [
                       _HomeHeader(identity: identity),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                            RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
+                        padding: const EdgeInsets.fromLTRB(RvmSpacing.md,
+                            RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            const _ScheduleCard(),
+                            const SizedBox(height: RvmSpacing.md),
                             _OffThisWeekCard(),
                             const SizedBox(height: RvmSpacing.md),
                             if (perms.canSeeFacultyWork) ...[
@@ -55,7 +62,9 @@ class HomeScreen extends StatelessWidget {
                             ],
                             _InterviewsCard(perms: perms),
                             const SizedBox(height: RvmSpacing.md),
-                            _QuickActionsCard(perms: perms),
+                            _QuickActions(perms: perms),
+                            const SizedBox(height: RvmSpacing.md),
+                            _WorkFromHomeCard(),
                             const SizedBox(height: RvmSpacing.md),
                             _AnnouncementsSection(),
                           ],
@@ -63,12 +72,12 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -81,29 +90,38 @@ class _HomeHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = identity?.username ?? 'Welcome';
     final trimmed = name.trim();
-    final initial = trimmed.isEmpty ? '?' : trimmed.substring(0, 1).toUpperCase();
-    final role = (appRoleWire(identity?.role ?? AppRole.unknown) ?? '—').toUpperCase();
+    final role =
+        (appRoleWire(identity?.role ?? AppRole.unknown) ?? '—').toUpperCase();
     final location = identity?.locationName;
 
     return TeamPageHeader(
       eyebrow: _greeting(DateTime.now().hour),
       title: name,
-      leading: CircleAvatar(
-        radius: 24,
-        backgroundColor: RvmColors.ivory,
-        child: Text(
-          initial,
-          style: Theme.of(context)
-              .textTheme
-              .titleLarge
-              ?.copyWith(color: RvmColors.ironwood, fontWeight: FontWeight.w700),
-        ),
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          TeamAvatar(name: trimmed, size: 48, rounded: true),
+          Positioned(
+            right: 0,
+            bottom: 1,
+            child: Container(
+              width: 11,
+              height: 11,
+              decoration: BoxDecoration(
+                color: RvmColors.success,
+                shape: BoxShape.circle,
+                border: Border.all(color: RvmColors.ironwood, width: 2),
+              ),
+            ),
+          ),
+        ],
       ),
       actions: [
-        IconButton(
+        TeamHeaderAction(
+          icon: Icons.notifications_none_rounded,
           tooltip: 'Notifications',
+          badge: true,
           onPressed: () => context.push('/notifications'),
-          icon: const Icon(Icons.notifications_none_rounded),
         ),
       ],
       footer: Row(
@@ -116,17 +134,17 @@ class _HomeHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.location_on_outlined,
-                      size: 14, color: RvmColors.ivory.withValues(alpha: 0.85)),
-                  const SizedBox(width: 2),
+                      size: 12, color: RvmColors.ivory.withValues(alpha: 0.7)),
+                  const SizedBox(width: 3),
                   Flexible(
                     child: Text(
                       location,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: RvmColors.ivory.withValues(alpha: 0.9)),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 11,
+                            color: RvmColors.ivory.withValues(alpha: 0.72),
+                          ),
                     ),
                   ),
                 ],
@@ -145,40 +163,100 @@ String _greeting(int hour) {
   return 'Good evening';
 }
 
-class _OffThisWeekCard extends StatelessWidget {
+// ── today's schedule ──────────────────────────────────────────────────────
+
+class _ScheduleCard extends StatelessWidget {
+  const _ScheduleCard();
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => getIt<LoadBloc<TeamOffWeek>>()..add(const LoadRequested()),
-      child: BlocBuilder<LoadBloc<TeamOffWeek>, LoadState<TeamOffWeek>>(
+      create: (_) => getIt<PunchBloc>()..add(const PunchLoadRequested()),
+      child: BlocBuilder<PunchBloc, PunchState>(
         builder: (context, state) {
-          if (state.status == LoadStatus.loading || state.status == LoadStatus.initial) {
-            return _SectionCard(
-              title: 'Off this week',
-              child: const SizedBox(height: 40, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-            );
-          }
-          if (state.status == LoadStatus.failure) return const SizedBox.shrink();
           final data = state.data;
-          if (data == null || data.scope == null || data.people.isEmpty) {
-            return _SectionCard(title: 'Off this week', child: const Text('Nobody is off this week.'));
-          }
-          return _SectionCard(
-            title: 'Off this week',
-            trailing: TextButton(onPressed: () => context.push('/team/directory'), child: const Text('Directory')),
+          final today = data?.today;
+          final shift = data?.shift;
+          final onDuty = today?.punchedIn ?? false;
+          final schedule = (shift?.start != null && shift?.end != null)
+              ? '${_prettyTime(shift?.start ?? '')} – ${_prettyTime(shift?.end ?? '')}'
+              : 'Shift not set';
+          final logged = today?.firstIn;
+          return TeamCard(
             child: Column(
               children: [
-                for (final p in data.people)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      child: Text(p.card.fullName.trim().isEmpty
-                          ? '?'
-                          : p.card.fullName.trim().substring(0, 1).toUpperCase()),
+                Row(
+                  children: [
+                    TeamIconBadge(
+                      icon: Icons.schedule_rounded,
+                      color: RvmColors.success,
+                      background: RvmColors.successSoft,
+                      size: 38,
                     ),
-                    title: Text(p.card.fullName),
-                    subtitle: Text(p.days.join(', ')),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('TODAY\'S SCHEDULE',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    fontSize: 9.5,
+                                    letterSpacing: 0.8,
+                                    fontWeight: FontWeight.w600,
+                                    color: RvmColors.muted,
+                                  )),
+                          const SizedBox(height: 2),
+                          Text(schedule,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                  )),
+                        ],
+                      ),
+                    ),
+                    TeamPill(
+                      label: onDuty ? 'On Duty' : 'Off Duty',
+                      tone:
+                          onDuty ? TeamPillTone.success : TeamPillTone.neutral,
+                      dot: true,
+                    ),
+                  ],
+                ),
+                const Divider(height: 25),
+                Row(
+                  children: [
+                    Icon(Icons.schedule_outlined,
+                        size: 14, color: RvmColors.subtle),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        logged == null
+                            ? 'Not punched in yet'
+                            : 'Logged in at ${TimeOfDay.fromDateTime(logged.toLocal()).format(context)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontSize: 11.5,
+                              color: RvmColors.muted,
+                            ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => context.push('/me/attendance'),
+                      child: Text('View logs',
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    fontSize: 11.5,
+                                    color: RvmColors.clay,
+                                    fontWeight: FontWeight.w600,
+                                  )),
+                    ),
+                  ],
+                ),
               ],
             ),
           );
@@ -188,50 +266,137 @@ class _OffThisWeekCard extends StatelessWidget {
   }
 }
 
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child, this.trailing});
-  final String title;
-  final Widget child;
-  final Widget? trailing;
+String _prettyTime(String value) {
+  // The API returns 24h "HH:MM"; the design shows a friendly 12h range.
+  final parts = value.split(':');
+  if (parts.length < 2) return value;
+  final hour = int.tryParse(parts[0]);
+  final minute = parts[1];
+  if (hour == null) return value;
+  final suffix = hour >= 12 ? 'PM' : 'AM';
+  final h = hour % 12 == 0 ? 12 : hour % 12;
+  return '$h:$minute $suffix';
+}
 
+// ── off this week ─────────────────────────────────────────────────────────
+
+class _OffThisWeekCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(RvmSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return BlocProvider(
+      create: (_) => getIt<LoadBloc<TeamOffWeek>>()..add(const LoadRequested()),
+      child: BlocBuilder<LoadBloc<TeamOffWeek>, LoadState<TeamOffWeek>>(
+        builder: (context, state) {
+          final data = state.data;
+          final count = data?.people.length;
+          final body = switch (state.status) {
+            LoadStatus.loading || LoadStatus.initial => const SizedBox(
+                height: 34,
+                child:
+                    Center(child: CircularProgressIndicator(strokeWidth: 2))),
+            LoadStatus.failure => const SizedBox.shrink(),
+            _ => _OffThisWeekInner(people: data?.people ?? const []),
+          };
+          return TeamCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: Text(title, style: Theme.of(context).textTheme.titleMedium)),
-                if (trailing != null) trailing!,
+                TeamSectionHeader(
+                  title: 'Off this week',
+                  trailing: Text(
+                    count == null ? 'Team' : 'Team ($count)',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontSize: 11),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                body,
               ],
             ),
-            const SizedBox(height: RvmSpacing.sm),
-            child,
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
+class _OffThisWeekInner extends StatelessWidget {
+  const _OffThisWeekInner({required this.people});
+  final List<OffWeekPerson> people;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = people.isEmpty
+        ? 'Nobody is off this week. Full team present!'
+        : people
+            .map((p) => '${p.card.fullName} · ${p.days.join(', ')}')
+            .join('\n');
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: RvmColors.cream,
+        borderRadius: BorderRadius.circular(RvmRadii.md),
+        border: Border.all(color: RvmColors.sand),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 11.5,
+                      height: 1.35,
+                      color: RvmColors.muted,
+                    )),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: () => context.push('/team/directory'),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              foregroundColor: RvmColors.clay,
+            ),
+            child: const Text('Calendar',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── role work cards ───────────────────────────────────────────────────────
+
 class _FacultyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _SectionCard(
-      title: "Today's classes",
-      trailing: TextButton(onPressed: () => context.push('/work/batches'), child: const Text('My batches')),
+    return TeamCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Open your batches to mark today’s student attendance.'),
-          const SizedBox(height: RvmSpacing.sm),
+          TeamSectionHeader(
+            title: "Today's classes",
+            trailing: TextButton(
+              onPressed: () => context.push('/work/batches'),
+              style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 28), padding: EdgeInsets.zero),
+              child: const Text('My batches', style: TextStyle(fontSize: 11.5)),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text('Open your batches to mark today’s student attendance.',
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: () => context.push('/work/indicators'),
-            icon: const Icon(Icons.insights_outlined, size: 18),
+            icon: const Icon(Icons.insights_outlined, size: 17),
             label: const Text('My attendance health'),
+            style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(40)),
           ),
         ],
       ),
@@ -242,10 +407,25 @@ class _FacultyCard extends StatelessWidget {
 class _HodCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _SectionCard(
-      title: 'Faculty Development',
-      trailing: TextButton(onPressed: () => context.push('/work/hod'), child: const Text('Open')),
-      child: const Text('Your team to-do list, interview verdicts, risk logs and day comments.'),
+    return TeamCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TeamSectionHeader(
+            title: 'Faculty Development',
+            trailing: TextButton(
+              onPressed: () => context.push('/work/hod'),
+              style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 28), padding: EdgeInsets.zero),
+              child: const Text('Open', style: TextStyle(fontSize: 11.5)),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+              'Your team to-do list, interview verdicts, risk logs and day comments.',
+              style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
     );
   }
 }
@@ -257,21 +437,46 @@ class _PrioritySummaryCard extends StatelessWidget {
       create: (_) => getIt<InboxBloc>()..add(const LoadRequested()),
       child: BlocBuilder<InboxBloc, LoadState<PriorityInbox>>(
         builder: (context, state) {
-          return _SectionCard(
-            title: 'Priority tasks',
-            child: switch (state.status) {
-              LoadStatus.loading || LoadStatus.initial =>
-                const SizedBox(height: 40, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-              LoadStatus.failure => Text(state.failure?.message ?? 'Could not load tasks.'),
-              LoadStatus.empty => const Text('Nothing on your plate right now.'),
-              LoadStatus.success => Row(
-                  children: [
-                    Text('${state.data!.outstanding}', style: Theme.of(context).textTheme.headlineMedium),
-                    const SizedBox(width: 8),
-                    Text('outstanding · ${state.data!.unread} unread'),
-                  ],
+          return TeamCard(
+            onTap: () => context.push('/notifications'),
+            child: Row(
+              children: [
+                TeamIconBadge(
+                  icon: Icons.flag_outlined,
+                  color: RvmColors.teamSeed,
+                  background: const Color(0xFFFCEBE2),
                 ),
-            },
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Priority tasks',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 2),
+                      Text(
+                        switch (state.status) {
+                          LoadStatus.loading ||
+                          LoadStatus.initial =>
+                            'Loading…',
+                          LoadStatus.failure =>
+                            state.failure?.message ?? 'Could not load tasks.',
+                          LoadStatus.empty =>
+                            'Nothing on your plate right now.',
+                          LoadStatus.success =>
+                            '${state.data!.outstanding} outstanding · ${state.data!.unread} unread',
+                        },
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 20, color: RvmColors.subtle),
+              ],
+            ),
           );
         },
       ),
@@ -289,21 +494,40 @@ class _InterviewsCard extends StatelessWidget {
       create: (_) => getIt<InterviewsBloc>()..add(const LoadRequested()),
       child: BlocBuilder<InterviewsBloc, LoadState<List<InterviewRound>>>(
         builder: (context, state) {
-          if (state.status == LoadStatus.failure || state.status == LoadStatus.empty) {
+          if (state.status == LoadStatus.failure ||
+              state.status == LoadStatus.empty) {
             return const SizedBox.shrink();
           }
-          final round = (state.data ?? const <InterviewRound>[]).isNotEmpty ? state.data!.first : null;
+          final round = (state.data ?? const <InterviewRound>[]).isNotEmpty
+              ? state.data!.first
+              : null;
           if (round == null) return const SizedBox.shrink();
-          return _SectionCard(
-            title: 'Next interview (24h)',
-            trailing: TextButton(onPressed: () => context.push('/work/interviews'), child: const Text('All')),
+          return TeamCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(round.candidateName ?? 'Candidate', style: Theme.of(context).textTheme.bodyLarge),
-                if (round.position != null) Text(round.position!, style: Theme.of(context).textTheme.bodySmall),
+                TeamSectionHeader(
+                  title: 'Next interview (24h)',
+                  trailing: TextButton(
+                    onPressed: () => context.push('/work/interviews'),
+                    style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 28),
+                        padding: EdgeInsets.zero),
+                    child: const Text('All', style: TextStyle(fontSize: 11.5)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(round.candidateName ?? 'Candidate',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                if (round.position != null)
+                  Text(round.position!,
+                      style: Theme.of(context).textTheme.bodySmall),
                 if (round.scheduledAt != null)
-                  Text('At ${TimeOfDay.fromDateTime(round.scheduledAt!.toLocal()).format(context)}',
+                  Text(
+                      'At ${TimeOfDay.fromDateTime(round.scheduledAt!.toLocal()).format(context)}',
                       style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
@@ -314,75 +538,323 @@ class _InterviewsCard extends StatelessWidget {
   }
 }
 
-class _QuickActionsCard extends StatelessWidget {
-  const _QuickActionsCard({required this.perms});
+// ── quick actions ─────────────────────────────────────────────────────────
+
+class _QuickActions extends StatelessWidget {
+  const _QuickActions({required this.perms});
   final TeamPermissions perms;
 
   @override
   Widget build(BuildContext context) {
-    // (icon, label, route) — a null route is a feature the backend does not
-    // expose yet (work-from-home, 2B helpdesk raise).
     final caps = context.watch<CapabilitiesBloc>().state.data;
-    final actions = <(IconData, String, String?)>[
-      (Icons.fingerprint, 'Punch in / out', '/me/punch'),
-      (Icons.today_outlined, 'My day', '/me/attendance'),
-      (Icons.event_note_outlined, 'Requests & leave', '/requests'),
-      if (caps?.approvalsOwnReports == true || caps?.approvalsAnyRequest == true)
-        (Icons.fact_check_outlined, 'Approvals', '/approvals'),
-      (Icons.work_off_outlined, 'Work from home', null),
+    final actions = <_QuickAction>[
+      _QuickAction(
+          Icons.fingerprint_rounded,
+          'Punch in / out',
+          'Quick attendance',
+          RvmColors.teamSeed,
+          const Color(0xFFFCEBE2),
+          '/me/punch'),
+      _QuickAction(Icons.today_outlined, 'My day', 'Tasks & meetings',
+          RvmColors.info, RvmColors.infoSoft, '/me/attendance'),
+      _QuickAction(
+          Icons.event_note_outlined,
+          'Requests & leave',
+          'Apply vacation',
+          RvmColors.teamSeed,
+          const Color(0xFFFCEBE2),
+          '/requests'),
+      if (caps?.approvalsOwnReports == true ||
+          caps?.approvalsAnyRequest == true)
+        _QuickAction(Icons.fact_check_outlined, 'Approvals', 'Pending reviews',
+            RvmColors.warning, RvmColors.warningSoft, '/approvals',
+            badge: '2 new'),
     ];
-    return _SectionCard(
-      title: 'Quick actions',
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final a in actions)
-            ActionChip(
-              avatar: Icon(a.$1, size: 18),
-              label: Text(a.$2),
-              onPressed: () => a.$3 != null ? context.push(a.$3!) : _pending(context, a.$2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TeamSectionHeader(
+          title: 'Quick actions',
+          caption: 'Personal & Team',
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = (constraints.maxWidth - 10) / 2;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final a in actions)
+                  SizedBox(width: width, child: _QuickTile(action: a)),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickAction {
+  const _QuickAction(this.icon, this.title, this.subtitle, this.color,
+      this.background, this.route,
+      {this.badge});
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final Color background;
+  final String? route;
+  final String? badge;
+}
+
+class _QuickTile extends StatelessWidget {
+  const _QuickTile({required this.action});
+  final _QuickAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    return TeamCard(
+      padding: const EdgeInsets.all(12),
+      radius: RvmRadii.md,
+      onTap: () {
+        if (action.route != null) {
+          context.push(action.route!);
+        } else {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(
+                content: Text(
+                    '${action.title} needs the new backend — not available yet.')));
+        }
+      },
+      child: SizedBox(
+        height: 88,
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TeamIconBadge(
+                  icon: action.icon,
+                  color: action.color,
+                  background: action.background,
+                  size: 34,
+                  iconSize: 17,
+                  radius: 10,
+                ),
+                const Spacer(),
+                Text(action.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontSize: 12.5, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(action.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontSize: 10.5)),
+              ],
             ),
+            if (action.badge != null)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: RvmColors.teamSeed,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(action.badge!,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.white,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w700,
+                          )),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkFromHomeCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return TeamCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      onTap: () {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+              content: Text(
+                  'Work from home needs the new backend — not available yet.')));
+      },
+      child: Row(
+        children: [
+          const TeamIconBadge(
+            icon: Icons.desktop_windows_outlined,
+            color: RvmColors.success,
+            background: RvmColors.successSoft,
+            size: 36,
+            iconSize: 18,
+            radius: 11,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Work from home',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontSize: 13)),
+                const SizedBox(height: 1),
+                Text('Request remote session',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontSize: 10.5)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded,
+              size: 20, color: RvmColors.subtle),
         ],
       ),
     );
   }
-
-  void _pending(BuildContext context, String name) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('$name needs the new backend — not available yet.')));
-  }
 }
+
+// ── announcements ─────────────────────────────────────────────────────────
 
 class _AnnouncementsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => getIt<HomeAnnouncementsBloc>()..add(const LoadRequested()),
-      child: BlocBuilder<HomeAnnouncementsBloc, LoadState<List<TeamAnnouncement>>>(
+      child:
+          BlocBuilder<HomeAnnouncementsBloc, LoadState<List<TeamAnnouncement>>>(
         builder: (context, state) {
-          return _SectionCard(
-            title: 'Announcements',
-            child: switch (state.status) {
-              LoadStatus.loading || LoadStatus.initial =>
-                const SizedBox(height: 40, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-              LoadStatus.failure => Text(state.failure?.message ?? 'Could not load announcements.'),
-              LoadStatus.empty => const Text('No announcements right now.'),
-              LoadStatus.success => Column(
-                  children: [
-                    for (final a in state.data!.take(5))
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(a.title),
-                        subtitle: Text(a.message, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        leading: const Icon(Icons.campaign_outlined),
-                      ),
-                  ],
+          return TeamCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TeamSectionHeader(
+                  title: 'Announcements',
+                  trailing: TextButton(
+                    onPressed: () => context.push('/notifications'),
+                    style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 28),
+                        padding: EdgeInsets.zero),
+                    child:
+                        const Text('History', style: TextStyle(fontSize: 11.5)),
+                  ),
                 ),
-            },
+                const SizedBox(height: 10),
+                switch (state.status) {
+                  LoadStatus.loading || LoadStatus.initial => const SizedBox(
+                      height: 40,
+                      child: Center(
+                          child: CircularProgressIndicator(strokeWidth: 2))),
+                  LoadStatus.failure => Text(
+                      state.failure?.message ?? 'Could not load announcements.',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  LoadStatus.empty => const _AnnouncementEmpty(),
+                  LoadStatus.success => Column(
+                      children: [
+                        for (final a in state.data!.take(4))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Container(
+                              padding: const EdgeInsets.all(11),
+                              decoration: BoxDecoration(
+                                color: RvmColors.cream,
+                                borderRadius:
+                                    BorderRadius.circular(RvmRadii.sm),
+                                border: Border.all(color: RvmColors.sand),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.campaign_outlined,
+                                      size: 16, color: RvmColors.muted),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(a.title,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                    fontWeight: FontWeight.w600,
+                                                    color: RvmColors.ink)),
+                                        Text(a.message,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(fontSize: 10.5)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                },
+              ],
+            ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _AnnouncementEmpty extends StatelessWidget {
+  const _AnnouncementEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      decoration: BoxDecoration(
+        color: RvmColors.cream,
+        borderRadius: BorderRadius.circular(RvmRadii.md),
+      ),
+      child: Column(
+        children: [
+          Text('No new company announcements right now.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontSize: 11)),
+          const SizedBox(height: 2),
+          Text('Stay tuned for future company updates.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontSize: 9.5, color: RvmColors.subtle)),
+        ],
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:rvm_team_app/bloc/team_auth_bloc.dart';
 import 'package:rvm_team_app/data/repositories/auth_repository.dart';
 import 'package:rvm_team_app/data/repositories/ess_repository.dart';
+import 'package:rvm_team_app/domain/ess_models.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
@@ -19,6 +20,16 @@ String _jwt(Map<String, dynamic> payload) {
       base64Url.encode(utf8.encode(json.encode(payload))).replaceAll('=', '');
   return 'header.$p.sig';
 }
+
+Map<String, dynamic> _teamClaims({required bool expired}) => {
+      'role': 'faculty',
+      'userId': 'u1',
+      'exp': (expired
+                  ? DateTime.now().subtract(const Duration(minutes: 5))
+                  : DateTime.now().add(const Duration(hours: 1)))
+              .millisecondsSinceEpoch ~/
+          1000,
+    };
 
 void main() {
   late _MockAuthSession session;
@@ -75,5 +86,41 @@ void main() {
     await unauthenticated;
 
     verify(() => ess.me()).called(1);
+  });
+
+  test('a spent token is rotated before the shell can call capabilities',
+      () async {
+    final calls = <String?>[
+      _jwt(_teamClaims(expired: true)),
+      _jwt(_teamClaims(expired: false)),
+    ];
+    when(() => session.readSchedulerToken())
+        .thenAnswer((_) async => calls.removeAt(0));
+    when(() => session.readEssRefreshToken())
+        .thenAnswer((_) async => 'refresh-token');
+    when(() => ess.me()).thenAnswer((_) async => EssMe.fromJson(const {}));
+
+    final authenticated =
+        bloc.stream.firstWhere((s) => s.status == TeamAuthStatus.authenticated);
+    bloc.add(const TeamAuthProbeRequested());
+    final state = await authenticated;
+
+    expect(state.identity?.userId, 'u1');
+    verify(() => ess.me()).called(1);
+  });
+
+  test('a spent token with no kept sign-in is dropped, not used', () async {
+    when(() => session.readSchedulerToken())
+        .thenAnswer((_) async => _jwt(_teamClaims(expired: true)));
+    when(() => session.readEssRefreshToken()).thenAnswer((_) async => null);
+    when(() => session.signOutScheduler()).thenAnswer((_) async {});
+
+    final unauthenticated = bloc.stream
+        .firstWhere((s) => s.status == TeamAuthStatus.unauthenticated);
+    bloc.add(const TeamAuthProbeRequested());
+    await unauthenticated;
+
+    verifyNever(() => ess.me());
+    verify(() => session.signOutScheduler()).called(1);
   });
 }

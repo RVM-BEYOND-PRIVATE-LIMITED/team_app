@@ -58,7 +58,10 @@ class _HelpdeskQueueScreenState extends State<HelpdeskQueueScreen> {
             title: 'Team queue',
             subtitle: const Text('Tickets your role serves'),
             actions: [
-              IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh)),
+              TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: _load),
             ],
           ),
           Expanded(child: _body()),
@@ -69,10 +72,13 @@ class _HelpdeskQueueScreenState extends State<HelpdeskQueueScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     final queue = _queue;
     if (queue == null || queue.tickets.isEmpty) {
-      return const AppEmpty(icon: Icons.inbox_outlined, message: 'The queue is empty.');
+      return const AppEmpty(
+          icon: Icons.inbox_outlined, message: 'The queue is empty.');
     }
     return RefreshIndicator(
       onRefresh: _load,
@@ -85,7 +91,8 @@ class _HelpdeskQueueScreenState extends State<HelpdeskQueueScreen> {
           return Card(
             child: ListTile(
               onTap: () => context.push('/helpdesk/ticket/${t.id}'),
-              title: Text('${t.ref} · ${t.subject}', overflow: TextOverflow.ellipsis),
+              title: Text('${t.ref} · ${t.subject}',
+                  overflow: TextOverflow.ellipsis),
               subtitle: Text([
                 t.category.name,
                 t.status.replaceAll('_', ' '),

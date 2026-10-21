@@ -69,6 +69,7 @@ class InterviewsListBloc extends LoadBloc<List<InterviewRound>> {
     bool Function(List<InterviewRound>)? isEmpty,
   }) : super(fetch, isEmpty: isEmpty);
 }
+
 typedef HomeAnnouncementsBloc = LoadBloc<List<TeamAnnouncement>>;
 typedef SecurityEventsBloc = LoadBloc<List<SecurityEvent>>;
 typedef HodOverviewBloc = LoadBloc<HodOverview>;
@@ -92,31 +93,51 @@ void configureDependencies(AuthSession session) {
         ))
     // ESS client: bearer + rotating kept sign-in (A3).
     ..registerLazySingleton<Dio>(
-      () => DioFactory.ess(
-        env: getIt<ApiEnvironment>(),
-        tokens: getIt<AuthSession>(),
-        essTokens: getIt<AuthSession>(),
-        logging: kDebugMode,
-      ),
+      () {
+        final dio = DioFactory.ess(
+          env: getIt<ApiEnvironment>(),
+          tokens: getIt<AuthSession>(),
+          essTokens: getIt<AuthSession>(),
+          logging: kDebugMode,
+        );
+        // Let 5xx responses reach the data source as a typed Failure instead of
+        // throwing a DioException. The debugger stops on every thrown error even
+        // when the app catches it (a 503 on the Wall used to surface that way),
+        // and a server 5xx is a result the UI must render, not a crash. 4xx still
+        // throws so token rotation and the other interceptors keep working.
+        dio.options.validateStatus =
+            (status) => status != null && (status < 300 || status >= 500);
+        return dio;
+      },
       instanceName: 'ess',
     );
 
   // Data sources (dio stays here).
   getIt
-    ..registerLazySingleton<AuthRemoteDataSource>(() => AuthRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<MeRemoteDataSource>(() => MeRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<PriorityTasksRemoteDataSource>(() => PriorityTasksRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<WorkRemoteDataSource>(() => WorkRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<AnnouncementsRemoteDataSource>(() => AnnouncementsRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<HodRemoteDataSource>(() => HodRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<EssRemoteDataSource>(() => EssRemoteDataSource(getIt<Dio>(instanceName: 'ess')))
-    ..registerLazySingleton<MyAttendanceRemoteDataSource>(() => MyAttendanceRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<AuthRemoteDataSource>(
+        () => AuthRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<MeRemoteDataSource>(
+        () => MeRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<PriorityTasksRemoteDataSource>(
+        () => PriorityTasksRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<WorkRemoteDataSource>(
+        () => WorkRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<AnnouncementsRemoteDataSource>(
+        () => AnnouncementsRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<HodRemoteDataSource>(
+        () => HodRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<EssRemoteDataSource>(
+        () => EssRemoteDataSource(getIt<Dio>(instanceName: 'ess')))
+    ..registerLazySingleton<MyAttendanceRemoteDataSource>(
+        () => MyAttendanceRemoteDataSource(getIt<Dio>()))
     ..registerLazySingleton<LocationService>(LocationService.new);
 
   // Repositories.
   getIt
-    ..registerLazySingleton<AuthRepository>(() => AuthRepository(remote: getIt(), connectivity: getIt()))
-    ..registerLazySingleton<MeRepository>(() => MeRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<AuthRepository>(
+        () => AuthRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<MeRepository>(
+        () => MeRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<EssRepository>(() => EssRepository(
           remote: getIt(),
           tokens: getIt<AuthSession>(),
@@ -124,15 +145,18 @@ void configureDependencies(AuthSession session) {
         ))
     ..registerLazySingleton<PriorityTasksRepository>(
         () => PriorityTasksRepository(remote: getIt(), connectivity: getIt()))
-    ..registerLazySingleton<WorkRepository>(() => WorkRepository(remote: getIt(), connectivity: getIt()))
-    ..registerLazySingleton<HodRepository>(() => HodRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<WorkRepository>(
+        () => WorkRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<HodRepository>(
+        () => HodRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<AnnouncementsRepository>(
         () => AnnouncementsRepository(remote: getIt(), connectivity: getIt()))
-    ..registerLazySingleton<MyAttendanceRepository>(() => MyAttendanceRepository(
-          remote: getIt(),
-          location: getIt(),
-          connectivity: getIt(),
-        ));
+    ..registerLazySingleton<MyAttendanceRepository>(
+        () => MyAttendanceRepository(
+              remote: getIt(),
+              location: getIt(),
+              connectivity: getIt(),
+            ));
 
   // Session-wide blocs.
   getIt
@@ -145,53 +169,69 @@ void configureDependencies(AuthSession session) {
     ..registerFactory<ForgotPasswordBloc>(() => ForgotPasswordBloc(getIt()))
     ..registerFactory<AccountActionBloc>(() => AccountActionBloc(getIt()))
     ..registerFactory<TaskActionBloc>(() => TaskActionBloc(getIt()))
-    ..registerFactory<MeBloc>(() => LoadBloc<TeamProfile>(() => getIt<MeRepository>().me()))
-    ..registerFactory<InboxBloc>(() => LoadBloc<PriorityInbox>(() => getIt<PriorityTasksRepository>().inbox()))
+    ..registerFactory<MeBloc>(
+        () => LoadBloc<TeamProfile>(() => getIt<MeRepository>().me()))
+    ..registerFactory<InboxBloc>(() =>
+        LoadBloc<PriorityInbox>(() => getIt<PriorityTasksRepository>().inbox()))
     ..registerFactory<MyBatchesBloc>(() => LoadBloc<List<TeamBatch>>(
         () => getIt<WorkRepository>().batches(),
         isEmpty: (l) => l.isEmpty))
     ..registerFactory<InterviewsBloc>(() => LoadBloc<List<InterviewRound>>(
         () => getIt<WorkRepository>().upcomingInterviews(),
         isEmpty: (l) => l.isEmpty))
-    ..registerFactory<HomeAnnouncementsBloc>(() => LoadBloc<List<TeamAnnouncement>>(
-        () => getIt<AnnouncementsRepository>().list(),
-        isEmpty: (l) => l.isEmpty))
+    ..registerFactory<HomeAnnouncementsBloc>(() =>
+        LoadBloc<List<TeamAnnouncement>>(
+            () => getIt<AnnouncementsRepository>().list(),
+            isEmpty: (l) => l.isEmpty))
     ..registerFactory<SecurityEventsBloc>(() => LoadBloc<List<SecurityEvent>>(
         () => getIt<MeRepository>().securityEvents(),
         isEmpty: (l) => l.isEmpty))
     ..registerFactory<InterviewsListBloc>(() => InterviewsListBloc(
         () => getIt<WorkRepository>().interviews(),
         isEmpty: (l) => l.isEmpty))
-    ..registerFactory<HodOverviewBloc>(() => LoadBloc<HodOverview>(() => getIt<HodRepository>().overview()))
+    ..registerFactory<HodOverviewBloc>(
+        () => LoadBloc<HodOverview>(() => getIt<HodRepository>().overview()))
     ..registerFactory<HodInterviewsBloc>(() => LoadBloc<List<HodInterview>>(
         () => getIt<HodRepository>().interviews(),
         isEmpty: (l) => l.isEmpty))
-    ..registerFactory<HodFacultyOptionsBloc>(() => LoadBloc<List<FacultyOption>>(
-        () => getIt<HodRepository>().facultyOptions(),
-        isEmpty: (l) => l.isEmpty))
-    ..registerFactoryParam<FacultyReportBloc, String, void>(
-        (facultyId, _) => LoadBloc<FacultyReport>(() => getIt<WorkRepository>().facultyReport(facultyId, startDate: _monthStart(), endDate: _today())))
+    ..registerFactory<HodFacultyOptionsBloc>(() =>
+        LoadBloc<List<FacultyOption>>(
+            () => getIt<HodRepository>().facultyOptions(),
+            isEmpty: (l) => l.isEmpty))
+    ..registerFactoryParam<FacultyReportBloc, String, void>((facultyId, _) =>
+        LoadBloc<FacultyReport>(() => getIt<WorkRepository>().facultyReport(
+            facultyId,
+            startDate: _monthStart(),
+            endDate: _today())))
     ..registerFactory<AbsentRemarkBloc>(() => AbsentRemarkBloc(getIt()))
     ..registerFactory<HodWriteBloc>(() => HodWriteBloc(getIt()))
     ..registerFactory<InterviewActionBloc>(() => InterviewActionBloc(getIt()))
     // ── Team RVM ESS (1A/1B) ──────────────────────────────────────────────
-    ..registerFactory<CapabilitiesBloc>(() => LoadBloc<EssCapabilities>(() => getIt<EssRepository>().capabilities()))
+    ..registerFactory<CapabilitiesBloc>(() =>
+        LoadBloc<EssCapabilities>(() => getIt<EssRepository>().capabilities()))
     ..registerFactory<PersonalBloc>(() => PersonalBloc(getIt()))
     ..registerFactory<DataRequestsBloc>(() => DataRequestsBloc(getIt()))
     ..registerFactory<AttendanceDayBloc>(() => AttendanceDayBloc(getIt()))
     ..registerFactory<SessionsBloc>(() => SessionsBloc(getIt()))
     ..registerFactory<HrToolsBloc>(() => HrToolsBloc(getIt()))
-    ..registerFactory<PunchBloc>(() => PunchBloc(getIt(), getIt(), getIt<AuthSession>()))
+    ..registerFactory<PunchBloc>(
+        () => PunchBloc(getIt(), getIt(), getIt<AuthSession>()))
     ..registerFactoryParam<EmployeePersonalBloc, String, void>(
         (employeeId, _) => EmployeePersonalBloc(getIt(), employeeId))
     // ── Team RVM ESS (1E: Me & My Team) ───────────────────────────────────
     ..registerFactory<TeamTodayBloc>(() => TeamTodayBloc(getIt()))
-    ..registerFactory<LoadBloc<OrgView>>(() => LoadBloc<OrgView>(() => getIt<EssRepository>().myOrg()))
-    ..registerFactory<LoadBloc<TeamOffWeek>>(() => LoadBloc<TeamOffWeek>(() => getIt<EssRepository>().teamOffThisWeek()))
-    ..registerFactory<LoadBloc<MyProfile>>(() => LoadBloc<MyProfile>(() => getIt<EssRepository>().myProfile()))
-    ..registerFactory<LoadBloc<PraisePage>>(() => LoadBloc<PraisePage>(() => getIt<EssRepository>().myPraise()))
+    ..registerFactory<LoadBloc<OrgView>>(
+        () => LoadBloc<OrgView>(() => getIt<EssRepository>().myOrg()))
+    ..registerFactory<LoadBloc<TeamOffWeek>>(() =>
+        LoadBloc<TeamOffWeek>(() => getIt<EssRepository>().teamOffThisWeek()))
+    ..registerFactory<LoadBloc<MyProfile>>(
+        () => LoadBloc<MyProfile>(() => getIt<EssRepository>().myProfile()))
+    ..registerFactory<LoadBloc<PraisePage>>(
+        () => LoadBloc<PraisePage>(() => getIt<EssRepository>().myPraise()))
     // ── Team RVM ESS (2D: leaders) ───────────────────────────────────────
-    ..registerFactory<LoadBloc<LeadersOverview>>(() => LoadBloc<LeadersOverview>(() => getIt<EssRepository>().leadersOverview()))
+    ..registerFactory<LoadBloc<LeadersOverview>>(() =>
+        LoadBloc<LeadersOverview>(
+            () => getIt<EssRepository>().leadersOverview()))
     // ── Team RVM ESS (1C: requests, leave, approvals) ─────────────────────
     ..registerFactory<RequestsBloc>(() => RequestsBloc(getIt()))
     ..registerFactory<ApprovalsBloc>(() => ApprovalsBloc(getIt()))
@@ -203,7 +243,8 @@ void configureDependencies(AuthSession session) {
     ..registerFactory<HelpdeskBloc>(() => HelpdeskBloc(getIt()))
     // Mark screen is per (batch, date) — resolve with param1=batchId, param2=date.
     ..registerFactoryParam<MarkAttendanceBloc, String, DateTime>(
-        (batchId, date) => MarkAttendanceBloc(getIt(), batchId: batchId, date: date));
+        (batchId, date) =>
+            MarkAttendanceBloc(getIt(), batchId: batchId, date: date));
 }
 
 /// D5: register this phone for push. A real token exists only once the Firebase project is

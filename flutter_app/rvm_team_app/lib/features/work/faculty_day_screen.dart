@@ -75,8 +75,14 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
             title: 'My day',
             subtitle: Text(_dateIso),
             actions: [
-              IconButton(tooltip: 'Pick a date', onPressed: _pickDate, icon: const Icon(Icons.event)),
-              IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh)),
+              TeamHeaderAction(
+                  icon: Icons.event_rounded,
+                  tooltip: 'Pick a date',
+                  onPressed: _pickDate),
+              TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: _load),
             ],
           ),
           Expanded(child: _body()),
@@ -87,7 +93,9 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     final day = _day!;
     return RefreshIndicator(
       onRefresh: _load,
@@ -100,13 +108,18 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Indicators', style: Theme.of(context).textTheme.titleMedium),
+                  Text('Indicators',
+                      style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: RvmSpacing.sm),
                   _row('Sessions today', '${day.sessionsToday}'),
-                  _row('Marked today', '${day.markedToday} (${day.todayPercentage}%)'),
-                  _row('This month', '${day.monthMarked}/${day.monthExpected} (${day.monthPercentage}%)'),
-                  _row('Active students', '${day.activeStudents}/${day.totalStudents}'),
-                  _row('Sessions without attendance', '${day.sessionsWithoutAttendance}'),
+                  _row('Marked today',
+                      '${day.markedToday} (${day.todayPercentage}%)'),
+                  _row('This month',
+                      '${day.monthMarked}/${day.monthExpected} (${day.monthPercentage}%)'),
+                  _row('Active students',
+                      '${day.activeStudents}/${day.totalStudents}'),
+                  _row('Sessions without attendance',
+                      '${day.sessionsWithoutAttendance}'),
                   if (day.pendingRemarks > 0)
                     _row('Remarks still due', '${day.pendingRemarks}'),
                 ],
@@ -126,13 +139,17 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
                       color: s.marked ? RvmColors.success : RvmColors.warning),
                   title: Text(s.name),
                   subtitle: Text([
-                    if (s.startTime != null) '${s.startTime}${s.endTime != null ? '–${s.endTime}' : ''}',
+                    if (s.startTime != null)
+                      '${s.startTime}${s.endTime != null ? '–${s.endTime}' : ''}',
                     if (s.locationName != null) s.locationName!,
                     '${s.students} students',
                     if (s.covered) 'covered',
                   ].join(' · ')),
                   trailing: Text(s.marked ? 'Marked' : 'Not marked',
-                      style: TextStyle(color: s.marked ? RvmColors.success : RvmColors.warning)),
+                      style: TextStyle(
+                          color: s.marked
+                              ? RvmColors.success
+                              : RvmColors.warning)),
                 ),
               ),
               const SizedBox(height: RvmSpacing.sm),
