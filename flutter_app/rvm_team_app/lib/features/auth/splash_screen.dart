@@ -9,26 +9,53 @@ class SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: RvmColors.teamSeed,
-                borderRadius: BorderRadius.circular(RvmRadii.md),
+      body: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [RvmColors.ironwood, RvmColors.ironwoodEnd],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: RvmColors.teamSeed,
+                  borderRadius: BorderRadius.circular(RvmRadii.lg),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Text('rvm',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 21)),
               ),
-              child: const Text('rvm',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20)),
-            ),
-            const SizedBox(height: RvmSpacing.lg),
-            Text('Team RVM', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: RvmSpacing.lg),
-            const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4)),
-          ],
+              const SizedBox(height: RvmSpacing.lg),
+              Text('Team RVM',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: RvmColors.ivory, fontWeight: FontWeight.w700)),
+              const SizedBox(height: RvmSpacing.lg),
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.2, color: RvmColors.ivory),
+              ),
+            ],
+          ),
         ),
       ),
     );

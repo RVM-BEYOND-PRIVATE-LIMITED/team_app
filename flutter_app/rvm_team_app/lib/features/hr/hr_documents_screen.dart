@@ -39,7 +39,8 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
       _failure = null;
     });
     try {
-      final page = await getIt<EssRepository>().hrEmployeeDocuments(employee.id);
+      final page =
+          await getIt<EssRepository>().hrEmployeeDocuments(employee.id);
       if (!mounted) return;
       setState(() {
         _page = page;
@@ -69,10 +70,19 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Reject document'),
-        content: TextField(controller: controller, minLines: 2, maxLines: 3, decoration: const InputDecoration(hintText: 'Reason')),
+        content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Reason')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Reject')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Reject')),
         ],
       ),
     );
@@ -87,11 +97,15 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
 
   Future<void> _open(EssDocument d) async {
     try {
-      final url = await getIt<EssRepository>().hrDocumentFileUrl(_employee!.id, d.id);
+      final url =
+          await getIt<EssRepository>().hrDocumentFileUrl(_employee!.id, d.id);
       if (url == null || url.isEmpty || !mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       await Clipboard.setData(ClipboardData(text: url));
-      messenger..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Secure link copied (5 minutes).')));
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+            const SnackBar(content: Text('Secure link copied (5 minutes).')));
     } on Failure catch (f) {
       _snack(f.message);
     }
@@ -106,8 +120,9 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
     }
   }
 
-  void _snack(String message) =>
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+  void _snack(String message) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
@@ -118,8 +133,15 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
             title: 'Documents desk',
             subtitle: Text(_employee?.fullName ?? 'Pick an employee'),
             actions: [
-              IconButton(tooltip: 'Choose employee', onPressed: _pick, icon: const Icon(Icons.person_search)),
-              if (_employee != null) IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh)),
+              TeamHeaderAction(
+                  icon: Icons.person_search_rounded,
+                  tooltip: 'Choose employee',
+                  onPressed: _pick),
+              if (_employee != null)
+                TeamHeaderAction(
+                    icon: Icons.refresh_rounded,
+                    tooltip: 'Refresh',
+                    onPressed: _load),
             ],
           ),
           Expanded(child: _body()),
@@ -131,14 +153,20 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
   Widget _body() {
     if (_employee == null) {
       return Center(
-        child: FilledButton.icon(onPressed: _pick, icon: const Icon(Icons.person_search), label: const Text('Choose an employee')),
+        child: FilledButton.icon(
+            onPressed: _pick,
+            icon: const Icon(Icons.person_search),
+            label: const Text('Choose an employee')),
       );
     }
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     final page = _page;
     if (page == null || page.documents.isEmpty) {
-      return const AppEmpty(icon: Icons.folder_open, message: 'No documents uploaded.');
+      return const AppEmpty(
+          icon: Icons.folder_open, message: 'No documents uploaded.');
     }
     return RefreshIndicator(
       onRefresh: _load,
@@ -148,7 +176,11 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
         separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.sm),
         itemBuilder: (context, i) {
           final d = page.documents[i];
-          final name = page.types.where((t) => t.slug == d.docType).map((t) => t.name).firstOrNull ?? d.docType;
+          final name = page.types
+                  .where((t) => t.slug == d.docType)
+                  .map((t) => t.name)
+                  .firstOrNull ??
+              d.docType;
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(RvmSpacing.md),
@@ -157,22 +189,35 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: Text(name, style: Theme.of(context).textTheme.titleMedium)),
+                      Expanded(
+                          child: Text(name,
+                              style: Theme.of(context).textTheme.titleMedium)),
                       Text(d.status),
                     ],
                   ),
-                  Text(d.fileName, style: Theme.of(context).textTheme.bodySmall),
-                  if (d.rejectionReason != null) Text('Reason: ${d.rejectionReason}'),
+                  Text(d.fileName,
+                      style: Theme.of(context).textTheme.bodySmall),
+                  if (d.rejectionReason != null)
+                    Text('Reason: ${d.rejectionReason}'),
                   const SizedBox(height: RvmSpacing.sm),
                   Wrap(
                     spacing: 8,
                     children: [
-                      TextButton.icon(onPressed: () => _open(d), icon: const Icon(Icons.open_in_new, size: 16), label: const Text('Open')),
+                      TextButton.icon(
+                          onPressed: () => _open(d),
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: const Text('Open')),
                       if (d.status == 'pending') ...[
-                        FilledButton(onPressed: () => _verify(d), child: const Text('Verify')),
-                        OutlinedButton(onPressed: () => _reject(d), child: const Text('Reject')),
+                        FilledButton(
+                            onPressed: () => _verify(d),
+                            child: const Text('Verify')),
+                        OutlinedButton(
+                            onPressed: () => _reject(d),
+                            child: const Text('Reject')),
                       ],
-                      TextButton(onPressed: () => _delete(d), child: const Text('Delete')),
+                      TextButton(
+                          onPressed: () => _delete(d),
+                          child: const Text('Delete')),
                     ],
                   ),
                 ],

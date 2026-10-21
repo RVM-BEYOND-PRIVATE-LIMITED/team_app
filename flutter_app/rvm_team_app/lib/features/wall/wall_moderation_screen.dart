@@ -77,16 +77,26 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(hidden ? 'Hide this content' : 'Keep this content'),
-        content: TextField(controller: controller, minLines: 2, maxLines: 3, decoration: const InputDecoration(hintText: 'Note (optional)')),
+        content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Note (optional)')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: Text(hidden ? 'Hide' : 'Keep')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: Text(hidden ? 'Hide' : 'Keep')),
         ],
       ),
     );
     if (note == null || !mounted) return;
     try {
-      await getIt<EssRepository>().resolveReport(report.id, hidden: hidden, note: note);
+      await getIt<EssRepository>()
+          .resolveReport(report.id, hidden: hidden, note: note);
       await _load();
     } on Failure catch (f) {
       _snack(f.message);
@@ -101,8 +111,13 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(a.title),
-          content: Text(counts.entries.map((e) => '${e.key}: ${e.value}').join('\n')),
-          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+          content: Text(
+              counts.entries.map((e) => '${e.key}: ${e.value}').join('\n')),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Close'))
+          ],
         ),
       );
     } on Failure catch (f) {
@@ -135,20 +150,33 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: title, maxLength: 200, decoration: const InputDecoration(labelText: 'Title')),
-              TextField(controller: body, minLines: 3, maxLines: 8, maxLength: 5000, decoration: const InputDecoration(labelText: 'Message')),
+              TextField(
+                  controller: title,
+                  maxLength: 200,
+                  decoration: const InputDecoration(labelText: 'Title')),
+              TextField(
+                  controller: body,
+                  minLines: 3,
+                  maxLines: 8,
+                  maxLength: 5000,
+                  decoration: const InputDecoration(labelText: 'Message')),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Save')),
         ],
       ),
     );
     if (saved != true || !mounted) return;
     try {
-      await getIt<EssRepository>().editAnnouncement(a.id, title: title.text.trim(), body: body.text.trim());
+      await getIt<EssRepository>().editAnnouncement(a.id,
+          title: title.text.trim(), body: body.text.trim());
       await _load();
     } on Failure catch (f) {
       _snack(f.message);
@@ -162,8 +190,12 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
         title: const Text('Delete this announcement?'),
         content: const Text('This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Delete')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -177,12 +209,14 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
   }
 
   Future<void> _compose() async {
-    final created = await showDialog<bool>(context: context, builder: (_) => const _AnnouncementComposer());
+    final created = await showDialog<bool>(
+        context: context, builder: (_) => const _AnnouncementComposer());
     if (created == true) await _load();
   }
 
-  void _snack(String message) =>
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+  void _snack(String message) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
@@ -192,7 +226,12 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
           TeamPageHeader(
             title: 'Wall desk',
             subtitle: const Text('Reports, announcements and the log'),
-            actions: [IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh))],
+            actions: [
+              TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: _load)
+            ],
           ),
           Expanded(child: _body()),
         ],
@@ -207,13 +246,17 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
+        padding: const EdgeInsets.fromLTRB(
+            RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
         children: [
-          Text('Open reports (${_reports.length})', style: Theme.of(context).textTheme.titleMedium),
+          Text('Open reports (${_reports.length})',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: RvmSpacing.sm),
           if (_reports.isEmpty)
             const Text('No open reports.')
@@ -225,21 +268,31 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${r.target} · ${r.reason}', style: Theme.of(context).textTheme.titleSmall),
+                      Text('${r.target} · ${r.reason}',
+                          style: Theme.of(context).textTheme.titleSmall),
                       if (r.targetPreview != null) Text('“${r.targetPreview}”'),
-                      Text('by ${r.reporter?.fullName ?? 'someone'}', style: Theme.of(context).textTheme.bodySmall),
+                      Text('by ${r.reporter?.fullName ?? 'someone'}',
+                          style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(height: RvmSpacing.sm),
                       Row(
                         children: [
-                          Expanded(child: FilledButton(onPressed: () => _resolve(r, true), child: const Text('Hide content'))),
+                          Expanded(
+                              child: FilledButton(
+                                  onPressed: () => _resolve(r, true),
+                                  child: const Text('Hide content'))),
                           const SizedBox(width: RvmSpacing.sm),
-                          Expanded(child: OutlinedButton(onPressed: () => _resolve(r, false), child: const Text('Keep'))),
+                          Expanded(
+                              child: OutlinedButton(
+                                  onPressed: () => _resolve(r, false),
+                                  child: const Text('Keep'))),
                         ],
                       ),
                       if (r.targetHidden)
                         Align(
                           alignment: Alignment.centerRight,
-                          child: TextButton(onPressed: () => _unhide(r), child: const Text('Unhide content')),
+                          child: TextButton(
+                              onPressed: () => _unhide(r),
+                              child: const Text('Unhide content')),
                         ),
                     ],
                   ),
@@ -248,7 +301,8 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
               const SizedBox(height: RvmSpacing.sm),
             ],
           const SizedBox(height: RvmSpacing.md),
-          Text('My announcements', style: Theme.of(context).textTheme.titleMedium),
+          Text('My announcements',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: RvmSpacing.sm),
           if (_announcements.isEmpty)
             const Text('No announcements yet.')
@@ -257,11 +311,14 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
               Card(
                 child: ListTile(
                   title: Text(a.title),
-                  subtitle: Text(a.needsAck ? 'Needs acknowledgement' : 'Read-only'),
+                  subtitle:
+                      Text(a.needsAck ? 'Needs acknowledgement' : 'Read-only'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      TextButton(onPressed: () => _counts(a), child: const Text('Counts')),
+                      TextButton(
+                          onPressed: () => _counts(a),
+                          child: const Text('Counts')),
                       PopupMenuButton<String>(
                         onSelected: (v) {
                           if (v == 'edit') _editAnnouncement(a);
@@ -277,7 +334,8 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
                 ),
               ),
           const SizedBox(height: RvmSpacing.md),
-          Text('Moderation log', style: Theme.of(context).textTheme.titleMedium),
+          Text('Moderation log',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: RvmSpacing.sm),
           if (_log.isEmpty)
             const Text('Nothing logged.')
@@ -285,8 +343,12 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
             for (final e in _log.take(20))
               ListTile(
                 dense: true,
-                title: Text(e.action.replaceAll('.', ' · ').replaceAll('_', ' ')),
-                subtitle: Text([e.actorName, e.at?.toLocal().toString().split('.').first].whereType<String>().join(' · ')),
+                title:
+                    Text(e.action.replaceAll('.', ' · ').replaceAll('_', ' ')),
+                subtitle: Text([
+                  e.actorName,
+                  e.at?.toLocal().toString().split('.').first
+                ].whereType<String>().join(' · ')),
               ),
         ],
       ),
@@ -341,9 +403,12 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (date == null || !mounted) return;
-    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_publishAt ?? DateTime.now()));
+    final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(_publishAt ?? DateTime.now()));
     if (time == null) return;
-    setState(() => _publishAt = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+    setState(() => _publishAt =
+        DateTime(date.year, date.month, date.day, time.hour, time.minute));
   }
 
   Future<void> _addPeople() async {
@@ -355,7 +420,8 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
 
   Future<void> _attach() async {
     if (_attachments.length >= 5) return;
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
+    final result = await FilePicker.platform
+        .pickFiles(allowMultiple: true, withData: true);
     if (result == null) return;
     for (final file in result.files) {
       if (_attachments.length >= 5) break;
@@ -395,7 +461,9 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
     } on Failure catch (f) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(f.message)));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(f.message)));
     }
   }
 
@@ -408,8 +476,16 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(controller: _title, maxLength: 200, decoration: const InputDecoration(labelText: 'Title')),
-            TextField(controller: _body, minLines: 3, maxLines: 8, maxLength: 5000, decoration: const InputDecoration(labelText: 'Message')),
+            TextField(
+                controller: _title,
+                maxLength: 200,
+                decoration: const InputDecoration(labelText: 'Title')),
+            TextField(
+                controller: _body,
+                minLines: 3,
+                maxLines: 8,
+                maxLength: 5000,
+                decoration: const InputDecoration(labelText: 'Message')),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _everyone,
@@ -422,8 +498,13 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
                 runSpacing: 6,
                 children: [
                   for (final p in _people)
-                    InputChip(label: Text(p.fullName), onDeleted: () => setState(() => _people.remove(p))),
-                  ActionChip(avatar: const Icon(Icons.person_add_alt, size: 16), label: const Text('Add people'), onPressed: _addPeople),
+                    InputChip(
+                        label: Text(p.fullName),
+                        onDeleted: () => setState(() => _people.remove(p))),
+                  ActionChip(
+                      avatar: const Icon(Icons.person_add_alt, size: 16),
+                      label: const Text('Add people'),
+                      onPressed: _addPeople),
                 ],
               ),
             ],
@@ -434,7 +515,10 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
               title: const Text('Needs acknowledgement'),
             ),
             if (_needsAck)
-              OutlinedButton.icon(onPressed: _pickClose, icon: const Icon(Icons.event), label: Text('Closes: ${_isoDay(_closes)}')),
+              OutlinedButton.icon(
+                  onPressed: _pickClose,
+                  icon: const Icon(Icons.event),
+                  label: Text('Closes: ${_isoDay(_closes)}')),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _pinned,
@@ -444,15 +528,24 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _publishAt != null,
-              onChanged: (v) => setState(() => _publishAt = v ? DateTime.now().add(const Duration(minutes: 5)) : null),
+              onChanged: (v) => setState(() => _publishAt =
+                  v ? DateTime.now().add(const Duration(minutes: 5)) : null),
               title: const Text('Publish later'),
-              subtitle: _publishAt == null ? null : Text(_publishAt!.toLocal().toString().split('.').first),
+              subtitle: _publishAt == null
+                  ? null
+                  : Text(_publishAt!.toLocal().toString().split('.').first),
             ),
             if (_publishAt != null)
-              OutlinedButton.icon(onPressed: _pickPublish, icon: const Icon(Icons.schedule), label: const Text('Change time')),
+              OutlinedButton.icon(
+                  onPressed: _pickPublish,
+                  icon: const Icon(Icons.schedule),
+                  label: const Text('Change time')),
             Row(
               children: [
-                TextButton.icon(onPressed: _attach, icon: const Icon(Icons.attach_file, size: 18), label: const Text('Attach')),
+                TextButton.icon(
+                    onPressed: _attach,
+                    icon: const Icon(Icons.attach_file, size: 18),
+                    label: const Text('Attach')),
               ],
             ),
             if (_attachments.isNotEmpty)
@@ -462,7 +555,8 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
                 children: [
                   for (var i = 0; i < _attachments.length; i++)
                     InputChip(
-                      label: Text(_attachments[i]['name']?.toString() ?? 'File'),
+                      label:
+                          Text(_attachments[i]['name']?.toString() ?? 'File'),
                       onDeleted: () => setState(() => _attachments.removeAt(i)),
                     ),
                 ],
@@ -471,8 +565,11 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _saving ? null : _save, child: const Text('Publish')),
+        TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: _saving ? null : _save, child: const Text('Publish')),
       ],
     );
   }

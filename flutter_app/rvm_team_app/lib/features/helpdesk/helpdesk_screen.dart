@@ -30,13 +30,18 @@ class _HelpdeskView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<HelpdeskBloc, HelpdeskState>(
-      listenWhen: (a, b) => a.actionFailure != b.actionFailure || a.actionNonce != b.actionNonce,
+      listenWhen: (a, b) =>
+          a.actionFailure != b.actionFailure || a.actionNonce != b.actionNonce,
       listener: (context, state) {
         final msg = state.actionFailure?.message;
         if (msg != null) {
-          ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(msg)));
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(msg)));
         } else if (state.actionNonce > 0) {
-          ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(const SnackBar(content: Text('Ticket sent.')));
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(const SnackBar(content: Text('Ticket sent.')));
         }
       },
       builder: (context, state) => Scaffold(
@@ -47,17 +52,19 @@ class _HelpdeskView extends StatelessWidget {
               subtitle: const Text('Raise a ticket and follow its thread'),
               actions: [
                 Builder(
-                  builder: (context) => IconButton(
+                  builder: (context) => TeamHeaderAction(
+                    icon: Icons.support_agent_rounded,
                     tooltip: 'Team queue',
                     onPressed: () => context.push('/helpdesk/queue'),
-                    icon: const Icon(Icons.support_agent),
                   ),
                 ),
                 Builder(
-                  builder: (context) => IconButton(
+                  builder: (context) => TeamHeaderAction(
+                    icon: Icons.refresh_rounded,
                     tooltip: 'Refresh',
-                    onPressed: () => context.read<HelpdeskBloc>().add(const HelpdeskRefreshed()),
-                    icon: const Icon(Icons.refresh),
+                    onPressed: () => context
+                        .read<HelpdeskBloc>()
+                        .add(const HelpdeskRefreshed()),
                   ),
                 ),
               ],
@@ -75,20 +82,28 @@ class _HelpdeskView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, HelpdeskState state) {
-    if (state.status == LoadStatus.initial || state.status == LoadStatus.loading) return const AppLoading();
+    if (state.status == LoadStatus.initial ||
+        state.status == LoadStatus.loading) {
+      return const AppLoading();
+    }
     if (state.status == LoadStatus.failure) {
       return AppError(
         message: state.failure?.message ?? 'Could not load your tickets.',
-        onRetry: () => context.read<HelpdeskBloc>().add(const HelpdeskRefreshed()),
+        onRetry: () =>
+            context.read<HelpdeskBloc>().add(const HelpdeskRefreshed()),
       );
     }
     if (state.tickets.isEmpty) {
-      return const AppEmpty(icon: Icons.support_agent, message: 'No tickets yet.\nRaise one and it goes to the right team.');
+      return const AppEmpty(
+          icon: Icons.support_agent,
+          message: 'No tickets yet.\nRaise one and it goes to the right team.');
     }
     return RefreshIndicator(
-      onRefresh: () async => context.read<HelpdeskBloc>().add(const HelpdeskRefreshed()),
+      onRefresh: () async =>
+          context.read<HelpdeskBloc>().add(const HelpdeskRefreshed()),
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
+        padding: const EdgeInsets.fromLTRB(
+            RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
         itemCount: state.tickets.length,
         separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.sm),
         itemBuilder: (context, i) => _TicketCard(ticket: state.tickets[i]),
@@ -108,7 +123,9 @@ class _TicketCard extends StatelessWidget {
         onTap: () => context.push('/helpdesk/ticket/${ticket.id}'),
         title: Row(
           children: [
-            Expanded(child: Text('${ticket.ref} · ${ticket.subject}', overflow: TextOverflow.ellipsis)),
+            Expanded(
+                child: Text('${ticket.ref} · ${ticket.subject}',
+                    overflow: TextOverflow.ellipsis)),
             _StatusPill(status: ticket.status),
           ],
         ),
@@ -134,13 +151,22 @@ class _StatusPill extends StatelessWidget {
       'on_hold' => ('On hold', RvmColors.warning),
       'resolved' => ('Resolved', RvmColors.success),
       'closed' => ('Closed', RvmColors.success),
-      'withdrawn' => ('Withdrawn', Theme.of(context).colorScheme.onSurfaceVariant),
+      'withdrawn' => (
+          'Withdrawn',
+          Theme.of(context).colorScheme.onSurfaceVariant
+        ),
       _ => (status, Theme.of(context).colorScheme.onSurfaceVariant),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
-      child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999)),
+      child: Text(label,
+          style: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(color: color, fontWeight: FontWeight.w600)),
     );
   }
 }

@@ -44,7 +44,8 @@ class EssRepository with ConnectivityGuard {
   /// Safe to call right after login; a failure must not block sign-in.
   Future<void> keepSignIn({String? deviceLabel}) async {
     final installId = await _tokens.installId();
-    final kept = await _remote.keepSignIn(installId: installId, deviceLabel: deviceLabel);
+    final kept = await _remote.keepSignIn(
+        installId: installId, deviceLabel: deviceLabel);
     await _tokens.saveEssSession(
       accessToken: kept.accessToken,
       refreshToken: kept.refreshToken,
@@ -86,18 +87,20 @@ class EssRepository with ConnectivityGuard {
     return _remote.updateMyPersonal(patch);
   }
 
-  Future<({EmployeeCard employee, PersonalDetails personal})> employeePersonal(String id) async {
+  Future<({EmployeeCard employee, PersonalDetails personal})> employeePersonal(
+      String id) async {
     await ensureOnline();
     return _remote.employeePersonal(id);
   }
 
-  Future<({EmployeeCard employee, PersonalDetails personal})> updateEmployeePersonal(
-      String id, Map<String, dynamic> patch) async {
+  Future<({EmployeeCard employee, PersonalDetails personal})>
+      updateEmployeePersonal(String id, Map<String, dynamic> patch) async {
     await ensureOnline();
     return _remote.updateEmployeePersonal(id, patch);
   }
 
-  Future<EssDataRequest> createDataRequest({required String kind, required String details}) async {
+  Future<EssDataRequest> createDataRequest(
+      {required String kind, required String details}) async {
     await ensureOnline();
     return _remote.createMyDataRequest(kind: kind, details: details);
   }
@@ -107,12 +110,14 @@ class EssRepository with ConnectivityGuard {
     return _remote.myDataRequests();
   }
 
-  Future<({List<EssDataRequest> requests, bool truncated})> hrDataRequests({String status = 'open'}) async {
+  Future<({List<EssDataRequest> requests, bool truncated})> hrDataRequests(
+      {String status = 'open'}) async {
     await ensureOnline();
     return _remote.hrDataRequests(status: status);
   }
 
-  Future<EssDataRequest> resolveDataRequest(String id, {required String status, String? note}) async {
+  Future<EssDataRequest> resolveDataRequest(String id,
+      {required String status, String? note}) async {
     await ensureOnline();
     return _remote.resolveDataRequest(id, status: status, note: note);
   }
@@ -122,12 +127,14 @@ class EssRepository with ConnectivityGuard {
     return _remote.attendanceDay(date);
   }
 
-  Future<MockLocationReport> reportMockLocation(Map<String, dynamic> body) async {
+  Future<MockLocationReport> reportMockLocation(
+      Map<String, dynamic> body) async {
     await ensureOnline();
     return _remote.reportMockLocation(body);
   }
 
-  Future<({List<MockLocationReport> reports, bool truncated})> mockLocationReports({
+  Future<({List<MockLocationReport> reports, bool truncated})>
+      mockLocationReports({
     String? from,
     String? to,
     String? branchId,
@@ -161,9 +168,11 @@ class EssRepository with ConnectivityGuard {
     return _remote.myOrg();
   }
 
-  Future<DirectoryPage> directory({String? query, String? branchId, String? departmentId}) async {
+  Future<DirectoryPage> directory(
+      {String? query, String? branchId, String? departmentId}) async {
     await ensureOnline();
-    return _remote.directory(query: query, branchId: branchId, departmentId: departmentId);
+    return _remote.directory(
+        query: query, branchId: branchId, departmentId: departmentId);
   }
 
   Future<TeamTodayView> teamToday({String filter = 'all'}) async {
@@ -194,7 +203,13 @@ class EssRepository with ConnectivityGuard {
   }) async {
     await ensureOnline();
     return _remote.createAttendanceRequest(
-        type: type, day: day, reason: reason, place: place, fixIn: fixIn, fixOut: fixOut, minutes: minutes);
+        type: type,
+        day: day,
+        reason: reason,
+        place: place,
+        fixIn: fixIn,
+        fixOut: fixOut,
+        minutes: minutes);
   }
 
   Future<List<EssRequest>> myAttendanceRequests() async {
@@ -207,7 +222,10 @@ class EssRepository with ConnectivityGuard {
     return _remote.withdrawAttendanceRequest(id);
   }
 
-  Future<EssRequest> createLeaveRequest({required String type, required String day, required String reason}) async {
+  Future<EssRequest> createLeaveRequest(
+      {required String type,
+      required String day,
+      required String reason}) async {
     await ensureOnline();
     return _remote.createLeaveRequest(type: type, day: day, reason: reason);
   }
@@ -232,12 +250,18 @@ class EssRepository with ConnectivityGuard {
     return _remote.approvals(status: status);
   }
 
-  Future<EssRequest> decideRequest({required String family, required String id, required String decision, String? note}) async {
+  Future<EssRequest> decideRequest(
+      {required String family,
+      required String id,
+      required String decision,
+      String? note}) async {
     await ensureOnline();
-    return _remote.decideRequest(family: family, id: id, decision: decision, note: note);
+    return _remote.decideRequest(
+        family: family, id: id, decision: decision, note: note);
   }
 
-  Future<void> archiveRequest({required String family, required String id}) async {
+  Future<void> archiveRequest(
+      {required String family, required String id}) async {
     await ensureOnline();
     return _remote.archiveRequest(family: family, id: id);
   }
@@ -264,7 +288,8 @@ class EssRepository with ConnectivityGuard {
     return _remote.notificationSettings();
   }
 
-  Future<NotificationSettings> saveNotificationSettings(List<String> disabledCategories) async {
+  Future<NotificationSettings> saveNotificationSettings(
+      List<String> disabledCategories) async {
     await ensureOnline();
     return _remote.saveNotificationSettings(disabledCategories);
   }
@@ -294,7 +319,12 @@ class EssRepository with ConnectivityGuard {
     List<Map<String, dynamic>>? attachments,
   }) async {
     await ensureOnline();
-    return _remote.createWallPost(body: body, kind: kind, scope: scope, poll: poll, attachments: attachments);
+    return _remote.createWallPost(
+        body: body,
+        kind: kind,
+        scope: scope,
+        poll: poll,
+        attachments: attachments);
   }
 
   Future<List<WallReactionGroup>> postReactions(String id) async {
@@ -317,14 +347,17 @@ class EssRepository with ConnectivityGuard {
     return _remote.closePoll(id);
   }
 
-  Future<String?> putMyPhoto({required String base64, required String contentType}) async {
+  Future<String?> putMyPhoto(
+      {required String base64, required String contentType}) async {
     await ensureOnline();
     return _remote.putMyPhoto(base64: base64, contentType: contentType);
   }
 
-  Future<void> registerPushDevice({required String token, String? deviceLabel, String? installId}) async {
+  Future<void> registerPushDevice(
+      {required String token, String? deviceLabel, String? installId}) async {
     await ensureOnline();
-    return _remote.registerPushDevice(token: token, deviceLabel: deviceLabel, installId: installId);
+    return _remote.registerPushDevice(
+        token: token, deviceLabel: deviceLabel, installId: installId);
   }
 
   Future<void> revokePushDevice(String id) async {
@@ -347,22 +380,26 @@ class EssRepository with ConnectivityGuard {
     return _remote.editWallComment(id, body);
   }
 
-  Future<({WallReactionCounts counts, String? myReaction})> reactToComment(String id, String reaction) async {
+  Future<({WallReactionCounts counts, String? myReaction})> reactToComment(
+      String id, String reaction) async {
     await ensureOnline();
     return _remote.reactToComment(id, reaction);
   }
 
-  Future<({WallReactionCounts counts, String? myReaction})> unreactToComment(String id) async {
+  Future<({WallReactionCounts counts, String? myReaction})> unreactToComment(
+      String id) async {
     await ensureOnline();
     return _remote.unreactToComment(id);
   }
 
-  Future<void> reportPost(String id, {required String reason, String? detail}) async {
+  Future<void> reportPost(String id,
+      {required String reason, String? detail}) async {
     await ensureOnline();
     return _remote.reportPost(id, reason: reason, detail: detail);
   }
 
-  Future<void> reportComment(String id, {required String reason, String? detail}) async {
+  Future<void> reportComment(String id,
+      {required String reason, String? detail}) async {
     await ensureOnline();
     return _remote.reportComment(id, reason: reason, detail: detail);
   }
@@ -387,19 +424,23 @@ class EssRepository with ConnectivityGuard {
     return _remote.deleteWallPost(id);
   }
 
-  Future<({WallReactionCounts counts, String? myReaction})> reactToPost(String id, String reaction) async {
+  Future<({WallReactionCounts counts, String? myReaction})> reactToPost(
+      String id, String reaction) async {
     await ensureOnline();
     return _remote.reactToPost(id, reaction);
   }
 
-  Future<({WallReactionCounts counts, String? myReaction})> unreactToPost(String id) async {
+  Future<({WallReactionCounts counts, String? myReaction})> unreactToPost(
+      String id) async {
     await ensureOnline();
     return _remote.unreactToPost(id);
   }
 
-  Future<WallComment> addWallComment({required String postId, required String body, String? parentId}) async {
+  Future<WallComment> addWallComment(
+      {required String postId, required String body, String? parentId}) async {
     await ensureOnline();
-    return _remote.addWallComment(postId: postId, body: body, parentId: parentId);
+    return _remote.addWallComment(
+        postId: postId, body: body, parentId: parentId);
   }
 
   Future<WallPost> createPraise({
@@ -410,7 +451,12 @@ class EssRepository with ConnectivityGuard {
     List<Map<String, dynamic>>? attachments,
   }) async {
     await ensureOnline();
-    return _remote.createPraise(employeeId: employeeId, badge: badge, reason: reason, scope: scope, attachments: attachments);
+    return _remote.createPraise(
+        employeeId: employeeId,
+        badge: badge,
+        reason: reason,
+        scope: scope,
+        attachments: attachments);
   }
 
   Future<List<WallAnnouncement>> wallAnnouncements() async {
@@ -433,12 +479,51 @@ class EssRepository with ConnectivityGuard {
     return _remote.wallCelebrations();
   }
 
-  Future<void> sendWish({required String employeeId, required String occasion, required String body}) async {
-    await ensureOnline();
-    return _remote.sendWish(employeeId: employeeId, occasion: occasion, body: body);
+  /// The Wall's first paint reads that do NOT throw: a 503 (the wall tables are
+  /// not migrated yet) is returned as a [Failure] so the tab renders a clear
+  /// retry screen instead of an exception the debugger stops on.
+  Future<({WallSettings? data, Failure? failure})> wallSettingsSafe() async {
+    if (!await connectivity.isOnline) {
+      return (data: null, failure: const NoConnectionFailure());
+    }
+    return _remote.wallSettingsSafe();
   }
 
-  Future<void> votePoll({required String pollId, required List<String> optionIds}) async {
+  Future<({WallFeed? data, Failure? failure})> wallFeedSafe(
+      {String? scope, String? before}) async {
+    if (!await connectivity.isOnline) {
+      return (data: null, failure: const NoConnectionFailure());
+    }
+    return _remote.wallFeedSafe(scope: scope, before: before);
+  }
+
+  Future<({List<WallAnnouncement>? data, Failure? failure})>
+      wallAnnouncementsSafe() async {
+    if (!await connectivity.isOnline) {
+      return (data: null, failure: const NoConnectionFailure());
+    }
+    return _remote.wallAnnouncementsSafe();
+  }
+
+  Future<({WallCelebrations? data, Failure? failure})>
+      wallCelebrationsSafe() async {
+    if (!await connectivity.isOnline) {
+      return (data: null, failure: const NoConnectionFailure());
+    }
+    return _remote.wallCelebrationsSafe();
+  }
+
+  Future<void> sendWish(
+      {required String employeeId,
+      required String occasion,
+      required String body}) async {
+    await ensureOnline();
+    return _remote.sendWish(
+        employeeId: employeeId, occasion: occasion, body: body);
+  }
+
+  Future<void> votePoll(
+      {required String pollId, required List<String> optionIds}) async {
     await ensureOnline();
     return _remote.votePoll(pollId: pollId, optionIds: optionIds);
   }
@@ -455,9 +540,14 @@ class EssRepository with ConnectivityGuard {
     return _remote.myTickets(status: status);
   }
 
-  Future<HelpdeskTicket> raiseTicket({required String category, required String subject, required String body, bool anonymous = false}) async {
+  Future<HelpdeskTicket> raiseTicket(
+      {required String category,
+      required String subject,
+      required String body,
+      bool anonymous = false}) async {
     await ensureOnline();
-    return _remote.raiseTicket(category: category, subject: subject, body: body, anonymous: anonymous);
+    return _remote.raiseTicket(
+        category: category, subject: subject, body: body, anonymous: anonymous);
   }
 
   Future<HelpdeskTicketDetail> ticket(String id) async {
@@ -465,22 +555,26 @@ class EssRepository with ConnectivityGuard {
     return _remote.ticket(id);
   }
 
-  Future<HelpdeskMessage> addTicketComment({required String id, required String body}) async {
+  Future<HelpdeskMessage> addTicketComment(
+      {required String id, required String body}) async {
     await ensureOnline();
     return _remote.addTicketComment(id: id, body: body);
   }
 
-  Future<HelpdeskTicket> ticketAction(String id, String action, {Map<String, dynamic>? data}) async {
+  Future<HelpdeskTicket> ticketAction(String id, String action,
+      {Map<String, dynamic>? data}) async {
     await ensureOnline();
     return _remote.ticketAction(id, action, data: data);
   }
 
-  Future<HelpdeskTicket> assignTicket({required String id, required String employeeId, String? note}) async {
+  Future<HelpdeskTicket> assignTicket(
+      {required String id, required String employeeId, String? note}) async {
     await ensureOnline();
     return _remote.assignTicket(id: id, employeeId: employeeId, note: note);
   }
 
-  Future<HelpdeskQueue> helpdeskQueue({String? status, String? category}) async {
+  Future<HelpdeskQueue> helpdeskQueue(
+      {String? status, String? category}) async {
     await ensureOnline();
     return _remote.helpdeskQueue(status: status, category: category);
   }
@@ -500,7 +594,12 @@ class EssRepository with ConnectivityGuard {
     String? remark,
   }) async {
     await ensureOnline();
-    return _remote.uploadDocument(docType: docType, fileName: fileName, contentType: contentType, base64: base64, remark: remark);
+    return _remote.uploadDocument(
+        docType: docType,
+        fileName: fileName,
+        contentType: contentType,
+        base64: base64,
+        remark: remark);
   }
 
   Future<String?> documentFileUrl(String id) async {
@@ -513,9 +612,14 @@ class EssRepository with ConnectivityGuard {
     return _remote.myChangeRequests();
   }
 
-  Future<ChangeRequest> createChangeRequest({required String field, String? oldValue, required String newValue, required String reason}) async {
+  Future<ChangeRequest> createChangeRequest(
+      {required String field,
+      String? oldValue,
+      required String newValue,
+      required String reason}) async {
     await ensureOnline();
-    return _remote.createChangeRequest(field: field, oldValue: oldValue, newValue: newValue, reason: reason);
+    return _remote.createChangeRequest(
+        field: field, oldValue: oldValue, newValue: newValue, reason: reason);
   }
 
   Future<BankDetails?> myBankDetails() async {
@@ -576,7 +680,8 @@ class EssRepository with ConnectivityGuard {
     return _remote.setRequestLimit(type, count: count, minutes: minutes);
   }
 
-  Future<EssRequest> cancelRequest(String family, String id, String reason) async {
+  Future<EssRequest> cancelRequest(
+      String family, String id, String reason) async {
     await ensureOnline();
     return _remote.cancelRequest(family, id, reason);
   }
@@ -586,7 +691,8 @@ class EssRepository with ConnectivityGuard {
     return _remote.hrChangeRequests();
   }
 
-  Future<ChangeRequest> decideChangeRequest(String id, {required bool approve, String? note}) async {
+  Future<ChangeRequest> decideChangeRequest(String id,
+      {required bool approve, String? note}) async {
     await ensureOnline();
     return _remote.decideChangeRequest(id, approve: approve, note: note);
   }
@@ -596,17 +702,20 @@ class EssRepository with ConnectivityGuard {
     return _remote.hrEmployeeDocuments(employeeId);
   }
 
-  Future<String?> hrDocumentFileUrl(String employeeId, String documentId) async {
+  Future<String?> hrDocumentFileUrl(
+      String employeeId, String documentId) async {
     await ensureOnline();
     return _remote.hrDocumentFileUrl(employeeId, documentId);
   }
 
-  Future<EssDocument> verifyDocument(String employeeId, String documentId) async {
+  Future<EssDocument> verifyDocument(
+      String employeeId, String documentId) async {
     await ensureOnline();
     return _remote.verifyDocument(employeeId, documentId);
   }
 
-  Future<EssDocument> rejectDocument(String employeeId, String documentId, String reason) async {
+  Future<EssDocument> rejectDocument(
+      String employeeId, String documentId, String reason) async {
     await ensureOnline();
     return _remote.rejectDocument(employeeId, documentId, reason);
   }
@@ -671,7 +780,8 @@ class EssRepository with ConnectivityGuard {
     return _remote.wallReports(status: status);
   }
 
-  Future<void> resolveReport(String id, {required bool hidden, String? note}) async {
+  Future<void> resolveReport(String id,
+      {required bool hidden, String? note}) async {
     await ensureOnline();
     return _remote.resolveReport(id, hidden: hidden, note: note);
   }
@@ -681,9 +791,11 @@ class EssRepository with ConnectivityGuard {
     return _remote.moderationLog();
   }
 
-  Future<WallAnnouncement> editAnnouncement(String id, {required String title, required String body, bool? pinned}) async {
+  Future<WallAnnouncement> editAnnouncement(String id,
+      {required String title, required String body, bool? pinned}) async {
     await ensureOnline();
-    return _remote.editAnnouncement(id, title: title, body: body, pinned: pinned);
+    return _remote.editAnnouncement(id,
+        title: title, body: body, pinned: pinned);
   }
 
   Future<void> deleteAnnouncement(String id) async {
@@ -700,5 +812,4 @@ class EssRepository with ConnectivityGuard {
     await ensureOnline();
     return _remote.unhideComment(id);
   }
-
 }

@@ -59,11 +59,19 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(hintText: minutes ? 'Minutes (blank = no limit)' : 'Count (blank = no limit)'),
+          decoration: InputDecoration(
+              hintText: minutes
+                  ? 'Minutes (blank = no limit)'
+                  : 'Count (blank = no limit)'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Save')),
         ],
       ),
     );
@@ -72,14 +80,17 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
     if (value.isNotEmpty && number == null) return;
     try {
       if (minutes) {
-        await getIt<EssRepository>().setRequestLimit(limit.type, minutes: number);
+        await getIt<EssRepository>()
+            .setRequestLimit(limit.type, minutes: number);
       } else {
         await getIt<EssRepository>().setRequestLimit(limit.type, count: number);
       }
       await _load();
     } on Failure catch (f) {
       if (mounted) {
-        ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(f.message)));
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(f.message)));
       }
     }
   }
@@ -92,7 +103,12 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
           TeamPageHeader(
             title: 'Request limits',
             subtitle: const Text('Monthly caps per employee'),
-            actions: [IconButton(tooltip: 'Refresh', onPressed: _load, icon: const Icon(Icons.refresh))],
+            actions: [
+              TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: _load)
+            ],
           ),
           Expanded(child: _body()),
         ],
@@ -102,8 +118,12 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
-    if (_limits.isEmpty) return const AppEmpty(icon: Icons.tune, message: 'No limits configured.');
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
+    if (_limits.isEmpty) {
+      return const AppEmpty(icon: Icons.tune, message: 'No limits configured.');
+    }
     return ListView.separated(
       padding: const EdgeInsets.all(RvmSpacing.md),
       itemCount: _limits.length,
@@ -116,8 +136,13 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
         return Card(
           child: ListTile(
             title: Text(l.label),
-            subtitle: Text(l.updatedByName == null ? value : '$value · set by ${l.updatedByName}'),
-            trailing: IconButton(tooltip: 'Edit', onPressed: () => _edit(l), icon: const Icon(Icons.edit_outlined)),
+            subtitle: Text(l.updatedByName == null
+                ? value
+                : '$value · set by ${l.updatedByName}'),
+            trailing: IconButton(
+                tooltip: 'Edit',
+                onPressed: () => _edit(l),
+                icon: const Icon(Icons.edit_outlined)),
           ),
         );
       },

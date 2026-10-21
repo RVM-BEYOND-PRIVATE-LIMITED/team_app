@@ -12,6 +12,7 @@ import '../../data/repositories/ess_repository.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
+import '../../widgets/team_kit.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -58,7 +59,8 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       return;
     }
-    _resolveDebounce = Timer(const Duration(milliseconds: 450), () => _resolve(identifier));
+    _resolveDebounce =
+        Timer(const Duration(milliseconds: 450), () => _resolve(identifier));
   }
 
   Future<void> _resolve(String identifier) async {
@@ -72,7 +74,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 'This account signs in with attendance ${resolution.methods.join(' or ')}. '
                 'That flow is not in this app yet — use the portal password.';
           case 'unknown':
-            _resolverHint = 'No single account matched. Check the username or phone.';
+            _resolverHint =
+                'No single account matched. Check the username or phone.';
           default:
             _resolverHint = null;
         }
@@ -110,7 +113,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 460),
-                      child: _content(context, state),
+                      child: TeamCard(
+                        padding: const EdgeInsets.all(20),
+                        child: _content(context, state),
+                      ),
                     ),
                   ),
                 ),
@@ -123,8 +129,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _content(BuildContext context, TeamAuthState state) {
-    if (state.twoFactor != null) return _TwoFactorStep(challenge: state.twoFactor!, state: state);
-    if (state.attendanceCode != null) return _attendanceCodeStep(context, state);
+    if (state.twoFactor != null) {
+      return _TwoFactorStep(challenge: state.twoFactor!, state: state);
+    }
+    if (state.attendanceCode != null) {
+      return _attendanceCodeStep(context, state);
+    }
     if (state.attendanceMode) return _attendanceForm(context, state);
     return _form(context, state);
   }
@@ -137,16 +147,25 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Attendance sign-in', style: Theme.of(context).textTheme.headlineSmall),
+          Text('Attendance sign-in',
+              style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: RvmSpacing.xs),
-          Text('For staff without a portal login. Use your phone, email or employee code.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+          Text(
+              'For staff without a portal login. Use your phone, email or employee code.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant)),
           const SizedBox(height: RvmSpacing.xl),
           TextFormField(
             controller: _attIdentifier,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Phone, email or employee code', prefixIcon: Icon(Icons.badge_outlined)),
-            validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter your phone, email or employee code' : null,
+            decoration: const InputDecoration(
+                labelText: 'Phone, email or employee code',
+                prefixIcon: Icon(Icons.badge_outlined)),
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'Enter your phone, email or employee code'
+                : null,
           ),
           const SizedBox(height: RvmSpacing.md),
           TextFormField(
@@ -158,10 +177,13 @@ class _LoginScreenState extends State<LoginScreen> {
               prefixIcon: const Icon(Icons.lock_outline),
               suffixIcon: IconButton(
                 onPressed: () => setState(() => _obscure = !_obscure),
-                icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                icon: Icon(_obscure
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined),
               ),
             ),
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
+            validator: (v) =>
+                (v == null || v.isEmpty) ? 'Enter your password' : null,
           ),
           if (state.errorMessage != null) ...[
             const SizedBox(height: RvmSpacing.md),
@@ -171,7 +193,10 @@ class _LoginScreenState extends State<LoginScreen> {
           FilledButton(
             onPressed: state.submitting ? null : _submitAttendance,
             child: state.submitting
-                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4))
                 : const Text('Sign in'),
           ),
           const SizedBox(height: RvmSpacing.sm),
@@ -182,7 +207,9 @@ class _LoginScreenState extends State<LoginScreen> {
           TextButton(
             onPressed: state.submitting
                 ? null
-                : () => context.read<TeamAuthBloc>().add(const TeamAttendanceModeToggled(false)),
+                : () => context
+                    .read<TeamAuthBloc>()
+                    .add(const TeamAttendanceModeToggled(false)),
             child: const Text('Back to portal sign-in'),
           ),
         ],
@@ -198,12 +225,16 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Enter the code', style: Theme.of(context).textTheme.headlineSmall),
+          Text('Enter the code',
+              style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: RvmSpacing.xs),
           Text(
             'We sent a 6-digit code to ${code.sentTo ?? 'you'} by ${code.channel ?? 'SMS'}. '
             'It is valid for ${code.ttlMinutes} minutes.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: RvmSpacing.xl),
           TextFormField(
@@ -211,12 +242,22 @@ class _LoginScreenState extends State<LoginScreen> {
             autofocus: true,
             keyboardType: TextInputType.number,
             textInputAction: TextInputAction.done,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6)
+            ],
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(letterSpacing: 8),
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(letterSpacing: 8),
             onFieldSubmitted: (_) => _submitCode(code.challengeId),
-            decoration: const InputDecoration(labelText: 'Sign-in code', prefixIcon: Icon(Icons.pin_outlined)),
-            validator: (v) => RegExp(r'^\d{6}$').hasMatch(v?.trim() ?? '') ? null : 'Enter the 6-digit code',
+            decoration: const InputDecoration(
+                labelText: 'Sign-in code',
+                prefixIcon: Icon(Icons.pin_outlined)),
+            validator: (v) => RegExp(r'^\d{6}$').hasMatch(v?.trim() ?? '')
+                ? null
+                : 'Enter the 6-digit code',
           ),
           if (state.errorMessage != null) ...[
             const SizedBox(height: RvmSpacing.md),
@@ -224,16 +265,22 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
           const SizedBox(height: RvmSpacing.lg),
           FilledButton(
-            onPressed: state.submitting ? null : () => _submitCode(code.challengeId),
+            onPressed:
+                state.submitting ? null : () => _submitCode(code.challengeId),
             child: state.submitting
-                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4))
                 : const Text('Verify and sign in'),
           ),
           const SizedBox(height: RvmSpacing.sm),
           TextButton(
             onPressed: state.submitting
                 ? null
-                : () => context.read<TeamAuthBloc>().add(const TeamAttendanceBack()),
+                : () => context
+                    .read<TeamAuthBloc>()
+                    .add(const TeamAttendanceBack()),
             child: const Text('Back'),
           ),
         ],
@@ -255,7 +302,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (identifier.isEmpty) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Enter your phone, email or employee code first.')));
+        ..showSnackBar(const SnackBar(
+            content: Text('Enter your phone, email or employee code first.')));
       return;
     }
     context.read<TeamAuthBloc>().add(TeamAttendanceCodeRequested(identifier));
@@ -264,8 +312,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void _submitCode(String challengeId) {
     if (!(_attFormKey.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
-    context.read<TeamAuthBloc>().add(
-        TeamAttendanceCodeSubmitted(challengeId: challengeId, code: _attCode.text.replaceAll(' ', '')));
+    context.read<TeamAuthBloc>().add(TeamAttendanceCodeSubmitted(
+        challengeId: challengeId, code: _attCode.text.replaceAll(' ', '')));
   }
 
   Widget _form(BuildContext context, TeamAuthState state) {
@@ -280,28 +328,41 @@ class _LoginScreenState extends State<LoginScreen> {
             height: 56,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: RvmColors.teamSeed.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(RvmRadii.md),
+              color: RvmColors.claySoft,
+              borderRadius: BorderRadius.circular(RvmRadii.lg),
             ),
-            child: const Icon(Icons.groups_2_outlined, size: 26, color: RvmColors.teamSeed),
+            child: const Icon(Icons.groups_2_outlined,
+                size: 26, color: RvmColors.clay),
           ),
           const SizedBox(height: RvmSpacing.lg),
-          Text('Sign in to Team RVM', style: Theme.of(context).textTheme.headlineSmall),
+          Text('Sign in to Team RVM',
+              style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: RvmSpacing.xs),
           Text('Use your RVM portal username or phone and password.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant)),
           const SizedBox(height: RvmSpacing.xl),
           TextFormField(
             controller: _username,
             textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.username],
             onChanged: _onUsernameChanged,
-            decoration: const InputDecoration(labelText: 'Username or phone', prefixIcon: Icon(Icons.person_outline)),
-            validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter your username or phone' : null,
+            decoration: const InputDecoration(
+                labelText: 'Username or phone',
+                prefixIcon: Icon(Icons.person_outline)),
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'Enter your username or phone'
+                : null,
           ),
           if (_resolverHint != null) ...[
             const SizedBox(height: RvmSpacing.sm),
-            Text(_resolverHint!, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+            Text(_resolverHint!,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
           ],
           const SizedBox(height: RvmSpacing.md),
           TextFormField(
@@ -314,10 +375,13 @@ class _LoginScreenState extends State<LoginScreen> {
               prefixIcon: const Icon(Icons.lock_outline),
               suffixIcon: IconButton(
                 onPressed: () => setState(() => _obscure = !_obscure),
-                icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                icon: Icon(_obscure
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined),
               ),
             ),
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
+            validator: (v) =>
+                (v == null || v.isEmpty) ? 'Enter your password' : null,
           ),
           const SizedBox(height: RvmSpacing.md),
           DropdownButtonFormField<String>(
@@ -330,9 +394,11 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             items: [
               for (final b in _branches)
-                DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(
+                    value: b, child: Text(b, overflow: TextOverflow.ellipsis)),
             ],
-            onChanged: state.submitting ? null : (v) => setState(() => _branch = v),
+            onChanged:
+                state.submitting ? null : (v) => setState(() => _branch = v),
             validator: (v) => v == null ? 'Select your branch' : null,
           ),
           if (state.errorMessage != null) ...[
@@ -343,18 +409,26 @@ class _LoginScreenState extends State<LoginScreen> {
           FilledButton(
             onPressed: state.submitting ? null : _submit,
             child: state.submitting
-                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4))
                 : const Text('Sign in'),
           ),
           const SizedBox(height: RvmSpacing.sm),
-          TextButton(onPressed: () => context.push('/forgot'), child: const Text('Forgot password?')),
+          TextButton(
+              onPressed: () => context.push('/forgot'),
+              child: const Text('Forgot password?')),
           const Divider(height: RvmSpacing.lg),
           TextButton.icon(
             onPressed: state.submitting
                 ? null
-                : () => context.read<TeamAuthBloc>().add(const TeamAttendanceModeToggled(true)),
+                : () => context
+                    .read<TeamAuthBloc>()
+                    .add(const TeamAttendanceModeToggled(true)),
             icon: const Icon(Icons.fingerprint),
-            label: const Text('Staff without a portal login? Sign in with attendance'),
+            label: const Text(
+                'Staff without a portal login? Sign in with attendance'),
           ),
         ],
       ),
@@ -403,10 +477,11 @@ class _TwoFactorStepState extends State<_TwoFactorStep> {
             height: 56,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: RvmColors.teamSeed.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(RvmRadii.md),
+              color: RvmColors.claySoft,
+              borderRadius: BorderRadius.circular(RvmRadii.lg),
             ),
-            child: const Icon(Icons.mark_email_read_outlined, size: 26, color: RvmColors.teamSeed),
+            child: const Icon(Icons.mark_email_read_outlined,
+                size: 26, color: RvmColors.clay),
           ),
           const SizedBox(height: RvmSpacing.lg),
           Text('Check your email', style: theme.textTheme.headlineSmall),
@@ -414,7 +489,8 @@ class _TwoFactorStepState extends State<_TwoFactorStep> {
           Text(
             'Two-step sign-in is on for this account. Enter the 6-digit code sent to '
             '${challenge.sentTo ?? 'your email'}.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: RvmSpacing.xl),
           TextFormField(
@@ -423,12 +499,19 @@ class _TwoFactorStepState extends State<_TwoFactorStep> {
             keyboardType: TextInputType.number,
             textInputAction: TextInputAction.done,
             autofillHints: const [AutofillHints.oneTimeCode],
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6)
+            ],
             textAlign: TextAlign.center,
             style: theme.textTheme.titleLarge?.copyWith(letterSpacing: 8),
             onFieldSubmitted: (_) => _verify(),
-            decoration: const InputDecoration(labelText: 'Sign-in code', prefixIcon: Icon(Icons.pin_outlined)),
-            validator: (v) => RegExp(r'^\d{6}$').hasMatch(v?.trim() ?? '') ? null : 'Enter the 6-digit code',
+            decoration: const InputDecoration(
+                labelText: 'Sign-in code',
+                prefixIcon: Icon(Icons.pin_outlined)),
+            validator: (v) => RegExp(r'^\d{6}$').hasMatch(v?.trim() ?? '')
+                ? null
+                : 'Enter the 6-digit code',
           ),
           if (state.errorMessage != null) ...[
             const SizedBox(height: RvmSpacing.md),
@@ -438,7 +521,10 @@ class _TwoFactorStepState extends State<_TwoFactorStep> {
           FilledButton(
             onPressed: state.submitting ? null : _verify,
             child: state.submitting
-                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4))
                 : const Text('Verify and sign in'),
           ),
           const SizedBox(height: RvmSpacing.sm),
@@ -448,13 +534,17 @@ class _TwoFactorStepState extends State<_TwoFactorStep> {
               TextButton(
                 onPressed: state.submitting
                     ? null
-                    : () => context.read<TeamAuthBloc>().add(const TeamTwoFactorResendRequested()),
+                    : () => context
+                        .read<TeamAuthBloc>()
+                        .add(const TeamTwoFactorResendRequested()),
                 child: const Text('Resend code'),
               ),
               TextButton(
                 onPressed: state.submitting
                     ? null
-                    : () => context.read<TeamAuthBloc>().add(const TeamTwoFactorCancelled()),
+                    : () => context
+                        .read<TeamAuthBloc>()
+                        .add(const TeamTwoFactorCancelled()),
                 child: const Text('Use a different account'),
               ),
             ],
@@ -480,10 +570,15 @@ class _ErrorNote extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, size: 18, color: RvmColors.danger),
+          const Icon(Icons.error_outline_rounded,
+              size: 18, color: RvmColors.danger),
           const SizedBox(width: RvmSpacing.sm),
           Expanded(
-            child: Text(message, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: RvmColors.danger)),
+            child: Text(message,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: RvmColors.danger)),
           ),
         ],
       ),

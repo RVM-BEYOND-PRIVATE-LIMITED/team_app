@@ -52,10 +52,11 @@ class _TeamAppState extends State<TeamApp> {
         child: MaterialApp.router(
           title: 'Team RVM',
           debugShowCheckedModeBanner: false,
-          theme: RvmTheme.light(seed: RvmColors.teamSeed),
-          darkTheme: RvmTheme.dark(seed: RvmColors.teamSeed),
+          theme: RvmTheme.light(seed: RvmColors.clay),
+          darkTheme: RvmTheme.dark(seed: RvmColors.clay),
           themeMode: ThemeMode.system,
-          builder: (context, child) => VersionGate(child: child ?? const SizedBox.shrink()),
+          builder: (context, child) =>
+              VersionGate(child: child ?? const SizedBox.shrink()),
           routerConfig: _router,
         ),
       ),
