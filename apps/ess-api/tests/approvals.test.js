@@ -303,7 +303,7 @@ describe('HR\'s tools for requests', () => {
     const { app, db, people } = buildApp();
     const listed = await limits(app, tokens.portal(people.hr));
     expect(listed.status).toBe(200);
-    expect(listed.body.limits.map((l) => l.type)).toEqual(['excuse_late', 'fix_a_day', 'leave_cl', 'leave_lwp', 'on_duty', 'short_leave', 'wfh']);
+    expect(listed.body.limits.map((l) => l.type)).toEqual(['excuse_late', 'fix_a_day', 'leave_cl', 'leave_lwp', 'on_duty', 'short_leave']);
     const changed = await setLimit(app, tokens.portal(people.super_admin), 'fix_a_day', { limit_count: 5 });
     expect(changed.status).toBe(200);
     expect(changed.body.limit).toMatchObject({ type: 'fix_a_day', limit_count: 5, updated_by_name: 'Test Super Admin' });

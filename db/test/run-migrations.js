@@ -170,6 +170,12 @@ const REFUSALS = [
   refusal('a pending request that says it was decided', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, decided_at, decided_by_name) VALUES (e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site', now(), 'HR')"),
   refusal('a cancelled request with no cancel time', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, decided_at, decided_by_name, status) VALUES (e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site', now(), 'HR', 'cancelled')"),
   refusal('a leave request of a type it does not take', "INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason) VALUES (e, 'sick', DATE '2026-10-16', 'I am not well.')"),
+  // WFH (KP, 22 Oct): HR's allowance is 1 to 31 days, with a note of up to 300 characters.
+  refusal('a WFH allowance of no days', "INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days) VALUES (e, 0)"),
+  refusal('a WFH allowance of more than a month', "INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days) VALUES (e, 32)"),
+  refusal('a WFH note over 300 characters', "INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days, note) VALUES (e, 4, repeat('x', 301))"),
+  refusal('a second WFH allowance for one employee', "INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days) VALUES (e, 4), (e, 5)", 'unique_violation'),
+  refusal('a WFH allowance for nobody', "INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days) VALUES (gen_random_uuid(), 4)", 'foreign_key_violation'),
   refusal('a request limit of an unknown type', "INSERT INTO public.hr_ess_request_limits (type, limit_count) VALUES ('tea_break', 2)"),
   refusal('a minutes limit kept in the count column', "INSERT INTO public.hr_ess_request_limits (type, limit_count) VALUES ('short_leave', 5)"),
   refusal('a negative request limit', "INSERT INTO public.hr_ess_request_limits (type, limit_count) VALUES ('fix_a_day', -1)"),
@@ -340,14 +346,17 @@ DECLARE
   r_id uuid;
   second_id uuid;
   v_sl_day date;
+  v_wfh_day date;
 BEGIN
   INSERT INTO public.hr_employees (id, full_name, branch_id) VALUES (e, 'Test Requester', b);
   INSERT INTO public.hr_employees (id, full_name) VALUES (m, 'Test Manager');
   INSERT INTO public.users (id) VALUES (u);
   INSERT INTO public.hr_branches (id) VALUES (b);
 
-  -- The limits are seeded, in the one place HR can change them.
-  IF (SELECT count(*) FROM public.hr_ess_request_limits) <> 7 THEN RAISE EXCEPTION 'the limits are not seeded'; END IF;
+  -- The limits are seeded, in the one place HR can change them. WFH has no row: its limit is the
+  -- employee's own allowance (migration 29).
+  IF (SELECT count(*) FROM public.hr_ess_request_limits) <> 6 THEN RAISE EXCEPTION 'the limits are not seeded'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_request_limits WHERE type = 'wfh') THEN RAISE EXCEPTION 'a generic WFH limit row'; END IF;
   IF (SELECT limit_count FROM public.hr_ess_request_limits WHERE type = 'fix_a_day') <> 3 THEN RAISE EXCEPTION 'the fix-a-day limit'; END IF;
   IF (SELECT limit_minutes FROM public.hr_ess_request_limits WHERE type = 'short_leave') <> 180 THEN RAISE EXCEPTION 'the short-leave limit'; END IF;
 
@@ -493,6 +502,53 @@ BEGIN
     ((v_month + interval '4 days' + interval '23 hours') AT TIME ZONE 'Asia/Kolkata'));
   IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'last month on the 5th: %', v_out; END IF;
 
+  -- WFH (KP, 22 Oct): the allowance is the limit; the approval writes the day present with the
+  -- WFH note and keeps the times; the limit and a disabled allowance are re-checked at approval;
+  -- HR's cancel restores the day the approval found.
+  INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days, note)
+    VALUES (e, 1, 'Two days a week while the centre is being painted.');
+  v_wfh_day := v_month + 3;
+  INSERT INTO public.hr_staff_attendance (employee_id, branch_id, day, status, source, note, first_in, last_out, worked_minutes)
+    VALUES (e, b, v_wfh_day, 'present', 'self_punch', 'Punched at the centre.',
+            (v_wfh_day + TIME '09:00') AT TIME ZONE 'Asia/Kolkata',
+            (v_wfh_day + TIME '18:00') AT TIME ZONE 'Asia/Kolkata', 540);
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
+    VALUES (e, 'wfh', v_wfh_day, 'Working from home while the centre is painted.') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the WFH approval: %', v_out; END IF;
+  SELECT status, leave_type, note, source, first_in, last_out, worked_minutes INTO v_row
+    FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_wfh_day;
+  IF v_row.status <> 'present' OR v_row.leave_type IS NOT NULL
+     OR v_row.note <> 'Work from home: Working from home while the centre is painted.'
+     OR v_row.source <> 'override' OR v_row.worked_minutes <> 540
+     OR v_row.first_in <> ((v_wfh_day + TIME '09:00') AT TIME ZONE 'Asia/Kolkata')
+     OR v_row.last_out <> ((v_wfh_day + TIME '18:00') AT TIME ZONE 'Asia/Kolkata') THEN
+    RAISE EXCEPTION 'the WFH day: %, %, %, %, %, %, %', v_row.status, v_row.leave_type, v_row.note, v_row.source,
+      v_row.first_in, v_row.last_out, v_row.worked_minutes;
+  END IF;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
+    VALUES (e, 'wfh', v_wfh_day + 1, 'One more day at home.') RETURNING id INTO second_id;
+  v_out := public.hr_ess_decide_leave_request(second_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'wfh_limit' THEN RAISE EXCEPTION 'a second WFH day: %', v_out; END IF;
+  UPDATE public.hr_ess_wfh_allowances SET is_enabled = false WHERE employee_id = e;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
+    VALUES (e, 'wfh', v_wfh_day + 2, 'And another.') RETURNING id INTO r_id;
+  v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'wfh_not_allowed' THEN RAISE EXCEPTION 'a WFH day with the allowance off: %', v_out; END IF;
+  UPDATE public.hr_ess_wfh_allowances SET is_enabled = true WHERE employee_id = e;
+  v_out := public.hr_ess_cancel_leave_request((SELECT id FROM public.hr_ess_leave_requests
+      WHERE employee_id = e AND type = 'wfh' AND status = 'approved'), m, u, 'Test Manager', 'The centre stayed open.', now());
+  IF v_out ->> 'outcome' <> 'cancelled' THEN RAISE EXCEPTION 'the WFH cancel: %', v_out; END IF;
+  SELECT note, source, first_in, last_out, worked_minutes INTO v_row
+    FROM public.hr_staff_attendance WHERE employee_id = e AND day = v_wfh_day;
+  IF v_row.note <> 'Punched at the centre.' OR v_row.source <> 'self_punch' OR v_row.worked_minutes <> 540 THEN
+    RAISE EXCEPTION 'the restored WFH day: %, %, %', v_row.note, v_row.source, v_row.worked_minutes;
+  END IF;
+  v_out := public.hr_ess_withdraw_leave_request(r_id, e, now());
+  IF v_out ->> 'outcome' <> 'withdrawn' THEN RAISE EXCEPTION 'withdrawing the stale WFH day: %', v_out; END IF;
+  v_out := public.hr_ess_decide_leave_request(second_id, m, u, 'Test Manager', true, NULL, now());
+  IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the WFH day after the cancel: %', v_out; END IF;
+
   -- The morning job: an approved on-duty day with no row is written; a day that already has a row
   -- is left alone; running again changes nothing.
   INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, status, decided_by_name, decided_at)
@@ -513,6 +569,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.hr_ess_attendance_request_history h
               LEFT JOIN public.hr_ess_attendance_requests q ON q.id = h.request_id
               WHERE q.id IS NULL) THEN RAISE EXCEPTION 'history kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_wfh_allowances WHERE employee_id = e) THEN RAISE EXCEPTION 'WFH allowance kept'; END IF;
 END $check$;`;
 
 /** The Wall's tables as the ESS writes them (tasks F1 to F7): the defaults every row takes, the

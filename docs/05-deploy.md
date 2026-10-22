@@ -109,7 +109,7 @@ The workflow itself also reads `HOST`, `USER` and `SSH_PRIVATE_KEY` (the server 
 
 The deploy never runs a migration ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, after review. Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED` and nothing else changes, so the code can deploy first.
 
-Twenty-eight in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four, Phase 2B's two, Phase 2C's six, Phase 2D's two, G6's link table and the Wall's poll-close repair. KP applied 13 to 27 by 22 Oct 2026; **28 (the Wall repair) is the only one still to apply**. Re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
+Twenty-nine in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four, Phase 2B's two, Phase 2C's six, Phase 2D's two, G6's link table, the Wall's poll-close repair and the WFH allowance. KP applied 13 to 27 by 22 Oct 2026; **28 (the Wall repair) and 29 (the WFH allowance) are the ones still to apply**. Re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
 
 | # | Migration | Rollback |
 | --- | --- | --- |
@@ -141,9 +141,10 @@ Twenty-eight in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four
 | 26 | `db/migrations/20261111000002_hr_ess_approval_escalations.sql` | `db/rollbacks/20261111000002_hr_ess_approval_escalations.sql` |
 | 27 | `db/migrations/20261112000001_hr_ess_infra_links.sql` | `db/rollbacks/20261112000001_hr_ess_infra_links.sql` |
 | 28 | `db/migrations/20261112000000_hr_ess_wall_poll_closed_repair.sql` | `db/rollbacks/20261112000000_hr_ess_wall_poll_closed_repair.sql` |
+| 29 | `db/migrations/20261113000001_hr_ess_wfh_allowances.sql` | `db/rollbacks/20261113000001_hr_ess_wfh_allowances.sql` |
 
 **Applying them (KP):**
-1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all twenty-four against a throwaway Postgres and must end "Every migration check passed."
+1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all twenty-nine against a throwaway Postgres and must end "Every migration check passed."
 2. In the Supabase dashboard, open the SQL editor of the Scheduler's project.
 3. Paste one file whole, from the `main` branch, and run it. Then the next, in the order above. Each is safe to run again if a run is interrupted.
 4. Each file ends by telling PostgREST to reload its schema, so the endpoints work within seconds, with no restart.
@@ -152,7 +153,7 @@ Twenty-eight in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four
 - Each new table answers through PostgREST with the service key: `GET /rest/v1/<table>?select=id&limit=0` (`select=employee_id` for `hr_ess_personal_details`, `select=type` for `hr_ess_request_limits`) is 200, not 404 `PGRST205`.
 - The same request with the anon key is refused with a permission error: every new table's privileges are revoked from the API roles, and row-level security is on as well.
 - The seven request functions appear in the PostgREST OpenAPI listing (`GET /rest/v1/`) for the service key, and not for the anon key: `hr_ess_decide_attendance_request`, `hr_ess_decide_leave_request`, `hr_ess_withdraw_attendance_request`, `hr_ess_withdraw_leave_request`, `hr_ess_cancel_attendance_request`, `hr_ess_cancel_leave_request`, `hr_ess_on_duty_apply`.
-- KP, in the SQL editor, which also only reads: `SELECT relname, relrowsecurity FROM pg_class WHERE relname LIKE 'hr\_ess\_%' AND relkind = 'r';` shows the twelve tables, each `true`; `SELECT tablename, policyname FROM pg_policies WHERE tablename LIKE 'hr\_ess\_%';` shows no rows; `SELECT indexname FROM pg_indexes WHERE tablename = 'hr_ess_sessions';` shows six, `hr_ess_sessions_live_family_key` and `hr_ess_sessions_sign_in_key` among them; `SELECT tgname FROM pg_trigger WHERE tgname LIKE 'hr\_ess\_%';` shows `hr_ess_sessions_bind_password`, `hr_ess_data_requests_open_limit`, `hr_ess_attendance_requests_filed_trg` and `hr_ess_leave_requests_filed_trg`.
+- KP, in the SQL editor, which also only reads: `SELECT relname, relrowsecurity FROM pg_class WHERE relname LIKE 'hr\_ess\_%' AND relkind = 'r';` shows every `hr_ess_*` table, each `true`; `SELECT tablename, policyname FROM pg_policies WHERE tablename LIKE 'hr\_ess\_%';` shows no rows; `SELECT indexname FROM pg_indexes WHERE tablename = 'hr_ess_sessions';` shows six, `hr_ess_sessions_live_family_key` and `hr_ess_sessions_sign_in_key` among them; `SELECT tgname FROM pg_trigger WHERE tgname LIKE 'hr\_ess\_%';` shows `hr_ess_sessions_bind_password`, `hr_ess_data_requests_open_limit`, `hr_ess_attendance_requests_filed_trg` and `hr_ess_leave_requests_filed_trg`.
 
 **Going back.** Run the rollback of the same name, last applied first. A rollback deletes that table's rows. Rolling back `hr_ess_sessions` makes the tokens the ESS minted answer 503 instead of 401, so tell staff to sign out of the app and in again ([04-build-plan.md](04-build-plan.md#migrations-in-run-order)).
 

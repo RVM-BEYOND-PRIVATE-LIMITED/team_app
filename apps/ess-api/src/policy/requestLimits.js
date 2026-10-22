@@ -10,9 +10,11 @@
  *   unit         'count' counts requests; 'minutes' adds up the minutes asked for in the month
  *   phase        the build phase that ships the request type (ADR-0013)
  *
- * Work from home stays in the table, switched off, because KP decided it is not allowed but the
- * design keeps room to switch it on later. Leave without pay has no limit until KP sets one
- * (still open).
+ * Work from home is offered only to the employees HR selects, each with their own monthly limit
+ * (KP, 22 Oct 2026): there is no generic row for it, and the allowance in hr_ess_wfh_allowances is
+ * the limit. The table's own row stays switched off here, with limit 0, so a caller without an
+ * allowance gets exactly the old answer. Leave without pay has no limit until KP sets one (still
+ * open).
  */
 const REQUEST_TYPES = Object.freeze([
   { type: 'on_duty', offered: true, limit: null, unit: 'count', phase: 1 },

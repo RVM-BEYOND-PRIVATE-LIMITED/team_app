@@ -24,7 +24,15 @@ function capabilitiesRoute({ config, store, now }) {
     } catch (e) {
       if (!(e && e.code === 'MODULE_NOT_INSTALLED')) throw e;
     }
-    res.json(capabilitiesFor({ kind, role, directReports, pushEnabled: config.push.enabled, limitRows }));
+    // HR's per-employee WFH allowance (KP, 22 Oct). Before its migration the launch call still
+    // answers: no allowance means the type is simply off, as the policy table says.
+    let wfhAllowance = null;
+    try {
+      wfhAllowance = await store.getWfhAllowance(employee.id);
+    } catch (e) {
+      if (!(e && e.code === 'MODULE_NOT_INSTALLED')) throw e;
+    }
+    res.json(capabilitiesFor({ kind, role, directReports, pushEnabled: config.push.enabled, limitRows, wfhAllowance }));
   });
 }
 

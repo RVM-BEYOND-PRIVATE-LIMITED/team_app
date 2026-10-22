@@ -27,9 +27,9 @@ const { ATTENDANCE_OVERRIDE_ROLES } = require('./hrPolicy');
 /** The families the inbox and the decide route work with. */
 const FAMILIES = Object.freeze(['attendance', 'leave']);
 
-/** The offered types of each family in this phase (wfh is not offered). */
+/** The offered types of each family in this phase (wfh is offered per employee, by HR). */
 const ATTENDANCE_TYPES = Object.freeze(['on_duty', 'fix_a_day', 'excuse_late', 'short_leave']);
-const LEAVE_TYPES = Object.freeze(['cl', 'lwp']);
+const LEAVE_TYPES = Object.freeze(['cl', 'lwp', 'wfh']);
 
 const STATUSES = Object.freeze(['pending', 'approved', 'rejected', 'withdrawn', 'cancelled']);
 

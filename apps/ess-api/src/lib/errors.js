@@ -160,6 +160,12 @@ const MESSAGES = Object.freeze({
   LIMIT_VALUE: 'Give a whole number of requests (or minutes for short leave), or null for no limit.',
   BALANCES_MONTH: 'Look at this month or last month.',
 
+  // WFH: HR enables it per employee and fixes that employee's monthly limit (KP, 22 Oct).
+  WFH_NOT_ALLOWED: 'Work from home is only for selected employees. Ask HR to switch it on for you.',
+  WFH_LIMIT: 'That is over your work-from-home limit for this month. Check the balance on the form.',
+  WFH_ALLOWANCE: 'Choose enabled, and a monthly limit of 1 to 31 days; the note can be up to 300 characters.',
+  WFH_QUERY: 'Search by name or employee code, up to 60 characters.',
+
   // D5-D8: push devices and notifications.
   PUSH_TOKEN: "The phone's push token is missing or not valid.",
   PUSH_DEVICE_LABEL: 'Keep the phone name to 80 characters.',

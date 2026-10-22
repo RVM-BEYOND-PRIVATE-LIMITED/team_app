@@ -6,7 +6,7 @@ Updated 22 Oct 2026.
 
 Team RVM is RVM CAD's Android app for every employee, modelled on the Keka employee app. Attendance is at its core. It offers:
 - punching in and out, under the same rules as the web;
-- requests and approvals;
+- requests and approvals, with work from home for selected employees;
 - an Inbox with push notifications;
 - faculty class marking, with the Scheduler's own checks enforced server-side;
 - a Wall: posts, reactions, praise, polls and announcements;
@@ -99,7 +99,7 @@ Fixing any of them means changing the Scheduler, which this project doesn't do. 
 | Tabs | Admin, Admin Manager and Finance Admin get all five |
 | Mocked location | Refused on the phone |
 | Location tracking | Continues with the screen off while punched in, and stops at punch-out, shift end plus grace, or midnight |
-| Monthly limits | No work from home; on duty unlimited; fix a day 3; excuse a late 3; short leave 180 minutes; CL 1 |
+| Monthly limits | Work from home only for employees HR selects, each with their own monthly limit (KP, 22 Oct); on duty unlimited; fix a day 3; excuse a late 3; short leave 180 minutes; CL 1 |
 | Payroll cut-off | The 5th of the next month |
 | Colleague contacts | Email visible to everyone; phone only to HR and the person's managers |
 | Wall | Everyone posts |
@@ -112,7 +112,7 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 ## Still open
 
 - **Layout:** [ADR-0017](adr/0017-repository-layout-and-tooling.md) (folder layout, workspaces, Node version), and which Node version the server runs.
-- **Decisions owed:** the points in [04-build-plan.md](04-build-plan.md#decisions-still-owed) (the phone reset, the HR Executive as manager, staying signed in, desk logins and faculty class marking were decided on 16 and 19 Oct). Open: faculty leave, short leave and half days, mocked pings, the contact rule, the cut-off edge cases, where HR reviews on the web, and the infra register (decision 9).
+- **Decisions owed:** the points in [04-build-plan.md](04-build-plan.md#decisions-still-owed) (the phone reset, the HR Executive as manager, staying signed in, desk logins, faculty class marking, the infra register and WFH were decided on 16, 19 and 22 Oct). Open: faculty leave, short leave and half days, mocked pings, the contact rule, the cut-off edge cases, and where HR reviews on the web.
 - **Leave without pay:** whether it has a monthly limit.
 - **Production check (read-only):** confirm that the attendance migrations and the one-CL-a-month index are applied.
 - **Brief re-export:** the fact-check corrections and the 16 Oct answers are in the live brief. KP re-exports it and replaces [the PDF in inputs/](inputs/).
@@ -126,8 +126,8 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 
 ## Next steps
 
-1. **Wave 1 and Wave 2 are live; Phases 1C to 1E are deployed; Phases 2A to 2D are built and deployed (19 Oct); H1 class marking and G6 the infra-register mirror are built (22 Oct).** The ESS has answered at `https://team-api.rvmcad.org` since 16 Oct, deployed on every merge to `main` ([05-deploy.md](05-deploy.md)). KP has applied migrations 13 to 27; **28, the Wall's poll-close column repair, is the only migration still to apply** - until then every Wall endpoint answers 503. The pilot gate is next; what is left is listed phase by phase in [06-backend-phases.md](06-backend-phases.md).
-2. **Waves 2 to 4 are complete for the backend:** Phases 1C, 1D, 1E, 2A, 2B, 2C and 2D are built and deployed, all in team_app, with tests for every endpoint, including role-denied and wrong-owner cases; H1 class marking (decision 8) adds three routes over the Scheduler's own `student_attendance` and `pending_alerts` rows, and G6 (decision 9) mirrors lab and facility tickets into the Admin Manager's `infra_tickets`, linked by `hr_ess_infra_links`. What remains: apply the outstanding migrations, the pilot gate, and one open build decision (3, short leave and half days).
+1. **Wave 1 and Wave 2 are live; Phases 1C to 1E are deployed; Phases 2A to 2D are built and deployed (19 Oct); H1 class marking and G6 the infra-register mirror are built (22 Oct), and so is WFH for selected employees.** The ESS has answered at `https://team-api.rvmcad.org` since 16 Oct, deployed on every merge to `main` ([05-deploy.md](05-deploy.md)). KP has applied migrations 13 to 27; **28, the Wall's poll-close column repair, and 29, the WFH allowance, are the migrations still to apply** - until 28 every Wall endpoint answers 503, and until 29 WFH does. The pilot gate is next; what is left is listed phase by phase in [06-backend-phases.md](06-backend-phases.md).
+2. **Waves 2 to 4 are complete for the backend:** Phases 1C, 1D, 1E, 2A, 2B, 2C and 2D are built and deployed, all in team_app, with tests for every endpoint, including role-denied and wrong-owner cases; H1 class marking (decision 8) adds three routes over the Scheduler's own `student_attendance` and `pending_alerts` rows, G6 (decision 9) mirrors lab and facility tickets into the Admin Manager's `infra_tickets`, linked by `hr_ess_infra_links`, and WFH (KP, 22 Oct) gives HR a per-employee allowance and writes an approved day present with a WFH note. What remains: apply the outstanding migrations, the pilot gate, and one open build decision (3, short leave and half days).
 3. **Phase 0, from RVM, alongside the build:**
    - a Firebase project;
    - a Google Play organisation account (it needs a D-U-N-S number);

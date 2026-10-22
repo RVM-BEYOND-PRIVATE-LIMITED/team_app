@@ -111,6 +111,9 @@ const SCHEMA = {
     'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason', 'created_at', 'updated_at'],
   hr_ess_leave_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
     'action', 'note', 'details'],
+  // 20261113000001_hr_ess_wfh_allowances.sql (KP, 22 Oct): HR's per-employee WFH allowance.
+  hr_ess_wfh_allowances: ['employee_id', 'is_enabled', 'monthly_limit_days', 'note', 'set_by_user_id',
+    'set_by_name', 'created_at', 'updated_at'],
   // 20261106000003_hr_ess_request_archives.sql
   hr_ess_request_archives: ['id', 'family', 'request_id', 'employee_id', 'archived_at'],
   // 20261111000002_hr_ess_approval_escalations.sql (Phase 2D, D4)
@@ -418,6 +421,8 @@ const KEYS = {
   hr_ess_document_types: ['slug'],
   // The celebration opt-out's person key already reads through here.
   hr_ess_celebration_optouts: ['employee_id'],
+  // WFH's allowance is keyed by the employee (20261113000001).
+  hr_ess_wfh_allowances: ['employee_id'],
 };
 
 /** What the database fills in on insert: the hr_ess_* DEFAULTs in db/migrations. */
@@ -431,6 +436,8 @@ const DEFAULTS = {
   // D4: the escalation timestamp (20261111000002).
   hr_ess_approval_escalations: (at) => ({ escalated_at: at }),
   hr_ess_leave_requests: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
+  // WFH's allowance (20261113000001): enabled unless HR says otherwise.
+  hr_ess_wfh_allowances: (at) => ({ is_enabled: true, note: null, created_at: at, updated_at: at }),
   hr_ess_attendance_request_history: (at) => ({ at, details: {} }),
   hr_ess_leave_request_history: (at) => ({ at, details: {} }),
   hr_ess_request_archives: (at) => ({ archived_at: at }),
@@ -1064,6 +1071,15 @@ const FUNCTIONS = {
         });
         return { data: { outcome: 'rejected', request: clone(r) }, error: null };
       }
+      // WFH: the allowance is the limit, re-read at decision time (KP, 22 Oct). Missing or
+      // disabled refuses; the month's OTHER approved WFH days count against the limit.
+      if (r.type === 'wfh') {
+        const allowance = fake.rows('hr_ess_wfh_allowances').find((a) => a.employee_id === r.employee_id);
+        if (!allowance || allowance.is_enabled !== true) return { data: { outcome: 'wfh_not_allowed' }, error: null };
+        const taken = fake.rows('hr_ess_leave_requests').filter((x) => x.id !== r.id && x.employee_id === r.employee_id
+          && x.type === 'wfh' && x.status === 'approved' && (x.day || '').slice(0, 7) === r.day.slice(0, 7)).length;
+        if (taken >= allowance.monthly_limit_days) return { data: { outcome: 'wfh_limit' }, error: null };
+      }
       if (r.type === 'cl') {
         const taken = fake.rows('hr_staff_attendance').some((d) => d.employee_id === r.employee_id
           && d.status === 'leave' && d.leave_type === 'cl'
@@ -1071,14 +1087,18 @@ const FUNCTIONS = {
         if (taken) return { data: { outcome: 'cl_limit' }, error: null };
       }
       const dayRow = fake.rows('hr_staff_attendance').find((a) => a.employee_id === r.employee_id && a.day === r.day);
+      const employee = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
+      const isWfh = r.type === 'wfh';
       const applied = fakeApplyOverride(fake, {
-        employee_id: r.employee_id, day: r.day, branch_id: dayRow ? dayRow.branch_id : null,
-        status: 'leave', leave_type: r.type,
+        employee_id: r.employee_id, day: r.day,
+        branch_id: dayRow ? dayRow.branch_id : (isWfh && employee ? employee.branch_id ?? null : null),
+        // WFH writes the day present, with the WFH note; leave writes the leave row, as before.
+        status: isWfh ? 'present' : 'leave', leave_type: isWfh ? null : r.type,
         // Whatever times the day records are kept, as the controller's own merge does.
         first_in: dayRow ? dayRow.first_in ?? null : null,
         last_out: dayRow ? dayRow.last_out ?? null : null,
         worked_minutes: dayRow ? dayRow.worked_minutes ?? null : null,
-        reason: r.reason, by: p_decider_user_id ?? null, by_name: p_decider_name,
+        reason: isWfh ? `Work from home: ${r.reason}` : r.reason, by: p_decider_user_id ?? null, by_name: p_decider_name,
       });
       if (applied.error) return { data: null, error: applied.error };
       r.day_before = applied.before;

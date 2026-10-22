@@ -45,6 +45,7 @@ const REQUEST_TYPE_LABELS = Object.freeze({
   short_leave: 'a short leave',
   cl: 'casual leave',
   lwp: 'leave without pay',
+  wfh: 'work from home',
 });
 
 /** '2026-10-15' -> '15 Oct', as staff write a day. */

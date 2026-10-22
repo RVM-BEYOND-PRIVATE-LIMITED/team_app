@@ -215,6 +215,8 @@ function decideRequest({ store, now }) {
     if (outcome === 'times_incomplete') throw new HttpError(409, 'TIMES_INCOMPLETE', MESSAGES.TIMES_INCOMPLETE);
     if (outcome === 'day_off') throw new HttpError(409, 'DAY_LOCKED', MESSAGES.DAY_LOCKED);
     if (outcome === 'cl_limit') throw new HttpError(409, 'CL_LIMIT', MESSAGES.CL_TAKEN);
+    if (outcome === 'wfh_not_allowed') throw new HttpError(409, 'WFH_NOT_ALLOWED', MESSAGES.WFH_NOT_ALLOWED);
+    if (outcome === 'wfh_limit') throw new HttpError(409, 'WFH_LIMIT', MESSAGES.WFH_LIMIT);
 
     // After a decision that wrote the day: the shift snapshot first for a fixed day (so the
     // month's judging sees it), then the recompute -- the controller's own order (124-126).

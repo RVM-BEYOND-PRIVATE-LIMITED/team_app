@@ -61,13 +61,20 @@ const INTEGRITY_REQUIRED = false;
  * @param {number} who.directReports        active employees whose manager_id is the caller
  * @param {boolean} who.pushEnabled         whether the FIREBASE_* settings are all present
  * @param {Array<object>|null} [who.limitRows]  hr_ess_request_limits rows, for the numbers HR set
+ * @param {object|null} [who.wfhAllowance]   the caller's hr_ess_wfh_allowances row, when HR selected them
  */
-function capabilitiesFor({ kind, role, directReports, pushEnabled, limitRows = null }) {
+function capabilitiesFor({ kind, role, directReports, pushEnabled, limitRows = null, wfhAllowance = null }) {
   // An attendance session carries no portal role, whatever the person's account says: these
   // powers come with the portal login, so a session that did not use it does not get them.
   const r = kind === 'portal' ? role : null;
   const ownReports = directReports > 0;
   const anyRequest = ANY_REQUEST_ROLES.has(r);
+  const requests = requestPolicy(limitRows);
+  // WFH is offered only to the employees HR enabled, and the allowance's days are its limit.
+  const wfhEnabled = Boolean(wfhAllowance && wfhAllowance.is_enabled);
+  requests.types = requests.types.map((t) => (t.type === 'wfh' && wfhEnabled
+    ? { ...t, offered: true, limit: wfhAllowance.monthly_limit_days }
+    : t));
   return {
     tabs: [...TABS],
     sections: { time: true, helpdesk: true, documents: true, profile: true, work: WORK_ROLES.has(r) },
@@ -78,7 +85,7 @@ function capabilitiesFor({ kind, role, directReports, pushEnabled, limitRows = n
       request_types: anyRequest || ownReports ? offeredRequestTypes() : [],
       hr_scope: [...(HR_SCOPE.get(r) || [])],
     },
-    requests: requestPolicy(limitRows),
+    requests,
     wall: { post: true, announce: ANNOUNCE_ROLES.has(r), moderate: MODERATE_ROLES.has(r) },
     push: { enabled: pushEnabled === true },
     integrity: { required: INTEGRITY_REQUIRED },

@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.10.0
+  version: 0.11.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -262,6 +262,7 @@ paths:
         - `approvals.request_types` lists every offered request type when `any_request` or `own_reports` is true, and is empty otherwise. This holds for an hr_executive with direct reports too.
         - An attendance session carries no portal role, so it gets the attendance-only row whatever role the person's portal account has.
         - `requests` comes from the one policy module the request endpoints will enforce, so the numbers here are the numbers that apply.
+        - `requests.types`'s `wfh` row is `offered: true` with `limit` set to the caller's own monthly allowance when HR has enabled WFH for them (KP, 22 Oct 2026), and `offered: false`, `limit: 0` otherwise. The allowance is per employee; there is no generic request-limit row for it.
         - `wall.post` is true.
         - `push.enabled` is true only when the server has its `FIREBASE_*` settings (ADR-0016); until then notifications are written to the server log, not sent. `integrity.required` is false: there is no Play project yet, so no Play Integrity token is asked for.
       responses:
@@ -2089,9 +2090,10 @@ paths:
       description: |
         Either token kind, with the checks of `GET /ess/me`.
 
-        - `type`: `cl` (casual leave; one a month, the Scheduler's own rule, enforced here and by the database) or `lwp` (leave without pay; no limit set yet).
+        - `type`: `cl` (casual leave; one a month, the Scheduler's own rule, enforced here and by the database), `lwp` (leave without pay; no limit set yet) or `wfh` (work from home, only for an employee HR has enabled, against that employee's own monthly limit).
         - `day`: this month or last month, and leave may be filed AHEAD (a planned CL). The same cut-off as attendance requests: last month closes after the 5th (409 `REQUEST_CLOSED`).
         - The month's CL already on the sheet counts as used, so a CL cannot be filed around one HR recorded by hand; over the limit is 409 `LIMIT_REACHED`.
+        - WFH is refused with 409 `WFH_NOT_ALLOWED` when HR has not enabled it for the caller (or has switched it off), and with 409 `WFH_LIMIT` when the month's approved and pending WFH days already use the allowance. The allowance is the limit; there is no generic request-limit row for it.
         - One pending request per type and day: a second is 409 `DUPLICATE_REQUEST`.
       requestBody:
         required: true
@@ -2103,7 +2105,7 @@ paths:
               properties:
                 type:
                   type: string
-                  enum: [cl, lwp]
+                  enum: [cl, lwp, wfh]
                 day:
                   type: string
                   format: date
@@ -2273,7 +2275,7 @@ paths:
       description: |
         Either token kind. Allowed, used, pending and remaining for every request type, for the month of the `day` they apply to. The numbers HR set in `PUT /ess/hr/request-limits/{type}`; `allowed` null means no limit, and `remaining` counts pending requests too.
 
-        For leave, the days the sheet already records count as used (so a CL marked by hand cannot hide); for the attendance types, approved requests do. `short_leave` (Phase 2) and `wfh` (not offered) show their limits with nothing filed.
+        For leave, the days the sheet already records count as used (so a CL marked by hand cannot hide); for the attendance types, approved requests do. `short_leave` (Phase 2) shows its minutes. `wfh` shows the caller's own allowance (`offered: true`, `allowed` = its days) when HR has enabled it, and `offered: false` with `allowed: 0` otherwise (KP, 22 Oct 2026).
       parameters:
         - name: month
           in: query
@@ -2302,8 +2304,203 @@ paths:
                       - { type: leave_cl, offered: true, unit: count, phase: 1, allowed: 1, used: 0, pending: 1, remaining: 0 }
                       - { type: leave_lwp, offered: true, unit: count, phase: 1, allowed: null, used: 0, pending: 0, remaining: null }
                       - { type: wfh, offered: false, unit: count, phase: 1, allowed: 0, used: 0, pending: 0, remaining: 0 }
+                wfhEnabled:
+                  summary: HR has enabled this employee's work-from-home allowance
+                  value:
+                    month: '2026-10'
+                    types:
+                      - { type: wfh, offered: true, unit: count, phase: 1, allowed: 4, used: 1, pending: 1, remaining: 2 }
         '400':
           $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/wfh-allowances:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listWfhAllowances
+      tags: [ESS]
+      x-owner: ess
+      summary: The work-from-home allowances HR has set (KP, 22 Oct 2026)
+      description: |
+        The roles of `PUT /ess/hr/request-limits/{type}`: `hr`, `ceo` and `super_admin`. An HR Executive is 403 `ATTENDANCE_OVERRIDE_DENIED`.
+
+        One row per employee HR has selected, newest change first, at most 200 (`truncated` says the list was cut). `?q=` searches by name or employee code. An employee without a row is simply absent; a disabled row stays in the list, so HR can switch it back on with its limit intact.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 60
+          description: A name or employee code to search for; more than 60 characters is 400 `VALIDATION_FAILED`.
+      responses:
+        '200':
+          description: The allowances, with the employee card for each.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WfhAllowanceList'
+              examples:
+                one:
+                  value:
+                    allowances:
+                      - employee_id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                        employee:
+                          id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                          full_name: Suresh Yadav
+                          employee_code: RVM-0217
+                          branch: { id: b0000000-0000-4000-8000-000000000001, name: Faridabad }
+                          department: { id: d0000000-0000-4000-8000-000000000001, name: Technical Training }
+                        enabled: true
+                        monthly_limit_days: 4
+                        note: Two days a week while the centre is being painted.
+                        set_by_name: Priya Sharma
+                        updated_at: '2026-10-22T06:30:00+00:00'
+                    truncated: false
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/hr/wfh-allowances/{employeeId}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    put:
+      operationId: setWfhAllowance
+      tags: [ESS]
+      x-owner: ess
+      summary: Enable or change one employee's work-from-home allowance (KP, 22 Oct 2026)
+      description: |
+        The roles of `PUT /ess/hr/request-limits/{type}`: `hr`, `ceo` and `super_admin`. The upsert creates the row on the first save and changes it after that; `enabled: false` switches WFH off for the person without losing the limit. `monthly_limit_days` is 1 to 31; `note` is HR's own reminder, up to 300 characters.
+
+        Only an active employee can be selected (404 `EMPLOYEE_NOT_FOUND`). The change is recorded in `hr_ess_audit` as `wfh.allowance.changed`, with the before and after `enabled` and limit only, never the note or any personal data.
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          description: The employee's `hr_employees.id`. Not a uuid is 400 `VALIDATION_FAILED`.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, monthly_limit_days]
+              properties:
+                enabled:
+                  type: boolean
+                monthly_limit_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 31
+                note:
+                  type: [string, 'null']
+                  maxLength: 300
+            examples:
+              enable:
+                value: { enabled: true, monthly_limit_days: 4, note: Two days a week while the centre is being painted. }
+              disable:
+                value: { enabled: false, monthly_limit_days: 4 }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowance]
+                properties:
+                  allowance:
+                    $ref: '#/components/schemas/WfhAllowance'
+              examples:
+                changed:
+                  value:
+                    allowance:
+                      employee_id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                      employee:
+                        id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                        full_name: Suresh Yadav
+                        employee_code: RVM-0217
+                        branch: { id: b0000000-0000-4000-8000-000000000001, name: Faridabad }
+                        department: { id: d0000000-0000-4000-8000-000000000001, name: Technical Training }
+                      enabled: true
+                      monthly_limit_days: 4
+                      note: Two days a week while the centre is being painted.
+                      set_by_name: Priya Sharma
+                      updated_at: '2026-10-22T06:30:00+00:00'
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssAttendanceHrForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/wfh:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyWfh
+      tags: [ESS]
+      x-owner: ess
+      summary: My work-from-home allowance and this month's numbers (KP, 22 Oct 2026)
+      description: |
+        Either token kind. WFH is offered only to the employees HR has enabled: without an allowance the answer is `enabled: false`, `monthly_limit_days: 0` and `remaining: 0` (the month's used and pending days are still counted). `used` counts approved WFH days this month, `pending` the requests still waiting, and `remaining` is the limit less both, never below zero.
+      responses:
+        '200':
+          description: My allowance and this month's numbers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyWfh'
+              examples:
+                enabled:
+                  value: { month: '2026-10', enabled: true, monthly_limit_days: 4, used: 1, pending: 1, remaining: 2 }
+                notSelected:
+                  value: { month: '2026-10', enabled: false, monthly_limit_days: 0, used: 0, pending: 0, remaining: 0 }
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
@@ -2410,7 +2607,8 @@ paths:
 
         - `decision`: `approve` or `reject`. `note`: up to 1,000 characters; a rejection needs one (at least 3), because the employee is owed the reason.
         - An approval writes the official day through the Scheduler's override function, in one transaction with the request's status and history; a second decision on the same request is 409 `ALREADY_DECIDED` whatever two approvers do at the same moment.
-        - What a decision can refuse: `NOT_LATE` (excusing a day that is not a late), `TIMES_INCOMPLETE` (the fix would leave the day without an in or out), `DAY_LOCKED` (a fix on a day recorded as leave, a week off or a holiday), `CL_LIMIT` (a second CL in the month), `REQUEST_CLOSED`/`REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or excuse for a day that has not happened). A refused decision changes nothing.
+        - What a decision can refuse: `NOT_LATE` (excusing a day that is not a late), `TIMES_INCOMPLETE` (the fix would leave the day without an in or out), `DAY_LOCKED` (a fix on a day recorded as leave, a week off or a holiday), `CL_LIMIT` (a second CL in the month), `WFH_NOT_ALLOWED` (HR has switched the person's allowance off, or there is no row), `WFH_LIMIT` (the month's other approved WFH days already use the allowance), `REQUEST_CLOSED`/`REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or excuse for a day that has not happened). A refused decision changes nothing.
+        - A WFH approval writes the day as present, with `Work from home: <reason>` as its note and the times the day already records kept — the same sanctioned path leave uses. The allowance is re-read at decision time under a lock, so HR switching it off or another approval filling the month cannot be raced.
         - An approved on_duty day for a FUTURE date is not written yet: the morning job writes it on the day itself, so the day is never locked before it happens.
       parameters:
         - name: family
@@ -2860,7 +3058,7 @@ paths:
       tags: [ESS]
       x-owner: ess
       summary: The monthly request limits (C6)
-      description: The roles of `POST /ess/hr/attendance-requests/{id}/cancel`. Every known type and the number HR set; `limit_count` or `limit_minutes` carries the number, null meaning no limit.
+      description: The roles of `POST /ess/hr/attendance-requests/{id}/cancel`. Every type with a generic monthly limit and the number HR set; `limit_count` or `limit_minutes` carries the number, null meaning no limit. `wfh` has no generic row; its limit is the employee's own allowance (`GET /ess/hr/wfh-allowances`, KP 22 Oct 2026).
       responses:
         '200':
           description: The limits.
@@ -2878,7 +3076,6 @@ paths:
                       - { type: short_leave, limit_count: null, limit_minutes: 180, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
                       - { type: leave_cl, limit_count: 1, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
                       - { type: leave_lwp, limit_count: null, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
-                      - { type: wfh, limit_count: 0, limit_minutes: null, updated_at: '2026-10-16T04:00:00+00:00', updated_by_name: null }
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
@@ -10689,12 +10886,12 @@ components:
       type: string
       enum: [on_duty, fix_a_day, excuse_late, short_leave, leave_cl, leave_lwp, wfh]
       description: |
-        on_duty: working away from the branch for the day. fix_a_day: correct a day's attendance. excuse_late: excuse a late arrival. short_leave: short leave, counted in minutes (Phase 2). leave_cl: casual leave. leave_lwp: leave without pay. wfh: work from home, not offered.
+        on_duty: working away from the branch for the day. fix_a_day: correct a day's attendance. excuse_late: excuse a late arrival. short_leave: short leave, counted in minutes (Phase 2). leave_cl: casual leave. leave_lwp: leave without pay. wfh: work from home, offered only to the employees HR has enabled, each with their own monthly limit.
 
     RequestTypePolicy:
       type: object
       description: |
-        One request type and its monthly limit, per employee per calendar month (KP, 16 Oct). Today: on_duty no limit; fix_a_day 3; excuse_late 3; short_leave 180 minutes (phase 2); leave_cl 1; leave_lwp no limit set (still open); wfh not offered, limit 0.
+        One request type and its monthly limit, per employee per calendar month (KP, 16 Oct). Today: on_duty no limit; fix_a_day 3; excuse_late 3; short_leave 180 minutes (phase 2); leave_cl 1; leave_lwp no limit set (still open); wfh offered only when HR has enabled the employee, with that employee's allowance as its limit (KP, 22 Oct).
       required: [type, offered, limit, unit, phase]
       properties:
         type:
@@ -11364,7 +11561,7 @@ components:
           enum: [leave]
         type:
           type: string
-          enum: [cl, lwp]
+          enum: [cl, lwp, wfh]
         status:
           type: string
           enum: [pending, approved, rejected, withdrawn, cancelled]
@@ -11511,7 +11708,7 @@ components:
           enum: [leave]
         type:
           type: string
-          enum: [cl, lwp]
+          enum: [cl, lwp, wfh]
         status:
           type: string
           enum: [pending, approved, rejected, withdrawn, cancelled]
@@ -11723,6 +11920,105 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RequestLimit'
+
+    WfhOrgRef:
+      type: object
+      description: A branch or department on the allowance's employee card.
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    WfhEmployeeCard:
+      type: object
+      description: The employee a WFH allowance belongs to; name, code, branch and department only.
+      required: [id, full_name, employee_code, branch, department]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/WfhOrgRef'
+            - type: 'null'
+        department:
+          oneOf:
+            - $ref: '#/components/schemas/WfhOrgRef'
+            - type: 'null'
+
+    WfhAllowance:
+      type: object
+      description: One employee's work-from-home allowance (KP, 22 Oct 2026). The allowance is the monthly limit; there is no generic request-limit row for `wfh`.
+      required: [employee_id, employee, enabled, monthly_limit_days, note, set_by_name, updated_at]
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        employee:
+          oneOf:
+            - $ref: '#/components/schemas/WfhEmployeeCard'
+            - type: 'null'
+        enabled:
+          type: boolean
+          description: False switches WFH off for this person without losing the agreed limit.
+        monthly_limit_days:
+          type: integer
+          minimum: 1
+          maximum: 31
+        note:
+          type: [string, 'null']
+          maxLength: 300
+        set_by_name:
+          type: [string, 'null']
+        updated_at:
+          type: string
+          format: date-time
+
+    WfhAllowanceList:
+      type: object
+      required: [allowances, truncated]
+      properties:
+        allowances:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/WfhAllowance'
+        truncated:
+          type: boolean
+
+    MyWfh:
+      type: object
+      required: [month, enabled, monthly_limit_days, used, pending, remaining]
+      properties:
+        month:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+        enabled:
+          type: boolean
+        monthly_limit_days:
+          type: integer
+          minimum: 0
+          maximum: 31
+          description: The allowance's days when enabled; 0 when HR has not enabled WFH for this person.
+        used:
+          type: integer
+          minimum: 0
+          description: Approved WFH days this month.
+        pending:
+          type: integer
+          minimum: 0
+          description: WFH days still waiting for a decision this month.
+        remaining:
+          type: integer
+          minimum: 0
+          description: max(0, monthly_limit_days - used - pending) when enabled; 0 otherwise.
 
     PushDevice:
       type: object
@@ -15295,6 +15591,31 @@ components:
         error: That is over this type's monthly limit. Check the balance on the form.
         code: LIMIT_REACHED
 
+    EssWfhNotAllowed:
+      value:
+        error: Work from home is only for selected employees. Ask HR to switch it on for you.
+        code: WFH_NOT_ALLOWED
+
+    EssWfhLimit:
+      value:
+        error: That is over your work-from-home limit for this month. Check the balance on the form.
+        code: WFH_LIMIT
+
+    EssWfhQuery:
+      value:
+        error: Search by name or employee code, up to 60 characters.
+        code: VALIDATION_FAILED
+
+    EssWfhAllowance:
+      value:
+        error: 'Choose enabled, and a monthly limit of 1 to 31 days; the note can be up to 300 characters.'
+        code: VALIDATION_FAILED
+
+    EssEmployeeNotFound:
+      value:
+        error: That employee was not found.
+        code: EMPLOYEE_NOT_FOUND
+
     EssRequestMinutes:
       value:
         error: Give the short leave in whole minutes, from 1 to 480.
@@ -16281,6 +16602,10 @@ components:
               $ref: '#/components/examples/EssUnknownField'
             requestMinutes:
               $ref: '#/components/examples/EssRequestMinutes'
+            wfhQuery:
+              $ref: '#/components/examples/EssWfhQuery'
+            wfhAllowance:
+              $ref: '#/components/examples/EssWfhAllowance'
             invalidId:
               $ref: '#/components/examples/EssInvalidId'
             invalidJson:
@@ -16288,7 +16613,7 @@ components:
 
     EssRequestConflict:
       description: |
-        The request cannot move. A `withdraw` of something decided is `REQUEST_NOT_PENDING`; a second decision is `ALREADY_DECIDED`. An approval may be refused with `REQUEST_CLOSED` or `REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or an excuse for a day that has not happened), `NOT_LATE`, `TIMES_INCOMPLETE`, `DAY_LOCKED` or `CL_LIMIT`; the request then stays pending. A cancel of anything but an approved request is `CANNOT_CANCEL`.
+        The request cannot move. A `withdraw` of something decided is `REQUEST_NOT_PENDING`; a second decision is `ALREADY_DECIDED`. An approval may be refused with `REQUEST_CLOSED` or `REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or an excuse for a day that has not happened), `NOT_LATE`, `TIMES_INCOMPLETE`, `DAY_LOCKED`, `CL_LIMIT`, `WFH_NOT_ALLOWED` or `WFH_LIMIT`; the request then stays pending. A cancel of anything but an approved request is `CANNOT_CANCEL`.
       content:
         application/json:
           schema:
@@ -16316,11 +16641,15 @@ components:
               $ref: '#/components/examples/EssDayLocked'
             clTaken:
               $ref: '#/components/examples/EssClTaken'
+            wfhNotAllowed:
+              $ref: '#/components/examples/EssWfhNotAllowed'
+            wfhLimit:
+              $ref: '#/components/examples/EssWfhLimit'
             cannotCancel:
               $ref: '#/components/examples/EssCannotCancel'
 
     EssNoSuchRequest:
-      description: '`NOT_FOUND`: no request (or employee) has this id.'
+      description: '`NOT_FOUND`: no request has this id, or nothing is at this address. `EMPLOYEE_NOT_FOUND`: no active employee has that id (the WFH allowance save).'
       content:
         application/json:
           schema:
@@ -16332,6 +16661,8 @@ components:
               $ref: '#/components/examples/EssNotificationNotFound'
             device:
               $ref: '#/components/examples/EssDeviceNotFound'
+            employee:
+              $ref: '#/components/examples/EssEmployeeNotFound'
             nothing:
               value:
                 error: There is nothing at this address.

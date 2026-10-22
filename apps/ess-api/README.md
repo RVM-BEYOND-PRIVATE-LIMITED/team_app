@@ -18,7 +18,7 @@ Run from the repository root (`npm run lint`, `npm test`) or from this folder:
 
 `npm run test:migrations`, from the repository root, runs `db/migrations` against a throwaway Postgres in Docker (`db/test/run-migrations.js`).
 
-`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.10.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
+`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.11.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
 
 Set `SCHEDULER_BACKEND_DIR` to a Scheduler_Backend checkout to also run the drift checks. They compare `src/policy/roles.js` and `src/policy/hrPolicy.js` with the Scheduler's `config/roles.js` and `config/hrPolicy.js`, and the verbatim Scheduler code in `tests/helpers` with its source:
 
@@ -28,9 +28,9 @@ SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test
 
 Without it those checks are skipped, and that includes CI, which cannot read the private Scheduler repository. Run them by hand whenever the Scheduler changes.
 
-Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all twenty-six migrations more broadly. CI runs neither yet.
+Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all twenty-nine migrations more broadly. CI runs neither yet.
 
-**The suite (22 Oct 2026, Phase 2D with H1 and G6):** 2,518 tests in 55 files, the contract included - 1,218 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, plus `helpdeskAssign` for the Phase 2C delta; Phase 2C's are `documents`, `changeRequests`, `bankDetails`, `idCard` and `documentsJob`; Phase 2D's are `leaders`, `approvalsChain`, `facultyDay` and `classMarking`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all twenty-six migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's, the Helpdesk's, Phase 2C's and Phase 2D's row rules themselves. H1 needs no migration.
+**The suite (22 Oct 2026, Phase 2D with H1 and G6, and WFH):** 2,574 tests in 56 files, the contract included - 1,243 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, plus `helpdeskAssign` for the Phase 2C delta; Phase 2C's are `documents`, `changeRequests`, `bankDetails`, `idCard` and `documentsJob`; Phase 2D's are `leaders`, `approvalsChain`, `facultyDay` and `classMarking`, and WFH's is `wfh`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all twenty-nine migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's, the Helpdesk's, Phase 2C's, Phase 2D's and WFH's row rules themselves. H1 needs no migration; WFH needs 29.
 
 ## Settings
 
@@ -76,6 +76,7 @@ Phase 1C adds no setting either:
 | The half-day threshold for a fixed day | 240 minutes, the Scheduler's default | `src/policy/attendance.js` `HALF_DAY_MINUTES` |
 | My lists | the last 100 requests | `src/lib/store.js` `LIST_LIMITS.myRequests` |
 | The Inbox | at most 100 requests and 5 "who else is off" names per request | `src/lib/store.js` `LIST_LIMITS.inbox`, `src/routes/approvals.js` `CONTEXT_NAMES` |
+| Work from home | HR's per-employee allowance, 1 to 31 days, 200 in the list; the allowance is the limit, not a request-limit row | `db/migrations/20261113000001_hr_ess_wfh_allowances.sql`, `src/routes/wfh.js`, `LIST_LIMITS.wfhAllowances` |
 
 Phase 1D adds no setting either:
 
@@ -162,6 +163,9 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `POST`, `GET /api/ess/leave-requests` | either | My leave requests (C2, C4): `cl` (one a month) or `lwp`, whole days. `POST` files one; `GET` lists my own |
 | `POST /api/ess/leave-requests/{id}/withdraw` | either | Withdraw a pending leave request |
 | `GET /api/ess/leave/balances?month=` | either | Allowed, used, pending and remaining for every type (C5), this month or last |
+| `GET /api/ess/me/wfh` | either | My work-from-home allowance and this month (KP, 22 Oct): `{ month, enabled, monthly_limit_days, used, pending, remaining }`; without an allowance `enabled: false` and `remaining: 0` |
+| `GET /api/ess/hr/wfh-allowances?q=` | portal: hr, ceo, super_admin | Who HR has enabled for WFH, newest change first, at most 200 (`truncated`), each joined to the employee card; `?q=` searches name or code. An employee without a row is absent |
+| `PUT /api/ess/hr/wfh-allowances/{employeeId}` | portal: hr, ceo, super_admin | Enable, change or disable one employee's allowance: `{ enabled, monthly_limit_days, note? }` (1 to 31 days, note up to 300); audited as `wfh.allowance.changed` with the before/after numbers only |
 | `GET /api/ess/approvals?status=` | either | The approvals Inbox (D1) and its counts: a manager sees their reports' pending requests; hr, ceo and super_admin see everybody's and may filter any status; each row carries the month's count, the limit, the day's late marks and who else is off |
 | `POST /api/ess/approvals/{family}/{id}/decide` | either | Approve or reject (D1, H6); a rejection needs a reason. An approval writes the day through the Scheduler's override function, in one transaction with the status and history |
 | `POST /api/ess/approvals/{family}/{id}/archive` | either | Clear a request from my Inbox without deciding it (204); per approver |
@@ -240,7 +244,7 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 
 The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.10.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use; WFH's limit is the employee's own allowance in `hr_ess_wfh_allowances` (KP, 22 Oct), so its capability row is `offered: true` with that limit only for an enabled employee. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.11.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
 
 ### Staying signed in (task A3)
 
@@ -266,6 +270,7 @@ A kept sign-in is a family of `hr_ess_sessions` rows, one per refresh token, kee
 - **On duty ahead of time.** An approval for a future day writes nothing; the morning job (`src/jobs/onDuty.js`) writes it as present on the day itself, with `On duty: <place>` as the note. One process only; idempotent; failures go to the pm2 log and to `hr_ess_audit`.
 - **The Inbox.** A manager's list is their direct reports' pending requests (an attendance sign-in may be a manager's); HR's roles see everybody's and may filter by any status. The context is computed in a handful of bounded reads: the month's count per kind, the day's late marks, and who else is off that day.
 - **The limits** live in `hr_ess_request_limits`. `GET /ess/me/capabilities` falls back to the code's defaults before that migration; the request endpoints answer 503 until their own tables and the limits are there.
+- **Work from home** (KP, 22 Oct) is a leave type with its own per-employee allowance instead of a request-limit row: `hr_ess_wfh_allowances`, one row per selected employee, set by HR (`PUT /ess/hr/wfh-allowances/{employeeId}`, audited) and read by the employee (`GET /ess/me/wfh`, the balances' `wfh` line and the capabilities' `wfh` row). A request is refused 409 `WFH_NOT_ALLOWED` without an enabled row and 409 `WFH_LIMIT` over the month; the decide function re-checks both under a lock and writes the day `present` with `Work from home: <reason>`, keeping the times it already records. The complete flow, the punch caveat and the future Scheduler handover are in [docs/10-wfh-flow.md](../../docs/10-wfh-flow.md).
 
 ### Notifications and push (tasks D2, D5-D8)
 
@@ -344,7 +349,7 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 409 | `ALREADY_EXCHANGED` | Keeping a token the ESS minted itself, or a Scheduler sign-in already kept once |
 | 409 | `REFRESH_IN_PROGRESS` | A refresh token traded in less than a minute ago, presented again by the same install: retry with the newest one |
 | 409 | `OWN_REQUEST`, `OWN_RECORD`, `ALREADY_RESOLVED`, `TOO_MANY_OPEN_REQUESTS`, `RECORD_CHANGED` | HR acting on their own data; a request already answered; 5 open requests (counted by the database, too); personal details another save changed meanwhile so that half an emergency contact would be left |
-| 409 | `DUPLICATE_REQUEST`, `LIMIT_REACHED`, `REQUEST_CLOSED`, `REQUEST_WINDOW`, `REQUEST_FUTURE`, `REQUEST_NOT_PENDING`, `ALREADY_DECIDED`, `NOT_LATE`, `TIMES_INCOMPLETE`, `DAY_LOCKED`, `CL_LIMIT`, `CANNOT_CANCEL` | A request cannot move: the same type and day already waits; over the month's limit; last month past the cut-off, or a day before last month; a fix or an excuse for a day that has not happened; a withdraw of something decided; a second decision; an excuse of a day that is not late; a fix leaving no in or out time; a fix on a leave, week-off or holiday; a second CL in the month; a cancel of something not approved |
+| 409 | `DUPLICATE_REQUEST`, `LIMIT_REACHED`, `REQUEST_CLOSED`, `REQUEST_WINDOW`, `REQUEST_FUTURE`, `REQUEST_NOT_PENDING`, `ALREADY_DECIDED`, `NOT_LATE`, `TIMES_INCOMPLETE`, `DAY_LOCKED`, `CL_LIMIT`, `WFH_NOT_ALLOWED`, `WFH_LIMIT`, `CANNOT_CANCEL` | A request cannot move: the same type and day already waits; over the month's limit; last month past the cut-off, or a day before last month; a fix or an excuse for a day that has not happened; a withdraw of something decided; a second decision; an excuse of a day that is not late; a fix leaving no in or out time; a fix on a leave, week-off or holiday; a second CL in the month; WFH not enabled by HR, or the month's WFH allowance used up; a cancel of something not approved |
 | 409 | `CLASS_ALREADY_MARKED`, `CLASS_NOT_ABSENT` | Class marking (H1): a teaching role saving a day already marked; a remark for a student who is present or not marked |
 | 403 | `NOT_YOURS` | The Wall: somebody else's post or comment. Only its author edits or deletes it |
 | 403 | `NOT_AN_ANNOUNCER`, `MODERATE_DENIED`, `NOT_IN_AUDIENCE` | The Wall: an announcement from a role outside HR, the CEO and super admins; a hide, the report queue or the moderation log from anybody but HR; an announcement that was not sent to this person |
@@ -356,6 +361,7 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 409 | `CHANGE_ALREADY_OPEN` | A change request filed while another for the same field still waits |
 | 401 | `ID_CARD_BAD_TOKEN` | A verify link that is not valid, has expired, or belongs to somebody who has left |
 | 404 | `NOT_FOUND` | No such endpoint, or a method the endpoint does not take (OPTIONS included); a session that is not one of the caller's; or no such request, employee or branch |
+| 404 | `EMPLOYEE_NOT_FOUND` | The WFH allowance save names an employee who is not on the record or has left |
 | 404 | `BATCH_NOT_FOUND` | Class marking (H1): no batch has that id |
 | 400 | `INVALID_JSON` | A request body that is not valid JSON |
 | 400 | `BAD_INSTALL_ID`, `BAD_DEVICE_LABEL`, `BAD_IDENTIFIER` | A missing or malformed install id, phone name or sign-in identifier |

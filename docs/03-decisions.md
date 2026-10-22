@@ -46,7 +46,7 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 
 | Request | Limit | Notes |
 | --- | --- | --- |
-| Work from home | Not allowed | The request type is hidden. |
+| Work from home | Per employee, set by HR | Only for selected employees. HR enables it and fixes that employee's monthly limit (1 to 31 days) in `hr_ess_wfh_allowances`; the allowance is the limit. An approved day is written as present with the WFH note and needs no punch. See [WFH, 22 Oct](#wfh-selected-employees-per-employee-monthly-limit-kp-22-oct-2026). |
 | On duty | No limit | Each request still needs approval. An approved day is written as present (on duty) and needs no punch ([ADR-0020](adr/0020-approvals-through-the-override-function.md)). |
 | Fix a day | 3 | |
 | Excuse a late | 3 | |
@@ -152,4 +152,30 @@ code or schema changes; one ESS migration (27) for the G6 link table.
 - **Close sync:** the ticket's resolve, close or withdraw closes the register row; the hourly job
   resolves the ticket when the Admin Manager closes the register row, with a register_closed event
   and the raiser told. Built in src/lib/infraMirror.js, src/jobs/infra.js and the ticket detail's
-  infra field.
+  `infra` field.
+
+### WFH: selected employees, per-employee monthly limit (KP, 22 Oct 2026)
+
+- **Who may work from home:** only employees HR selects. HR enables it per employee and fixes that
+  employee's monthly limit in days (1 to 31) in `hr_ess_wfh_allowances` (migration 29); there is no
+  generic request-limit row for WFH. An `is_enabled` false row switches the type off without losing
+  the agreed number.
+- **How it is requested:** `wfh` is a LEAVE request type, one whole day per request, in the same
+  family, Inbox, chain, decide, withdraw and cancel as CL and LWP. `POST /api/ess/leave-requests
+  { type: 'wfh', day, reason }` is refused with 409 `WFH_NOT_ALLOWED` when HR has not enabled it,
+  and 409 `WFH_LIMIT` when the month's approved and pending WFH days already use the allowance.
+- **The approval:** the SQL decide function re-reads the allowance under a row lock, counts the
+  month's other approved WFH days again, and refuses with `wfh_not_allowed` or `wfh_limit` if the
+  position changed. Otherwise it writes the day as PRESENT through
+  `hr_attendance_apply_override`, with the note `Work from home: <reason>` and the times the day
+  already records kept. No punch is needed. HR's cancel restores the day exactly as it does for
+  leave.
+- **The reading:** `GET /api/ess/me/wfh` gives the month, `enabled`, `monthly_limit_days`, used,
+  pending and remaining; the same numbers appear in the `wfh` row of `GET /api/ess/leave/balances`
+  and in `GET /api/ess/me/capabilities` (`offered: true`, `limit` = the allowance) when enabled.
+- **Follow-up — Scheduler handover (not a change now):** the app marks the day present, but the
+  Scheduler's punch path does not know a person is on WFH. A punch from home would still be judged
+  by the branch geofence. Waiving the geofence for an approved WFH day needs a Scheduler change
+  (its punch controller and the `hr_employees.geofence_exempt` rule); it stays out of scope under
+  ADR-0018, and the full flow and handover note are in
+  [10-wfh-flow.md](10-wfh-flow.md).

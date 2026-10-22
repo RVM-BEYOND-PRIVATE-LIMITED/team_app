@@ -11,7 +11,9 @@ Read these before working on Team RVM, RVM CAD's Android employee app, which is 
 | [04-build-plan.md](04-build-plan.md) | The build (STEP 2): waves, branches, merge order, migrations, the decisions still owed, and risks |
 | [05-deploy.md](05-deploy.md) | Deploying the ESS: where the set-up stands, the server check, the first deploy, switching it off, every setting |
 | [06-backend-phases.md](06-backend-phases.md) | Every piece of backend work left, phase by phase, and every gap-report task mapped to its phase |
+| [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) | The plan and sanctioned Scheduler writes for class marking (decision 8) and the infra register (decision 9) |
+| [10-wfh-flow.md](10-wfh-flow.md) | Work from home end to end: HR's per-employee allowance, the leave request, the approval's present day, the punch caveat and the Scheduler handover |
 | [adr/](adr/README.md) | Architecture decision records |
 | [inputs/](inputs/) | Copies of the brief, the gap report and the developer's prompt |
 
-Last updated 16 Oct 2026.
+Last updated 22 Oct 2026.

@@ -1,6 +1,6 @@
 # Team RVM app: backend handover to the Flutter developer
 
-22 Oct 2026 · Contract `packages/contracts/openapi.yaml` **0.10.0** · ESS live at
+22 Oct 2026 · Contract `packages/contracts/openapi.yaml` **0.11.0** · ESS live at
 `https://team-api.rvmcad.org`
 
 This note is the single handover: the two hosts, the sign-in flow, every endpoint by screen, the
@@ -94,9 +94,10 @@ examples; the app should never invent wording for a code it receives.
 
 | Screen | Calls |
 | --- | --- |
-| New request | `POST /attendance-requests` (`on_duty`, `fix_a_day`, `excuse_late`, `short_leave` with `minutes`), `POST /leave-requests` (`cl`, `lwp`) |
+| New request | `POST /attendance-requests` (`on_duty`, `fix_a_day`, `excuse_late`, `short_leave` with `minutes`), `POST /leave-requests` (`cl`, `lwp`, and `wfh` only when `GET /me/wfh` says enabled) |
 | My requests | `GET /attendance-requests`, `GET /leave-requests`; withdraw with `POST /attendance-requests/{id}/withdraw`, `POST /leave-requests/{id}/withdraw` |
 | Balances | `GET /leave/balances?month=` |
+| Work from home | `GET /me/wfh` — the allowance and this month's used, pending and remaining |
 | Approvals Inbox | `GET /approvals?status=`, `POST /approvals/{family}/{id}/decide`, `POST /approvals/{family}/{id}/archive` |
 | The chain | `GET /approvals/{family}/{id}/chain` |
 
@@ -150,6 +151,7 @@ mirrored to the Admin Manager's register. POSH's queue is the Internal Committee
 | Data requests | `GET /hr/data-requests?status=`, `PATCH /hr/data-requests/{id}` |
 | Mock reports | `GET /hr/mock-location-reports?from=&to=&branch_id=` |
 | Request limits | `GET /hr/request-limits`, `PUT /hr/request-limits/{type}` |
+| WFH allowances | `GET /hr/wfh-allowances?q=`, `PUT /hr/wfh-allowances/{employeeId}` — HR enables WFH per employee and sets the monthly days |
 | Documents review | `GET /hr/employees/{id}/documents`, `POST .../{documentId}/verify`, `POST .../{documentId}/reject`, `GET .../file` |
 | Change requests | `GET /hr/change-requests`, `POST /hr/change-requests/{id}/decide` |
 | Bank details (HR read) | `GET /hr/employees/{id}/bank-details` |

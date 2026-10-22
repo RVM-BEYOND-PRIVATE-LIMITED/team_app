@@ -18,6 +18,7 @@ const devices = require('./routes/devices');
 const { attendanceDayRoute } = require('./routes/attendanceDay');
 const attendanceRequests = require('./routes/attendanceRequests');
 const leaveRequests = require('./routes/leaveRequests');
+const wfh = require('./routes/wfh');
 const approvals = require('./routes/approvals');
 const leaders = require('./routes/leaders');
 const hrRequests = require('./routes/hrRequests');
@@ -198,6 +199,12 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.get('/leave-requests', asEmployee, leaveRequests.listMyLeaveRequests({ store }));
   api.post('/leave-requests/:id/withdraw', asEmployee, leaveRequests.withdrawMyLeaveRequest({ store, now }));
   api.get('/leave/balances', asEmployee, leaveRequests.myLeaveBalances({ store, now }));
+
+  // WFH (KP, 22 Oct): HR enables it per employee with a monthly limit; the employee reads their
+  // own allowance here, and files a day through POST /leave-requests { type: 'wfh' }.
+  api.get('/me/wfh', asEmployee, wfh.myWfh({ store, now }));
+  api.get('/hr/wfh-allowances', asAttendanceHr, wfh.listWfhAllowances({ store }));
+  api.put('/hr/wfh-allowances/:employeeId', asAttendanceHr, wfh.setWfhAllowance({ store, now }));
 
   // D1, H6: the approvals Inbox, the decision, the archive that clears it for one approver, and
   // D4: the chain one request waits on.

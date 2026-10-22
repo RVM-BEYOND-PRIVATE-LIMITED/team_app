@@ -360,15 +360,16 @@ carry the two database changes.
   absent student's remark after the first save; the remark route changes no mark, and an admin
   role may correct the marks too.
 
-**Tests:** the suite is 2,518 in 55 files, the contract at 0.10.0 with 1,218 contract checks
-(Waves 9 and 10 included). Phase 2D's own files are `leaders`, `approvalsChain`, `facultyDay`,
-`classMarking` and `approvals` (the policy and the job); `tests/classMarking.test.js` covers the
+**Tests:** the suite is 2,574 in 56 files, the contract at 0.11.0 with 1,243 contract checks
+(Waves 9 to 11 included). Phase 2D's own files are `leaders`, `approvalsChain`, `facultyDay`,
+`classMarking` and `approvals` (the policy and the job); WFH's is `wfh`; `tests/classMarking.test.js` covers the
 roster for an owner, a covering substitute and an admin, the role, branch, ownership, window,
 roster and lock refusals, the alert resolution, the remark rules and the no-leak reply.
-`npm run test:migrations` applies all twenty-eight migrations and their rollbacks twice.
+`npm run test:migrations` applies all twenty-nine migrations and their rollbacks twice.
 
-**You after:** apply migration 27 (the infra link); 13 to 26 are applied.
-Until 27, the register mirror is skipped and retried, and tickets are unaffected.
+**You after:** apply migrations 27 to 29 (the infra link, the Wall repair and the WFH allowance);
+13 to 26 are applied. Until 27, the register mirror is skipped and retried, and tickets are
+unaffected. Until 29, WFH answers 503 and the rest of the leave flow works.
 
 **Done when:** the CEO sees the organisation in numbers with no name in the reply; a faculty
 member sees today's batches -- including the one they cover -- with what is marked and what is
@@ -406,13 +407,14 @@ These were in the gap report or found in STEP 1. They stay as they are unless KP
 7. **HR's web tools.** Where do HR review change requests and documents, and where do helpdesk agents work on the web? The brief put these in the web HRMS, which now stays unchanged. The options are the app itself, or a small web page served by team_app.
 8. **Faculty marking — decided 22 Oct.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open? **Decided:** yes, to [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — three ESS routes, the Scheduler's six checks enforced server-side, and the sanctioned writes to `student_attendance` (upsert and remark update) and `pending_alerts` (resolve). Built in Phase 2D above.
 9. **Infra register — decided 22 Oct.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? **Decided:** yes, to [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — an `hr_ess_infra_links` table, a summary `infra_tickets` row on raise, and close-sync both ways without a Scheduler change. The sanctioned writes are the `infra_tickets` insert and close. Built in Phase 2B above.
-10. **The Scheduler's own holes and the committed dump.** These are outside this project, and KP's call.
+10. **Work from home — decided 22 Oct.** WFH is for selected employees only: HR enables it per employee and fixes that employee's monthly limit in days (`hr_ess_wfh_allowances`, migration 29), with no generic request-limit row. It is a leave request type; an approval writes the day PRESENT with `Work from home: <reason>` through the Scheduler's own override, keeping the day's times, and needs no punch. The punch path still applies the branch geofence; waiving it for an approved WFH day is a Scheduler change and stays a documented follow-up ([10-wfh-flow.md](10-wfh-flow.md)). Built in Phase 1C above.
+11. **The Scheduler's own holes and the committed dump.** These are outside this project, and KP's call.
 
 Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone reset (yes, the same device rows), an HR Executive who manages people (approves their own team, as a manager), staying signed in (1 hour and 90 days), and desk logins (none allowed).
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 13 to 27; 28 (the Wall's poll-close column repair) is the only one still to apply.**
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 13 to 27; 28 (the Wall's poll-close column repair) and 29 (the WFH allowance) are still to apply.**
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
@@ -444,6 +446,7 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 26 | [`20261111000002_hr_ess_approval_escalations.sql`](../db/migrations/20261111000002_hr_ess_approval_escalations.sql) | [`20261111000002_hr_ess_approval_escalations.sql`](../db/rollbacks/20261111000002_hr_ess_approval_escalations.sql): drops the table | `hr_ess_approval_escalations`: one row per level told -- the family, the request (no foreign key, so the trail outlives it), who it came from and who it went to, the reason and the time; unique on (family, request, person), so a level is escalated once | D4: the chain view still works from the line; the escalation job logs and stops escalating |
 | 27 | [`20261112000001_hr_ess_infra_links.sql`](../db/migrations/20261112000001_hr_ess_infra_links.sql) | [`20261112000001_hr_ess_infra_links.sql`](../db/rollbacks/20261112000001_hr_ess_infra_links.sql): drops the table | `hr_ess_infra_links`: one row per helpdesk ticket (unique) linking it to the Admin Manager's `infra_tickets` summary (unique when set), with `state` `linked` or `skipped`, the skip reason and the last sync time; a linked row must carry the register id and a skipped one must not; cascades with its ticket; an index on the register id | G6: the mirror is skipped and retried by the hourly job; tickets themselves are unaffected |
 | 28 | [`20261112000000_hr_ess_wall_poll_closed_repair.sql`](../db/migrations/20261112000000_hr_ess_wall_poll_closed_repair.sql) | [`20261112000000_hr_ess_wall_poll_closed_repair.sql`](../db/rollbacks/20261112000000_hr_ess_wall_poll_closed_repair.sql): drops the column (guarded, only while the Wall table exists) | A repair for migration 13: the live `hr_ess_wall_posts` was created from an earlier revision and has no `poll_closed_at`, which every Wall read names. Adds the one column, guarded by `to_regclass` so it is safe after a full rollback; nothing else changes | Every Wall endpoint (feed, praise, post) answers 503 `MODULE_NOT_INSTALLED` until it is applied |
+| 29 | [`20261113000001_hr_ess_wfh_allowances.sql`](../db/migrations/20261113000001_hr_ess_wfh_allowances.sql) | [`20261113000001_hr_ess_wfh_allowances.sql`](../db/rollbacks/20261113000001_hr_ess_wfh_allowances.sql): restores the leave decide function to migration 10's version, removes WFH requests, puts the cl/lwp CHECK back and drops the allowance table (guarded) | `hr_ess_wfh_allowances` (KP, 22 Oct): one row per selected employee, `is_enabled`, a monthly limit of 1 to 31 days, HR's note of up to 300 characters, who set it; the leave type CHECK admits `wfh`; the generic `wfh` limit row of migration 6 is removed; and `hr_ess_decide_leave_request` gains the WFH branch (re-reads the allowance under a row lock, counts the month's other approved WFH days, writes the day PRESENT with `Work from home: <reason>` through the Scheduler's override) | WFH is 503 for the allowance routes and the request is refused; every other leave type works. `GET /api/ess/me/capabilities` falls back to WFH off |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 

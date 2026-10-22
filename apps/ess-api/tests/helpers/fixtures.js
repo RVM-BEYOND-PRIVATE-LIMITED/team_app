@@ -260,7 +260,6 @@ function company() {
     requestLimit('short_leave', null, 180),
     requestLimit('leave_cl', 1, null),
     requestLimit('leave_lwp', null, null),
-    requestLimit('wfh', 0, null),
   ];
 
   const tables = {

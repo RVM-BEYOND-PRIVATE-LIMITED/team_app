@@ -14,7 +14,7 @@ const { notifyApprovers } = require('../lib/notify');
  * not offered in this phase.
  */
 
-/** POST /api/ess/leave-requests { type: cl|lwp, day, reason } */
+/** POST /api/ess/leave-requests { type: cl|lwp|wfh, day, reason } */
 function createMyLeaveRequest({ store, now }) {
   return asyncRoute(async (req, res) => {
     const { employee } = req.auth;
@@ -36,18 +36,33 @@ function createMyLeaveRequest({ store, now }) {
       throw new HttpError(409, 'DUPLICATE_REQUEST', MESSAGES.DUPLICATE_REQUEST);
     }
 
-    // The month's counter. For leave the sheet's own days count too, so a request cannot be
-    // filed around a CL or an unpaid day somebody recorded by hand.
-    const limits = await store.getRequestLimits();
-    const type = REQUEST_TYPES.find((t) => t.type === `leave_${body.type}`);
-    const { from, to } = monthBounds(day);
-    const rows = await store.listMyRequestFacts('leave', employee.id, from, to);
-    const leaveDays = await store.listMyLeaveDays(employee.id, from, to);
-    const written = leaveDays.filter((d) => d.leave_type === body.type).length;
-    const { used, pending } = countForMonth(rows, body.type, { written });
-    const allowed = effectiveLimit(type, limits);
-    if (allowed != null && used + pending >= allowed) {
-      throw new HttpError(409, 'LIMIT_REACHED', MESSAGES.LIMIT_REACHED);
+    // WFH (KP, 22 Oct): the employee's own allowance IS the limit. HR enables it per person; the
+    // month's approved and pending WFH days count, whether they came from here or another row.
+    if (body.type === 'wfh') {
+      const allowance = await store.getWfhAllowance(employee.id);
+      if (!allowance || !allowance.is_enabled) {
+        throw new HttpError(409, 'WFH_NOT_ALLOWED', MESSAGES.WFH_NOT_ALLOWED);
+      }
+      const taken = await store.countWfhDays({
+        employeeId: employee.id, month: day.slice(0, 7), statuses: ['approved', 'pending'],
+      });
+      if (taken >= allowance.monthly_limit_days) {
+        throw new HttpError(409, 'WFH_LIMIT', MESSAGES.WFH_LIMIT);
+      }
+    } else {
+      // The month's counter. For leave the sheet's own days count too, so a request cannot be
+      // filed around a CL or an unpaid day somebody recorded by hand.
+      const limits = await store.getRequestLimits();
+      const type = REQUEST_TYPES.find((t) => t.type === `leave_${body.type}`);
+      const { from, to } = monthBounds(day);
+      const rows = await store.listMyRequestFacts('leave', employee.id, from, to);
+      const leaveDays = await store.listMyLeaveDays(employee.id, from, to);
+      const written = leaveDays.filter((d) => d.leave_type === body.type).length;
+      const { used, pending } = countForMonth(rows, body.type, { written });
+      const allowed = effectiveLimit(type, limits);
+      if (allowed != null && used + pending >= allowed) {
+        throw new HttpError(409, 'LIMIT_REACHED', MESSAGES.LIMIT_REACHED);
+      }
     }
 
     const created = await store.createLeaveRequest({ employee_id: employee.id, type: body.type, day, reason });
@@ -99,6 +114,13 @@ function myLeaveBalances({ store, now }) {
     const { from, to } = monthBounds(`${month}-01`);
 
     const limits = await store.getRequestLimits();
+    // WFH's allowance arrives with migration 29. Before it, the other balances still answer.
+    let allowance = null;
+    try {
+      allowance = await store.getWfhAllowance(employee.id);
+    } catch (e) {
+      if (!(e && e.code === 'MODULE_NOT_INSTALLED')) throw e;
+    }
     const attendanceFacts = await store.listMyRequestFacts('attendance', employee.id, from, to);
     const leaveFacts = await store.listMyRequestFacts('leave', employee.id, from, to);
     const days = await store.listMyLeaveDays(employee.id, from, to);
@@ -106,6 +128,8 @@ function myLeaveBalances({ store, now }) {
       leave_cl: days.filter((d) => d.leave_type === 'cl').length,
       leave_lwp: days.filter((d) => d.leave_type === 'lwp').length,
     };
+    const wfhUsed = await store.countWfhDays({ employeeId: employee.id, month, statuses: ['approved'] });
+    const wfhPending = await store.countWfhDays({ employeeId: employee.id, month, statuses: ['pending'] });
 
     const types = REQUEST_TYPES.map((t) => {
       let counts = { used: 0, pending: 0 };
@@ -116,8 +140,17 @@ function myLeaveBalances({ store, now }) {
         counts = minutesForMonth(attendanceFacts, t.type);
       } else if (t.type === 'leave_cl' || t.type === 'leave_lwp') {
         counts = countForMonth(leaveFacts, t.type.slice('leave_'.length), { written: written[t.type] });
+      } else if (t.type === 'wfh') {
+        // WFH's limit is the employee's own allowance, never a generic request-limit row.
+        const enabled = Boolean(allowance && allowance.is_enabled);
+        return {
+          type: 'wfh',
+          offered: enabled,
+          unit: 'count',
+          phase: 1,
+          ...balanceOf(enabled ? allowance.monthly_limit_days : 0, { used: wfhUsed, pending: wfhPending }),
+        };
       }
-      // wfh (not offered) has nothing filed here yet.
       return {
         type: t.type,
         offered: t.offered,

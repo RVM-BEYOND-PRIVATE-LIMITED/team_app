@@ -93,12 +93,12 @@ Not code. It runs alongside the build, and the pilot cannot start without it.
 
 ## Phase 1C: Requests, leave and approvals
 
-The brief's Phase 1, and its core. **Built 19 Oct 2026; waiting for migrations 6 to 10.**
+The brief's Phase 1, and its core. **Built 19 Oct 2026; waiting for migrations 6 to 10. WFH added 22 Oct needs migration 29.**
 
 | Work | Tasks |
 | --- | --- |
 | Request tables with their history; the work mode kept in ESS tables | C1 |
-| On duty, fix a day, excuse a late (work from home is not allowed). A half day from the 3rd-late rule is cleared by excusing one of its lates; one from the 4-hour rule by fixing the day's times | C3 |
+| On duty, fix a day, excuse a late (WFH for selected employees, against HR's own allowance, from 22 Oct). A half day from the 3rd-late rule is cleared by excusing one of its lates; one from the 4-hour rule by fixing the day's times | C3 |
 | CL and leave without pay | C2, C4 |
 | Balances: allowed, used, remaining, pending included, shown on every form; a request over the limit refused in plain words | C5 |
 | The limits KP set (on duty unlimited, fix a day 3, excuse a late 3, CL 1), in a table HR can change | C6 |
@@ -117,6 +117,19 @@ controller's own order. **The two defaults the build had to choose** (both in
 [04-build-plan.md](04-build-plan.md#phase-1c-requests-leave-and-approvals--built-19-oct-2026)):
 the 5th itself is open for raising and deciding (decision 6), and leave is whole days in this
 phase.
+
+**Work from home (custom, KP 22 Oct 2026; built, migration 29).** WFH is offered only to the
+employees HR selects. `hr_ess_wfh_allowances` holds one row per employee (`is_enabled`,
+`monthly_limit_days` 1 to 31, HR's note); the allowance is the limit, never a generic
+`hr_ess_request_limits` row. `wfh` is a leave type: the same requests table, Inbox, chain, decide,
+withdraw and cancel. `PUT /api/ess/hr/wfh-allowances/{employeeId}` enables or disables it (HR, CEO
+and super admins; audited as `wfh.allowance.changed` with the numbers only), `GET
+/api/ess/hr/wfh-allowances?q=` lists who has it, and `GET /api/ess/me/wfh` answers the employee's
+month. `POST /api/ess/leave-requests { type: 'wfh' }` is refused 409 `WFH_NOT_ALLOWED` without an
+enabled row and 409 `WFH_LIMIT` when the month's approved and pending days fill it; the decide
+function re-checks both under a lock and writes the day PRESENT with `Work from home: <reason>`,
+keeping the times already recorded, through `hr_attendance_apply_override`. No punch is needed.
+Full flow, caveat and Scheduler handover: [10-wfh-flow.md](10-wfh-flow.md).
 
 - **You first:**
   - decision 2: does app leave replace the Admin Manager's faculty leave or run alongside it, and does a faculty member's approved app leave also update the faculty leave dates used for batch cover (that writes a Scheduler table)?
@@ -198,7 +211,7 @@ uploads) and [09-data-inventory.md](09-data-inventory.md) (the Play Data safety 
 - **Backend:**
   - the Flutter handover note (base URLs, the sign-in flow, endpoints per screen, error codes) —
     **written**;
-  - the contract complete for Phase 1 — **0.10.0**;
+  - the contract complete for Phase 1 — **0.11.0**;
   - every Phase 1 migration applied — **yes**;
   - the pilot branch's phones reset — **RVM to do** with `POST /hr/devices/reset`;
   - a data inventory for Play's Data safety form — **written**;
@@ -459,7 +472,7 @@ These stay as they are unless KP decides to change the Scheduler separately ([AD
 | I | Update | 1B Signed in and attendance extras | New hr_ess_* tables, phase by phase, from 1B on (ADR-0021) |
 | C1 | Missing | 1C Requests, leave and approvals | Request tables with history; the work mode lives in ESS tables |
 | C2 | Update | 1C Requests, leave and approvals | CL and leave without pay through the ESS |
-| C3 | Missing | 1C Requests, leave and approvals | On duty, fix a day, excuse a late (WFH not allowed; short leave in 2D) |
+| C3 | Missing | 1C Requests, leave and approvals | On duty, fix a day, excuse a late (WFH for selected employees from 22 Oct, against HR's per-employee allowance; short leave in 2D) |
 | C4 | Missing | 1C Requests, leave and approvals | Leave requests |
 | C5 | Missing | 1C Requests, leave and approvals | Balances: allowed, used, remaining, pending included |
 | C6 | Update | 1C Requests, leave and approvals | The limits table KP set, which HR can change |

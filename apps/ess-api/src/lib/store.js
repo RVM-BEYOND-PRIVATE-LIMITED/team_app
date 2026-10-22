@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { HttpError, MESSAGES } = require('./errors');
+const { monthBounds } = require('./time');
 
 /**
  * The ESS's reads and writes on the Scheduler's database, which stays the system of record
@@ -108,6 +109,11 @@ const COLUMNS = Object.freeze({
   mockReportCreated: 'id, reported_at',
   // C6: the numbers HR can change. updated_by_user_id is kept for the record and never sent.
   requestLimit: 'type, limit_count, limit_minutes, updated_at, updated_by_name',
+  // WFH (KP, 22 Oct): HR's per-employee allowance. set_by_user_id is kept for the record and
+  // never sent; the name is what people read.
+  wfhAllowance: 'employee_id, is_enabled, monthly_limit_days, note, set_by_name, created_at, updated_at',
+  // The employee card the allowance list joins to: enough for a name, code, branch and department.
+  wfhEmployee: 'id, full_name, employee_code, branch_id, department_id',
   // C1-C12: a request as the app reads it. day_before and day_written_at stay server-side (HR's
   // cancel reads them inside SQL), and the decided_by and cancelled_by account ids are never sent.
   attendanceRequest: 'id, employee_id, type, status, day, reason, place, fix_in, fix_out, minutes, '
@@ -353,6 +359,8 @@ const LIST_LIMITS = Object.freeze({
   changeRequests: 100,
   hrChangeRequests: 200,
   helpdeskAssignments: 50,
+  // WFH's per-employee allowance list (KP, 22 Oct).
+  wfhAllowances: 200,
 });
 
 /**
@@ -755,6 +763,44 @@ function createSupabaseStore(config, { client } = {}) {
     /** One row per type (its primary key), so the update is at most one row; null for no such type. */
     setRequestLimit: (type, patch) =>
       write('hr_ess_request_limits', (q) => q.update(patch).eq('type', type).select(COLUMNS.requestLimit).maybeSingle()),
+
+    /* ── WFH: HR's per-employee allowance (KP, 22 Oct) ── */
+
+    /** One employee's allowance, or null when HR has not selected them. */
+    getWfhAllowance: (employeeId) =>
+      read('hr_ess_wfh_allowances', (q) => q.select(COLUMNS.wfhAllowance).eq('employee_id', employeeId).maybeSingle()),
+    /**
+     * The allowance list, newest change first, optionally only these employees' (the search's
+     * matches). One more than `limit` is read, so the caller can say the list was cut.
+     */
+    listWfhAllowances: async ({ employeeIds = null, limit = LIST_LIMITS.wfhAllowances + 1 } = {}) => {
+      const ordered = (q) => q.select(COLUMNS.wfhAllowance)
+        .order('updated_at', { ascending: false }).limit(limit);
+      if (employeeIds) {
+        const rows = await readIn('hr_ess_wfh_allowances', COLUMNS.wfhAllowance, 'employee_id', employeeIds, ordered);
+        return rows.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)).slice(0, limit);
+      }
+      return (await read('hr_ess_wfh_allowances', ordered)) || [];
+    },
+    /** One row per employee (its primary key): only the columns sent are written on a conflict. */
+    upsertWfhAllowance: (row) =>
+      write('hr_ess_wfh_allowances', (q) => q.upsert([row], { onConflict: 'employee_id' })
+        .select(COLUMNS.wfhAllowance).single()),
+    /** The employee card the allowance list shows: branch and department ids, never contact data. */
+    listWfhEmployees: (employeeIds) => readIn('hr_employees', COLUMNS.wfhEmployee, 'id', employeeIds),
+    /**
+     * How many WFH days this employee has in `month` (YYYY-MM) with one of `statuses`, optionally
+     * leaving out one request. The allowance is the limit, so this is the only counter WFH needs.
+     */
+    countWfhDays: async ({ employeeId, month, statuses, excludeRequestId = null }) => {
+      const { from, to } = monthBounds(`${month}-01`);
+      const rows = await read('hr_ess_leave_requests', (q) => {
+        const base = q.select('id').eq('employee_id', employeeId).eq('type', 'wfh')
+          .in('status', statuses).gte('day', from).lte('day', to);
+        return excludeRequestId ? base.neq('id', excludeRequestId) : base;
+      });
+      return (rows || []).length;
+    },
 
     /* ── C1, C3: my attendance requests ── */
 
