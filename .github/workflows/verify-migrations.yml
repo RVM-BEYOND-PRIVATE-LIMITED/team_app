@@ -24,7 +24,7 @@ jobs:
           missing=0
 
           table() {
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X HEAD "$base/$1?limit=1" "${auth[@]}")
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$base/$1?limit=1" "${auth[@]}")
             if [ "$code" = "200" ] || [ "$code" = "206" ]; then echo "OK      table $1"
             else echo "MISSING table $1 (HTTP $code)"; missing=$((missing + 1)); fi
           }
