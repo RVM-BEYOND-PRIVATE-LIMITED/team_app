@@ -68,6 +68,9 @@ const SCHEMA = {
   hold_periods: ['student_id', 'hold_start', 'hold_end', 'hold_category', 'hold_remarks', 'applied_by'],
   pending_alerts: ['id', 'batch_id', 'student_id', 'date', 'alert_type', 'is_resolved'],
   students: ['id', 'name', 'is_on_hold', 'hold_applied_at', 'is_suspended', 'is_banned'],
+  // The join marker the Scheduler cross-checks: a roster link alone is not a join
+  // (utils/attendanceEligibility.js:55-89).
+  admissions: ['student_id', 'joined'],
   // 20261020000000_hr_attendance_punch.sql:77-90
   hr_attendance_devices: ['id', 'employee_id', 'token_hash', 'user_agent', 'bound_ip', 'status', 'bound_at', 'last_seen_at',
     'revoked_at', 'revoked_by', 'revoked_by_name', 'revoke_reason'],

@@ -62,6 +62,7 @@ const COLUMNS = Object.freeze({
   batch: 'id, name, faculty_id, start_date, end_date, start_time, end_time, days_of_week, schedule, location_id',
   substitution: 'id, batch_id, original_faculty_id, substitute_faculty_id, start_date, end_date',
   batchStudent: 'batch_id, student_id, joined_at',
+  admissionJoined: 'student_id, joined',
   studentAttendance: 'batch_id, student_id, date',
   holdPeriod: 'student_id, hold_start, hold_end',
   studentHoldFlag: 'id, is_on_hold, hold_applied_at',
@@ -501,6 +502,8 @@ function createSupabaseStore(config, { client } = {}) {
     listSubstitutionsForSubstitute: (facultyId) =>
       list('faculty_substitutions', (q) => q.select(COLUMNS.substitution).eq('substitute_faculty_id', facultyId)),
     listBatchStudents: (batchIds) => readIn('batch_students', COLUMNS.batchStudent, 'batch_id', batchIds),
+    /** H7/H1: a student on a roster is joined only when admissions.joined agrees (utils/attendanceEligibility.js:55-89). */
+    listAdmissionsJoined: (studentIds) => readIn('admissions', COLUMNS.admissionJoined, 'student_id', studentIds),
     listAttendanceForBatchesBetween: (batchIds, from, to) =>
       readIn('student_attendance', COLUMNS.studentAttendance, 'batch_id', batchIds,
         (q) => q.gte('date', from).lte('date', to)),

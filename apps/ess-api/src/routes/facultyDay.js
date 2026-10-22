@@ -57,7 +57,15 @@ function facultyDayRoute({ store, now }) {
     ]);
     const locationName = new Map(locations.map((l) => [l.id, l.name]));
 
-    const joined = links.filter((l) => l.joined_at);
+    const joinedLinks = links.filter((l) => l.joined_at);
+    const joinedIds = [...new Set(joinedLinks.map((l) => l.student_id))];
+    const admissions = joinedIds.length ? await store.listAdmissionsJoined(joinedIds) : [];
+    // A roster link is not a join: admissions.joined must agree, unless the student has no
+    // admissions record at all (legacy/direct adds), exactly as utils/attendanceEligibility.js:55-89.
+    const anyJoined = new Set(admissions.filter((a) => a.joined === true).map((a) => a.student_id));
+    const notJoined = new Set(admissions.filter((a) => a.joined !== true).map((a) => a.student_id));
+    for (const id of anyJoined) notJoined.delete(id);
+    const joined = joinedLinks.filter((l) => !notJoined.has(l.student_id));
     const studentIds = [...new Set(links.map((l) => l.student_id))];
     const [periods, onHoldRows] = studentIds.length
       ? await Promise.all([store.listHoldPeriods(studentIds), store.listStudentsOnHold(studentIds)])

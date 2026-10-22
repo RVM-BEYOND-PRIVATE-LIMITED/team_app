@@ -35,6 +35,22 @@ describe('GET /api/ess/me/faculty-day', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/student_id|student_name|remarks_|phone/);
   });
 
+  it('a roster link without a joined admission is not counted', async () => {
+    const SID = (n) => `9e000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const { app, people } = buildApp({ setup: (w) => {
+      TEACHING(w);
+      w.tables.admissions = [
+        { student_id: SID(1), joined: false },
+        { student_id: SID(2), joined: true },
+        { student_id: SID(4), joined: true },
+      ];
+    } });
+    const res = await request(app).get(DAY).set(bearer(tokens.portal(people.faculty)));
+    expect(res.status).toBe(200);
+    expect(res.body.sessions[0].students).toBe(1);
+    expect(res.body.indicators).toMatchObject({ active_students: 2, total_students: 4 });
+  });
+
   it('a substitution that has ended leaves the batch out', async () => {
     const { app, people } = buildApp({ setup: (w) => {
       TEACHING(w);
