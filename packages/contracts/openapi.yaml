@@ -14369,6 +14369,11 @@ components:
         overdue_minutes:
           type: [integer, 'null']
           description: The working minutes a live ticket is past the deadline it is now breaching; null when on time.
+        infra:
+          oneOf:
+            - $ref: '#/components/schemas/HelpdeskInfraLink'
+            - type: 'null'
+          description: The Admin Manager's register summary for a lab or facility ticket (G6); null for every other category or when the mirror is still skipped.
         created_at:
           type: string
           format: date-time
@@ -14378,6 +14383,20 @@ components:
         mine:
           type: boolean
           description: 'True: the caller raised it.'
+
+    HelpdeskInfraLink:
+      type: object
+      description: The summary row in the Admin Manager's infra register that mirrors a lab or facility ticket (G6).
+      required: [ticket_no, status, closed_on]
+      properties:
+        ticket_no:
+          type: [integer, 'null']
+        status:
+          type: string
+          enum: [open, closed]
+        closed_on:
+          type: [string, 'null']
+          format: date
 
     HelpdeskTicketList:
       type: object

@@ -12,6 +12,7 @@ const { startPushJob } = require('./jobs/push');
 const { startWallJob } = require('./jobs/wall');
 const { startHelpdeskJob } = require('./jobs/helpdesk');
 const { startApprovalsJob } = require('./jobs/approvals');
+const { startInfraJob } = require('./jobs/infra');
 const { startDocumentsJob } = require('./jobs/documents');
 
 let config;
@@ -43,6 +44,8 @@ app.listen(config.port, config.host, () => {
   startHelpdeskJob({ store });
   // The approval chains' escalations (D4): pending past the constant climbs the line, hourly.
   startApprovalsJob({ store });
+  // G6: the Admin Manager's infra register mirror — retries and the register's own closes, hourly.
+  startInfraJob({ store });
   // The weekly missing-documents reminder (KP 1): identity, offer and joining papers, at boot
   // and then weekly.
   startDocumentsJob({ store });

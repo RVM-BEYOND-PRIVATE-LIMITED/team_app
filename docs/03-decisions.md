@@ -28,11 +28,11 @@ Team RVM is its own app. **Nothing in Scheduler_Backend or Scheduler_frontend ch
 | 5 | Location with the screen off | Yes, while punched in. A foreground service with a visible notification sends a ping every 2 minutes. It stops at the first of: punch-out, the end of the shift plus its grace period, or midnight IST. When a ping answers 204, the app re-reads `GET /api/hr/my-attendance` to decide whether to stop. Google Play's location declaration is needed. | Decided | KP, 16 Oct | B4 |
 | 6 | Mocked location | The app refuses the punch on the phone and reports the attempt to the ESS for HR (the Scheduler's punch API can't take a mock flag without a change). Not yet confirmed: what happens to a mocked ping (the proposal is to report it to HR the same way). | Decided (punch); Open (pings) | KP, 16 Oct | B14 |
 | 7 | Offline punching | Not allowed in the first version ("Punching needs a connection") | Default | Brief | B15 |
-| 8 | Posting on the Wall | Everyone can post, comment, react, praise and run polls. Only HR, the CEO and super admins post announcements. HR can hide anything, with a reason. | Decided | KP, 16 Oct | F1–F8 |
+| 8 | Posting on the Wall | Everyone can post, comment, react, praise and run polls. Only HR, the CEO and super admins post announcements. HR can hide anything, with a reason. | Decided | KP, 16 Oct | F1â€“F8 |
 | 9 | Colleague contact details | Work email is visible to everyone. A phone number is visible only to HR and to the managers above that person on the HR record, so a manager sees their reports' phones. KP to confirm whether an employee also sees their own managers' phones. | Decided (KP to confirm one point) | KP, 16 Oct | E2, E8 |
 | 10 | Pay in the app | Nothing for now | Default | Brief | E1 (never return pay) |
 | 11 | Moving phones from the browser to the app | HR resets the registered phones in bulk, branch by branch, at go-live. Only a one-at-a-time reset exists today, so the ESS adds an HR action that writes the same device rows the Scheduler's own reset writes (KP to confirm). A reset browser can't punch while it keeps its old cookie. | Decided | KP, 16 Oct | B8 |
-| 12 | Build stack | Flutter, in team_app (not flutterapps) | Decided | KP, 16 Oct | — |
+| 12 | Build stack | Flutter, in team_app (not flutterapps) | Decided | KP, 16 Oct | â€” |
 | 13 | Distribution | Google Play, from an organisation account, with closed testing for the pilot. Not yet confirmed, but Phase 0 starts the account now because the D-U-N-S number takes time. | Default | Brief | K6 |
 | 14 | Overtime | None, anywhere. The brief advises asking counsel first, because the Code on Wages pays overtime at twice the normal rate. | Decided | KP, 15 Oct | B10 |
 | 15 | First sign-in | Unchanged: HR's first-time password, then the employee chooses their own. The one-time-code route also stays. | Decided | KP, 15 Oct | A2 |
@@ -107,31 +107,49 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 - **Short leave** (C3) is filed in minutes (1 to 480 a day; **180 a month** seeded in `hr_ess_request_limits`, so HR can change it) and is approved by excusing the late it covers, exactly as an excuse-late is - the Scheduler's own recompute does not know the type.
 - **Still open:** decision 3 (do planned early-leaving minutes protect a day from the 4-hour half-day rule?). Decision 8 is answered below.
 
-## 19 Oct 2026 - H1 class marking (KP)
+## 22 Oct 2026 - Decisions 8 and 9 (KP)
 
-KP approved the plan ([07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md)) and the two
-sanctioned Scheduler writes it needs; no Scheduler code or schema changes, and no migration.
+KP approved the plan (07-plan-decisions-8-and-9.md) and the Scheduler writes it needs. No Scheduler
+code or schema changes; one ESS migration (27) for the G6 link table.
 
-- **The write:** `student_attendance`, one row per `(batch_id, student_id, date)`, upserted with
-  `student_id, batch_id, date, is_present, absent_reason, follow_up_comment, remarks_updated_by,
-  remarks_updated_at`, and the absent remark updated on that row; never a delete.
-- **The alert:** `pending_alerts` of type `absent_remarks_missing` is resolved by writing only
-  `is_resolved, resolved_at, resolved_by` — when a student is marked present, or when the reason
-  is filled. This is what the Scheduler's own marking does.
-- **Who may mark:** teaching roles `faculty` and `hod`; the Scheduler's admin roles `admin`,
-  `admin_manager`, `hoo`, `accounts_admin`, `ceo` and `super_admin`. `hr`, `hr_executive`,
-  `hod_placement` and attendance sessions are refused.
-- **The rules:** a teaching caller must own the batch (`batches.faculty_id`) or cover it through
-  `faculty_substitutions`; an admin caller marks only their own branch (mapped by branch name from
-  `hr_branches` to `locations`), while the CEO and super admins are global. The day must be a real
-  `YYYY-MM-DD` from the batch's start date to `min(batch.end_date, today IST)`. A student counts
-  only with `batch_students.joined_at` set, `admissions.joined` true unless the student has no
-  admissions row at all, and not on hold on the day. A teaching role's day locks after the first
-  save (409 `CLASS_ALREADY_MARKED`); admin roles may correct it. Remarks are for absent students
-  only, 3 to 500 characters, with an optional follow-up of up to 1,000.
-- **Built in Phase 2D:** `GET /api/ess/me/batches/{id}/roster?date=`,
-  `POST /api/ess/me/batches/{id}/attendance` and
-  `PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks`; audit entries
-  `class.attendance.marked` (counts only) and `class.remark.changed` (before/after reason). The
-  roster returns a student's name, admission number and mark only — never a phone, password
-  hash, fee or personal detail.
+### H1: class marking (decision 8)
+
+- **The write:** `student_attendance`, one row per (batch_id, student_id, date), upserted with
+  student_id, batch_id, date, is_present, absent_reason, follow_up_comment, remarks_updated_by and
+  remarks_updated_at, and the absent remark updated on that row; never a delete.
+- **The alert:** `pending_alerts` of type absent_remarks_missing is resolved by writing only
+  is_resolved, resolved_at and resolved_by, when a student is marked present or the reason is filled.
+  This is what the Scheduler's own marking does.
+- **Who may mark:** teaching roles faculty and hod; the Scheduler's admin roles admin, admin_manager,
+  hoo, accounts_admin, ceo and super_admin. hr, hr_executive, hod_placement and attendance sessions
+  are refused.
+- **The rules:** a teaching caller must own the batch (batches.faculty_id) or cover it through
+  faculty_substitutions; an admin caller marks only their own branch (mapped by branch name from
+  hr_branches to locations), while the CEO and super admins are global. The day must be a real
+  YYYY-MM-DD from the batch's start date to min(batch.end_date, today IST). A student counts only
+  with batch_students.joined_at set, admissions.joined true unless the student has no admissions row
+  at all, and not on hold on the day. A teaching role's day locks after the first save (409
+  CLASS_ALREADY_MARKED); admin roles may correct it. Remarks are for absent students only, 3 to 500
+  characters, with an optional follow-up of up to 1,000.
+- **Built in Phase 2D:** GET /api/ess/me/batches/{id}/roster?date=,
+  POST /api/ess/me/batches/{id}/attendance and
+  PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks; audit entries class.attendance.marked
+  (counts only) and class.remark.changed (before/after reason). The roster returns a student's name,
+  admission number and mark only - never a phone, password hash, fee or personal detail.
+
+### G6: the infra register (decision 9)
+
+- **The write:** `infra_tickets` insert (one summary row: location_id, raised_on, audit_type,
+  issue, owner, deadline, raised_by) and update (status, closed_on only); never a delete.
+- **Which tickets:** it_lab maps to audit type A and facility to D. Only those two categories are
+  mirrored; POSH, grievance, HR documents and payroll never are.
+- **The link:** `hr_ess_infra_links` (migration 27), one row per ticket, state linked or skipped
+  with the reason; a skipped link is retried by the hourly job, and a linked register row is unique.
+- **Branch mapping:** hr_branches.name to locations.name. An unmapped branch skips the mirror and
+  never fails the raise.
+- **Anonymity:** an anonymous ticket is mirrored with raised_by and owner null; the register sees the
+  summary, never the person.
+- **Close sync:** the ticket's resolve, close or withdraw closes the register row; the hourly job
+  resolves the ticket when the Admin Manager closes the register row, with a register_closed event
+  and the raiser told. Built in src/lib/infraMirror.js, src/jobs/infra.js and the ticket detail's
+  infra field.

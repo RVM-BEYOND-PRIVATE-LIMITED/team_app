@@ -244,6 +244,15 @@ const REFUSALS = [
     INSERT INTO public.hr_ess_helpdesk_messages (ticket_id, kind) SELECT id, 'event' FROM public.hr_ess_helpdesk_tickets WHERE created_by = e`),
   refusal('a helpdesk subject of two characters', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
     VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'No', 'Six machines in Lab 2 stay on the boot screen.', now(), now())`),
+  // G6: the infra link's own shape (db/migrations/20261112000001_hr_ess_infra_links.sql).
+  refusal('a skipped infra link that carries a register id', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', now(), now());
+    INSERT INTO public.hr_ess_infra_links (ticket_id, state, infra_ticket_id)
+    SELECT id, 'skipped', gen_random_uuid() FROM public.hr_ess_helpdesk_tickets WHERE created_by = e`),
+  refusal('a linked infra link with no register id', `INSERT INTO public.hr_ess_helpdesk_tickets (created_by, category_id, priority, subject, body, first_response_due_at, resolution_due_at)
+    VALUES (e, (SELECT id FROM public.hr_ess_helpdesk_categories WHERE slug = 'it_lab'), 'medium', 'The lab PCs will not start.', 'Six machines in Lab 2 stay on the boot screen.', now(), now());
+    INSERT INTO public.hr_ess_infra_links (ticket_id, state)
+    SELECT id, 'linked' FROM public.hr_ess_helpdesk_tickets WHERE created_by = e`),
   // Phase 2C: the Documents', change requests' and bank details' own tables and rules
   // (db/migrations/20261110000001-3).
   refusal('a document of an unknown type', "INSERT INTO public.hr_ess_documents (employee_id, doc_type, file_name, storage_path, content_type, size_bytes) VALUES (e, 'passport', 'ID card.pdf', 'documents/' || e || '/id.pdf', 'application/pdf', 1000)", 'foreign_key_violation'),

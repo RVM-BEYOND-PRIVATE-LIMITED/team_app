@@ -109,7 +109,7 @@ The workflow itself also reads `HOST`, `USER` and `SSH_PRIVATE_KEY` (the server 
 
 The deploy never runs a migration ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, after review. Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED` and nothing else changes, so the code can deploy first.
 
-Twenty-six in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four, Phase 2B's two, Phase 2C's six and Phase 2D's two. KP applied 17 to 26 on 19 Oct 2026; **13 to 16 (the Wall) are still to be applied**. Re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
+Twenty-seven in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four, Phase 2B's two, Phase 2C's six, Phase 2D's two and G6's link table. KP applied 17 to 26 on 19 and 22 Oct 2026; **13 to 16 (the Wall) and 27 (the infra link) are still to be applied**. Re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
 
 | # | Migration | Rollback |
 | --- | --- | --- |
@@ -139,6 +139,7 @@ Twenty-six in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four, 
 | 24 | `db/migrations/20261110000006_hr_ess_notification_documents.sql` | `db/rollbacks/20261110000006_hr_ess_notification_documents.sql` |
 | 25 | `db/migrations/20261111000001_hr_ess_short_leave.sql` | `db/rollbacks/20261111000001_hr_ess_short_leave.sql` |
 | 26 | `db/migrations/20261111000002_hr_ess_approval_escalations.sql` | `db/rollbacks/20261111000002_hr_ess_approval_escalations.sql` |
+| 27 | `db/migrations/20261112000001_hr_ess_infra_links.sql` | `db/rollbacks/20261112000001_hr_ess_infra_links.sql` |
 
 **Applying them (KP):**
 1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all twenty-four against a throwaway Postgres and must end "Every migration check passed."

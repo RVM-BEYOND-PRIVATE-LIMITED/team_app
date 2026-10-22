@@ -154,6 +154,11 @@ const SCHEMA = {
   // 20261110000004_hr_ess_helpdesk_assignment.sql (Phase 2C, KP 5)
   hr_ess_helpdesk_assignments: ['id', 'ticket_id', 'from_employee_id', 'to_employee_id', 'assigned_by_user_id',
     'assigned_by_name', 'note', 'created_at'],
+  // 20261112000001_hr_ess_infra_links.sql (Phase 2D, G6)
+  hr_ess_infra_links: ['id', 'ticket_id', 'infra_ticket_id', 'state', 'reason', 'last_synced_at', 'created_at'],
+  // The Scheduler's Admin Manager register (20260804000003:113-130), the mirror's target.
+  infra_tickets: ['id', 'ticket_no', 'location_id', 'raised_on', 'audit_type', 'issue', 'owner', 'deadline',
+    'status', 'closed_on', 'escalated', 'escalated_at', 'raised_by', 'created_at'],
   // 20261110000001_hr_ess_documents.sql (Phase 2C, KP 1, KP 2)
   hr_ess_document_types: ['slug', 'name', 'is_mandatory', 'sort', 'created_at'],
   hr_ess_documents: ['id', 'employee_id', 'doc_type', 'file_name', 'storage_path', 'content_type', 'size_bytes',
@@ -233,6 +238,11 @@ const UNIQUE = {
   // H1: one mark per student per batch per day; the Scheduler's own key, which the upsert uses.
   student_attendance: [
     { name: 'student_attendance_batch_id_student_id_date_key', columns: ['batch_id', 'student_id', 'date'] },
+  ],
+  // G6: one link per helpdesk ticket and one per register row (both unique in migration 27).
+  hr_ess_infra_links: [
+    { name: 'hr_ess_infra_links_ticket_id_key', columns: ['ticket_id'] },
+    { name: 'hr_ess_infra_links_infra_ticket_id_key', columns: ['infra_ticket_id'] },
   ],
 };
 
@@ -457,6 +467,9 @@ const DEFAULTS = {
   hr_ess_change_requests: (at) => ({ status: 'open', created_at: at, updated_at: at }),
   hr_ess_bank_details: (at) => ({ branch_name: null, upi_id: null, created_at: at, updated_at: at }),
   hr_ess_helpdesk_assignments: (at) => ({ note: null, created_at: at }),
+  // G6 (20261112000001) and the Scheduler's register.
+  hr_ess_infra_links: (at) => ({ created_at: at }),
+  infra_tickets: (at) => ({ status: 'open', escalated: false, created_at: at }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));

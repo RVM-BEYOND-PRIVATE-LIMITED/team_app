@@ -249,18 +249,22 @@ describe('the Wave 2 reads and writes', () => {
     expect(db.tables.hr_attendance_devices.find((d) => d.id === '70000000-0000-4000-8000-000000000003').revoke_reason).toBe('Phone lost');
   });
 
-  it('write nothing to a Scheduler table except the five sanctioned methods', () => {
+  it('write nothing to a Scheduler table except the six sanctioned writes', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'store.js'), 'utf8');
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const written = [...code.matchAll(/write\('([a-z_]+)'/g)].map((m) => m[1]);
-    // The five Scheduler writes, each one named method and nothing else: HR's phone reset
+    // The six Scheduler writes, each one named method and nothing else: HR's phone reset
     // (revokeActiveDevices, the Scheduler's own update), the shift snapshot (setDaySnapshot,
     // the copy the Scheduler's ensureSnapshot makes), the employee's own photo pointer
-    // (setEmployeePhoto, the same columns the Scheduler's setPhoto writes), and H1's class
-    // marking (saveClassAttendance and updateClassRemark) with its alert resolution
-    // (resolveAbsentRemarkAlerts). The day itself is never written from here: the SQL functions
-    // go through hr_attendance_apply_override.
-    const allowed = new Set(['hr_attendance_devices', 'hr_staff_attendance', 'hr_employees', 'student_attendance', 'pending_alerts']);
+    // (setEmployeePhoto, the same columns the Scheduler's setPhoto writes), H1's class marking
+    // (saveClassAttendance and updateClassRemark) with its alert resolution
+    // (resolveAbsentRemarkAlerts), and G6's register row (createInfraTicket) and close
+    // (closeInfraTicket). The day itself is never written from here: the SQL functions go
+    // through hr_attendance_apply_override.
+    const allowed = new Set([
+      'hr_attendance_devices', 'hr_staff_attendance', 'hr_employees',
+      'student_attendance', 'pending_alerts', 'infra_tickets',
+    ]);
     expect(written.length).toBeGreaterThan(0);
     for (const table of written) {
       if (!allowed.has(table)) expect(table).toMatch(/^hr_ess_/);
@@ -270,6 +274,7 @@ describe('the Wave 2 reads and writes', () => {
     expect(written.filter((t) => t === 'hr_employees')).toHaveLength(1);
     expect(written.filter((t) => t === 'student_attendance')).toHaveLength(2);
     expect(written.filter((t) => t === 'pending_alerts')).toHaveLength(1);
+    expect(written.filter((t) => t === 'infra_tickets')).toHaveLength(2);
   });
 
   it('resolve a data request only while it is open', async () => {

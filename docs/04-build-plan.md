@@ -262,8 +262,11 @@ below). Everything is in `apps/ess-api` and `db/migrations/20261109000001` and `
 - **Queue membership is exact** — a role no category names (the CEO's, most staff's) is answered
   an empty queue, not a refusal, and confidential categories are hidden from every list but their
   team's.
-- **A claim is the only way a ticket gets an assignee**; assign and reassign are not built
-  (decision 7 open), and G6's infra-register mirror is not built (decision 9 open).
+- **A claim is the only way a ticket gets an assignee unless the team assigns it**: assign and
+  reassign came with Phase 2C (KP, 19 Oct), and the infra-register mirror came on 22 Oct (G6,
+  decision 9): `it_lab` -> audit type A and `facility` -> D get one summary row in the Admin
+  Manager's `infra_tickets`, linked through `hr_ess_infra_links` (migration 27), with anonymous
+  tickets carrying no identity and closing syncing both ways.
 - **The SLA targets are the build's defaults** (IT and facility 8 and 48 working hours; HR
   documents and payroll 24 and 72; grievance 12 and 48; POSH 12 and 72), for KP to confirm.
 - **The working-hours calendar is a policy constant** (`src/policy/helpdesk.js`) plus the
@@ -357,16 +360,16 @@ carry the two database changes.
   absent student's remark after the first save; the remark route changes no mark, and an admin
   role may correct the marks too.
 
-**Tests:** the suite is 2,509 in 54 files, the contract at 0.10.0 with 1,218 contract checks
+**Tests:** the suite is 2,518 in 55 files, the contract at 0.10.0 with 1,218 contract checks
 (Waves 9 and 10 included). Phase 2D's own files are `leaders`, `approvalsChain`, `facultyDay`,
 `classMarking` and `approvals` (the policy and the job); `tests/classMarking.test.js` covers the
 roster for an owner, a covering substitute and an admin, the role, branch, ownership, window,
 roster and lock refusals, the alert resolution, the remark rules and the no-leak reply.
-`npm run test:migrations` applies all twenty-six migrations and their rollbacks twice.
+`npm run test:migrations` applies all twenty-seven migrations and their rollbacks twice.
 
-**You after:** apply migrations 13 to 16 (the Wall's) -- the only set still outstanding; 25-26 are
-applied. Until 13-16 are applied every Wall endpoint but its settings answers 503
-`MODULE_NOT_INSTALLED`.
+**You after:** apply migrations 13 to 16 (the Wall's) and 27 (the infra link); 25-26 are applied.
+Until 13-16 are applied every Wall endpoint but its settings answers 503 `MODULE_NOT_INSTALLED`;
+until 27, the register mirror is skipped and retried, and tickets are unaffected.
 
 **Done when:** the CEO sees the organisation in numbers with no name in the reply; a faculty
 member sees today's batches -- including the one they cover -- with what is marked and what is
@@ -402,15 +405,15 @@ These were in the gap report or found in STEP 1. They stay as they are unless KP
 5. **Colleague contacts.** Does an employee also see their own managers' phone numbers?
 6. **Cut-off.** Is the 5th itself open? Can a pending request for last month be decided after the cut-off? The 1C build's default, while this is open: the 5th itself is open, for raising and for deciding; last month closes on the 6th. One function (`lastMonthOpen`, `src/policy/requests.js`) and the matching `extract(day …) > 5` in migration 10 hold it; change both together.
 7. **HR's web tools.** Where do HR review change requests and documents, and where do helpdesk agents work on the web? The brief put these in the web HRMS, which now stays unchanged. The options are the app itself, or a small web page served by team_app.
-8. **Faculty marking — decided 19 Oct.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open? **Decided:** yes, to [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — three ESS routes, the Scheduler's six checks enforced server-side, and the sanctioned writes to `student_attendance` (upsert and remark update) and `pending_alerts` (resolve). Built in Phase 2D above.
-9. **Infra register.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? That writes a Scheduler table. **Plan ready:** [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — an `hr_ess_infra_links` table, a summary `infra_tickets` row on raise, and close-sync both ways without a Scheduler change. Awaits KP's sanction.
+8. **Faculty marking — decided 22 Oct.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open? **Decided:** yes, to [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — three ESS routes, the Scheduler's six checks enforced server-side, and the sanctioned writes to `student_attendance` (upsert and remark update) and `pending_alerts` (resolve). Built in Phase 2D above.
+9. **Infra register — decided 22 Oct.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? **Decided:** yes, to [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — an `hr_ess_infra_links` table, a summary `infra_tickets` row on raise, and close-sync both ways without a Scheduler change. The sanctioned writes are the `infra_tickets` insert and close. Built in Phase 2B above.
 10. **The Scheduler's own holes and the committed dump.** These are outside this project, and KP's call.
 
 Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone reset (yes, the same device rows), an HR Executive who manages people (approves their own team, as a manager), staying signed in (1 hour and 90 days), and desk logins (none allowed).
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 17 to 26; 13 to 16 (the Wall's) are still to be applied.**
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 17 to 26; 13 to 16 (the Wall's) and 27 (G6's link table) are still to be applied.**
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
@@ -440,6 +443,7 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 24 | [`20261110000006_hr_ess_notification_documents.sql`](../db/migrations/20261110000006_hr_ess_notification_documents.sql) | [`20261110000006_hr_ess_notification_documents.sql`](../db/rollbacks/20261110000006_hr_ess_notification_documents.sql): puts both CHECKs back to the ten categories before it (only while the tables are still there) | Two CHECKs only, nothing else: `hr_ess_notifications.category` and `hr_ess_notification_settings.disabled_categories` take `documents` as well, as migration 18 did for `helpdesk` | E4: the weekly missing-documents reminder is logged as a failed write; a person cannot turn it off |
 | 25 | [`20261111000001_hr_ess_short_leave.sql`](../db/migrations/20261111000001_hr_ess_short_leave.sql) | [`20261111000001_hr_ess_short_leave.sql`](../db/rollbacks/20261111000001_hr_ess_short_leave.sql): puts the three-type CHECKs back, drops the minutes column, and re-creates the decide and cancel functions as migration 10 first wrote them (only while the table is still there) | The ESS's own request table, additively: the type CHECK admits `short_leave`; a `minutes` column (whole minutes 1 to 480) with the shape CHECK extended so only a short leave carries minutes; the decide and cancel functions re-created, the short-leave branch writing the day exactly as an excuse-late does | C3: a short-leave request is refused (503 `MODULE_NOT_INSTALLED`); the other types work |
 | 26 | [`20261111000002_hr_ess_approval_escalations.sql`](../db/migrations/20261111000002_hr_ess_approval_escalations.sql) | [`20261111000002_hr_ess_approval_escalations.sql`](../db/rollbacks/20261111000002_hr_ess_approval_escalations.sql): drops the table | `hr_ess_approval_escalations`: one row per level told -- the family, the request (no foreign key, so the trail outlives it), who it came from and who it went to, the reason and the time; unique on (family, request, person), so a level is escalated once | D4: the chain view still works from the line; the escalation job logs and stops escalating |
+| 27 | [`20261112000001_hr_ess_infra_links.sql`](../db/migrations/20261112000001_hr_ess_infra_links.sql) | [`20261112000001_hr_ess_infra_links.sql`](../db/rollbacks/20261112000001_hr_ess_infra_links.sql): drops the table | `hr_ess_infra_links`: one row per helpdesk ticket (unique) linking it to the Admin Manager's `infra_tickets` summary (unique when set), with `state` `linked` or `skipped`, the skip reason and the last sync time; a linked row must carry the register id and a skipped one must not; cascades with its ticket; an index on the register id | G6: the mirror is skipped and retried by the hourly job; tickets themselves are unaffected |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 

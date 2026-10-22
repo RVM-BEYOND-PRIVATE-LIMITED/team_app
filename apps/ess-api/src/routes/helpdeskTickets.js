@@ -7,6 +7,7 @@ const {
   ticketView, messageView, eventRow, commentRow, overdueMinutesOf, activeCategories,
 } = require('../lib/helpdeskKit');
 const { recordBefore } = require('../lib/audit');
+const { mirrorRaised, closeRegisterForTicket } = require('../lib/infraMirror');
 const {
   STATUSES, ACTIVE_STATUSES, AGENT_TRANSITIONS, RAISER_CLOSES_FROM, REOPEN_DAYS,
   RATING_MIN, RATING_MAX, canRead, canAct, seesRaiser, dueTimes, holidaysFor, isQueueRole,
@@ -98,6 +99,9 @@ function createTicket({ store, now }) {
     });
     await store.createHelpdeskMessage(eventRow(created.id, 'opened', {}, at, employee.id));
     await notifyRaised({ store, ticket: created, category, raiserName: anonymous ? null : employee.full_name });
+    // G6 (2D): a lab or facility ticket gets one summary row in the Admin Manager's register.
+    // Best effort: the raise is the record and never fails because the register cannot be written.
+    await mirrorRaised({ store, ticket: created, category, raiser: employee, raiserUserId: req.auth.userId ?? null, at });
     res.status(201).json({
       ticket: await ticketView(store, created, {
         category, raiser: employee, assignee: null, me: employee.id, seesName: true,
@@ -150,11 +154,17 @@ function getTicket({ store, now }) {
     const messages = await store.listHelpdeskMessages(row.id, LIST_LIMITS.helpdeskMessages);
     const authors = await store.listEmployeeCards([...new Set(messages.map((m) => m.employee_id).filter(Boolean))]);
     const byId = new Map(authors.map((p) => [p.id, p]));
+    // G6: the register's summary row, when this category is mirrored and the link was made.
+    const link = await store.getInfraLinkForTicket(row.id);
+    const infraRow = link && link.state === 'linked' ? await store.getInfraTicket(link.infra_ticket_id) : null;
     res.json({
       ticket: await ticketView(store, row, {
         category, raiser, assignee, me: req.auth.employee.id,
         seesName: !row.anonymous || isRaiser || seesRaiser(req.auth.role, row),
         overdueMinutes: overdueMinutesOf(row, nowDate, holidays),
+        infra: infraRow
+          ? { ticket_no: infraRow.ticket_no ?? null, status: infraRow.status, closed_on: infraRow.closed_on ?? null }
+          : null,
       }),
       messages: messages.map((m) => messageView(m, { author: byId.get(m.employee_id) || null })),
     });
@@ -194,6 +204,7 @@ function withdrawTicket({ store, now }) {
     const at = now().toISOString();
     const updated = await store.updateHelpdeskTicket(row.id, { status: 'withdrawn', updated_at: at });
     await store.createHelpdeskMessage(eventRow(row.id, 'withdrawn', { from: row.status }, at, employee.id));
+    await closeRegisterForTicket({ store, ticketId: row.id, at });
     const people = await peopleForTicket(store, updated);
     res.json({
       ticket: await ticketView(store, updated, {
@@ -278,6 +289,7 @@ function closeTicket({ store, now }) {
     await store.createHelpdeskMessage(eventRow(row.id, 'closed', {
       from: row.status, reason, rating,
     }, at, employee.id));
+    await closeRegisterForTicket({ store, ticketId: row.id, at });
     const people = await peopleForTicket(store, updated);
     res.json({
       ticket: await ticketView(store, updated, {
@@ -343,6 +355,7 @@ function moveTicketStatus({ store, now }) {
     if (to === 'resolved') patch.resolved_at = at;
     const updated = await store.updateHelpdeskTicket(row.id, patch);
     await store.createHelpdeskMessage(eventRow(row.id, 'status_changed', { from: row.status, to }, at, employee.id));
+    if (to === 'resolved') await closeRegisterForTicket({ store, ticketId: row.id, at });
     await notifyStatus({
       store, ticket: updated, raiserId: row.created_by, status: to, byName: employee.full_name,
     });

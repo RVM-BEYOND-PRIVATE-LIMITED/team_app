@@ -194,6 +194,10 @@ const COLUMNS = Object.freeze({
   helpdeskMessage: 'id, ticket_id, employee_id, kind, body, event, details, created_at',
   // Phase 2C. An assignment's history row: who had it before, who it went to, who pointed it.
   helpdeskAssignment: 'id, ticket_id, from_employee_id, to_employee_id, assigned_by_name, note, created_at',
+  // G6 (2D): the mirror to the Admin Manager's register. infra_tickets is the Scheduler's table;
+  // only the summary columns the mirror reads or sets are ever named.
+  infraTicket: 'id, ticket_no, location_id, raised_on, audit_type, issue, owner, deadline, status, closed_on, raised_by, created_at',
+  infraLink: 'id, ticket_id, infra_ticket_id, state, reason, last_synced_at, created_at',
   // My Documents: a type as the raise form reads it, and a document as every read shows it.
   // verified_by_user_id is kept for the record and never sent; the name is what people read.
   documentType: 'slug, name, is_mandatory, sort, created_at',
@@ -1378,6 +1382,37 @@ function createSupabaseStore(config, { client } = {}) {
         users.map((u) => u.id));
       return links.map((l) => l.id);
     },
+
+    /* ── G6 (2D): the Admin Manager's infra register mirror ── */
+
+    /**
+     * One summary row in the Scheduler's infra_tickets (KP, 22 Oct; sanctioned write). The register
+     * has no thread and no in-progress state: the helpdesk stays the record.
+     */
+    createInfraTicket: (row) =>
+      write('infra_tickets', (q) => q.insert([row]).select(COLUMNS.infraTicket).single()),
+    getInfraTicket: (id) => read('infra_tickets', (q) => q.select(COLUMNS.infraTicket).eq('id', id).maybeSingle()),
+    listInfraTicketsByIds: (ids) => readIn('infra_tickets', COLUMNS.infraTicket, 'id', ids),
+    /** The only update: closing the register row (the Scheduler's closeInfraTicket does the same). */
+    closeInfraTicket: (id, closedOn) =>
+      write('infra_tickets', (q) => q.update({ status: 'closed', closed_on: closedOn }).eq('id', id)
+        .select(COLUMNS.infraTicket).maybeSingle()),
+
+    /** The ESS side of the link; one row per helpdesk ticket (unique). */
+    createInfraLink: (row) =>
+      write('hr_ess_infra_links', (q) => q.insert([row]).select(COLUMNS.infraLink).single()),
+    updateInfraLink: (id, patch) =>
+      write('hr_ess_infra_links', (q) => q.update(patch).eq('id', id).select(COLUMNS.infraLink).maybeSingle()),
+    getInfraLinkForTicket: (ticketId) =>
+      read('hr_ess_infra_links', (q) => q.select(COLUMNS.infraLink).eq('ticket_id', ticketId).maybeSingle()),
+    /** The job's retry list: links whose mirror could not be made at raise. */
+    listSkippedInfraLinks: (limit) =>
+      list('hr_ess_infra_links', (q) => q.select(COLUMNS.infraLink).eq('state', 'skipped')
+        .order('created_at').limit(limit)),
+    /** The job's close-sync read: every linked ticket, oldest first. */
+    listLinkedInfraLinks: (limit) =>
+      list('hr_ess_infra_links', (q) => q.select(COLUMNS.infraLink).eq('state', 'linked')
+        .order('created_at').limit(limit)),
 
     /* ── the audit trail ── */
 

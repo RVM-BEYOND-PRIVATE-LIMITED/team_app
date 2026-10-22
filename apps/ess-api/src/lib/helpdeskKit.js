@@ -44,7 +44,7 @@ function categoryView(c) {
  * without the client re-deriving working hours.
  */
 async function ticketView(store, row, {
-  category, raiser = null, assignee = null, me = null, seesName = true, overdueMinutes = null,
+  category, raiser = null, assignee = null, me = null, seesName = true, overdueMinutes = null, infra = null,
 }) {
   return {
     id: row.id,
@@ -68,6 +68,7 @@ async function ticketView(store, row, {
     reopened_at: row.reopened_at ?? null,
     escalation_level: row.escalation_level ?? 0,
     overdue_minutes: overdueMinutes,
+    infra,
     created_at: row.created_at,
     updated_at: row.updated_at,
     mine: Boolean(me && row.created_by === me),
