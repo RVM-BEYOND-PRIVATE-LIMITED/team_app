@@ -367,9 +367,8 @@ roster for an owner, a covering substitute and an admin, the role, branch, owner
 roster and lock refusals, the alert resolution, the remark rules and the no-leak reply.
 `npm run test:migrations` applies all twenty-seven migrations and their rollbacks twice.
 
-**You after:** apply migrations 13 to 16 (the Wall's) and 27 (the infra link); 25-26 are applied.
-Until 13-16 are applied every Wall endpoint but its settings answers 503 `MODULE_NOT_INSTALLED`;
-until 27, the register mirror is skipped and retried, and tickets are unaffected.
+**You after:** apply migration 27 (the infra link); 13 to 26 are applied.
+Until 27, the register mirror is skipped and retried, and tickets are unaffected.
 
 **Done when:** the CEO sees the organisation in numbers with no name in the reply; a faculty
 member sees today's batches -- including the one they cover -- with what is marked and what is
@@ -413,7 +412,7 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 17 to 26; 13 to 16 (the Wall's) and 27 (G6's link table) are still to be applied.**
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 13 to 26; 27 (G6's link table) is the only one still to apply.**
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |

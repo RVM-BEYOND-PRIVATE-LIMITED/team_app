@@ -109,7 +109,7 @@ The workflow itself also reads `HOST`, `USER` and `SSH_PRIVATE_KEY` (the server 
 
 The deploy never runs a migration ([ADR-0021](adr/0021-migrations-new-tables-only.md)). KP applies each one by hand, after review. Until a feature's migration is applied, its endpoints answer 503 `MODULE_NOT_INSTALLED` and nothing else changes, so the code can deploy first.
 
-Twenty-seven in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four, Phase 2B's two, Phase 2C's six, Phase 2D's two and G6's link table. KP applied 17 to 26 on 19 and 22 Oct 2026; **13 to 16 (the Wall) and 27 (the infra link) are still to be applied**. Re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
+Twenty-seven in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four, Phase 2B's two, Phase 2C's six, Phase 2D's two and G6's link table. KP applied 13 to 26 by 22 Oct 2026; **27 (the infra link) is the only one still to apply**. Re-running any file is safe, and the read-only check below can be run at any time. [04-build-plan.md](04-build-plan.md#migrations-in-run-order) says what each creates and what waits for it.
 
 | # | Migration | Rollback |
 | --- | --- | --- |

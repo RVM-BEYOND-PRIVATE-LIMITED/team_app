@@ -1,7 +1,7 @@
 # Plan: decisions 8 and 9 (faculty class marking, the infra register)
 
 22 Oct 2026 · **Approved by KP on 22 Oct 2026 and built**: H1 and G6 are in `main`, and migration 27
-is the only database step left (plus 13-16, the Wall's). · Backend: `apps/ess-api`
+is the only database step left. · Backend: `apps/ess-api`
 
 Two decisions were left open because each writes a Scheduler table, which ADR-0018 and ADR-0021
 forbid unless KP sanctions the write. This plan states the exact writes, the rules, the endpoints,

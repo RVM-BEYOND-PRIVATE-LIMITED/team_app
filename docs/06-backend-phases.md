@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (22 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct and waits for migration 27.** KP has applied the migrations for 2B (17-18), 2C (19-24) and 2D (25-26); **2A's 13-16 and 27 are the only sets still to apply**. The pilot gate is next.
+**Where it stands (22 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct and waits for migration 27.** KP has applied migrations 13 to 26; **27 is the only migration still to apply**. The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 | [1C](#phase-1c-requests-leave-and-approvals) | Requests, leave, balances, approvals, the limits, the on-duty job | **Built + deployed, 19 Oct** |
 | [1D](#phase-1d-inbox-notifications-and-push) | Notifications, push, devices, priority tasks | **Built + deployed, 19 Oct** |
 | [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | **Built + deployed, 19 Oct; no migrations** |
-| [2A](#phase-2a-wall) | The Wall | **Built + deployed; migrations 13-16 to apply** |
+| [2A](#phase-2a-wall) | The Wall | **Built + deployed; 13-16 applied** |
 | [2B](#phase-2b-helpdesk) | The Helpdesk | **Built + deployed; 17-18 applied; G6 22 Oct, 27 to apply** |
 | [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | **Built + deployed; 19-24 applied** |
 | [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, class marking, multi-level approvals, short leave | **Built + deployed, 19 Oct; H1 built 22 Oct; 25-26 applied** |
