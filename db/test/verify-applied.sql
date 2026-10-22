@@ -49,6 +49,11 @@ checks AS (
                   WHERE table_schema = 'public' AND table_name = 'hr_ess_helpdesk_tickets'
                     AND column_name = 'assigned_at')
   UNION ALL
+  SELECT 'column hr_ess_wall_posts.poll_closed_at (repair for migration 13)',
+         EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'hr_ess_wall_posts'
+                    AND column_name = 'poll_closed_at')
+  UNION ALL
   SELECT 'notification categories include documents (migration 24)',
          EXISTS (SELECT 1 FROM pg_constraint
                   WHERE conname = 'hr_ess_notifications_category_check'

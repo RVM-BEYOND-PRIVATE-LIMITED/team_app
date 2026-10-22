@@ -58,6 +58,7 @@ jobs:
           column hr_ess_attendance_requests minutes
           column hr_ess_helpdesk_tickets assigned_at
           column hr_ess_documents remark
+          column hr_ess_wall_posts poll_closed_at
 
           count_at_least hr_ess_document_types slug 9
           count_at_least hr_ess_request_limits type 7
