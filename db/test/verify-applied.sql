@@ -72,8 +72,8 @@ checks AS (
   SELECT 'seed: 9 document types (migration 19)',
          (SELECT count(*) FROM public.hr_ess_document_types) >= 9
   UNION ALL
-  SELECT 'seed: 7 request limits (migration 6)',
-         (SELECT count(*) FROM public.hr_ess_request_limits) >= 7
+  SELECT 'seed: 6 request limits (migration 6; WFH is per employee since 29)',
+         (SELECT count(*) FROM public.hr_ess_request_limits) >= 6
   UNION ALL
   SELECT 'seed: 10 helpdesk categories (migration 17)',
          (SELECT count(*) FROM public.hr_ess_helpdesk_categories) >= 10

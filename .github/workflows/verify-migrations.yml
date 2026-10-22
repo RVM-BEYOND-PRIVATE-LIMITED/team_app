@@ -61,7 +61,7 @@ jobs:
           column hr_ess_wall_posts poll_closed_at
 
           count_at_least hr_ess_document_types slug 9
-          count_at_least hr_ess_request_limits type 7
+          count_at_least hr_ess_request_limits type 6
           count_at_least hr_ess_helpdesk_categories slug 10
 
           posh=$(curl -s "$base/hr_ess_helpdesk_categories?select=queue_roles&slug=eq.posh" "${auth[@]}" \
