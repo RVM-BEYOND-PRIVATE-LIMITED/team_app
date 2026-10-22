@@ -1,0 +1,73 @@
+name: Verify applied migrations
+
+# Read-only: probes the production PostgREST schema with the deploy's own secrets and reports any
+# hr_ess_* table, column or seed the migrations create but the database does not have. It changes
+# nothing. Dispatch it from the Actions tab (or `gh workflow run verify-migrations.yml`).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe the production schema (read-only)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          set -u
+          base="${SUPABASE_URL%/}/rest/v1"
+          auth=(-H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY")
+          missing=0
+
+          table() {
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X HEAD "$base/$1?limit=1" "${auth[@]}")
+            if [ "$code" = "200" ] || [ "$code" = "206" ]; then echo "OK      table $1"
+            else echo "MISSING table $1 (HTTP $code)"; missing=$((missing + 1)); fi
+          }
+          column() {
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$base/$1?select=$2&limit=1" "${auth[@]}")
+            if [ "$code" = "200" ]; then echo "OK      column $1.$2"
+            else echo "MISSING column $1.$2 (HTTP $code)"; missing=$((missing + 1)); fi
+          }
+          count_at_least() {
+            n=$(curl -s "$base/$1?select=$2" "${auth[@]}" | jq 'length')
+            if [ "${n:-0}" -ge "$3" ]; then echo "OK      seed $1 ($n)"
+            else echo "MISSING seed $1 (found ${n:-0}, expected >= $3)"; missing=$((missing + 1)); fi
+          }
+
+          for t in \
+            hr_ess_sessions hr_ess_audit hr_ess_data_requests hr_ess_personal_details \
+            hr_ess_mock_location_reports hr_ess_request_limits hr_ess_attendance_requests \
+            hr_ess_attendance_request_history hr_ess_leave_requests hr_ess_leave_request_history \
+            hr_ess_request_archives hr_ess_push_devices hr_ess_notifications \
+            hr_ess_notification_settings hr_ess_wall_posts hr_ess_wall_comments \
+            hr_ess_wall_poll_options hr_ess_wall_poll_votes hr_ess_wall_reactions \
+            hr_ess_wall_mentions hr_ess_wall_wishes hr_ess_wall_reports \
+            hr_ess_celebration_optouts hr_ess_announcements hr_ess_announcement_audience \
+            hr_ess_announcement_reads hr_ess_helpdesk_categories hr_ess_helpdesk_tickets \
+            hr_ess_helpdesk_messages hr_ess_document_types hr_ess_documents \
+            hr_ess_change_requests hr_ess_bank_details hr_ess_helpdesk_assignments \
+            hr_ess_approval_escalations hr_ess_infra_links; do
+            table "$t"
+          done
+
+          column hr_ess_attendance_requests minutes
+          column hr_ess_helpdesk_tickets assigned_at
+          column hr_ess_documents remark
+
+          count_at_least hr_ess_document_types slug 9
+          count_at_least hr_ess_request_limits type 7
+          count_at_least hr_ess_helpdesk_categories slug 10
+
+          posh=$(curl -s "$base/hr_ess_helpdesk_categories?select=queue_roles&slug=eq.posh" "${auth[@]}" \
+            | jq -e '.[0].queue_roles | index("internal_committee") != null' > /dev/null && echo yes || echo no)
+          if [ "$posh" = "yes" ]; then echo "OK      seed POSH queue is internal_committee"
+          else echo "MISSING seed POSH queue is internal_committee"; missing=$((missing + 1)); fi
+
+          echo "---"
+          echo "$missing missing check(s)"
+          test "$missing" -eq 0
