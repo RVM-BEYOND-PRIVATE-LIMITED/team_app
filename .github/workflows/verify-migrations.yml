@@ -51,7 +51,7 @@ jobs:
             hr_ess_announcement_reads hr_ess_helpdesk_categories hr_ess_helpdesk_tickets \
             hr_ess_helpdesk_messages hr_ess_document_types hr_ess_documents \
             hr_ess_change_requests hr_ess_bank_details hr_ess_helpdesk_assignments \
-            hr_ess_approval_escalations hr_ess_infra_links; do
+            hr_ess_approval_escalations hr_ess_infra_links hr_ess_wfh_allowances; do
             table "$t"
           done
 

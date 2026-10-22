@@ -18,7 +18,7 @@ WITH expected_tables(name) AS (VALUES
   ('hr_ess_announcement_reads'), ('hr_ess_helpdesk_categories'), ('hr_ess_helpdesk_tickets'),
   ('hr_ess_helpdesk_messages'), ('hr_ess_document_types'), ('hr_ess_documents'),
   ('hr_ess_change_requests'), ('hr_ess_bank_details'), ('hr_ess_helpdesk_assignments'),
-  ('hr_ess_approval_escalations'), ('hr_ess_infra_links')
+  ('hr_ess_approval_escalations'), ('hr_ess_infra_links'), ('hr_ess_wfh_allowances')
 ),
 expected_functions(name) AS (VALUES
   ('hr_ess_session_rotate'), ('hr_ess_session_revoke'), ('hr_ess_session_password_current'),
@@ -53,6 +53,11 @@ checks AS (
          EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_schema = 'public' AND table_name = 'hr_ess_wall_posts'
                     AND column_name = 'poll_closed_at')
+  UNION ALL
+  SELECT 'leave type check includes wfh (migration 29)',
+         EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'hr_ess_leave_requests_type_check'
+                    AND pg_get_constraintdef(oid) LIKE '%wfh%')
   UNION ALL
   SELECT 'notification categories include documents (migration 24)',
          EXISTS (SELECT 1 FROM pg_constraint
