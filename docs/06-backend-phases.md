@@ -191,15 +191,19 @@ The brief's Phase 1. ## Phase 1E: Me and My Team
 
 ## Pilot gate: one branch, two weeks
 
-The brief's gate between Phase 1 and Phase 2.
+The brief's gate between Phase 1 and Phase 2. **Backend deliverables written 22 Oct 2026:**
+[08-flutter-handover.md](08-flutter-handover.md) (hosts, sign-in, endpoints by screen, errors,
+uploads) and [09-data-inventory.md](09-data-inventory.md) (the Play Data safety answers).
 
 - **Backend:**
-  - the Flutter handover note (base URLs, the sign-in flow, endpoints per screen, error codes);
-  - the contract complete for Phase 1;
-  - every Phase 1 migration applied;
-  - the pilot branch's phones reset;
-  - a data inventory for Play's Data safety form: everything the ESS and the Scheduler collect from the app (precise location, the install id, identity fields, personal details, photos), why, and who sees it;
-  - a sign-in plan for the shared office IP. The Scheduler's per-IP limits stay as they are, so staff first sign in on mobile data or in small groups, and the app shows the Scheduler's 429 as "try again in a few minutes", never as a wrong password.
+  - the Flutter handover note (base URLs, the sign-in flow, endpoints per screen, error codes) —
+    **written**;
+  - the contract complete for Phase 1 — **0.10.0**;
+  - every Phase 1 migration applied — **yes**;
+  - the pilot branch's phones reset — **RVM to do** with `POST /hr/devices/reset`;
+  - a data inventory for Play's Data safety form — **written**;
+  - a sign-in plan for the shared office IP — **written** in the handover (sign in on mobile data or
+    in small groups; the app shows a 429 as "try again in a few minutes").
 - **RVM:**
   - Phase 0's people, roles and policy done;
   - the request limits and the cut-off agreed;
