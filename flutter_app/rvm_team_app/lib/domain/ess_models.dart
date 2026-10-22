@@ -1077,6 +1077,37 @@ class LeaveBalances extends Equatable {
   List<Object?> get props => [month, types];
 }
 
+/// HR's per-employee work-from-home allowance (KP, 22 Oct): the month, whether the
+/// login is enabled, the fixed monthly limit and this month's numbers.
+class WfhAllowance extends Equatable {
+  const WfhAllowance({
+    required this.month,
+    required this.enabled,
+    required this.monthlyLimitDays,
+    required this.used,
+    required this.pending,
+    required this.remaining,
+  });
+  final String month;
+  final bool enabled;
+  final int monthlyLimitDays;
+  final int used;
+  final int pending;
+  final int remaining;
+
+  factory WfhAllowance.fromJson(Map<String, dynamic> j) => WfhAllowance(
+        month: _str(j['month']) ?? '',
+        enabled: j['enabled'] == true,
+        monthlyLimitDays: _int(j['monthly_limit_days']) ?? 0,
+        used: _int(j['used']) ?? 0,
+        pending: _int(j['pending']) ?? 0,
+        remaining: _int(j['remaining']) ?? 0,
+      );
+
+  @override
+  List<Object?> get props => [month, enabled, monthlyLimitDays, used, pending, remaining];
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 1D — notifications (routes/notifications.js, policy/notifications.js)
 // ═══════════════════════════════════════════════════════════════════════════

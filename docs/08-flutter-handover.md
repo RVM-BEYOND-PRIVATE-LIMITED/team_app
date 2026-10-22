@@ -179,5 +179,11 @@ mirrored to the Admin Manager's register. POSH's queue is the Internal Committee
 8. Keep the branch chooser on a portal sign-in; do not advertise an employee code as a login until
    it matches `hr_employees.employee_code`.
 
+**Done in this repo (22 Oct 2026):** the Home **Work-from-home** card is wired in
+`lib/features/work/wfh_sheet.dart` and `lib/features/home/home_screen.dart`. It reads `GET /me/wfh`,
+shows the remaining/limit and files `POST /leave-requests { type: 'wfh', day, reason }`; a login
+without an allowance sees "not offered" and cannot submit. It was written without a Flutter SDK on
+the build machine, so run `flutter analyze` and the widget tests before shipping the next build.
+
 The contract and `apps/ess-api/README.md` are the reference for every field and status; a shape the
 contract does not name is not sent, and a code the README does not list is not produced.

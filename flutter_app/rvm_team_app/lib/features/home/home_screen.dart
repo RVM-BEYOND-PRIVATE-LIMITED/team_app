@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
+import '../work/wfh_sheet.dart';
 import '../../domain/ess_models.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
@@ -691,13 +692,7 @@ class _WorkFromHomeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return TeamCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      onTap: () {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(
-              content: Text(
-                  'Work from home needs the new backend — not available yet.')));
-      },
+      onTap: () => showWfhSheet(context),
       child: Row(
         children: [
           const TeamIconBadge(
@@ -719,7 +714,7 @@ class _WorkFromHomeCard extends StatelessWidget {
                         .titleSmall
                         ?.copyWith(fontSize: 13)),
                 const SizedBox(height: 1),
-                Text('Request remote session',
+                Text('Request a work-from-home day',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall

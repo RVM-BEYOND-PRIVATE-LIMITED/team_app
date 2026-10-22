@@ -300,6 +300,10 @@ class EssRemoteDataSource with DioExecutor {
       LeaveBalances.fromJson(_body(await _dio.get('/leave/balances',
           queryParameters: {if (month != null) 'month': month}))));
 
+  /// My work-from-home allowance and this month (KP, 22 Oct).
+  Future<WfhAllowance> myWfh() =>
+      guard(() async => WfhAllowance.fromJson(_body(await _dio.get('/me/wfh'))));
+
   Future<ApprovalInbox> approvals({String status = 'pending'}) =>
       guard(() async => ApprovalInbox.fromJson(_body(
           await _dio.get('/approvals', queryParameters: {'status': status}))));

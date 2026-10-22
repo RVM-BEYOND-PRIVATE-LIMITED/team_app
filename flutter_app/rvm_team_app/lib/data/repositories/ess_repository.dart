@@ -245,6 +245,12 @@ class EssRepository with ConnectivityGuard {
     return _remote.leaveBalances(month: month);
   }
 
+  /// HR's per-employee WFH allowance for the signed-in employee (KP, 22 Oct).
+  Future<WfhAllowance> myWfh() async {
+    await ensureOnline();
+    return _remote.myWfh();
+  }
+
   Future<ApprovalInbox> approvals({String status = 'pending'}) async {
     await ensureOnline();
     return _remote.approvals(status: status);
