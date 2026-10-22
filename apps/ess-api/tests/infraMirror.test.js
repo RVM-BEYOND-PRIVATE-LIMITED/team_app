@@ -126,6 +126,13 @@ describe('closing syncs both ways', () => {
     expect(w.db.tables.infra_tickets[0]).toMatchObject({ status: 'closed', closed_on: '2026-10-16' });
   });
 
+  it('logs and answers null when the link table is not there yet, rather than failing the process', async () => {
+    const w = world();
+    w.db.dropTable('hr_ess_infra_links');
+    const out = await runJob(w);
+    expect(out).toBeNull();
+  });
+
   it('a register row closed by the Admin Manager resolves the ticket, once', async () => {
     const w = world();
     const res = await raise(w.app, tokens.portal(w.people.faculty), body());

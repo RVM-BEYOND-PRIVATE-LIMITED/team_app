@@ -64,6 +64,11 @@ function startInfraJob({ store, now = () => new Date(), log = console, intervalM
 
       if (resolved || linked) log.log(`[ess] infra job: ${resolved} resolved from the register, ${linked} linked`);
       return { resolved, linked };
+    } catch (e) {
+      // A missing link table (before migration 27) or an outage is logged and retried next hour;
+      // the process must never go down because the register is unreachable.
+      log.error(`[ess] infra job: ${e && e.message ? e.message : e}`);
+      return null;
     } finally {
       running = false;
     }
