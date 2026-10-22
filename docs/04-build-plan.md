@@ -183,7 +183,8 @@ The brief's Phase 1. Built and tested; waiting for migrations 11 and 12.
 - multi-level approvals (D4);
 - short leave (by excusing the late it covers);
 - light KPI reads (H5);
-- the faculty "my day" read (H7).
+- the faculty "my day" read (H7);
+- faculty class marking (H1, decision 8).
 
 ### Phase 2A: the Wall — built 19 Oct 2026
 
@@ -340,7 +341,7 @@ carry the two database changes.
 | The faculty "my day" | `GET /api/ess/me/faculty-day?date=`: today's sessions owned or covered through `faculty_substitutions` (other centres included), with times, centre, students and a `marked` flag; the unresolved `absent_remarks_missing` alerts; the indicators card (today's and the month's marked-session percentages, joined/active students, sessions without attendance). Counts only | H7 | Built |
 | Approval chains | `GET /api/ess/approvals/{family}/{id}/chain` (each level, its skip reason and the first that may decide; `hr_fallback` when none can) and `POST .../archive` (clear one approver's Inbox without deciding). An hourly job escalates a request pending past the window to the next level, records it and notifies | D4 | Built |
 | Short leave | A fourth attendance-request type, counted in minutes: 1 to 480 a day, 180 a month by default (seeded in `hr_ess_request_limits`). An approval excuses the late it covers, exactly as an excuse-late does; HR's cancel restores it | C3 | Built |
-| Class marking | Not built: it waits on decision 8 | H1 | Decision |
+| Class marking | `GET /api/ess/me/batches/{id}/roster?date=`, `POST .../attendance` and `PATCH .../attendance/{date}/remarks` (decision 8, 19 Oct): the Scheduler's six checks enforced server-side (role, branch, ownership or substitution, date window, roster eligibility, the teaching lock). The save upserts `student_attendance` and resolves `pending_alerts`, the two sanctioned writes; admin roles may correct a day | H1 | Built |
 
 **What the build had to choose, for KP to confirm:**
 - **the escalation window is two IST days**, one level a run, HR the fallback when the line is
@@ -351,12 +352,17 @@ carry the two database changes.
   to the asked day, against the days marked in `student_attendance` -- the Scheduler report's rule,
   without its branch filter (a substitution batch is never branch-filtered there either);
 - **the HOD domain roster is still not built**: the domain-to-faculty mapping lives in the HOD
-  module, not on the HR record (see Phase 1E).
+  module, not on the HR record (see Phase 1E);
+- **the class-marking lock closes the day's marks, not its reasons**: a teaching role may fill an
+  absent student's remark after the first save; the remark route changes no mark, and an admin
+  role may correct the marks too.
 
-**Tests:** the suite is 2,452 in 53 files, the contract at 0.9.0 with 1,183 contract checks
-(Wave 9 included). Phase 2D's own files are `leaders`, `approvalsChain`, `facultyDay` and
-`approvals` (the policy and the job). `npm run test:migrations` applies all twenty-six migrations
-and their rollbacks twice.
+**Tests:** the suite is 2,509 in 54 files, the contract at 0.10.0 with 1,218 contract checks
+(Waves 9 and 10 included). Phase 2D's own files are `leaders`, `approvalsChain`, `facultyDay`,
+`classMarking` and `approvals` (the policy and the job); `tests/classMarking.test.js` covers the
+roster for an owner, a covering substitute and an admin, the role, branch, ownership, window,
+roster and lock refusals, the alert resolution, the remark rules and the no-leak reply.
+`npm run test:migrations` applies all twenty-six migrations and their rollbacks twice.
 
 **You after:** apply migrations 13 to 16 (the Wall's) -- the only set still outstanding; 25-26 are
 applied. Until 13-16 are applied every Wall endpoint but its settings answers 503
@@ -383,7 +389,7 @@ These were in the gap report or found in STEP 1. They stay as they are unless KP
   - the web org chart's notice-period fault (E11, web side);
   - the remarks endpoint's faults (B5);
   - the Admin Manager's branch-wide read (B16).
-- **Role views:** H1–H3, and the short-leave rule inside `hr_attendance_recompute`.
+- **Role views:** H2-H3, and the short-leave rule inside `hr_attendance_recompute`.
 - **Attendance-only staff:** priority tasks and the interview calendar for them, because both are tied to portal logins.
 - **The web:** HR review queues and a Helpdesk tab inside the web HRMS (E5, G5 web side), since the web stays unchanged.
 
@@ -396,7 +402,7 @@ These were in the gap report or found in STEP 1. They stay as they are unless KP
 5. **Colleague contacts.** Does an employee also see their own managers' phone numbers?
 6. **Cut-off.** Is the 5th itself open? Can a pending request for last month be decided after the cut-off? The 1C build's default, while this is open: the 5th itself is open, for raising and for deciding; last month closes on the 6th. One function (`lastMonthOpen`, `src/policy/requests.js`) and the matching `extract(day …) > 5` in migration 10 hold it; change both together.
 7. **HR's web tools.** Where do HR review change requests and documents, and where do helpdesk agents work on the web? The brief put these in the web HRMS, which now stays unchanged. The options are the app itself, or a small web page served by team_app.
-8. **Faculty marking.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open? **Plan ready:** [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — three ESS routes, the Scheduler's six checks enforced server-side, and one sanctioned write to `student_attendance` (plus resolving `pending_alerts`). Awaits KP's sanction.
+8. **Faculty marking — decided 19 Oct.** Should the app offer class-attendance marking while the Scheduler's checks on it (J1) stay open? **Decided:** yes, to [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — three ESS routes, the Scheduler's six checks enforced server-side, and the sanctioned writes to `student_attendance` (upsert and remark update) and `pending_alerts` (resolve). Built in Phase 2D above.
 9. **Infra register.** Should lab and facility helpdesk tickets also add a row to the Admin Manager's infra register? That writes a Scheduler table. **Plan ready:** [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md) — an `hr_ess_infra_links` table, a summary `infra_tickets` row on raise, and close-sync both ways without a Scheduler change. Awaits KP's sanction.
 10. **The Scheduler's own holes and the committed dump.** These are outside this project, and KP's call.
 
@@ -453,7 +459,22 @@ Tested on a throwaway `postgres:17-alpine` in Docker, never on a real database:
 - **Shared nginx.** A broken team_app nginx file would block the Scheduler's deploys. The ESS deploy tests before reloading, puts the last good file back on a failure, and CI runs every case against nginx 1.18 and 1.24 ([ADR-0019](adr/0019-ess-on-its-own-subdomain.md)). Deleting the ESS certificate while its file is enabled would also break `nginx -t`, so [05-deploy.md](05-deploy.md) takes the host off nginx first.
 - **The deploy secrets reach every branch.** On GitHub Free a repository's secrets cannot be limited to `main`. Today only the three organisation admins can push, and they hold the same secrets in Scheduler_Backend; [05-deploy.md](05-deploy.md) lists the steps before anyone else gets write access.
 - **Deploys before migrations.** Merges deploy before KP applies migrations, so new endpoints answer 503 until their tables exist ([ADR-0021](adr/0021-migrations-new-tables-only.md)).
-- **The one Scheduler write.** HR's bulk phone reset (B8) updates `hr_attendance_devices` exactly as the Scheduler's own reset does (`attendanceAdminController.js:280-293`), only for rows still `active`, in slices of 150 ids, and never with an empty id list. The slices are separate requests with no transaction around them: if one fails, the phones already reset stay reset, are recorded in `hr_ess_audit` (or the server log) marked `incomplete`, and the reply is 503, so HR sends the same reset again for the rest. If the Scheduler changes its reset, change this one to match.
+- **The Scheduler writes the ESS may make.** Each is one named store method, doing exactly what
+  the Scheduler's own code does, never a delete and never another column:
+  - HR's bulk phone reset (B8) updates `hr_attendance_devices` exactly as the Scheduler's own
+    reset does (`attendanceAdminController.js:280-293`), only for rows still `active`, in slices
+    of 150 ids, and never with an empty id list. The slices are separate requests with no
+    transaction around them: if one fails, the phones already reset stay reset, are recorded in
+    `hr_ess_audit` (or the server log) marked `incomplete`, and the reply is 503, so HR sends the
+    same reset again for the rest.
+  - The shift snapshot writes the three shift columns `ensureSnapshot` copies onto a day.
+  - The employee's photo pointer writes only the photo columns the Scheduler's `setPhoto` writes.
+  - Class marking (H1, decision 8) upserts `student_attendance` on its own
+    `(batch_id, student_id, date)` key and updates that row's absent reason and follow-up; it
+    resolves `pending_alerts` rows of type `absent_remarks_missing` with `is_resolved`,
+    `resolved_at` and `resolved_by` only. `tests/store.test.js` allows exactly these five tables
+    and asserts the number of write sites, so a later change cannot widen them quietly.
+  If the Scheduler changes any of these paths, change the matching method to match.
 - **Kept sign-ins after a rollback.** Rolling back `hr_ess_sessions` makes every access token the ESS minted answer 503 on the ESS (not 401), so the app does not sign out by itself; on the Scheduler those tokens last out their hour.
 - **Production state unconfirmed.** Whether the attendance migrations (`20261020000000` to `20261023000000`) and the one-CL index are applied in production is not confirmed. Check, read-only, before Wave 3 relies on them.
 - **Open holes.** The Scheduler's holes stay open while the app ships. Whether to release anyway is KP's decision.

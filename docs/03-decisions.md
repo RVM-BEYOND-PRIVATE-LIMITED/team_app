@@ -69,7 +69,7 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 | Shared desk logins (fbd.admin and similar) | None are allowed at all: every app login belongs to one employee, and each admin signs in as themselves. There is no list to keep. A portal login with no linked HR record is refused (403 `NOT_LINKED`); one linked to somebody's record would act as that person, so RVM gives each person their own login | Decided | KP, 16 Oct |
 | Staying signed in (task A3) | The ESS swaps a fresh sign-in for a refresh token and issues short sign-in tokens in the Scheduler's own formats. They last 1 hour; the sign-in lasts 90 days from its last use. It ends on an attendance password change, when HR switches the login off, on exit, or on signing out | Decided | KP, 16 Oct |
 | HR's bulk phone reset (task B8) | Writes the same device rows the Scheduler's own reset writes, branch by branch, for HR, the CEO and super admins | Decided | KP, 16 Oct |
-| Faculty class marking in the app (Phase 2) | `POST /api/attendance` keeps its missing server checks, because fixing them is a Scheduler change. Decide before Phase 2 whether the app offers marking. | Open | [ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md) |
+| Faculty class marking in the app (Phase 2) | Yes: three ESS routes that enforce the Scheduler's six checks server-side, writing `student_attendance` and resolving `pending_alerts` with KP's sanction. Built in Phase 2D (H1) | Decided | KP, 19 Oct; [plan](07-plan-decisions-8-and-9.md) |
 
 ## What RVM must provide (Phase 0)
 
@@ -105,4 +105,33 @@ Limits are per employee, per calendar month. HR can change them later (task C6).
 
 - **Escalation window:** a request still pending after **two IST days** climbs one level of its reporting line per hourly run, recorded once per person in `hr_ess_approval_escalations`; HR is the fallback when the line runs out. It is a policy constant (`src/policy/approvals.js`), not a database setting.
 - **Short leave** (C3) is filed in minutes (1 to 480 a day; **180 a month** seeded in `hr_ess_request_limits`, so HR can change it) and is approved by excusing the late it covers, exactly as an excuse-late is - the Scheduler's own recompute does not know the type.
-- **Still open:** decision 3 (do planned early-leaving minutes protect a day from the 4-hour half-day rule?) and decision 8 (faculty class marking) - H1 is not built until 8 is answered.
+- **Still open:** decision 3 (do planned early-leaving minutes protect a day from the 4-hour half-day rule?). Decision 8 is answered below.
+
+## 19 Oct 2026 - H1 class marking (KP)
+
+KP approved the plan ([07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md)) and the two
+sanctioned Scheduler writes it needs; no Scheduler code or schema changes, and no migration.
+
+- **The write:** `student_attendance`, one row per `(batch_id, student_id, date)`, upserted with
+  `student_id, batch_id, date, is_present, absent_reason, follow_up_comment, remarks_updated_by,
+  remarks_updated_at`, and the absent remark updated on that row; never a delete.
+- **The alert:** `pending_alerts` of type `absent_remarks_missing` is resolved by writing only
+  `is_resolved, resolved_at, resolved_by` — when a student is marked present, or when the reason
+  is filled. This is what the Scheduler's own marking does.
+- **Who may mark:** teaching roles `faculty` and `hod`; the Scheduler's admin roles `admin`,
+  `admin_manager`, `hoo`, `accounts_admin`, `ceo` and `super_admin`. `hr`, `hr_executive`,
+  `hod_placement` and attendance sessions are refused.
+- **The rules:** a teaching caller must own the batch (`batches.faculty_id`) or cover it through
+  `faculty_substitutions`; an admin caller marks only their own branch (mapped by branch name from
+  `hr_branches` to `locations`), while the CEO and super admins are global. The day must be a real
+  `YYYY-MM-DD` from the batch's start date to `min(batch.end_date, today IST)`. A student counts
+  only with `batch_students.joined_at` set, `admissions.joined` true unless the student has no
+  admissions row at all, and not on hold on the day. A teaching role's day locks after the first
+  save (409 `CLASS_ALREADY_MARKED`); admin roles may correct it. Remarks are for absent students
+  only, 3 to 500 characters, with an optional follow-up of up to 1,000.
+- **Built in Phase 2D:** `GET /api/ess/me/batches/{id}/roster?date=`,
+  `POST /api/ess/me/batches/{id}/attendance` and
+  `PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks`; audit entries
+  `class.attendance.marked` (counts only) and `class.remark.changed` (before/after reason). The
+  roster returns a student's name, admission number and mark only — never a phone, password
+  hash, fee or personal detail.

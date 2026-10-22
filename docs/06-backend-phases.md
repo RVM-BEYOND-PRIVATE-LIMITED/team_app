@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (19 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct** and its migrations 25-26 are applied. KP has applied the migrations for 2B (17-18), 2C (19-24) and 2D (25-26); **2A's 13-16 are the only set still to apply**. The pilot gate is next.
+**Where it stands (22 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. KP has applied the migrations for 2B (17-18), 2C (19-24) and 2D (25-26); **2A's 13-16 are the only set still to apply**. The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 | [2A](#phase-2a-wall) | The Wall | **Built + deployed; migrations 13-16 to apply** |
 | [2B](#phase-2b-helpdesk) | The Helpdesk | **Built + deployed; 17-18 applied** |
 | [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | **Built + deployed; 19-24 applied** |
-| [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, multi-level approvals, short leave | **Built + deployed, 19 Oct; 25-26 applied** |
+| [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, class marking, multi-level approvals, short leave | **Built + deployed, 19 Oct; H1 built 22 Oct; 25-26 applied** |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Next |
 | [3](#phase-3-extras-not-in-this-round) | Extras | Not in this round |
 
@@ -360,23 +360,24 @@ for KP to confirm:
 
 The brief's Phase 2.
 
-**Built and deployed 19 Oct 2026; migrations 25-26 applied.**
+**Built and deployed 19 Oct 2026; H1 class marking built 22 Oct; migrations 25-26 applied.**
 
 - **The leaders' overview (H5):** `GET /api/ess/leaders/overview` for the CEO and super admins — headcount, today's attendance states, who is off this week, and the approval queue with the oldest request's age. Counts only: no names, pay or performance ever leave the database.
 - **The faculty "my day" (H7):** `GET /api/ess/me/faculty-day?date=` — today's sessions owned or covered through `faculty_substitutions` (other centres included), each with its times, centre, students and whether it is marked; the remarks still due (`pending_alerts` of type `absent_remarks_missing`); and the indicators card (today's and the month's marked-session percentages, joined/active students, sessions without attendance). Counts only, never a student's name, phone or remarks.
+- **Faculty class marking (H1, decision 8, built 22 Oct):** `GET /api/ess/me/batches/{id}/roster?date=`, `POST /api/ess/me/batches/{id}/attendance` and `PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks`. The Scheduler's six checks are enforced server-side: the role (`faculty`/`hod`, or the Scheduler's admin roles), the branch (mapped by branch name), ownership or a covering substitution, the day (batch start to today IST), roster membership and eligibility (`joined_at`, `admissions.joined` unless no admissions row, not on hold), and the lock a teaching role hits after the first save — admin roles may correct a day. A save upserts `student_attendance` on its own key, resolves the `absent_remarks_missing` alert when a student is present or the reason is given with the save, and the remark route resolves it when a reason is filled later; the audits are `class.attendance.marked` (counts only) and `class.remark.changed` (before/after reason). The roster returns a name, an admission number and the mark only. The two Scheduler writes are the sanctioned ones from decision 8; **no migration**.
 - **Approval chains (D4):** `GET /api/ess/approvals/{family}/{id}/chain` shows the reporting line a request waits on, each level's skip reason (`same_person`, `not_active`, `on_leave`) and the first level that may decide; `POST .../archive` clears a request from one approver's Inbox without deciding it. An hourly job (`src/jobs/approvals.js`) escalates a request still pending after **two IST days** to the next unskipped level, one level a run, recorded once per person in `hr_ess_approval_escalations` and notified in the `approvals` category; HR is the fallback when the line is exhausted. **KP to confirm the two-day default** — it is the build's constant, not a database setting.
 - **Short leave (C3):** an attendance request type of its own, counted in **minutes** (1 to 480, the day's cap), with a monthly limit of 180 minutes shown beside the other balances; approved through the same decision function. The Scheduler's own `hr_attendance_recompute` does not know the type, so the app works around it exactly as the docs say: the approval excuses the late it covers.
-- **Not built:** faculty class marking (H1) — it waits on decision 8; the approval-chain rules per request type, which need KP's rule first. **Plan ready for H1:** [07-plan-decisions-8-and-9.md](07-plan-decisions-8-and-9.md), awaiting KP's sanction of the `student_attendance` write.
+- **Not built:** the approval-chain rules per request type, which need KP's rule first.
 
 | Work | Tasks |
 | --- | --- |
 | Light KPI cards for the CEO and super admins | H5 |
 | The faculty "my day" read and the indicators card | H7 |
+| Faculty class marking with the Scheduler's six checks | H1 (decision 8) |
 | Multi-level approval chains with auto-skip and escalation | D4 |
 | Short leave, by excusing the late it covers | C3 (Phase 2 type) |
-| Faculty class marking in the app, if decision 8 says yes | H1 (decision) |
 
-- **You first:** decisions 3 (do planned early-leaving minutes protect a day from the 4-hour half-day rule?) and 8 (offer class marking while the Scheduler's own checks on it stay open?).
+- **You first:** decision 3 (do planned early-leaving minutes protect a day from the 4-hour half-day rule?). Decision 8 is answered: H1 is built.
 
 ## Phase 3: Extras (not in this round)
 
@@ -495,7 +496,7 @@ These stay as they are unless KP decides to change the Scheduler separately ([AD
 | G4 | Missing | 2B Helpdesk | Confidential categories and anonymity, reads logged |
 | G5 | Missing | 2B Helpdesk | Agent workspace on the phone; the web part per decision 7 |
 | G6 | Update | 2B Helpdesk | Mirror into infra_tickets only if decision 9 says yes (it writes a Scheduler table) |
-| H1 | Update | Out of scope (Scheduler change) | Marking checks are Scheduler code (see decision 8) |
+| H1 | Update | 2D Leader views and deeper approvals | Class marking with the Scheduler's six checks; the sanctioned `student_attendance` and `pending_alerts` writes (decision 8) |
 | H2 | Update | Out of scope (Scheduler change) | The roster reply is Scheduler code |
 | H3 | Update | Out of scope (Scheduler change) | Interviewer roles are Scheduler code |
 | H4 | Missing | 1E Me and My Team | HoO "my team today" for the branch |

@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.9.0
+  version: 0.10.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -3544,6 +3544,186 @@ paths:
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
           $ref: '#/components/responses/EssFacultyForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/batches/{id}/roster:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - $ref: '#/components/parameters/ClassBatchId'
+    get:
+      operationId: classRoster
+      tags: [ESS]
+      x-owner: ess
+      summary: The day's class roster (H1, decision 8)
+      description: |
+        A portal login of a teaching role (`faculty`, `hod`) who owns the batch or covers it on the day through `faculty_substitutions`, or an admin role (`admin`, `admin_manager`, `hoo`, `accounts_admin`, `ceo`, `super_admin`) at the batch's branch. The CEO and super admins may read any branch. Anybody else is 403 `CLASS_ROLE_DENIED`; the wrong branch or owner is 403 `CLASS_NOT_YOURS`; a day before the batch starts or after today (IST) is 403 `CLASS_WINDOW`.
+
+        The eligible students are those with `batch_students.joined_at` set, whose `admissions.joined` agrees (unless the student has no admissions row at all), and who are not on hold on the day. Each carries only `id`, `full_name` (the student's name), `admission_number`, the day's `marked` state and its absent reason and follow-up. `already_marked` says whether the day has any rows; `can_edit` is false for a teaching role once it has (the lock), and always true for an admin role.
+      parameters:
+        - name: date
+          in: query
+          required: true
+          description: 'The day, `YYYY-MM-DD`. Not a future day, and not before the batch starts.'
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: The batch, the day, its lock state and the eligible roster.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassRoster'
+              examples:
+                markedDay:
+                  value:
+                    batch: { id: 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b, name: CAD Morning Batch }
+                    date: '2026-10-16'
+                    already_marked: true
+                    can_edit: false
+                    students:
+                      - { id: 9e000000-0000-4000-8000-000000000001, full_name: Aarav Sharma, admission_number: ADM-001, marked: present, absent_reason: null, follow_up_comment: null }
+                      - { id: 9e000000-0000-4000-8000-000000000002, full_name: Diya Patel, admission_number: ADM-002, marked: absent, absent_reason: null, follow_up_comment: null }
+        '400':
+          $ref: '#/components/responses/EssClassBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssClassForbidden'
+        '404':
+          $ref: '#/components/responses/EssClassNotFound'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/batches/{id}/attendance:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - $ref: '#/components/parameters/ClassBatchId'
+    post:
+      operationId: saveClassAttendance
+      tags: [ESS]
+      x-owner: ess
+      summary: Mark a batch's day (H1, decision 8)
+      description: |
+        Saves one `student_attendance` row per student, on the Scheduler's own key (batch, student, date), with `remarks_updated_by` and `remarks_updated_at`. The same six rules as the roster apply: role, branch, ownership or substitution, the date window, roster membership and eligibility, and the lock. A teaching role that saves a day already marked is 409 `CLASS_ALREADY_MARKED`; an admin role may correct the day. A student not on the roster or not eligible on the day is 400 `VALIDATION_FAILED` with `CLASS_ROSTER`. A present mark, or an absent mark that already carries its reason, resolves that student's unresolved `absent_remarks_missing` alert for the day. The audit entry `class.attendance.marked` carries the batch, the day and the present/absent counts, never a student's name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassAttendanceRequest'
+            examples:
+              twoStudents:
+                value:
+                  date: '2026-10-16'
+                  attendance:
+                    - { student_id: 9e000000-0000-4000-8000-000000000001, present: true }
+                    - { student_id: 9e000000-0000-4000-8000-000000000002, present: false, absent_reason: 'Fever, informed the office.', follow_up_comment: Call the parent. }
+      responses:
+        '200':
+          description: The saved day and its counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassMarkSaved'
+              examples:
+                saved:
+                  value:
+                    batch: { id: 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b, name: CAD Morning Batch }
+                    date: '2026-10-16'
+                    counts: { present: 1, absent: 1, total: 2 }
+        '400':
+          $ref: '#/components/responses/EssClassBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssClassForbidden'
+        '404':
+          $ref: '#/components/responses/EssClassNotFound'
+        '409':
+          $ref: '#/components/responses/EssClassConflict'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/batches/{id}/attendance/{date}/remarks:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - $ref: '#/components/parameters/ClassBatchId'
+    patch:
+      operationId: updateClassRemark
+      tags: [ESS]
+      x-owner: ess
+      summary: Fill or change an absent student's reason (H1, decision 8)
+      description: |
+        The after-marking path: the mark itself is untouched, and the row must be an absent one for the day (a present or unmarked student is 409 `CLASS_NOT_ABSENT`). The role, branch, ownership, date window and roster rules are the roster's own. The reason is 3 to 500 characters and the follow-up up to 1,000; the caller's name and the server's time are stamped on the row. Filling a reason resolves the student's unresolved `absent_remarks_missing` alert for the day. The audit entry `class.remark.changed` carries the student and the before/after reason. A teaching role may use this route after the day is marked: the lock closes the marks, not their reasons.
+      parameters:
+        - $ref: '#/components/parameters/ClassDay'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassRemarkRequest'
+            examples:
+              filled:
+                value:
+                  student_id: 9e000000-0000-4000-8000-000000000002
+                  absent_reason: Fever, informed the office.
+                  follow_up_comment: Call the parent.
+      responses:
+        '200':
+          description: The updated mark.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassRemarkSaved'
+              examples:
+                filled:
+                  value:
+                    batch: { id: 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b, name: CAD Morning Batch }
+                    date: '2026-10-16'
+                    student: { id: 9e000000-0000-4000-8000-000000000002, full_name: Diya Patel, admission_number: ADM-002, marked: absent, absent_reason: 'Fever, informed the office.', follow_up_comment: Call the parent. }
+        '400':
+          $ref: '#/components/responses/EssClassBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssClassForbidden'
+        '404':
+          $ref: '#/components/responses/EssClassNotFound'
+        '409':
+          $ref: '#/components/responses/EssClassConflict'
         '429':
           $ref: '#/components/responses/EssRateLimited'
         '503':
@@ -10175,6 +10355,24 @@ components:
         type: string
         format: date
 
+    ClassBatchId:
+      name: id
+      in: path
+      required: true
+      description: The batch's id (`batches.id`).
+      schema:
+        type: string
+        format: uuid
+
+    ClassDay:
+      name: date
+      in: path
+      required: true
+      description: 'The day, `YYYY-MM-DD`. Not a future day, and not before the batch starts.'
+      schema:
+        type: string
+        format: date
+
   headers:
 
     WwwAuthenticate:
@@ -11820,6 +12018,138 @@ components:
         sessions_without_attendance:
           type: integer
           minimum: 0
+
+    ClassBatch:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    ClassRosterStudent:
+      type: object
+      required: [id, full_name, admission_number, marked, absent_reason, follow_up_comment]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: [string, 'null']
+          description: The student's name (`students.name`), never a phone, a fee or a personal detail.
+        admission_number:
+          type: [string, 'null']
+        marked:
+          type: [string, 'null']
+          enum: [present, absent, null]
+        absent_reason:
+          type: [string, 'null']
+        follow_up_comment:
+          type: [string, 'null']
+
+    ClassRoster:
+      type: object
+      required: [batch, date, already_marked, can_edit, students]
+      properties:
+        batch:
+          $ref: '#/components/schemas/ClassBatch'
+        date:
+          type: string
+          format: date
+        already_marked:
+          type: boolean
+        can_edit:
+          type: boolean
+        students:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassRosterStudent'
+
+    ClassAttendanceItem:
+      type: object
+      required: [student_id, present]
+      properties:
+        student_id:
+          type: string
+          format: uuid
+        present:
+          type: boolean
+        absent_reason:
+          type: [string, 'null']
+          minLength: 3
+          maxLength: 500
+        follow_up_comment:
+          type: [string, 'null']
+          maxLength: 1000
+
+    ClassAttendanceRequest:
+      type: object
+      required: [date, attendance]
+      properties:
+        date:
+          type: string
+          format: date
+        attendance:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/ClassAttendanceItem'
+
+    ClassCounts:
+      type: object
+      required: [present, absent, total]
+      properties:
+        present:
+          type: integer
+          minimum: 0
+        absent:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+
+    ClassMarkSaved:
+      type: object
+      required: [batch, date, counts]
+      properties:
+        batch:
+          $ref: '#/components/schemas/ClassBatch'
+        date:
+          type: string
+          format: date
+        counts:
+          $ref: '#/components/schemas/ClassCounts'
+
+    ClassRemarkRequest:
+      type: object
+      required: [student_id, absent_reason]
+      properties:
+        student_id:
+          type: string
+          format: uuid
+        absent_reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+        follow_up_comment:
+          type: [string, 'null']
+          maxLength: 1000
+
+    ClassRemarkSaved:
+      type: object
+      required: [batch, date, student]
+      properties:
+        batch:
+          $ref: '#/components/schemas/ClassBatch'
+        date:
+          type: string
+          format: date
+        student:
+          $ref: '#/components/schemas/ClassRosterStudent'
 
     OrgView:
       type: object
@@ -15491,6 +15821,51 @@ components:
         error: That employee was not found.
         code: NOT_FOUND
 
+    EssClassRoleDenied:
+      value:
+        error: Only teaching staff and the admin roles can mark a class.
+        code: CLASS_ROLE_DENIED
+
+    EssClassNotYours:
+      value:
+        error: That batch is not yours to mark.
+        code: CLASS_NOT_YOURS
+
+    EssClassWindow:
+      value:
+        error: 'A class can be marked only from the batch''s start date up to today.'
+        code: CLASS_WINDOW
+
+    EssClassRoster:
+      value:
+        error: 'Some students are not on this batch''s roster for that day, or are not eligible to be marked.'
+        code: VALIDATION_FAILED
+
+    EssClassAttendance:
+      value:
+        error: 'Send each student once, with present as true or false, and each absent reason within its limits.'
+        code: VALIDATION_FAILED
+
+    EssClassRemark:
+      value:
+        error: 'An absent reason must be 3 to 500 characters, and a follow-up comment up to 1,000.'
+        code: VALIDATION_FAILED
+
+    EssBatchNotFound:
+      value:
+        error: That batch was not found.
+        code: BATCH_NOT_FOUND
+
+    EssClassAlreadyMarked:
+      value:
+        error: This class has already been marked for that day. Ask an admin to correct it.
+        code: CLASS_ALREADY_MARKED
+
+    EssClassNotAbsent:
+      value:
+        error: 'That student is not marked absent for this day, so there is no absent remark to change.'
+        code: CLASS_NOT_ABSENT
+
   responses:
 
     EssNotAuthenticated:
@@ -16522,3 +16897,80 @@ components:
           examples:
             rateLimited:
               $ref: '#/components/examples/EssRateLimited'
+
+    EssClassBad:
+      description: |
+        `VALIDATION_FAILED`: the message says which rule - a real calendar day, a batch id, a body field, a student once with a true/false mark, an absent reason of 3 to 500 characters, a follow-up of up to 1,000, or a student on this day's roster who is eligible to be marked. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            roster:
+              $ref: '#/components/examples/EssClassRoster'
+            attendance:
+              $ref: '#/components/examples/EssClassAttendance'
+            remark:
+              $ref: '#/components/examples/EssClassRemark'
+            dateFormat:
+              $ref: '#/components/examples/EssDateFormat'
+            invalidId:
+              $ref: '#/components/examples/EssInvalidId'
+            unknownField:
+              $ref: '#/components/examples/EssUnknownField'
+            invalidJson:
+              $ref: '#/components/examples/EssInvalidJson'
+
+    EssClassForbidden:
+      description: |
+        Not a reason to sign out. The token is good; this person cannot mark this batch on this day.
+        - `CLASS_ROLE_DENIED`: a role outside teaching (`faculty`, `hod`) and the Scheduler's admin roles (`admin`, `admin_manager`, `hoo`, `accounts_admin`, `ceo`, `super_admin`). An attendance session has no portal role and is refused here too.
+        - `CLASS_NOT_YOURS`: another faculty member's batch with no covering substitution, or an admin's batch in another branch.
+        - `CLASS_WINDOW`: a day before the batch starts, or after its end date or today (IST).
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            roleDenied:
+              $ref: '#/components/examples/EssClassRoleDenied'
+            notYours:
+              $ref: '#/components/examples/EssClassNotYours'
+            window:
+              $ref: '#/components/examples/EssClassWindow'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
+            notActive:
+              $ref: '#/components/examples/EssNotActive'
+            noAttendanceLogin:
+              $ref: '#/components/examples/EssNoAttendanceLogin'
+            passwordChangeRequired:
+              $ref: '#/components/examples/EssPasswordChangeRequired'
+
+    EssClassNotFound:
+      description: '`BATCH_NOT_FOUND`: no batch has this id, or it has since gone.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              $ref: '#/components/examples/EssBatchNotFound'
+
+    EssClassConflict:
+      description: |
+        The day cannot move as asked; nothing is changed.
+        - `CLASS_ALREADY_MARKED`: a teaching role saving a batch and day that already has rows. An admin role may correct the day instead.
+        - `CLASS_NOT_ABSENT`: a remark for a student who is present, or is not marked at all on that day.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            alreadyMarked:
+              $ref: '#/components/examples/EssClassAlreadyMarked'
+            notAbsent:
+              $ref: '#/components/examples/EssClassNotAbsent'

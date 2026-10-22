@@ -26,6 +26,7 @@ const notifications = require('./routes/notifications');
 const meProfile = require('./routes/meProfile');
 const meOrg = require('./routes/meOrg');
 const facultyDay = require('./routes/facultyDay');
+const classMarking = require('./routes/classMarking');
 const team = require('./routes/team');
 const wallPosts = require('./routes/wallPosts');
 const wallComments = require('./routes/wallComments');
@@ -233,6 +234,10 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.get('/me/org', asEmployee, meOrg.myOrg({ store }));
   // H7: the faculty "my day" and the indicators card (Phase 2D).
   api.get('/me/faculty-day', asEmployee, facultyDay.facultyDayRoute({ store, now }));
+  // H1: class marking (Phase 2D, decision 8): the day's eligible roster, the save and a remark.
+  api.get('/me/batches/:id/roster', asEmployee, classMarking.classRoster({ store, now }));
+  api.post('/me/batches/:id/attendance', asEmployee, classMarking.saveClassAttendance({ store, now }));
+  api.patch('/me/batches/:id/attendance/:date/remarks', asEmployee, classMarking.updateClassRemark({ store, now }));
   api.get('/directory', asEmployee, meOrg.directory({ store }));
   api.get('/team/today', asEmployee, team.teamToday({ store, now }));
   api.get('/team/off-this-week', asEmployee, team.teamOffThisWeek({ store, now }));

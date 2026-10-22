@@ -5,10 +5,22 @@ const { HttpError, MESSAGES } = require('./errors');
  * The ESS's reads and writes on the Scheduler's database, which stays the system of record
  * (ADR-0003).
  *
- * The ESS reads the Scheduler's tables. It writes its own hr_ess_* tables (ADR-0021), and one
- * Scheduler table, by one path only: HR's bulk phone reset makes exactly the update the
- * Scheduler's own reset makes on hr_attendance_devices (revokeActiveDevices below; KP, 16 Oct,
- * decision 11; ADR-0018).
+ * The ESS reads the Scheduler's tables. It writes its own hr_ess_* tables (ADR-0021), and the
+ * Scheduler's tables only through named methods KP sanctioned, each doing what the Scheduler's
+ * own code does and nothing more:
+ *
+ *   hr_attendance_devices  HR's bulk phone reset, the Scheduler's own update (revokeActiveDevices;
+ *                          KP, 16 Oct, decision 11)
+ *   hr_staff_attendance    the shift snapshot the Scheduler's ensureSnapshot copies onto a day
+ *                          (setDaySnapshot)
+ *   hr_employees           the photo pointer only, the columns the Scheduler's setPhoto writes
+ *                          (setEmployeePhoto)
+ *   student_attendance     H1 class marking: the upsert of a day's rows and an absent remark's
+ *                          update (saveClassAttendance, updateClassRemark; KP, decision 8)
+ *   pending_alerts         H1: resolving an 'absent_remarks_missing' alert when the student is
+ *                          marked present or the reason is filled (resolveAbsentRemarkAlerts)
+ *
+ * Never a delete, never another table, never another column.
  *
  * Every read names its columns, and nothing selects '*'. A select('*') is how the Scheduler's
  * marking roster came to hand out password hashes (J2), and a list also means that a column
@@ -67,6 +79,9 @@ const COLUMNS = Object.freeze({
   holdPeriod: 'student_id, hold_start, hold_end',
   studentHoldFlag: 'id, is_on_hold, hold_applied_at',
   pendingRemark: 'id, batch_id, student_id, date, alert_type, is_resolved',
+  // H1 (2D): the roster's students, and the day's marks as class marking reads and writes them.
+  classStudent: 'id, name, admission_number, is_on_hold, hold_applied_at',
+  classAttendance: 'batch_id, student_id, date, is_present, absent_reason, follow_up_comment',
   // password_set_at, and never password_hash: a 'pw' session already proves a hash existed, so
   // whether the person chose their own password is all the first-time check needs.
   attendanceAccount: 'id, employee_id, status, sessions_valid_from, password_set_at',
@@ -513,6 +528,44 @@ function createSupabaseStore(config, { client } = {}) {
     listPendingRemarksFor: (batchIds, day) =>
       readIn('pending_alerts', COLUMNS.pendingRemark, 'batch_id', batchIds,
         (q) => q.eq('date', day).eq('alert_type', 'absent_remarks_missing').eq('is_resolved', false)),
+
+    /* ── H1 (2D): class marking, the Scheduler's own rows ── */
+
+    getBatch: (id) => one('batches', COLUMNS.batch, 'id', id),
+    /** The roster's own columns and the hold flag, and nothing else from a student's record. */
+    listStudentsFor: (studentIds) => readIn('students', COLUMNS.classStudent, 'id', studentIds),
+    /** The batch's marks for one day: what the roster shows and the lock is decided from. */
+    listClassAttendance: (batchId, day) =>
+      list('student_attendance', (q) => q.select(COLUMNS.classAttendance).eq('batch_id', batchId).eq('date', day)),
+    /**
+     * One row per (batch, student, date), the Scheduler's own unique key: an upsert on it corrects
+     * a day for an admin and leaves every other column of an existing row alone.
+     */
+    saveClassAttendance: (rows) =>
+      write('student_attendance', (q) => q.upsert(rows, { onConflict: 'batch_id,student_id,date' })),
+    /** The absent remark alone: the mark itself, its presence and the caller's stamp stay put. */
+    updateClassRemark: ({ batchId, studentId, day, absentReason, followUpComment, by, at }) =>
+      write('student_attendance', (q) => q.update({
+        absent_reason: absentReason,
+        follow_up_comment: followUpComment,
+        remarks_updated_by: by,
+        remarks_updated_at: at,
+      }).eq('batch_id', batchId).eq('student_id', studentId).eq('date', day).eq('is_present', false)
+        .select(COLUMNS.classAttendance).maybeSingle()),
+    /**
+     * The Scheduler's own alert resolution (attendanceController.js:149-162,1194-1201): every
+     * unresolved 'absent_remarks_missing' alert for these students on this day is resolved. One
+     * update, never a delete.
+     */
+    resolveAbsentRemarkAlerts: async ({ batchId, studentIds, day, by, at }) => {
+      const ids = [...new Set((studentIds || []).filter(Boolean))];
+      if (!ids.length) return 0;
+      const rows = await write('pending_alerts', (q) => q.update({ is_resolved: true, resolved_at: at, resolved_by: by })
+        .eq('batch_id', batchId).eq('date', day).eq('alert_type', 'absent_remarks_missing')
+        .eq('is_resolved', false).in('student_id', ids).select('id'));
+      return (rows || []).length;
+    },
+
     listAttendanceLogins: () => list('hr_attendance_accounts', (q) => q.select(COLUMNS.attendanceLogin)),
     /** The logins that have a password, asked as a filter, so not one hash leaves the database. */
     listAttendanceLoginsWithPassword: () =>

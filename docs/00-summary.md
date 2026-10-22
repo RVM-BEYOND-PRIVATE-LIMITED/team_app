@@ -1,6 +1,6 @@
 # Team RVM: project summary
 
-Updated 19 Oct 2026.
+Updated 22 Oct 2026.
 
 ## What it is
 
@@ -8,6 +8,7 @@ Team RVM is RVM CAD's Android app for every employee, modelled on the Keka emplo
 - punching in and out, under the same rules as the web;
 - requests and approvals;
 - an Inbox with push notifications;
+- faculty class marking, with the Scheduler's own checks enforced server-side;
 - a Wall: posts, reactions, praise, polls and announcements;
 - a Helpdesk;
 - Me and My Team.
@@ -111,7 +112,7 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 ## Still open
 
 - **Layout:** [ADR-0017](adr/0017-repository-layout-and-tooling.md) (folder layout, workspaces, Node version), and which Node version the server runs.
-- **Decisions owed:** the ten points in [04-build-plan.md](04-build-plan.md#decisions-still-owed) (the phone reset, the HR Executive as manager, staying signed in and desk logins were decided on 16 Oct). These include faculty leave, short leave, mocked pings, the contact rule, the cut-off edge cases, the phone reset, where HR reviews on the web, and faculty class marking.
+- **Decisions owed:** the points in [04-build-plan.md](04-build-plan.md#decisions-still-owed) (the phone reset, the HR Executive as manager, staying signed in, desk logins and faculty class marking were decided on 16 and 19 Oct). Open: faculty leave, short leave and half days, mocked pings, the contact rule, the cut-off edge cases, where HR reviews on the web, and the infra register (decision 9).
 - **Leave without pay:** whether it has a monthly limit.
 - **Production check (read-only):** confirm that the attendance migrations and the one-CL-a-month index are applied.
 - **Brief re-export:** the fact-check corrections and the 16 Oct answers are in the live brief. KP re-exports it and replaces [the PDF in inputs/](inputs/).
@@ -125,8 +126,8 @@ The full record, with sources, is in [03-decisions.md](03-decisions.md) and [adr
 
 ## Next steps
 
-1. **Wave 1 and Wave 2 are live; Phases 1C to 1E are deployed; Phases 2A to 2D are built and deployed (19 Oct).** The ESS has answered at `https://team-api.rvmcad.org` since 16 Oct, deployed on every merge to `main` ([05-deploy.md](05-deploy.md)). KP has applied migrations 17 to 26; **the Wall's four, 13 to 16, are the only set still to apply** - until then every Wall endpoint but `GET /api/ess/wall/settings` answers 503 `MODULE_NOT_INSTALLED`. The pilot gate is next; what is left is listed phase by phase in [06-backend-phases.md](06-backend-phases.md).
-2. **Waves 2 to 4 are complete for the backend:** Phases 1C, 1D, 1E, 2A, 2B, 2C and 2D are built and deployed, all in team_app, with tests for every endpoint, including role-denied and wrong-owner cases. What remains: apply the Wall's migrations, the pilot gate, and the two open build decisions (3, short leave and half days; 8, faculty class marking).
+1. **Wave 1 and Wave 2 are live; Phases 1C to 1E are deployed; Phases 2A to 2D are built and deployed (19 Oct), and H1 class marking is built (22 Oct).** The ESS has answered at `https://team-api.rvmcad.org` since 16 Oct, deployed on every merge to `main` ([05-deploy.md](05-deploy.md)). KP has applied migrations 17 to 26; **the Wall's four, 13 to 16, are the only set still to apply** - until then every Wall endpoint but `GET /api/ess/wall/settings` answers 503 `MODULE_NOT_INSTALLED`. The pilot gate is next; what is left is listed phase by phase in [06-backend-phases.md](06-backend-phases.md).
+2. **Waves 2 to 4 are complete for the backend:** Phases 1C, 1D, 1E, 2A, 2B, 2C and 2D are built and deployed, all in team_app, with tests for every endpoint, including role-denied and wrong-owner cases; H1 class marking (decision 8) adds three routes over the Scheduler's own `student_attendance` and `pending_alerts` rows. What remains: apply the Wall's migrations, the pilot gate, and one open build decision (3, short leave and half days).
 3. **Phase 0, from RVM, alongside the build:**
    - a Firebase project;
    - a Google Play organisation account (it needs a D-U-N-S number);

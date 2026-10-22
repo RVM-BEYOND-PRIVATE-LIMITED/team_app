@@ -64,10 +64,11 @@ const SCHEMA = {
   faculty_substitutions: ['id', 'batch_id', 'original_faculty_id', 'substitute_faculty_id',
     'start_date', 'end_date', 'notes'],
   batch_students: ['batch_id', 'student_id', 'joined_at'],
-  student_attendance: ['batch_id', 'student_id', 'date', 'is_present'],
+  student_attendance: ['batch_id', 'student_id', 'date', 'is_present', 'absent_reason', 'follow_up_comment',
+    'remarks_updated_by', 'remarks_updated_at'],
   hold_periods: ['student_id', 'hold_start', 'hold_end', 'hold_category', 'hold_remarks', 'applied_by'],
-  pending_alerts: ['id', 'batch_id', 'student_id', 'date', 'alert_type', 'is_resolved'],
-  students: ['id', 'name', 'is_on_hold', 'hold_applied_at', 'is_suspended', 'is_banned'],
+  pending_alerts: ['id', 'batch_id', 'student_id', 'date', 'alert_type', 'is_resolved', 'resolved_at', 'resolved_by', 'location_id'],
+  students: ['id', 'name', 'admission_number', 'is_on_hold', 'hold_applied_at', 'is_suspended', 'is_banned'],
   // The join marker the Scheduler cross-checks: a roster link alone is not a join
   // (utils/attendanceEligibility.js:55-89).
   admissions: ['student_id', 'joined'],
@@ -228,6 +229,10 @@ const UNIQUE = {
   // E3: one open ask per field per person (the partial unique index, 20261110000002).
   hr_ess_change_requests: [
     { name: 'hr_ess_change_requests_open_field_key', columns: ['employee_id', 'field'], where: (row) => row.status === 'open' },
+  ],
+  // H1: one mark per student per batch per day; the Scheduler's own key, which the upsert uses.
+  student_attendance: [
+    { name: 'student_attendance_batch_id_student_id_date_key', columns: ['batch_id', 'student_id', 'date'] },
   ],
 };
 

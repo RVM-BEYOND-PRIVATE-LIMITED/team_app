@@ -65,6 +65,18 @@ const MESSAGES = Object.freeze({
   PORTAL_LOGIN_REQUIRED: 'HR tools need your portal login. Sign in with your username or login phone.',
   NOT_FACULTY: 'This view is for teaching staff with a faculty record. Ask HR if yours is missing.',
 
+  // H1 (decision 8): class marking. The roster's own refusal is a 400 like the other malformed
+  // forms; the rest say exactly why the day cannot be marked.
+  CLASS_ROLE_DENIED: 'Only teaching staff and the admin roles can mark a class.',
+  CLASS_NOT_YOURS: 'That batch is not yours to mark.',
+  CLASS_WINDOW: 'A class can be marked only from the batch\'s start date up to today.',
+  BATCH_NOT_FOUND: 'That batch was not found.',
+  CLASS_ALREADY_MARKED: 'This class has already been marked for that day. Ask an admin to correct it.',
+  CLASS_NOT_ABSENT: 'That student is not marked absent for this day, so there is no absent remark to change.',
+  CLASS_ROSTER: 'Some students are not on this batch\'s roster for that day, or are not eligible to be marked.',
+  CLASS_ATTENDANCE: 'Send each student once, with present as true or false, and each absent reason within its limits.',
+  CLASS_REMARK: 'An absent reason must be 3 to 500 characters, and a follow-up comment up to 1,000.',
+
   // Request bodies and query strings.
   BODY_NOT_OBJECT: 'The request body must be a JSON object.',
   UNKNOWN_FIELD: 'The request has a field the server does not take.',
