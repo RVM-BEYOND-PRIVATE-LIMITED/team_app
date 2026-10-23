@@ -55,9 +55,11 @@ function listApprovals({ store, now }) {
     const raw = oneQueryValue(req.query.status);
     const status = raw === undefined || raw === '' ? 'pending' : raw;
     if (![...STATUSES, 'all'].includes(status)) throw invalid(MESSAGES.APPROVAL_STATUS);
-    if (!hrWide && status !== 'pending') {
-      throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
-    }
+    /*
+     * A manager may filter their OWN reports by any status, not only pending (issue #11): the
+     * query below is already fenced to `reportIds`, so a wider status cannot widen the people.
+     * The old refusal made the app hide the filters from managers; it is no longer needed.
+     */
     const limits = await store.getRequestLimits();
     const today = istDay(now());
 

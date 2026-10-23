@@ -4,6 +4,7 @@ const { createEmployeeAuth } = require('./middleware/employeeAuth');
 const { DEFAULT_LIMITS, createIpLimiter, createEmployeeLimiter, createIdentifierLimiter } = require('./middleware/rateLimit');
 const { healthRoute } = require('./routes/health');
 const { meRoute } = require('./routes/me');
+const { accountRoutes } = require('./routes/account');
 const { capabilitiesRoute } = require('./routes/capabilities');
 const { sessionRoutes } = require('./routes/sessions');
 const { signInResolveRoute } = require('./routes/signIn');
@@ -143,6 +144,12 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   ];
   api.get('/me', asEmployee, meRoute({ store }));
   api.get('/me/capabilities', asEmployee, capabilitiesRoute({ config, store, now }));
+
+  // Account & Security for both kinds of sign-in (issue #10). A portal login may change
+  // everything on the Scheduler; an attendance-only login can change its password here.
+  const account = accountRoutes({ store, now });
+  api.get('/me/account', asEmployee, account.get);
+  api.post('/me/password', asEmployee, account.changePassword);
 
   // Staying signed in (task A3). Refresh and sign-out by refresh token take no bearer, so they
   // share a strict per-address limit instead; a sign-out with no refresh token falls through to

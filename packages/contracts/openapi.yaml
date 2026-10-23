@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.11.0
+  version: 0.12.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -401,6 +401,201 @@ paths:
           Hide a request type whose offered is false (work from home today). The limits are per employee per calendar month; null means no limit.
 
   # ─────────── ESS, Wave 2: kept sign-ins and the one-field sign-in ───────────
+
+  /ess/me/account:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyAccount
+      tags: [ESS]
+      x-owner: ess
+      summary: The caller's account and what this sign-in may change
+      description: |
+        Account & Security for both kinds of sign-in (issue #10). A portal login is answered
+        from its users row. An attendance-only login is answered from its HR record; its email
+        and phone are the login identifiers and are HR-managed, so `can_change_email` and
+        `can_change_phone` are false and `note` says to ask HR. Both kinds may change their
+        password with `POST /ess/me/password`.
+
+        Every check of `GET /ess/me` runs first, so the same 401, 403 `NOT_LINKED`,
+        403 `NOT_ACTIVE`, 403 `NO_ATTENDANCE_LOGIN` and 403 `PASSWORD_CHANGE_REQUIRED`
+        answers apply.
+      responses:
+        '200':
+          description: What this sign-in can show and change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [login_kind, role, username, email, email_verified, phone_number, two_factor_enabled, can_change_email, can_change_phone, can_change_password, can_use_two_factor, note]
+                properties:
+                  login_kind: { type: string, enum: [portal, attendance] }
+                  role: { type: [string, 'null'] }
+                  username: { type: [string, 'null'] }
+                  email: { type: [string, 'null'] }
+                  email_verified: { type: boolean }
+                  phone_number: { type: [string, 'null'] }
+                  two_factor_enabled: { type: boolean }
+                  can_change_email: { type: boolean }
+                  can_change_phone: { type: boolean }
+                  can_change_password: { type: boolean }
+                  can_use_two_factor: { type: boolean }
+                  note: { type: [string, 'null'] }
+              examples:
+                portal:
+                  summary: A portal login; the Scheduler also offers email, phone and two-factor changes
+                  value:
+                    login_kind: portal
+                    role: faculty
+                    username: ravi.kumar
+                    email: ravi.kumar@rvmcad.org
+                    email_verified: true
+                    phone_number: '9876543210'
+                    two_factor_enabled: false
+                    can_change_email: true
+                    can_change_phone: true
+                    can_change_password: true
+                    can_use_two_factor: true
+                    note: null
+                attendance:
+                  summary: An attendance-only login; email and phone are HR's
+                  value:
+                    login_kind: attendance
+                    role: null
+                    username: RVM-0217
+                    email: null
+                    email_verified: false
+                    phone_number: '9876500020'
+                    two_factor_enabled: false
+                    can_change_email: false
+                    can_change_phone: false
+                    can_change_password: true
+                    can_use_two_factor: false
+                    note: Ask HR to change your email or phone number. You can change your password here.
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+      x-notes:
+        - >-
+          Do not call the Scheduler's GET /me for an attendance-only session: its guard rejects the punch token. This endpoint is the one both kinds can call.
+        - >-
+          An attendance login's email and phone are the identifiers it signs in with, so they are not changed here. Use the data-request form to ask HR.
+
+  /ess/me/password:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: changeMyPassword
+      tags: [ESS]
+      x-owner: ess
+      summary: Change an attendance-only login's password
+      description: |
+        For an attendance-only sign-in. It proves `current_password` against
+        `hr_attendance_accounts`, or sets one without a current password when HR has not issued
+        one yet. A change ends every live ESS sign-in, including this one, and moves
+        `sessions_valid_from`, the Scheduler's own cut-off that voids every punch session issued
+        before it. Sign in again with the new password.
+
+        A portal login is refused 409 `USE_SCHEDULER`: the Scheduler's own Account & Security
+        changes its email, phone, password and two-factor together, so there is one writer for
+        a users row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [new_password]
+              properties:
+                current_password: { type: string, description: Required unless no attendance password has been set yet. }
+                new_password: { type: string, minLength: 8, maxLength: 128 }
+                confirm_password: { type: string, description: Must equal new_password when sent. }
+            example:
+              current_password: OldPass123
+              new_password: NewPass456
+              confirm_password: NewPass456
+      responses:
+        '200':
+          description: The password changed and every ESS sign-in ended.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok, signed_out, message]
+                properties:
+                  ok: { type: boolean }
+                  signed_out: { type: boolean }
+                  message: { type: string }
+              example:
+                ok: true
+                signed_out: true
+                message: Password changed. Sign in again with the new one.
+        '400':
+          description: The new password is too short, the confirmation does not match, or a field the server does not take was sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                short:
+                  value: { error: Use at least 8 characters for the new password., code: INVALID_PASSWORD }
+                mismatch:
+                  value: { error: The new password and its confirmation do not match., code: PASSWORD_MISMATCH }
+        '401':
+          description: No token, a rejected token, or a wrong current password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                noToken:
+                  value: { error: Please sign in., code: NOT_AUTHENTICATED }
+                wrongPassword:
+                  value: { error: That password is incorrect., code: WRONG_PASSWORD }
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '409':
+          description: A portal login; use the Scheduler's Account & Security instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                portalLogin:
+                  value:
+                    error: 'Use Account & Security on the portal: it changes your email, phone, password and two-factor together.'
+                    code: USE_SCHEDULER
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+      x-notes:
+        - >-
+          A 401 WRONG_PASSWORD is a real password refusal, not an expired token: show the message and do not sign out.
+        - >-
+          On 200 the current tokens are already dead. Clear them and open the sign-in screen.
 
   /ess/session:
     servers:
@@ -2526,7 +2721,7 @@ paths:
       x-owner: ess
       summary: The approvals Inbox (D1, H6)
       description: |
-        - A manager sees their own direct reports' requests, whatever their login role (an attendance session included). `status` must be `pending` for them.
+        - A manager sees their own direct reports' requests, whatever their login role (an attendance session included), and may filter by any status. The filter narrows the status, never the people: another team's requests never appear.
         - HR, the CEO and super admins (the Scheduler's `ATTENDANCE_OVERRIDE_ROLES`; an HR Executive is not among them) see everybody's, and may filter by any status: `pending` (the default), `approved`, `rejected`, `withdrawn`, `cancelled` or `all`.
         - `counts` is always the pending count this caller can still decide, archived ones left out.
         - Each request carries its context: how much of that kind the person has this month (pending + approved; minutes for a short leave), the month's limit, the day's late marks (attendance only), and who else is off that day — never the leave's type or reason, and at most 5 names.

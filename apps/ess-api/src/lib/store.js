@@ -53,6 +53,11 @@ const COLUMNS = Object.freeze({
   user: 'id, role, faculty_id',
   // The username is what the Scheduler records as the actor's name (attendanceAdminController.js:18).
   userLogin: 'id, username',
+  // Account & Security (issue #10). Never password_hash: it is read by its own method below,
+  // compared in memory, and never returned.
+  userAccount: 'id, username, email, email_verified_at, phone_number, two_factor_enabled',
+  employeeContact: 'id, employee_code, email, phone',
+  attendancePassword: 'id, employee_id, status, password_hash, password_set_at, sessions_valid_from',
   // What a minted portal token is built from (lib/accessTokens.js), and when the password last
   // changed, which ends a kept sign-in made before it (policy/sessions.js passwordChangedSince).
   userForToken: 'id, username, role, location_id, faculty_id, password_changed_at',
@@ -468,6 +473,9 @@ function createSupabaseStore(config, { client } = {}) {
   return {
     getUser: (userId) => one('users', COLUMNS.user, 'id', userId),
     getUserLogin: (userId) => one('users', COLUMNS.userLogin, 'id', userId),
+    getUserAccount: (userId) => one('users', COLUMNS.userAccount, 'id', userId),
+    getEmployeeContact: (employeeId) => one('hr_employees', COLUMNS.employeeContact, 'id', employeeId),
+    getAttendancePasswordHash: (employeeId) => one('hr_attendance_accounts', COLUMNS.attendancePassword, 'employee_id', employeeId),
     getEmployeeById: (employeeId) => one('hr_employees', COLUMNS.employee, 'id', employeeId),
     // hr_employees.user_id is unique where set (hr_employees_user_id_key), so a login is at
     // most one employee.
@@ -633,6 +641,21 @@ function createSupabaseStore(config, { client } = {}) {
       const n = await call(SESSION_FUNCTIONS.revoke, { p_family_id: familyId, p_reason: reason, p_now: at, p_employee_id: employeeId });
       return Number(n) || 0;
     },
+
+    /* ── Account & Security (issue #10): own password ── */
+
+    /**
+     * The attendance login's password. sessions_valid_from moves with it, which is exactly how
+     * the Scheduler ends every punch session issued before a password change; password_set_at
+     * marks that HR's first-time password has been replaced.
+     */
+    updateAttendancePassword: (employeeId, hash, at) => write('hr_attendance_accounts',
+      (q) => q.update({ password_hash: hash, password_set_at: at, sessions_valid_from: at })
+        .eq('employee_id', employeeId).select('id').single()),
+    /** End every live ESS sign-in this employee holds, including the one making this request. */
+    revokeAllSessionsForEmployee: (employeeId, at, reason = 'password_changed') => write('hr_ess_sessions',
+      (q) => q.update({ revoked_at: at, revoked_reason: reason }).eq('employee_id', employeeId)
+        .is('revoked_at', null).select('id')),
 
     /* ── B1: one of the caller's days ── */
 

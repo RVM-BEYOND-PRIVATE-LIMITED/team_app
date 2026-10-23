@@ -65,6 +65,16 @@ const MESSAGES = Object.freeze({
   PORTAL_LOGIN_REQUIRED: 'HR tools need your portal login. Sign in with your username or login phone.',
   NOT_FACULTY: 'This view is for teaching staff with a faculty record. Ask HR if yours is missing.',
 
+  // Account & Security (issue #10). A portal login changes all of these; an attendance-only
+  // login can change its password here, and asks HR for the two identifiers.
+  CURRENT_PASSWORD: 'Enter your current password.',
+  WRONG_PASSWORD: 'That password is incorrect.',
+  NEW_PASSWORD: 'Use at least 8 characters for the new password.',
+  PASSWORD_MISMATCH: 'The new password and its confirmation do not match.',
+  PASSWORD_SET: 'Password changed. Sign in again with the new one.',
+  HR_MANAGES_CONTACT: 'Ask HR to change your email or phone number. You can change your password here.',
+  PORTAL_ACCOUNT_CHANGE: 'Use Account & Security on the portal: it changes your email, phone, password and two-factor together.',
+
   // H1 (decision 8): class marking. The roster's own refusal is a 400 like the other malformed
   // forms; the rest say exactly why the day cannot be marked.
   CLASS_ROLE_DENIED: 'Only teaching staff and the admin roles can mark a class.',

@@ -115,6 +115,24 @@ describe('GET /api/ess/approvals', () => {
     expect(res.body.counts).toEqual({ attendance: 0, leave: 1, total: 1 });
   });
 
+  it('a manager may filter their own reports by any status, and cannot see another team', async () => {
+    const { app, people } = buildApp({ setup: (w) => {
+      withTwoRequests(w);
+      w.tables.hr_ess_attendance_requests.push(requestRow('attendance', w.people.attendance.employee.id, 3, {
+        status: 'approved', decided_by_name: 'Test Admin Manager', decided_at: '2026-10-15T05:00:00+00:00',
+      }));
+      w.tables.hr_ess_leave_requests.push(requestRow('leave', w.people.faculty.employee.id, 4, {
+        status: 'approved', decided_by_name: 'Test HR Manager', decided_at: '2026-10-15T05:00:00+00:00',
+      }));
+    } });
+    const approved = await inbox(app, tokens.portal(people.admin_manager), '?status=approved');
+    expect(approved.status).toBe(200);
+    expect(approved.body.requests.map((r) => r.id)).toEqual([REQ(3)]);
+    const all = await inbox(app, tokens.portal(people.admin_manager), '?status=all');
+    expect(all.status).toBe(200);
+    expect(all.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(3)]);
+  });
+
   it('an HR decider sees everybody, with counts, and may filter by any status', async () => {
     const { app, people } = buildApp({ setup: (w) => {
       withTwoRequests(w);
@@ -136,7 +154,10 @@ describe('GET /api/ess/approvals', () => {
     const { app, people } = buildApp({ setup: withTwoRequests });
     const res = await inbox(app, tokens.portal(people.hr_executive));
     expect(res.body).toEqual({ counts: { attendance: 0, leave: 0, total: 0 }, requests: [], truncated: false });
-    expectRefusal(await inbox(app, tokens.portal(people.hr_executive), '?status=all'), 403, 'NOT_AN_APPROVER');
+    // No reports means a filter is empty, not a 403 (issue #11: the manager owns the filter).
+    const filtered = await inbox(app, tokens.portal(people.hr_executive), '?status=all');
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.requests).toEqual([]);
   });
 
   it('an attendance session that manages somebody gets their requests, as the brief says', async () => {

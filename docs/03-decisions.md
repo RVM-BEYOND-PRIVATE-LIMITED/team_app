@@ -179,3 +179,37 @@ code or schema changes; one ESS migration (27) for the G6 link table.
   (its punch controller and the `hr_employees.geofence_exempt` rule); it stays out of scope under
   ADR-0018, and the full flow and handover note are in
   [10-wfh-flow.md](10-wfh-flow.md).
+
+## 23 Oct 2026 - Attendance-only sessions and Account & Security (issue #10)
+
+The app has two sign-ins. A **portal** login has a `users` row and can use every Scheduler
+screen. An **attendance-only** login has no `users` row by design (`hr_attendance_accounts` and
+`hr_employees` only), so the Scheduler's `/api/me` guard rejects its punch token before any
+handler runs. The fix is split by what each side owns:
+
+- **Account & Security.** The ESS answers `GET /api/ess/me/account` for both kinds. An
+  attendance-only login can change its own password with `POST /api/ess/me/password`; the write
+  updates `hr_attendance_accounts` with the same three columns the Scheduler's `setPassword`
+  updates (`password_hash`, `password_set_at`, `sessions_valid_from`) and ends every ESS
+  sign-in. A portal login is refused `409 USE_SCHEDULER` and keeps using the Scheduler's own
+  four-in-one screen, so a `users` row has one writer.
+- **Email and phone.** For an attendance-only login these are the identifiers it signs in with,
+  taken from the HR record. They stay HR-managed: the card says so, and the person uses the
+  existing data-request flow (A8) to ask for a change. Sending a code to a new address needs the
+  Scheduler's mail/SMS providers, which the ESS does not hold, and is not worth a second copy of
+  that infrastructure.
+- **Every other Scheduler-backed screen.** Priority tasks, announcements, interviews, My
+  batches/indicators, Faculty Development, Security activity and the Helpdesk team queue are
+  portal-only. The app hides them when `login.kind === 'attendance'` and shows the ESS
+  equivalents (Wall announcements, attendance day, requests, documents, ID card). A 403
+  `PORTAL_LOGIN_REQUIRED` from an ESS queue is the server saying the same thing.
+- **Not chosen:** teaching the Scheduler's `auth` to accept the punch token (option B). It would
+  be an ADR-0018 exception, and an attendance-only person has no `users` row for `req.user`; a
+  synthetic one would widen a punch-only sign-in to every Scheduler route that checks no more
+  than `auth`.
+- **The 401 rule.** A non-token 401 must keep the server's wording and must not sign the person
+  out; the app-side fix for that already shipped. This change adds no 401 for a valid token.
+
+The ESS half is live in `apps/ess-api` (`src/routes/account.js`, contract 0.12.0). The Flutter
+hiding of the Scheduler-only tiles is the remaining app change; the endpoint table is in
+[08-flutter-handover.md](08-flutter-handover.md).

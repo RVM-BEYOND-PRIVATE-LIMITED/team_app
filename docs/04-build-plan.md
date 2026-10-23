@@ -27,7 +27,7 @@ Task IDs refer to [02-reconciliation.md](02-reconciliation.md). [06-backend-phas
 
 **Still to do for Wave 1:** KP runs the server check, then turns on `ESS_DEPLOY_ENABLED` for the first deploy ([05-deploy.md](05-deploy.md)).
 
-**Stopped and removed on 16 Oct:** four Scheduler security branches, a login-page change and an nginx route in the Scheduler's deploy. The holes they would have fixed are still open ([02-reconciliation.md](02-reconciliation.md)).
+**Stopped and removed on 16 Oct:** four Scheduler security branches, a login-page change and an nginx route in the Scheduler's deploy. The holes they would have fixed were closed in the programme #92 pass on 23 Oct (Scheduler branch `fix/programme-92-security`; see `Scheduler_Backend/docs/programme-92-status-2026-10-23.md`).
 
 ## Wave 2: identity and the attendance extras (built, 16 Oct)
 
@@ -360,16 +360,15 @@ carry the two database changes.
   absent student's remark after the first save; the remark route changes no mark, and an admin
   role may correct the marks too.
 
-**Tests:** the suite is 2,574 in 56 files, the contract at 0.11.0 with 1,243 contract checks
+**Tests:** the suite is 2,600 in 57 files, the contract at 0.12.0 with 1,260 contract checks
 (Waves 9 to 11 included). Phase 2D's own files are `leaders`, `approvalsChain`, `facultyDay`,
 `classMarking` and `approvals` (the policy and the job); WFH's is `wfh`; `tests/classMarking.test.js` covers the
 roster for an owner, a covering substitute and an admin, the role, branch, ownership, window,
 roster and lock refusals, the alert resolution, the remark rules and the no-leak reply.
 `npm run test:migrations` applies all twenty-nine migrations and their rollbacks twice.
 
-**You after:** apply migrations 27 to 29 (the infra link, the Wall repair and the WFH allowance);
-13 to 26 are applied. Until 27, the register mirror is skipped and retried, and tickets are
-unaffected. Until 29, WFH answers 503 and the rest of the leave flow works.
+**You after:** nothing — migrations 27 to 29 are applied (confirmed read-only on 23 Oct 2026);
+the register mirror, the Wall and WFH are live.
 
 **Done when:** the CEO sees the organisation in numbers with no name in the reply; a faculty
 member sees today's batches -- including the one they cover -- with what is marked and what is
@@ -414,7 +413,7 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **KP has applied 13 to 27; 28 (the Wall's poll-close column repair) and 29 (the WFH allowance) are still to apply.**
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each creates only new `hr_ess_*` objects, is safe to run twice, and turns row-level security on with no policy, so only the service role (the ESS) reaches its rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **All 29 are applied.** The read-only check on 23 Oct 2026 (run 39939895079) found 28's Wall poll-close column and 29's WFH allowance in production, with every other `hr_ess_*` table, column and seed.
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
@@ -483,7 +482,7 @@ Tested on a throwaway `postgres:17-alpine` in Docker, never on a real database:
     and asserts the number of write sites, so a later change cannot widen them quietly.
   If the Scheduler changes any of these paths, change the matching method to match.
 - **Kept sign-ins after a rollback.** Rolling back `hr_ess_sessions` makes every access token the ESS minted answer 503 on the ESS (not 401), so the app does not sign out by itself; on the Scheduler those tokens last out their hour.
-- **Production state unconfirmed.** Whether the attendance migrations (`20261020000000` to `20261023000000`) and the one-CL index are applied in production is not confirmed. Check, read-only, before Wave 3 relies on them.
+- **Production state confirmed.** The attendance migrations (`20261020000000` to `20261023000000`) and the one-CL index were confirmed read-only on 23 Oct 2026; all `hr_ess_*` migrations 1 to 29 are applied.
 - **Open holes.** The Scheduler's holes stay open while the app ships. Whether to release anyway is KP's decision.
 - **The on-duty job runs inside the ESS process.** One instance only (`ecosystem.config.cjs`, fork mode), as for the rate limits; the SQL it calls is idempotent (a written day no longer matches), so a restart or a second manual run changes nothing. Its failures go to the pm2 log and to `hr_ess_audit` as `on_duty.failed`, best effort.
 - **The limits are load-bearing for the request endpoints.** They read `hr_ess_request_limits` and answer 503 until migration 6 is applied; `GET /api/ess/me/capabilities`, the app's launch call, falls back to the code's defaults instead of failing.
