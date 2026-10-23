@@ -39,6 +39,7 @@ dependencies:
 
   # document/photo picker for multipart uploads (system picker → no storage perms)
   file_picker: ^8.1.2
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

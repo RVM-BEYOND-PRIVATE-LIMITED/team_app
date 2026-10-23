@@ -61,13 +61,19 @@ class _SecurityView extends StatelessWidget {
             title: 'Sign-in details', caption: 'Kept private to you'),
         const SizedBox(height: 8),
         _InfoCard(rows: [
-          (
+          _InfoRow(
             'Email',
             p.email ?? 'Not set',
-            p.emailVerified ? 'Verified' : 'Unverified'
+            status: p.emailVerified
+                ? 'Verified'
+                : (p.email == null ? null : 'Unverified'),
+            onVerify: p.email != null && !p.emailVerified
+                ? () => _verifyEmail(context, p)
+                : null,
           ),
-          ('Phone', p.phoneNumber ?? 'Not set', null),
-          ('Two-factor', p.twoFactorEnabled ? 'On' : 'Off', null),
+          _InfoRow('Phone', p.phoneNumber ?? 'Not set'),
+          _InfoRow('Two-factor', p.twoFactorEnabled ? 'On' : 'Off',
+              status: p.twoFactorEnabled ? 'On' : 'Off'),
         ]),
         const SizedBox(height: RvmSpacing.lg),
         const TeamSectionHeader(
@@ -202,6 +208,20 @@ class _SecurityView extends StatelessWidget {
         build: (close, bloc) =>
             _ChangeEmailFlow(bloc: bloc, close: close, current: p.email),
       );
+
+  /// Verifies the address already on the account. The Scheduler's email-change
+  /// route accepts the current address while it is unverified and sends a code
+  /// to it; confirming that code stamps `email_verified_at`, so no new endpoint
+  /// is needed and the address itself never moves.
+  void _verifyEmail(BuildContext context, TeamProfile p) {
+    final email = p.email;
+    if (email == null || email.isEmpty) return;
+    _showActionDialog(
+      context,
+      build: (close, bloc) =>
+          _VerifyEmailFlow(bloc: bloc, close: close, email: email),
+    );
+  }
 
   void _changePhone(BuildContext context, TeamProfile p) => _showActionDialog(
         context,
@@ -893,9 +913,17 @@ class _DisableTwoFactorFormState extends State<_DisableTwoFactorForm> {
   }
 }
 
+class _InfoRow {
+  const _InfoRow(this.label, this.value, {this.status, this.onVerify});
+  final String label;
+  final String value;
+  final String? status;
+  final VoidCallback? onVerify;
+}
+
 class _InfoCard extends StatelessWidget {
   const _InfoCard({required this.rows});
-  final List<(String, String, String?)> rows;
+  final List<_InfoRow> rows;
 
   @override
   Widget build(BuildContext context) {
@@ -907,7 +935,7 @@ class _InfoCard extends StatelessWidget {
             if (i > 0) const Divider(height: 1),
             ListTile(
               leading: TeamIconBadge(
-                icon: switch (rows[i].$1) {
+                icon: switch (rows[i].label) {
                   'Email' => Icons.alternate_email_rounded,
                   'Phone' => Icons.phone_iphone_rounded,
                   _ => Icons.verified_user_outlined,
@@ -916,25 +944,140 @@ class _InfoCard extends StatelessWidget {
                 iconSize: 16,
                 radius: 10,
               ),
-              title: Text(rows[i].$2,
+              title: Text(rows[i].value,
                   style: Theme.of(context).textTheme.bodyMedium),
-              subtitle: Text(rows[i].$1,
+              subtitle: Text(rows[i].label,
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
                       ?.copyWith(fontSize: 10)),
-              trailing: rows[i].$3 == null
-                  ? null
-                  : TeamPill(
-                      label: rows[i].$3!,
-                      tone: rows[i].$3 == 'Verified' || rows[i].$3 == 'On'
-                          ? TeamPillTone.success
-                          : TeamPillTone.warning,
-                      dense: true,
-                    ),
+              trailing: _trailing(rows[i]),
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget? _trailing(_InfoRow row) {
+    final status = row.status;
+    if (status == null) return null;
+    if (status == 'Unverified') {
+      return OutlinedButton(
+        onPressed: row.onVerify,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: RvmColors.danger,
+          side: const BorderSide(color: RvmColors.danger),
+          minimumSize: const Size(0, 30),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          visualDensity: VisualDensity.compact,
+        ),
+        child: const Text('Verify Now',
+            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700)),
+      );
+    }
+    if (status == 'Verified') {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.verified_rounded, size: 14, color: RvmColors.success),
+          SizedBox(width: 3),
+          Text('Verified',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: RvmColors.success)),
+        ],
+      );
+    }
+    return TeamPill(
+      label: status,
+      tone: status == 'On' ? TeamPillTone.success : TeamPillTone.neutral,
+      dense: true,
+    );
+  }
+}
+
+/// Sends a code to the address already on the account (still unverified) and
+/// confirms it. Distinct from [_ChangeEmailFlow], which moves the address.
+class _VerifyEmailFlow extends StatefulWidget {
+  const _VerifyEmailFlow(
+      {required this.bloc, required this.close, required this.email});
+  final AccountActionBloc bloc;
+  final VoidCallback close;
+  final String email;
+  @override
+  State<_VerifyEmailFlow> createState() => _VerifyEmailFlowState();
+}
+
+class _VerifyEmailFlowState extends State<_VerifyEmailFlow> {
+  final _password = TextEditingController();
+  final _code = TextEditingController();
+  bool _sent = false;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<AccountActionBloc, AccountActionState>(
+      bloc: widget.bloc,
+      listenWhen: (a, b) => a.status != b.status || a.codeSent != b.codeSent,
+      listener: (context, s) {
+        if (s.codeSent) setState(() => _sent = true);
+        if (s.status == WriteStatus.success && !s.codeSent) {
+          widget.close();
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(const SnackBar(content: Text('Email verified.')));
+        }
+      },
+      builder: (context, s) => _ActionDialog(
+        title: _sent ? 'Confirm your email' : 'Verify your email',
+        bloc: widget.bloc,
+        children: _sent
+            ? [
+                Text('Enter the 6-digit code sent to ${widget.email}.',
+                    style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: RvmSpacing.sm),
+                TextField(
+                    controller: _code,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        const InputDecoration(labelText: '6-digit code')),
+                const SizedBox(height: RvmSpacing.md),
+                FilledButton(
+                  onPressed: s.status == WriteStatus.submitting
+                      ? null
+                      : () => widget.bloc
+                          .add(AccountConfirmEmail(_code.text.trim())),
+                  child: const Text('Verify'),
+                ),
+              ]
+            : [
+                Text(
+                    'We will send a code to ${widget.email}. Enter your current '
+                    'password to prove it is you.',
+                    style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: RvmSpacing.sm),
+                TextField(
+                    controller: _password,
+                    obscureText: true,
+                    decoration:
+                        const InputDecoration(labelText: 'Your password')),
+                const SizedBox(height: RvmSpacing.md),
+                FilledButton(
+                  onPressed: s.status == WriteStatus.submitting
+                      ? null
+                      : () => widget.bloc.add(AccountRequestEmail(
+                          email: widget.email, password: _password.text)),
+                  child: const Text('Send code'),
+                ),
+              ],
       ),
     );
   }

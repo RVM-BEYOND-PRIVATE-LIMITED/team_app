@@ -213,12 +213,22 @@ class WallBloc extends Bloc<WallEvent, WallState> {
         celebrations: state.celebrations,
         submitting: true));
     try {
-      await _repo.createPraise(
+      final result = await _repo.createPraiseSafe(
           employeeId: e.employeeId,
           badge: e.badge,
           reason: e.reason,
           scope: e.scope,
           attachments: e.attachments);
+      if (result.failure != null) {
+        emit(WallState(
+            status: state.status,
+            posts: state.posts,
+            settings: state.settings,
+            announcements: state.announcements,
+            celebrations: state.celebrations,
+            actionFailure: result.failure));
+        return;
+      }
       emit(WallState(
           status: state.status,
           posts: state.posts,

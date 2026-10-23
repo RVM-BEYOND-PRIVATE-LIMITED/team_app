@@ -22,7 +22,13 @@ class RequestsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => getIt<RequestsBloc>()..add(const RequestsLoadRequested()),
-      child: const _RequestsView(),
+      child: BlocProvider(
+        // This route is pushed outside the shell, so it brings its own copy of
+        // the menu. The Team Approvals tab is only shown to somebody the server
+        // will actually let decide: the Inbox otherwise opens on a 403.
+        create: (_) => getIt<CapabilitiesBloc>()..add(const LoadRequested()),
+        child: const _RequestsView(),
+      ),
     );
   }
 }
@@ -32,6 +38,9 @@ class _RequestsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final caps = context.watch<CapabilitiesBloc>().state.data;
+    final canApprove =
+        caps?.approvalsOwnReports == true || caps?.approvalsAnyRequest == true;
     return Scaffold(
       backgroundColor: RvmColors.ivory,
       body: Column(
@@ -48,33 +57,43 @@ class _RequestsView extends StatelessWidget {
               ),
             ],
             footer: TeamSegmentedTabs(
-              labels: const ['My Requests', 'Team Approvals'],
+              labels: canApprove
+                  ? const ['My Requests', 'Team Approvals']
+                  : const ['My Requests'],
               selectedIndex: 0,
               onDark: true,
               onChanged: (i) {
-                if (i == 1) context.push('/approvals');
+                if (i == 1 && canApprove) context.push('/approvals');
               },
             ),
           ),
           Expanded(
-            child: BlocConsumer<RequestsBloc, RequestsState>(
-              listenWhen: (a, b) =>
-                  a.createdNonce != b.createdNonce ||
-                  a.submitFailure != b.submitFailure,
+            // Two listeners, not one: clearing a failure while retrying must
+            // not look like a success (the old single listener did that when
+            // createdNonce was already above zero from an earlier request).
+            child: BlocListener<RequestsBloc, RequestsState>(
+              listenWhen: (a, b) => a.submitFailure != b.submitFailure,
               listener: (context, state) {
                 final msg = state.submitFailure?.message;
                 if (msg != null) {
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
                     ..showSnackBar(SnackBar(content: Text(msg)));
-                } else if (state.createdNonce > 0) {
+                }
+              },
+              child: BlocListener<RequestsBloc, RequestsState>(
+                listenWhen: (a, b) => a.createdNonce != b.createdNonce,
+                listener: (context, state) {
+                  if (state.createdNonce == 0) return;
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
                     ..showSnackBar(const SnackBar(
                         content: Text('Request sent to your approver.')));
-                }
-              },
-              builder: (context, state) => _body(context, state),
+                },
+                child: BlocBuilder<RequestsBloc, RequestsState>(
+                  builder: (context, state) => _body(context, state),
+                ),
+              ),
             ),
           ),
         ],

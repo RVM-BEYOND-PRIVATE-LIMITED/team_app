@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../work/wfh_sheet.dart';
+import '../../domain/attendance_models.dart';
 import '../../domain/ess_models.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
@@ -172,14 +173,25 @@ class _ScheduleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => getIt<PunchBloc>()..add(const PunchLoadRequested()),
-      child: BlocBuilder<PunchBloc, PunchState>(
+      create: (_) =>
+          getIt<PunchBloc>()..add(const PunchLoadRequested(withDistance: true)),
+      child: BlocConsumer<PunchBloc, PunchState>(
+        listenWhen: (a, b) => a.message != b.message,
+        listener: (context, state) {
+          final message = state.message;
+          if (message != null) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(content: Text(message)));
+          }
+        },
         builder: (context, state) {
           final data = state.data;
           final today = data?.today;
           final shift = data?.shift;
           final onDuty = today?.punchedIn ?? false;
-          final schedule = (shift?.start != null && shift?.end != null)
+          final done = today?.done ?? false;
+          final shiftText = (shift?.start != null && shift?.end != null)
               ? '${_prettyTime(shift?.start ?? '')} – ${_prettyTime(shift?.end ?? '')}'
               : 'Shift not set';
           final logged = today?.firstIn;
@@ -210,7 +222,7 @@ class _ScheduleCard extends StatelessWidget {
                                     color: RvmColors.muted,
                                   )),
                           const SizedBox(height: 2),
-                          Text(schedule,
+                          Text(shiftText,
                               style: Theme.of(context)
                                   .textTheme
                                   .titleSmall
@@ -258,10 +270,251 @@ class _ScheduleCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                _HomePunchButton(
+                  onDuty: onDuty,
+                  done: done,
+                  busy: state.punching,
+                  onPressed: state.punching
+                      ? null
+                      : () {
+                          final reason = _homePunchBlock(data);
+                          if (reason != null) {
+                            final messenger = ScaffoldMessenger.of(context);
+                            messenger
+                              ..hideCurrentSnackBar()
+                              ..showSnackBar(SnackBar(
+                                content: Text(reason),
+                                action: data?.mustSetPassword == true
+                                    ? SnackBarAction(
+                                        label: 'Set password',
+                                        onPressed: () =>
+                                            context.push('/me/punch'),
+                                      )
+                                    : null,
+                              ));
+                            return;
+                          }
+                          context
+                              .read<PunchBloc>()
+                              .add(PunchRequested(onDuty ? 'out' : 'in'));
+                        },
+                ),
+                const SizedBox(height: 8),
+                _DistanceNote(
+                  state: state,
+                  onRefresh: () => context
+                      .read<PunchBloc>()
+                      .add(const PunchDistanceRequested()),
+                ),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// A bounded, human message for the cases where a punch cannot be sent. The
+/// Home button never navigates: the person stays on Home and sees the reason.
+String? _homePunchBlock(MyAttendance? data) {
+  if (data == null) {
+    return 'Attendance is still loading. Try again in a moment.';
+  }
+  if (!data.linked) {
+    return data.message ??
+        'Your login is not linked to an employee record yet.';
+  }
+  if (data.mustSetPassword) {
+    return 'Set your attendance password before you punch.';
+  }
+  final device = data.device;
+  if (device != null && device.thisPhone != 'own' && !device.canRegister) {
+    return switch (device.thisPhone) {
+      'other' =>
+        'This phone is registered to another employee. Punch from your own phone.',
+      'revoked' =>
+        'HR has reset this phone. Punch from your new phone, or ask HR to reset it again.',
+      _ =>
+        'Your attendance is registered to a different phone. Ask HR to reset your phone.',
+    };
+  }
+  return null;
+}
+
+String _distanceText(double meters) {
+  if (meters < 1000) return '${meters.round()} m';
+  return '${(meters / 1000).toStringAsFixed(1)} km';
+}
+
+/// The Home card's distance line: how far this phone is from the branch
+/// geofence centre and whether that is inside the allowed radius.
+class _DistanceNote extends StatelessWidget {
+  const _DistanceNote({required this.state, required this.onRefresh});
+
+  final PunchState state;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final data = state.data;
+    final branch = data?.branch;
+    final radius = state.allowedRadiusMeters ?? branch?.radiusM;
+    final configured = branch != null &&
+        branch.configured &&
+        branch.latitude != null &&
+        branch.longitude != null &&
+        radius != null;
+
+    final Color color;
+    final IconData icon;
+    final String title;
+    final String? subtitle;
+    final bool loading = state.distanceLoading;
+
+    if (data == null) {
+      color = RvmColors.muted;
+      icon = Icons.location_searching_rounded;
+      title = 'Checking your location after attendance loads…';
+      subtitle = null;
+    } else if (!configured) {
+      color = RvmColors.warning;
+      icon = Icons.location_off_rounded;
+      title = 'Office geofence is not set up.';
+      subtitle = 'Ask HR to set the branch location.';
+    } else if (loading) {
+      color = RvmColors.info;
+      icon = Icons.my_location_rounded;
+      title = 'Checking your distance from ${branch.name}…';
+      subtitle = null;
+    } else if (state.distanceError != null) {
+      color = RvmColors.warning;
+      icon = Icons.location_disabled_rounded;
+      title = state.distanceError!;
+      subtitle = 'Tap the refresh button to try again.';
+    } else if (state.distanceMeters == null) {
+      color = RvmColors.muted;
+      icon = Icons.location_searching_rounded;
+      title = 'Distance not measured yet.';
+      subtitle = 'Tap refresh to check.';
+    } else {
+      final distance = state.distanceMeters!;
+      final inside = distance <= radius;
+      color = inside ? RvmColors.success : RvmColors.danger;
+      icon = inside ? Icons.check_circle_rounded : Icons.location_off_rounded;
+      title =
+          '${inside ? 'Inside' : 'Outside'} the office geofence — ${_distanceText(distance)} away';
+      subtitle = '${branch.name} · allowed radius ${_distanceText(radius)}'
+          '${state.accuracyMeters == null ? '' : ' · GPS ±${state.accuracyMeters!.round()} m'}';
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(RvmRadii.sm),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          loading
+              ? SizedBox(
+                  width: 15,
+                  height: 15,
+                  child:
+                      CircularProgressIndicator(strokeWidth: 2, color: color))
+              : Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                        )),
+                if (subtitle != null)
+                  Text(subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 9,
+                            color: RvmColors.muted,
+                          )),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Refresh distance',
+            onPressed: onRefresh,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            color: RvmColors.subtle,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Home tab's one-tap punch. Green while the person is on duty, red once
+/// they have punched out for the day, so the state is readable at a glance.
+class _HomePunchButton extends StatelessWidget {
+  const _HomePunchButton({
+    required this.onDuty,
+    required this.done,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final bool onDuty;
+  final bool done;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = done
+        ? RvmColors.danger
+        : onDuty
+            ? RvmColors.success
+            : RvmColors.clay;
+    final label = done
+        ? 'Punched Out'
+        : onDuty
+            ? 'Punch Out'
+            : 'Punch In';
+    final icon = done
+        ? Icons.check_circle_rounded
+        : onDuty
+            ? Icons.logout_rounded
+            : Icons.login_rounded;
+    return SizedBox(
+      height: 46,
+      child: FilledButton(
+        onPressed: done || busy ? null : onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: color,
+          disabledBackgroundColor: done ? color : color.withValues(alpha: 0.55),
+          disabledForegroundColor: Colors.white,
+        ),
+        child: busy
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white))
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 17),
+                  const SizedBox(width: 8),
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
       ),
     );
   }
@@ -549,13 +802,8 @@ class _QuickActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final caps = context.watch<CapabilitiesBloc>().state.data;
     final actions = <_QuickAction>[
-      _QuickAction(
-          Icons.fingerprint_rounded,
-          'Punch in / out',
-          'Quick attendance',
-          RvmColors.teamSeed,
-          const Color(0xFFFCEBE2),
-          '/me/punch'),
+      // The punch itself lives in the schedule card above, so this row does not
+      // send anyone to the full punch screen.
       _QuickAction(Icons.today_outlined, 'My day', 'Tasks & meetings',
           RvmColors.info, RvmColors.infoSoft, '/me/attendance'),
       _QuickAction(
@@ -606,7 +854,7 @@ class _QuickAction {
   final String subtitle;
   final Color color;
   final Color background;
-  final String? route;
+  final String route;
   final String? badge;
 }
 
@@ -619,17 +867,7 @@ class _QuickTile extends StatelessWidget {
     return TeamCard(
       padding: const EdgeInsets.all(12),
       radius: RvmRadii.md,
-      onTap: () {
-        if (action.route != null) {
-          context.push(action.route!);
-        } else {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(
-                content: Text(
-                    '${action.title} needs the new backend — not available yet.')));
-        }
-      },
+      onTap: () => context.push(action.route),
       child: SizedBox(
         height: 88,
         child: Stack(

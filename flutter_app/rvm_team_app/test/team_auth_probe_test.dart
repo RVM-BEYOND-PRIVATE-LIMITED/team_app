@@ -1,13 +1,11 @@
 import 'dart:convert';
 
 import 'package:core_auth/core_auth.dart';
-import 'package:core_network/core_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:rvm_team_app/bloc/team_auth_bloc.dart';
 import 'package:rvm_team_app/data/repositories/auth_repository.dart';
 import 'package:rvm_team_app/data/repositories/ess_repository.dart';
-import 'package:rvm_team_app/domain/ess_models.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
@@ -57,6 +55,7 @@ void main() {
 
     verifyNever(() => ess.me());
     verifyNever(() => ess.health());
+    verifyNever(() => ess.restoreKeptSignIn());
   });
 
   test('a stored team token restores the session without a network call',
@@ -72,20 +71,21 @@ void main() {
 
     expect(state.identity?.userId, 'u1');
     verifyNever(() => ess.me());
+    verifyNever(() => ess.restoreKeptSignIn());
   });
 
   test('a kept sign-in is used to restore an expired token', () async {
     when(() => session.readSchedulerToken()).thenAnswer((_) async => null);
     when(() => session.readEssRefreshToken())
         .thenAnswer((_) async => 'refresh-token');
-    when(() => ess.me()).thenThrow(const NoConnectionFailure());
+    when(() => ess.restoreKeptSignIn()).thenAnswer((_) async => false);
 
     final unauthenticated = bloc.stream
         .firstWhere((s) => s.status == TeamAuthStatus.unauthenticated);
     bloc.add(const TeamAuthProbeRequested());
     await unauthenticated;
 
-    verify(() => ess.me()).called(1);
+    verify(() => ess.restoreKeptSignIn()).called(1);
   });
 
   test('a spent token is rotated before the shell can call capabilities',
@@ -98,7 +98,7 @@ void main() {
         .thenAnswer((_) async => calls.removeAt(0));
     when(() => session.readEssRefreshToken())
         .thenAnswer((_) async => 'refresh-token');
-    when(() => ess.me()).thenAnswer((_) async => EssMe.fromJson(const {}));
+    when(() => ess.restoreKeptSignIn()).thenAnswer((_) async => true);
 
     final authenticated =
         bloc.stream.firstWhere((s) => s.status == TeamAuthStatus.authenticated);
@@ -106,7 +106,7 @@ void main() {
     final state = await authenticated;
 
     expect(state.identity?.userId, 'u1');
-    verify(() => ess.me()).called(1);
+    verify(() => ess.restoreKeptSignIn()).called(1);
   });
 
   test('a spent token with no kept sign-in is dropped, not used', () async {
@@ -121,6 +121,7 @@ void main() {
     await unauthenticated;
 
     verifyNever(() => ess.me());
+    verifyNever(() => ess.restoreKeptSignIn());
     verify(() => session.signOutScheduler()).called(1);
   });
 }

@@ -1,4 +1,5 @@
 import 'package:core_network/core_network.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 
 /// Wraps a raw dio call so every data source throws the shared typed [Failure]
@@ -21,6 +22,13 @@ mixin DioExecutor {
       return value;
     } on DioException catch (e) {
       throw Failure.fromDio(e);
+    } catch (e, stack) {
+      // A parse error or a plugin failure is still one failed request: make it
+      // a typed Failure so every bloc's `on Failure` handler resets its loading
+      // state and shows a message instead of leaving a spinner forever.
+      if (e is Failure) rethrow;
+      debugPrint('Unexpected request failure: $e\n$stack');
+      throw const UnknownFailure('Could not read the server response.');
     }
   }
 }
