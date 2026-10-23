@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (22 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct and waits for migration 27.** KP has applied migrations 13 to 27; **28, the Wall's poll-close column repair, is the only one still to apply** (until then every Wall endpoint answers 503). The pilot gate is next.
+**Where it stands (22 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct.** **All 29 migrations are applied** — the read-only check on 23 Oct 2026 (`.github/workflows/verify-migrations.yml`, run 39939895079) found every table, column and seed, including 28's Wall poll repair and 29's WFH allowance. The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 | [1D](#phase-1d-inbox-notifications-and-push) | Notifications, push, devices, priority tasks | **Built + deployed, 19 Oct** |
 | [1E](#phase-1e-me-and-my-team) | Profile, reporting chain, directory, team today | **Built + deployed, 19 Oct; no migrations** |
 | [2A](#phase-2a-wall) | The Wall | **Built + deployed; 13-16 applied** |
-| [2B](#phase-2b-helpdesk) | The Helpdesk | **Built + deployed; 17-18 applied; G6 22 Oct, 27 to apply** |
+| [2B](#phase-2b-helpdesk) | The Helpdesk | **Built + deployed; 17-18 and 27 applied; G6 live** |
 | [2C](#phase-2c-documents-profile-changes-and-the-id-card) | Documents, profile changes, ID card | **Built + deployed; 19-24 applied** |
 | [2D](#phase-2d-leader-and-faculty-views-and-deeper-approvals) | Leader and faculty views, class marking, multi-level approvals, short leave | **Built + deployed, 19 Oct; H1 built 22 Oct; 25-26 applied** |
 | [Pilot](#pilot-gate-one-branch-two-weeks) | One branch for two weeks, through Play closed testing | Next |
@@ -211,7 +211,7 @@ uploads) and [09-data-inventory.md](09-data-inventory.md) (the Play Data safety 
 - **Backend:**
   - the Flutter handover note (base URLs, the sign-in flow, endpoints per screen, error codes) —
     **written**;
-  - the contract complete for Phase 1 — **0.11.0**;
+  - the contract complete for Phase 1 - **0.12.0**;
   - every Phase 1 migration applied — **yes**;
   - the pilot branch's phones reset — **RVM to do** with `POST /hr/devices/reset`;
   - a data inventory for Play's Data safety form — **written**;
@@ -432,7 +432,7 @@ These stay as they are unless KP decides to change the Scheduler separately ([AD
 
 ## Every gap-report task and its phase
 
-"At c28b9ca" is what [02-reconciliation.md](02-reconciliation.md) found in the Scheduler's code on 15 Oct. B5 and B9 to B12 count as existing once the attendance migrations are confirmed in production (Phase 1B).
+"At c28b9ca" is what [02-reconciliation.md](02-reconciliation.md) found in the Scheduler's code on 15 Oct. The attendance migrations and the one-CL index were confirmed in production on 23 Oct (see [11-migration-status-2026-10-23.md](11-migration-status-2026-10-23.md)), so B5 and B9 to B12 are live, not provisional.
 
 | Task | At c28b9ca | Phase | How |
 | --- | --- | --- | --- |

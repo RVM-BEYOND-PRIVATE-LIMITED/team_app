@@ -70,9 +70,18 @@ examples; the app should never invent wording for a code it receives.
 | --- | --- |
 | Splash | `GET /health` (no token; `ok`, `db`, `min_app_version`, `latest_app_version`) |
 | Login | `POST /sign-in/resolve`; Scheduler portal/OTP/password calls; then `POST /session` |
-| Account/security | `GET /me`, `GET /me/capabilities`, `GET /sessions`, `DELETE /sessions/{id}`, `POST /session/sign-out` |
+| Account/security | Both kinds: `GET /me/account`, `GET /me/capabilities`, `GET /sessions`, `DELETE /sessions/{id}`, `POST /session/sign-out`. Portal only: the Scheduler's `GET/POST /me/*` for email, phone, password and two-factor. Attendance only: `POST /me/password`; email and phone are HR-managed. |
 | Notifications settings | `GET /notifications/settings`, `PUT /notifications/settings` |
 | Push registration | `POST /push-devices`, `DELETE /push-devices/{id}` |
+
+**Attendance-only sessions and the Scheduler (issue #10).** An attendance session has no users
+row, so the Scheduler's `/api/me` guard and every other Scheduler screen cannot answer it. The
+app must hide, for `login.kind === 'attendance'`: Scheduler Account & Security, Security
+activity, Priority tasks, Announcements, Interviews, My batches/indicators and Faculty
+Development, and the Helpdesk team queue. Use the ESS equivalents: `GET /me/account`,
+`POST /me/password`, the Wall's announcements, `GET /attendance/day`, requests, documents and the
+ID card. A data request is how the person asks HR to change the email or phone that their
+attendance login uses. The Scheduler is not widened to accept the punch token (ADR-0018).
 
 ### Home, Me and my team
 

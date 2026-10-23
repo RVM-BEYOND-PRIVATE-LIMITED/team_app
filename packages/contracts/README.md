@@ -64,17 +64,17 @@ The settings are in [`redocly.yaml`](redocly.yaml): Redocly's `recommended` rule
 
 The lint checks the file against itself. Whether the ESS really answers as the file says is checked by `apps/ess-api/tests/contract.test.js`, which runs with the ESS's tests: it compares the routes the ESS serves with the ESS operations here, and holds every reply it provokes against the documented status, schema (with no undocumented fields), error codes and headers.
 
-## Not covered yet
+## Current coverage
 
-- **Scheduler endpoints.** Only the Phase 1 sign-in and attendance ones are in. The calendar, holidays, priority tasks and faculty views come in with the slices that use them.
-- **ESS endpoints still to come, each with its own slice.** Several replace a Scheduler change that ADR-0018 ruled out:
-  - the refreshable session (A3);
-  - the one-field sign-in resolver (A5);
-  - the day's note, HR's remark and the server time for the attendance screen (B1);
-  - reporting a mocked location to HR (B14, decision 6);
-  - HR's bulk phone reset (B8, decision 11).
-- **Out of scope** under ADR-0018, so the Scheduler entries here stay as they are:
-  - a device-id header instead of the cookie (part of B8);
-  - batched pings (B15);
-  - 401s with a code (J8);
-  - retiring the old reset (A9).
+- **ESS endpoints.** All Phase 1 and Phase 2 slices are documented, including the refreshable
+  session (A3), the one-field resolver (A5), the attendance day's note, HR remark and server time
+  (B1), the mocked-location report (B14), HR's bulk phone reset (B8), and the attendance-only
+  Account & Security routes (issue #10).
+- **Scheduler endpoints.** The Phase 1 sign-in and attendance endpoints the app calls directly are
+  in, with their Scheduler behaviour at the audited commit. The calendar, holidays, priority tasks
+  and faculty views are portal-only and are not called by an attendance-only session; the app
+  hides them there (see `docs/08-flutter-handover.md`).
+- **Out of scope** under ADR-0018, so the Scheduler entries here stay as they are: a device-id
+  header instead of the cookie (part of B8), batched pings (B15), and the Scheduler-side 401
+  sweep (J8; the ESS already follows the rule). The old public reset (A9) is retired and answers
+  410.
