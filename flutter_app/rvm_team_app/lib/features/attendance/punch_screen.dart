@@ -25,30 +25,8 @@ class PunchScreen extends StatelessWidget {
   }
 }
 
-class _PunchView extends StatefulWidget {
+class _PunchView extends StatelessWidget {
   const _PunchView();
-
-  @override
-  State<_PunchView> createState() => _PunchViewState();
-}
-
-class _PunchViewState extends State<_PunchView> {
-  Timer? _clock;
-  DateTime _now = DateTime.now();
-
-  @override
-  void initState() {
-    super.initState();
-    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
-    });
-  }
-
-  @override
-  void dispose() {
-    _clock?.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,8 +86,6 @@ class _PunchViewState extends State<_PunchView> {
   Widget _body(BuildContext context, PunchState state, MyAttendance data) {
     final today = data.today;
     final device = data.device;
-    final canPunch =
-        device == null || device.thisPhone == 'own' || device.canRegister;
     final isIn = today?.punchedIn ?? false;
     final monthDays = data.days;
 
@@ -121,8 +97,8 @@ class _PunchViewState extends State<_PunchView> {
           today: today,
           shift: data.shift,
           branch: data.branch,
-          now: _now,
           isIn: isIn,
+          onReportDevice: () => _reportGps(context, data),
         ),
         const SizedBox(height: RvmSpacing.md),
         if (device != null) ...[
@@ -210,10 +186,6 @@ class _PunchViewState extends State<_PunchView> {
                 ?.copyWith(fontSize: 10, color: RvmColors.subtle),
           ),
         ),
-        if (!canPunch) ...[
-          const SizedBox(height: RvmSpacing.md),
-          _DeviceWarning(device: device),
-        ],
         if (state.punching) ...[
           const SizedBox(height: RvmSpacing.md),
           const LinearProgressIndicator(),
@@ -283,15 +255,15 @@ class _StatusCard extends StatelessWidget {
     required this.today,
     this.shift,
     this.branch,
-    required this.now,
     required this.isIn,
+    required this.onReportDevice,
   });
 
   final PunchToday? today;
   final AttendanceShift? shift;
   final AttendanceBranch? branch;
-  final DateTime now;
   final bool isIn;
+  final VoidCallback onReportDevice;
 
   @override
   Widget build(BuildContext context) {
@@ -300,14 +272,14 @@ class _StatusCard extends StatelessWidget {
         ? 'Shift: ${shift!.start} – ${shift!.end}'
         : (shift?.name ?? 'Shift not set');
     final branchText = branch?.name != null ? ' · ${branch!.name}' : '';
-    final clock =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-    final today2 = today;
     final canPunch = context.watch<PunchBloc>().state;
     final device = canPunch.data?.device;
     final allowed =
         device == null || device.thisPhone == 'own' || device.canRegister;
-    final done = today2?.done ?? false;
+    final done = today?.done ?? false;
+    final blockReason = _deviceBlockReason(device);
+    final phoneVerified = device?.thisPhone == 'own';
+    final phoneWillRegister = device?.canRegister ?? false;
 
     return TeamCard(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -325,24 +297,7 @@ class _StatusCard extends StatelessWidget {
                 dot: true,
               ),
               const Spacer(),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(clock,
-                      style: text.titleLarge?.copyWith(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      )),
-                  Text('IST · SERVER SYNCED',
-                      style: text.labelSmall?.copyWith(
-                          fontSize: 8,
-                          letterSpacing: 0.6,
-                          color: RvmColors.subtle,
-                          fontWeight: FontWeight.w600)),
-                ],
-              ),
+              const _LiveClock(),
             ],
           ),
           const SizedBox(height: 8),
@@ -379,29 +334,68 @@ class _StatusCard extends StatelessWidget {
           TeamPrimaryButton(
             label: done
                 ? 'Punched out for today'
-                : isIn
-                    ? 'Punch Out Now'
-                    : 'Punch In Now',
-            icon: done ? Icons.check_rounded : Icons.add_rounded,
-            color: isIn ? RvmColors.ironwood : RvmColors.clay,
+                : allowed
+                    ? (isIn ? 'Punch Out Now' : 'Punch In Now')
+                    : 'Punch unavailable',
+            icon: done
+                ? Icons.check_rounded
+                : (allowed ? Icons.add_rounded : Icons.info_outline_rounded),
+            color: isIn
+                ? RvmColors.ironwood
+                : (allowed ? RvmColors.clay : RvmColors.muted),
             busy: canPunch.punching,
-            onPressed: (canPunch.punching || done || !allowed)
+            onPressed: (canPunch.punching || done)
                 ? null
-                : () => _punch(context, isIn ? 'out' : 'in'),
+                : () {
+                    if (!allowed) {
+                      _showDeviceBlock(context, blockReason);
+                      return;
+                    }
+                    _punch(context, isIn ? 'out' : 'in');
+                  },
           ),
+          if (!allowed && blockReason != null) ...[
+            const SizedBox(height: 10),
+            TeamNotice(
+              icon: Icons.phonelink_erase_rounded,
+              tone: TeamPillTone.danger,
+              text: blockReason,
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: onReportDevice,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: const Text('Report this phone to HR',
+                    style: TextStyle(fontSize: 10.5)),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
-              const _MiniStatus(
-                icon: Icons.verified_rounded,
-                label: 'Verified Phone',
-                color: RvmColors.success,
+              _MiniStatus(
+                icon: phoneVerified || phoneWillRegister
+                    ? Icons.verified_rounded
+                    : Icons.error_outline_rounded,
+                label: phoneVerified
+                    ? 'Verified Phone'
+                    : (phoneWillRegister
+                        ? 'Phone will be registered'
+                        : 'Phone not verified'),
+                color: phoneVerified || phoneWillRegister
+                    ? RvmColors.success
+                    : RvmColors.danger,
               ),
               const SizedBox(width: 14),
               _MiniStatus(
                 icon: Icons.location_on_rounded,
                 label: branch?.configured == true
-                    ? 'Within Office Geofence'
+                    ? 'Office geofence active'
                     : 'Geofence not set up',
                 color: branch?.configured == true
                     ? RvmColors.success
@@ -417,6 +411,97 @@ class _StatusCard extends StatelessWidget {
   void _punch(BuildContext context, String kind) {
     context.read<PunchBloc>().add(PunchRequested(kind));
   }
+
+  void _showDeviceBlock(BuildContext context, String? reason) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.phone_android_rounded, color: RvmColors.danger),
+        title: const Text('Punch unavailable on this phone'),
+        content: Text(reason ??
+            'This phone is not the one registered for your attendance. Ask HR to reset it.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              onReportDevice();
+            },
+            child: const Text('Report to HR'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The live server-clock display. It owns its timer so only this text rebuilds
+/// every second; the punch button and the rest of the card stay stable, so a
+/// tap can never be lost to a rebuild.
+class _LiveClock extends StatefulWidget {
+  const _LiveClock();
+
+  @override
+  State<_LiveClock> createState() => _LiveClockState();
+}
+
+class _LiveClockState extends State<_LiveClock> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clock =
+        '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}:${_now.second.toString().padLeft(2, '0')}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(clock,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            )),
+        Text('IST · SERVER SYNCED',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontSize: 8,
+                letterSpacing: 0.6,
+                color: RvmColors.subtle,
+                fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+String? _deviceBlockReason(AttendanceDevice? device) {
+  if (device == null || device.thisPhone == 'own') return null;
+  return switch (device.thisPhone) {
+    'other' =>
+      'This phone is registered to another employee. Each person punches from their own phone.',
+    'revoked' =>
+      'HR has reset this phone. Punch from your new phone, or ask HR to reset it again.',
+    _ => device.canRegister
+        ? null
+        : 'Your attendance is registered to a different phone. Ask HR to reset your phone if you have changed it.',
+  };
 }
 
 class _MiniStatus extends StatelessWidget {
@@ -843,26 +928,6 @@ String _prettyDay(String value) {
 }
 
 // ── device warning / password ────────────────────────────────────────────
-
-class _DeviceWarning extends StatelessWidget {
-  const _DeviceWarning({this.device});
-  final AttendanceDevice? device;
-
-  @override
-  Widget build(BuildContext context) {
-    final message = switch (device?.thisPhone) {
-      'other' =>
-        'This phone is registered to someone else. Punch from your own phone.',
-      'revoked' =>
-        'HR has reset this phone. Punch from your new phone, or ask HR.',
-      _ => 'This phone is not the one registered to you. Ask HR to reset it.',
-    };
-    return TeamNotice(
-        icon: Icons.phonelink_erase_rounded,
-        tone: TeamPillTone.danger,
-        text: message);
-  }
-}
 
 class _SetPasswordCard extends StatefulWidget {
   const _SetPasswordCard({this.name});

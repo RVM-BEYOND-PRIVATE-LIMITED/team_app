@@ -33,22 +33,27 @@ class CelebrationsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Celebrations', style: Theme.of(context).textTheme.titleMedium),
+            Text('Celebrations',
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: RvmSpacing.sm),
             for (final entry in cards)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: _Avatar(name: entry.$1.employee.fullName),
                 title: Text(entry.$1.employee.fullName),
-                subtitle: Text(entry.$2 == 'birthday' ? 'Birthday' : 'Work anniversary'),
+                subtitle: Text(
+                    entry.$2 == 'birthday' ? 'Birthday' : 'Work anniversary'),
                 trailing: entry.$1.wishedByMe
                     ? const Icon(Icons.check_circle, color: RvmColors.success)
                     : TextButton(
-                        onPressed: () => context.read<WallBloc>().add(WallWished(
-                              employeeId: entry.$1.employee.id,
-                              occasion: entry.$2,
-                              body: entry.$2 == 'birthday' ? 'Happy birthday!' : 'Happy anniversary!',
-                            )),
+                        onPressed: () =>
+                            context.read<WallBloc>().add(WallWished(
+                                  employeeId: entry.$1.employee.id,
+                                  occasion: entry.$2,
+                                  body: entry.$2 == 'birthday'
+                                      ? 'Happy birthday!'
+                                      : 'Happy anniversary!',
+                                )),
                         child: const Text('Wish'),
                       ),
               ),
@@ -83,7 +88,9 @@ class AnnouncementCard extends StatelessWidget {
               children: [
                 const Icon(Icons.campaign_outlined, size: 18),
                 const SizedBox(width: 6),
-                Expanded(child: Text(announcement.title, style: Theme.of(context).textTheme.titleMedium)),
+                Expanded(
+                    child: Text(announcement.title,
+                        style: Theme.of(context).textTheme.titleMedium)),
                 if (announcement.pinned) const Icon(Icons.push_pin, size: 16),
               ],
             ),
@@ -92,17 +99,26 @@ class AnnouncementCard extends StatelessWidget {
             if (announcement.needsAck) ...[
               const SizedBox(height: RvmSpacing.sm),
               if (announcement.acked)
-                Row(children: const [Icon(Icons.verified_outlined, size: 16, color: RvmColors.success), SizedBox(width: 4), Text('Acknowledged')])
+                Row(children: const [
+                  Icon(Icons.verified_outlined,
+                      size: 16, color: RvmColors.success),
+                  SizedBox(width: 4),
+                  Text('Acknowledged')
+                ])
               else
                 FilledButton.tonal(
-                  onPressed: () => context.read<WallBloc>().add(WallAnnouncementAcked(announcement.id)),
+                  onPressed: () => context
+                      .read<WallBloc>()
+                      .add(WallAnnouncementAcked(announcement.id)),
                   child: const Text('Acknowledge'),
                 ),
             ] else if (!read)
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () => context.read<WallBloc>().add(WallAnnouncementRead(announcement.id)),
+                  onPressed: () => context
+                      .read<WallBloc>()
+                      .add(WallAnnouncementRead(announcement.id)),
                   child: const Text('Mark read'),
                 ),
               ),
@@ -151,13 +167,17 @@ class WallPostCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(post.author?.fullName ?? 'Someone', style: Theme.of(context).textTheme.titleSmall),
-                      Text(_when(post.createdAt), style: Theme.of(context).textTheme.labelSmall),
+                      Text(post.author?.fullName ?? 'Someone',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      Text(_when(post.createdAt),
+                          style: Theme.of(context).textTheme.labelSmall),
                     ],
                   ),
                 ),
                 if (post.kind == 'praise')
-                  _Chip(label: post.badgeLabel ?? 'Praise', color: RvmColors.teamSeed)
+                  _Chip(
+                      label: post.badgeLabel ?? 'Praise',
+                      color: RvmColors.teamSeed)
                 else if (post.kind == 'poll')
                   const _Chip(label: 'Poll', color: RvmColors.brand),
                 if (onEdit != null || onDelete != null || onReport != null)
@@ -169,9 +189,14 @@ class WallPostCard extends StatelessWidget {
                       if (v == 'report') onReport?.call();
                     },
                     itemBuilder: (_) => [
-                      if (onEdit != null) const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      if (onDelete != null) const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                      if (onReport != null) const PopupMenuItem(value: 'report', child: Text('Report')),
+                      if (onEdit != null)
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      if (onDelete != null)
+                        const PopupMenuItem(
+                            value: 'delete', child: Text('Delete')),
+                      if (onReport != null)
+                        const PopupMenuItem(
+                            value: 'report', child: Text('Report')),
                     ],
                   ),
               ],
@@ -182,34 +207,51 @@ class WallPostCard extends StatelessWidget {
             ],
             if (post.isPraise && post.about != null) ...[
               const SizedBox(height: 6),
-              Text('For ${post.about!.fullName}', style: Theme.of(context).textTheme.bodySmall),
+              Text('For ${post.about!.fullName}',
+                  style: Theme.of(context).textTheme.bodySmall),
             ],
             if (post.poll != null) ...[
               const SizedBox(height: RvmSpacing.sm),
-              _PollBlock(poll: post.poll!, postId: post.id, mine: post.mine, onChanged: onPollChanged ?? () {}),
+              _PollBlock(
+                  poll: post.poll!,
+                  postId: post.id,
+                  mine: post.mine,
+                  onChanged: onPollChanged ?? () {}),
             ],
             const SizedBox(height: RvmSpacing.sm),
             Row(
               children: [
-                Wrap(
-                  spacing: 2,
-                  children: [
-                    for (final r in wallReactions.entries)
-                      InkWell(
-                        onTap: () => onReact(post.myReaction == r.key ? null : r.key),
-                        borderRadius: BorderRadius.circular(999),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: post.myReaction == r.key ? scheme.primaryContainer : null,
-                            borderRadius: BorderRadius.circular(999),
+                // Six reaction chips can be wider than a phone once the two
+                // action buttons are beside them. Give the wrap the remaining
+                // width instead of letting the Row overflow (a RenderFlex
+                // overflow is a FlutterError on every rebuild).
+                Expanded(
+                  child: Wrap(
+                    spacing: 2,
+                    runSpacing: 2,
+                    children: [
+                      for (final r in wallReactions.entries)
+                        InkWell(
+                          onTap: () =>
+                              onReact(post.myReaction == r.key ? null : r.key),
+                          borderRadius: BorderRadius.circular(999),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: post.myReaction == r.key
+                                  ? scheme.primaryContainer
+                                  : null,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                                '${r.value}${post.reactions?.counts[r.key] ?? 0}',
+                                style: const TextStyle(fontSize: 13)),
                           ),
-                          child: Text('${r.value}${post.reactions?.counts[r.key] ?? 0}', style: const TextStyle(fontSize: 13)),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-                const Spacer(),
                 if ((post.reactions?.total ?? 0) > 0)
                   TextButton.icon(
                     onPressed: onWhoReacted,
@@ -241,7 +283,11 @@ class WallPostCard extends StatelessWidget {
 }
 
 class _PollBlock extends StatelessWidget {
-  const _PollBlock({required this.poll, required this.postId, required this.mine, required this.onChanged});
+  const _PollBlock(
+      {required this.poll,
+      required this.postId,
+      required this.mine,
+      required this.onChanged});
   final WallPoll poll;
   final String postId;
   final bool mine;
@@ -264,7 +310,9 @@ class _PollBlock extends StatelessWidget {
                           ? (poll.myOptionIds.where((x) => x != o.id).toList())
                           : ([...poll.myOptionIds, o.id]);
                       if (ids.isEmpty) return;
-                      context.read<WallBloc>().add(WallPollVoted(pollId: postId, optionIds: ids));
+                      context
+                          .read<WallBloc>()
+                          .add(WallPollVoted(pollId: postId, optionIds: ids));
                     },
               child: Row(
                 children: [
@@ -300,8 +348,12 @@ class _PollBlock extends StatelessWidget {
             spacing: 8,
             children: [
               if (!poll.optionsLocked)
-                TextButton(onPressed: () => _addOption(context), child: const Text('Add option')),
-              TextButton(onPressed: () => _close(context), child: const Text('Close poll')),
+                TextButton(
+                    onPressed: () => _addOption(context),
+                    child: const Text('Add option')),
+              TextButton(
+                  onPressed: () => _close(context),
+                  child: const Text('Close poll')),
             ],
           ),
       ],
@@ -314,10 +366,18 @@ class _PollBlock extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Add an option'),
-        content: TextField(controller: controller, maxLength: 120, decoration: const InputDecoration(hintText: 'Option')),
+        content: TextField(
+            controller: controller,
+            maxLength: 120,
+            decoration: const InputDecoration(hintText: 'Option')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Add')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Add')),
         ],
       ),
     );
@@ -340,7 +400,9 @@ class _PollBlock extends StatelessWidget {
   }
 
   static void _snack(BuildContext context, String message) =>
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
 }
 
 class _Avatar extends StatelessWidget {
@@ -349,7 +411,8 @@ class _Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = name.trim();
-    return CircleAvatar(child: Text(s.isEmpty ? '?' : s.substring(0, 1).toUpperCase()));
+    return CircleAvatar(
+        child: Text(s.isEmpty ? '?' : s.substring(0, 1).toUpperCase()));
   }
 }
 
@@ -360,8 +423,14 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
-        child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(999)),
+        child: Text(label,
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: color, fontWeight: FontWeight.w600)),
       );
 }
 
@@ -415,8 +484,10 @@ class _ReactionBreakdownSheetState extends State<ReactionBreakdownSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(RvmSpacing.md, 0, RvmSpacing.md, RvmSpacing.sm),
-            child: Text('Who reacted', style: Theme.of(context).textTheme.titleLarge),
+            padding: const EdgeInsets.fromLTRB(
+                RvmSpacing.md, 0, RvmSpacing.md, RvmSpacing.sm),
+            child: Text('Who reacted',
+                style: Theme.of(context).textTheme.titleLarge),
           ),
           if (_loading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
@@ -430,16 +501,23 @@ class _ReactionBreakdownSheetState extends State<ReactionBreakdownSheet> {
                 children: [
                   for (final g in _groups) ...[
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.sm, RvmSpacing.md, 2),
-                      child: Text('${wallReactions[g.reaction] ?? g.reaction} ${g.count}',
+                      padding: const EdgeInsets.fromLTRB(
+                          RvmSpacing.md, RvmSpacing.sm, RvmSpacing.md, 2),
+                      child: Text(
+                          '${wallReactions[g.reaction] ?? g.reaction} ${g.count}',
                           style: Theme.of(context).textTheme.titleSmall),
                     ),
                     for (final p in g.people)
                       ListTile(
                         dense: true,
-                        leading: CircleAvatar(child: Text(p.fullName.isEmpty ? '?' : p.fullName.substring(0, 1).toUpperCase())),
+                        leading: CircleAvatar(
+                            child: Text(p.fullName.isEmpty
+                                ? '?'
+                                : p.fullName.substring(0, 1).toUpperCase())),
                         title: Text(p.fullName),
-                        subtitle: p.employeeCode == null ? null : Text(p.employeeCode!),
+                        subtitle: p.employeeCode == null
+                            ? null
+                            : Text(p.employeeCode!),
                       ),
                   ],
                 ],

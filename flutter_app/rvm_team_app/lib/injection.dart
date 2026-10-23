@@ -100,13 +100,17 @@ void configureDependencies(AuthSession session) {
           essTokens: getIt<AuthSession>(),
           logging: kDebugMode,
         );
-        // Let 5xx responses reach the data source as a typed Failure instead of
-        // throwing a DioException. The debugger stops on every thrown error even
-        // when the app catches it (a 503 on the Wall used to surface that way),
-        // and a server 5xx is a result the UI must render, not a crash. 4xx still
-        // throws so token rotation and the other interceptors keep working.
-        dio.options.validateStatus =
-            (status) => status != null && (status < 300 || status >= 500);
+        // Let refused responses reach the data source as a typed Failure instead
+        // of throwing a DioException. The debugger stops on every thrown error
+        // even when the app catches it (a 503 on the Wall and a 400 on a request
+        // form used to surface that way), and a server 4xx/5xx is a result the UI
+        // must render, not a crash. A 401 still throws: the EssAuthInterceptor's
+        // kept-sign-in rotation runs on that error, and a rejected token must end
+        // the session rather than become a plain reply.
+        dio.options.validateStatus = (status) =>
+            status != null &&
+            ((status >= 200 && status < 300) ||
+                (status >= 400 && status != 401));
         return dio;
       },
       instanceName: 'ess',
@@ -251,12 +255,17 @@ void configureDependencies(AuthSession session) {
 /// configured (ADR-0016); until then the backend logs push instead of sending it. Pass a token
 /// today with `--dart-define=FCM_TOKEN=...`, or call this from the Firebase setup later.
 Future<void> registerPushToken(String token) async {
-  final installId = await getIt<AuthSession>().installId();
-  await getIt<EssRepository>().registerPushDevice(
-    token: token,
-    deviceLabel: 'Android',
-    installId: installId,
-  );
+  try {
+    final installId = await getIt<AuthSession>().installId();
+    await getIt<EssRepository>().registerPushDevice(
+      token: token,
+      deviceLabel: 'Android',
+      installId: installId,
+    );
+  } catch (_) {
+    // Best effort, unawaited at launch: a refused or offline registration must
+    // never surface on the splash or as an uncaught zone error.
+  }
 }
 
 String _today() {

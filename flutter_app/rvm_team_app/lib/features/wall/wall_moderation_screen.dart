@@ -40,35 +40,52 @@ class _WallModerationScreenState extends State<WallModerationScreen> {
       _loading = true;
       _failure = null;
     });
+    final repo = getIt<EssRepository>();
+    List<WallReport> reports = const [];
+    List<WallAnnouncement> announcements = const [];
+    List<ModerationEntry> log = const [];
+    Failure? reportsFailure;
+
+    // The three reads serve different roles: a moderator reads the reports, an
+    // announcer reads their announcements, and HR reads the log. A refusal of
+    // one section must not blank the whole desk (a CEO may announce without
+    // moderating; an HR Executive may do neither and reaches no link to it).
     try {
-      final repo = getIt<EssRepository>();
-      final reports = await repo.wallReports();
-      List<WallAnnouncement> announcements = const [];
-      List<ModerationEntry> log = const [];
-      try {
-        announcements = await repo.hrAnnouncements();
-      } on Failure {
-        // Not an announcer: the reports still work.
-      }
-      try {
-        log = await repo.moderationLog();
-      } on Failure {
-        // Ignore.
-      }
-      if (!mounted) return;
-      setState(() {
-        _reports = reports;
-        _announcements = announcements;
-        _log = log;
-        _loading = false;
-      });
+      reports = await repo.wallReports();
     } on Failure catch (f) {
-      if (!mounted) return;
+      reportsFailure = f;
+    } catch (_) {
+      reportsFailure = const UnknownFailure('Could not load the Wall desk.');
+    }
+    try {
+      announcements = await repo.hrAnnouncements();
+    } on Failure {
+      // Not an announcer; the reports or the log may still work.
+    } catch (_) {
+      // Ignore: the reports or the log may still work.
+    }
+    try {
+      log = await repo.moderationLog();
+    } on Failure {
+      // Not a moderator; ignore.
+    } catch (_) {
+      // Ignore.
+    }
+    if (!mounted) return;
+    if (reportsFailure != null && announcements.isEmpty && log.isEmpty) {
       setState(() {
-        _failure = f;
+        _failure = reportsFailure;
         _loading = false;
       });
+      return;
     }
+    setState(() {
+      _reports = reports;
+      _announcements = announcements;
+      _log = log;
+      _failure = null;
+      _loading = false;
+    });
   }
 
   Future<void> _resolve(WallReport report, bool hidden) async {

@@ -14,7 +14,8 @@ Future<void> showCreatePostSheet(BuildContext context) {
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => BlocProvider.value(value: bloc, child: const _CreatePostSheet()),
+    builder: (_) =>
+        BlocProvider.value(value: bloc, child: const _CreatePostSheet()),
   );
 }
 
@@ -27,7 +28,10 @@ class _CreatePostSheet extends StatefulWidget {
 
 class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _body = TextEditingController();
-  final _options = <TextEditingController>[TextEditingController(), TextEditingController()];
+  final _options = <TextEditingController>[
+    TextEditingController(),
+    TextEditingController()
+  ];
   final List<Map<String, dynamic>> _attachments = [];
   String _scope = 'org';
   bool _poll = false;
@@ -62,7 +66,14 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
       _snack('Up to five files.');
       return;
     }
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform
+          .pickFiles(allowMultiple: true, withData: true);
+    } catch (_) {
+      _snack('Could not open the file picker.');
+      return;
+    }
     if (result == null) return;
     for (final file in result.files) {
       if (_attachments.length >= 5) break;
@@ -101,7 +112,10 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
     final text = _body.text.trim();
     if (text.isEmpty) return;
     if (_poll) {
-      final labels = _options.map((c) => c.text.trim()).where((t) => t.isNotEmpty).toList();
+      final labels = _options
+          .map((c) => c.text.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
       if (labels.length < 2) {
         _snack('A poll needs at least two options.');
         return;
@@ -127,12 +141,14 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
     Navigator.of(context).pop();
   }
 
-  void _snack(String message) =>
-      ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+  void _snack(String message) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
-    final submitting = context.select<WallBloc, bool>((b) => b.state.submitting);
+    final submitting =
+        context.select<WallBloc, bool>((b) => b.state.submitting);
     return Padding(
       padding: EdgeInsets.only(
         left: RvmSpacing.md,
@@ -145,12 +161,17 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_poll ? 'New poll' : 'New post', style: Theme.of(context).textTheme.titleLarge),
+            Text(_poll ? 'New poll' : 'New post',
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: RvmSpacing.md),
             SegmentedButton<bool>(
               segments: const [
-                ButtonSegment(value: false, label: Text('Post'), icon: Icon(Icons.notes)),
-                ButtonSegment(value: true, label: Text('Poll'), icon: Icon(Icons.poll_outlined)),
+                ButtonSegment(
+                    value: false, label: Text('Post'), icon: Icon(Icons.notes)),
+                ButtonSegment(
+                    value: true,
+                    label: Text('Poll'),
+                    icon: Icon(Icons.poll_outlined)),
               ],
               selected: {_poll},
               onSelectionChanged: (s) => setState(() => _poll = s.first),
@@ -163,7 +184,9 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               maxLines: 8,
               maxLength: _poll ? 300 : 2000,
               decoration: InputDecoration(
-                hintText: _poll ? 'Ask a question…' : 'Share something with your team…',
+                hintText: _poll
+                    ? 'Ask a question…'
+                    : 'Share something with your team…',
                 border: const OutlineInputBorder(),
               ),
             ),
@@ -177,12 +200,16 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                         child: TextField(
                           controller: _options[i],
                           maxLength: 120,
-                          decoration: InputDecoration(labelText: 'Option ${i + 1}', counterText: '', border: const OutlineInputBorder()),
+                          decoration: InputDecoration(
+                              labelText: 'Option ${i + 1}',
+                              counterText: '',
+                              border: const OutlineInputBorder()),
                         ),
                       ),
                       if (_options.length > 2)
                         IconButton(
-                          onPressed: () => setState(() => _options.removeAt(i).dispose()),
+                          onPressed: () =>
+                              setState(() => _options.removeAt(i).dispose()),
                           icon: const Icon(Icons.remove_circle_outline),
                         ),
                     ],
@@ -190,7 +217,8 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                 ),
               if (_options.length < 10)
                 OutlinedButton.icon(
-                  onPressed: () => setState(() => _options.add(TextEditingController())),
+                  onPressed: () =>
+                      setState(() => _options.add(TextEditingController())),
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add option'),
                 ),
@@ -217,8 +245,14 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             ] else ...[
               Row(
                 children: [
-                  TextButton.icon(onPressed: _attach, icon: const Icon(Icons.attach_file, size: 18), label: const Text('Attach')),
-                  TextButton.icon(onPressed: _mention, icon: const Icon(Icons.alternate_email, size: 18), label: const Text('Mention')),
+                  TextButton.icon(
+                      onPressed: _attach,
+                      icon: const Icon(Icons.attach_file, size: 18),
+                      label: const Text('Attach')),
+                  TextButton.icon(
+                      onPressed: _mention,
+                      icon: const Icon(Icons.alternate_email, size: 18),
+                      label: const Text('Mention')),
                 ],
               ),
               if (_attachments.isNotEmpty)
@@ -228,8 +262,10 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                   children: [
                     for (var i = 0; i < _attachments.length; i++)
                       InputChip(
-                        label: Text(_attachments[i]['name']?.toString() ?? 'File'),
-                        onDeleted: () => setState(() => _attachments.removeAt(i)),
+                        label:
+                            Text(_attachments[i]['name']?.toString() ?? 'File'),
+                        onDeleted: () =>
+                            setState(() => _attachments.removeAt(i)),
                       ),
                   ],
                 ),
@@ -247,7 +283,10 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             FilledButton(
               onPressed: submitting ? null : _submit,
               child: submitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
                   : Text(_poll ? 'Post poll' : 'Post to the Wall'),
             ),
           ],

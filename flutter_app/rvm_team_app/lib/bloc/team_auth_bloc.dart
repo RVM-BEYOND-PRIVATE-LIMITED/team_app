@@ -220,15 +220,13 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       // surface `Failed host lookup` on the splash screen.
       final hasKeptSignIn = await _session.readEssRefreshToken() != null;
       if (stale && hasKeptSignIn) {
-        // GET /me rotates the refresh token on a 401 and re-mints a
-        // Scheduler-format access token, which is stored back as the session.
-        try {
-          await _ess.me();
+        // Rotate the kept sign-in directly. This is the one launch call that is
+        // EXPECTED to answer 401 when the sign-in has ended; it must come back
+        // as a value, never as a thrown DioException the debugger pauses on.
+        final restored = await _ess.restoreKeptSignIn();
+        if (restored) {
           token = await _session.readSchedulerToken();
           identity = StaffIdentity.fromToken(token);
-        } catch (_) {
-          // Offline (connectivity-guarded) or the kept sign-in was refused —
-          // fall through to unauthenticated. Never let launch fail on this.
         }
       }
       if (identity == null || !identity.isTeamMember || Jwt.isExpired(token)) {

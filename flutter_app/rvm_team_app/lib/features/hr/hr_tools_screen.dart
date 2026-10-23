@@ -19,7 +19,13 @@ class HrToolsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => getIt<HrToolsBloc>()..add(const HrToolsLoadRequested()),
-      child: const _HrToolsView(),
+      child: BlocProvider(
+        // This route is pushed outside the shell; bring the same menu so the
+        // chips and queues a role cannot use are never offered (the backend
+        // answers 403 for them).
+        create: (_) => getIt<CapabilitiesBloc>()..add(const LoadRequested()),
+        child: const _HrToolsView(),
+      ),
     );
   }
 }
@@ -29,13 +35,20 @@ class _HrToolsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final caps = context.watch<CapabilitiesBloc>().state.data;
+    // Attendance queues and request limits need ATTENDANCE_OVERRIDE_ROLES.
+    final canAttendance = caps?.approvalsAnyRequest == true;
+    // The Wall desk needs an announcer or a moderator; an HR Executive has
+    // neither, so the chip used to open a 403 screen.
+    final canWall = caps?.wallModerate == true || caps?.wallAnnounce == true;
     return Scaffold(
       appBar: AppBar(
         title: const Text('HR tools'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: () => context.read<HrToolsBloc>().add(const HrToolsRefreshed()),
+            onPressed: () =>
+                context.read<HrToolsBloc>().add(const HrToolsRefreshed()),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -43,16 +56,29 @@ class _HrToolsView extends StatelessWidget {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.sm, RvmSpacing.md, 0),
+            padding: const EdgeInsets.fromLTRB(
+                RvmSpacing.md, RvmSpacing.sm, RvmSpacing.md, 0),
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                ActionChip(label: const Text('Request limits'), onPressed: () => context.push('/hr/request-limits')),
-                ActionChip(label: const Text('Profile changes'), onPressed: () => context.push('/hr/change-requests')),
-                ActionChip(label: const Text('Documents desk'), onPressed: () => context.push('/hr/documents')),
-                ActionChip(label: const Text('Bank read'), onPressed: () => context.push('/hr/bank')),
-                ActionChip(label: const Text('Wall desk'), onPressed: () => context.push('/wall/moderation')),
+                if (canAttendance)
+                  ActionChip(
+                      label: const Text('Request limits'),
+                      onPressed: () => context.push('/hr/request-limits')),
+                ActionChip(
+                    label: const Text('Profile changes'),
+                    onPressed: () => context.push('/hr/change-requests')),
+                ActionChip(
+                    label: const Text('Documents desk'),
+                    onPressed: () => context.push('/hr/documents')),
+                ActionChip(
+                    label: const Text('Bank read'),
+                    onPressed: () => context.push('/hr/bank')),
+                if (canWall)
+                  ActionChip(
+                      label: const Text('Wall desk'),
+                      onPressed: () => context.push('/wall/moderation')),
               ],
             ),
           ),
@@ -61,10 +87,15 @@ class _HrToolsView extends StatelessWidget {
             builder: (context, state) => Padding(
               padding: const EdgeInsets.all(RvmSpacing.md),
               child: SegmentedButton<HrQueue>(
-                segments: const [
-                  ButtonSegment(value: HrQueue.dataRequests, label: Text('Requests')),
-                  ButtonSegment(value: HrQueue.reports, label: Text('Locations')),
-                  ButtonSegment(value: HrQueue.devices, label: Text('Phones')),
+                segments: [
+                  const ButtonSegment(
+                      value: HrQueue.dataRequests, label: Text('Requests')),
+                  if (canAttendance) ...[
+                    const ButtonSegment(
+                        value: HrQueue.reports, label: Text('Locations')),
+                    const ButtonSegment(
+                        value: HrQueue.devices, label: Text('Phones')),
+                  ],
                 ],
                 selected: {state.queue},
                 onSelectionChanged: (s) =>
@@ -74,12 +105,15 @@ class _HrToolsView extends StatelessWidget {
           ),
           Expanded(
             child: BlocConsumer<HrToolsBloc, HrToolsState>(
-              listenWhen: (a, b) => a.actionNonce != b.actionNonce || a.actionFailure != b.actionFailure,
+              listenWhen: (a, b) =>
+                  a.actionNonce != b.actionNonce ||
+                  a.actionFailure != b.actionFailure,
               listener: (context, state) {
                 if (state.actionFailure != null) {
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
-                    ..showSnackBar(SnackBar(content: Text(state.actionFailure!.message)));
+                    ..showSnackBar(
+                        SnackBar(content: Text(state.actionFailure!.message)));
                 } else if (state.actionNonce > 0) {
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
@@ -93,8 +127,11 @@ class _HrToolsView extends StatelessWidget {
                     return const AppLoading();
                   case LoadStatus.failure:
                     return AppError(
-                      message: state.failure?.message ?? 'Could not load this queue.',
-                      onRetry: () => context.read<HrToolsBloc>().add(const HrToolsRefreshed()),
+                      message: state.failure?.message ??
+                          'Could not load this queue.',
+                      onRetry: () => context
+                          .read<HrToolsBloc>()
+                          .add(const HrToolsRefreshed()),
                     );
                   case LoadStatus.empty:
                     return const AppEmpty(message: 'Nothing to review here.');
@@ -120,7 +157,8 @@ class _HrToolsView extends StatelessWidget {
             final r = state.dataRequests[i];
             return Card(
               child: ListTile(
-                title: Text('${r.kindLabel} · ${r.employee?.fullName ?? 'Unknown'}'),
+                title: Text(
+                    '${r.kindLabel} · ${r.employee?.fullName ?? 'Unknown'}'),
                 subtitle: Text(r.details),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -132,7 +170,8 @@ class _HrToolsView extends StatelessWidget {
                     ),
                     r.isOpen
                         ? const Icon(Icons.chevron_right)
-                        : Text(r.status.toUpperCase(), style: Theme.of(context).textTheme.labelSmall),
+                        : Text(r.status.toUpperCase(),
+                            style: Theme.of(context).textTheme.labelSmall),
                   ],
                 ),
                 onTap: r.isOpen ? () => _resolve(context, r) : null,
@@ -153,7 +192,8 @@ class _HrToolsView extends StatelessWidget {
                 title: Text(r.employee?.fullName ?? 'Unknown'),
                 subtitle: Text([
                   if (r.reportedAt != null)
-                    MaterialLocalizations.of(context).formatMediumDate(r.reportedAt!.toLocal()),
+                    MaterialLocalizations.of(context)
+                        .formatMediumDate(r.reportedAt!.toLocal()),
                   if (r.latitude != null && r.longitude != null)
                     '${r.latitude!.toStringAsFixed(4)}, ${r.longitude!.toStringAsFixed(4)}',
                   if (r.branch?.name != null) r.branch!.name,
@@ -173,7 +213,9 @@ class _HrToolsView extends StatelessWidget {
             final d = state.devices[i];
             return Card(
               child: ListTile(
-                leading: Icon(d.isActive ? Icons.smartphone : Icons.phonelink_erase_outlined),
+                leading: Icon(d.isActive
+                    ? Icons.smartphone
+                    : Icons.phonelink_erase_outlined),
                 title: Text(d.employee?.fullName ?? 'Unknown'),
                 subtitle: Text([
                   d.status,
@@ -182,7 +224,9 @@ class _HrToolsView extends StatelessWidget {
                     'seen ${MaterialLocalizations.of(context).formatMediumDate(d.lastSeenAt!.toLocal())}',
                 ].join(' · ')),
                 trailing: d.isActive
-                    ? TextButton(onPressed: () => _reset(context, d), child: const Text('Reset'))
+                    ? TextButton(
+                        onPressed: () => _reset(context, d),
+                        child: const Text('Reset'))
                     : null,
                 onTap: () => _openPersonal(context, d.employee),
               ),
@@ -194,7 +238,8 @@ class _HrToolsView extends StatelessWidget {
 
   void _openPersonal(BuildContext context, EmployeeCard? employee) {
     if (employee == null) return;
-    context.push('/hr/employee/${employee.id}/personal', extra: employee.fullName);
+    context.push('/hr/employee/${employee.id}/personal',
+        extra: employee.fullName);
   }
 
   Future<void> _resolve(BuildContext context, EssDataRequest r) async {
@@ -222,7 +267,8 @@ class _HrToolsView extends StatelessWidget {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'rejected'),
             child: const Text('Reject'),
@@ -238,10 +284,13 @@ class _HrToolsView extends StatelessWidget {
     if (result == 'rejected' && note.text.trim().length < 3) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('A rejection needs a reason (at least 3 characters).')));
+        ..showSnackBar(const SnackBar(
+            content:
+                Text('A rejection needs a reason (at least 3 characters).')));
       return;
     }
-    bloc.add(HrResolveDataRequestRequested(id: r.id, status: result, note: note.text.trim()));
+    bloc.add(HrResolveDataRequestRequested(
+        id: r.id, status: result, note: note.text.trim()));
   }
 
   Future<void> _reset(BuildContext context, RegisteredPhone d) async {
@@ -257,17 +306,23 @@ class _HrToolsView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Reset the registered phone of ${d.employee?.fullName ?? 'this employee'}?'),
+            Text(
+                'Reset the registered phone of ${d.employee?.fullName ?? 'this employee'}?'),
             const SizedBox(height: RvmSpacing.md),
             TextField(
               controller: reason,
-              decoration: const InputDecoration(labelText: 'Reason', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                  labelText: 'Reason', border: OutlineInputBorder()),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Reset')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Reset')),
         ],
       ),
     );
@@ -275,9 +330,11 @@ class _HrToolsView extends StatelessWidget {
     if (reason.text.trim().length < 3) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('A reason is required (at least 3 characters).')));
+        ..showSnackBar(const SnackBar(
+            content: Text('A reason is required (at least 3 characters).')));
       return;
     }
-    bloc.add(HrResetDevicesRequested(employeeIds: [employeeId], reason: reason.text.trim()));
+    bloc.add(HrResetDevicesRequested(
+        employeeIds: [employeeId], reason: reason.text.trim()));
   }
 }

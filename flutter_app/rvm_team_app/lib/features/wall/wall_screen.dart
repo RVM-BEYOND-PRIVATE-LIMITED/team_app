@@ -112,11 +112,14 @@ class _WallView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, WallState state) {
+    final hasFeed = state.posts.isNotEmpty ||
+        state.announcements.isNotEmpty ||
+        state.celebrations != null;
     if (state.status == LoadStatus.initial ||
-        state.status == LoadStatus.loading) {
+        (state.status == LoadStatus.loading && !hasFeed)) {
       return const AppLoading();
     }
-    if (state.status == LoadStatus.failure) {
+    if (state.status == LoadStatus.failure && !hasFeed) {
       final failure = state.failure;
       if (failure?.code == 'MODULE_NOT_INSTALLED') {
         return _WallSetupPending(
@@ -129,6 +132,9 @@ class _WallView extends StatelessWidget {
         onRetry: () => context.read<WallBloc>().add(const WallRefreshed()),
       );
     }
+    // A refresh (pull, a vote, a new praise) must NOT replace the scrolled
+    // ListView with a spinner: doing that disposes the ScrollPosition during a
+    // frame and Flutter reports "Build scheduled during frame" while scrolling.
     return RefreshIndicator(
       onRefresh: () async =>
           context.read<WallBloc>().add(const WallRefreshed()),
@@ -136,6 +142,14 @@ class _WallView extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(
             RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
         children: [
+          if (state.status == LoadStatus.failure && state.failure != null) ...[
+            TeamNotice(
+              icon: Icons.cloud_off_rounded,
+              tone: TeamPillTone.warning,
+              text: state.failure!.message,
+            ),
+            const SizedBox(height: RvmSpacing.md),
+          ],
           if (state.celebrations != null && !state.celebrations!.isEmpty) ...[
             CelebrationsCard(celebrations: state.celebrations!),
             const SizedBox(height: RvmSpacing.md),

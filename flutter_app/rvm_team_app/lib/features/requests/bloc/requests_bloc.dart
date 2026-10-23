@@ -67,7 +67,15 @@ class RequestsState extends Equatable {
   final int createdNonce;
 
   @override
-  List<Object?> get props => [status, requests, balances, failure, submitting, submitFailure, createdNonce];
+  List<Object?> get props => [
+        status,
+        requests,
+        balances,
+        failure,
+        submitting,
+        submitFailure,
+        createdNonce
+      ];
 }
 
 class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
@@ -91,8 +99,8 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
       final balances = await _repo.leaveBalances();
       final attendance = await _repo.myAttendanceRequests();
       final leave = await _repo.myLeaveRequests();
-      final all = [...attendance, ...leave]
-        ..sort((a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+      final all = [...attendance, ...leave]..sort((a, b) =>
+          (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
       emit(RequestsState(
         status: all.isEmpty ? LoadStatus.empty : LoadStatus.success,
         requests: all,
@@ -100,28 +108,71 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
         createdNonce: state.createdNonce,
       ));
     } on Failure catch (f) {
-      emit(RequestsState(status: LoadStatus.failure, failure: f, createdNonce: state.createdNonce));
+      emit(RequestsState(
+          status: LoadStatus.failure,
+          failure: f,
+          createdNonce: state.createdNonce));
     }
   }
 
-  Future<void> _onCreate(RequestCreateRequested e, Emitter<RequestsState> emit) async {
-    emit(RequestsState(status: state.status, requests: state.requests, balances: state.balances, submitting: true, createdNonce: state.createdNonce));
+  Future<void> _onCreate(
+      RequestCreateRequested e, Emitter<RequestsState> emit) async {
+    emit(RequestsState(
+        status: state.status,
+        requests: state.requests,
+        balances: state.balances,
+        submitting: true,
+        createdNonce: state.createdNonce));
     try {
-      if (e.family == 'leave') {
-        await _repo.createLeaveRequest(type: e.type, day: e.day, reason: e.reason);
-      } else {
-        await _repo.createAttendanceRequest(
-          type: e.type, day: e.day, reason: e.reason, place: e.place, fixIn: e.fixIn, fixOut: e.fixOut, minutes: e.minutes);
+      final result = e.family == 'leave'
+          ? await _repo.createLeaveRequestSafe(
+              type: e.type, day: e.day, reason: e.reason)
+          : await _repo.createAttendanceRequestSafe(
+              type: e.type,
+              day: e.day,
+              reason: e.reason,
+              place: e.place,
+              fixIn: e.fixIn,
+              fixOut: e.fixOut,
+              minutes: e.minutes);
+      if (result.failure != null) {
+        emit(RequestsState(
+            status: state.status,
+            requests: state.requests,
+            balances: state.balances,
+            submitFailure: result.failure,
+            createdNonce: state.createdNonce));
+        return;
       }
       final created = state.createdNonce + 1;
-      emit(RequestsState(status: state.status, requests: state.requests, balances: state.balances, createdNonce: created));
+      emit(RequestsState(
+          status: state.status,
+          requests: state.requests,
+          balances: state.balances,
+          createdNonce: created));
       await _load(emit);
     } on Failure catch (f) {
-      emit(RequestsState(status: state.status, requests: state.requests, balances: state.balances, submitFailure: f, createdNonce: state.createdNonce));
+      emit(RequestsState(
+          status: state.status,
+          requests: state.requests,
+          balances: state.balances,
+          submitFailure: f,
+          createdNonce: state.createdNonce));
+    } catch (e) {
+      // A parse or plugin error must not leave the form saying it is submitting
+      // (nor reach the debugger as an unhandled exception).
+      emit(RequestsState(
+        status: state.status,
+        requests: state.requests,
+        balances: state.balances,
+        submitFailure: UnknownFailure(e.toString()),
+        createdNonce: state.createdNonce,
+      ));
     }
   }
 
-  Future<void> _onWithdraw(RequestWithdrawRequested e, Emitter<RequestsState> emit) async {
+  Future<void> _onWithdraw(
+      RequestWithdrawRequested e, Emitter<RequestsState> emit) async {
     try {
       if (e.family == 'leave') {
         await _repo.withdrawLeaveRequest(e.id);
@@ -130,7 +181,12 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
       }
       await _load(emit);
     } on Failure catch (f) {
-      emit(RequestsState(status: state.status, requests: state.requests, balances: state.balances, submitFailure: f, createdNonce: state.createdNonce));
+      emit(RequestsState(
+          status: state.status,
+          requests: state.requests,
+          balances: state.balances,
+          submitFailure: f,
+          createdNonce: state.createdNonce));
     }
   }
 }

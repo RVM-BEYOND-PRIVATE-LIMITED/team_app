@@ -27,6 +27,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
   final _consentName = TextEditingController();
   bool _loading = true;
   bool _saving = false;
+  bool _editing = false;
   bool _showAccount = false;
   Failure? _failure;
   BankDetails? _existing;
@@ -54,14 +55,9 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
       if (!mounted) return;
       setState(() {
         _existing = bank;
-        if (bank != null) {
-          _bank.text = bank.bankName;
-          _branch.text = bank.branchName ?? '';
-          _account.text = bank.accountNumber;
-          _ifsc.text = bank.ifscCode;
-          _upi.text = bank.upiId ?? '';
-          _consentName.text = bank.consentName ?? '';
-        }
+        _seed(bank);
+        _editing = bank == null;
+        _failure = null;
         _loading = false;
       });
     } on Failure catch (f) {
@@ -72,6 +68,27 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
       });
     }
   }
+
+  void _seed(BankDetails? bank) {
+    _bank.text = bank?.bankName ?? '';
+    _branch.text = bank?.branchName ?? '';
+    _account.text = bank?.accountNumber ?? '';
+    _ifsc.text = bank?.ifscCode ?? '';
+    _upi.text = bank?.upiId ?? '';
+    _consentName.text = bank?.consentName ?? '';
+  }
+
+  void _startEditing() => setState(() {
+        _seed(_existing);
+        _showAccount = false;
+        _editing = true;
+      });
+
+  void _cancelEditing() => setState(() {
+        _seed(_existing);
+        _showAccount = false;
+        _editing = false;
+      });
 
   Future<void> _save() async {
     final bankName = _bank.text.trim();
@@ -96,7 +113,12 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
         consentName: consent,
       );
       if (!mounted) return;
-      setState(() => _existing = saved);
+      setState(() {
+        _existing = saved;
+        _seed(saved);
+        _showAccount = false;
+        _editing = false;
+      });
       _snack('Bank details saved.');
     } on Failure catch (f) {
       _snack(f.message);
@@ -137,8 +159,14 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
     if (_failure != null) {
       return AppError(message: _failure!.message, onRetry: _load);
     }
+    return _editing ? _editView() : _readOnlyView();
+  }
+
+  Widget _readOnlyView() {
+    final bank = _existing;
+    if (bank == null) return _editView();
     final text = Theme.of(context).textTheme;
-    final account = _account.text.replaceAll(' ', '');
+    final account = bank.accountNumber.replaceAll(' ', '');
     final masked = account.length <= 4
         ? account
         : '•••• ${account.substring(account.length - 4)}';
@@ -146,104 +174,96 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
       padding: const EdgeInsets.fromLTRB(
           RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.xl),
       children: [
-        if (_existing != null) ...[
-          TeamCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    const TeamIconBadge(
-                      icon: Icons.account_balance_rounded,
-                      color: RvmColors.clay,
-                      background: RvmColors.cream,
-                      size: 42,
-                      iconSize: 20,
-                      radius: 13,
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(_existing!.bankName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: text.titleSmall?.copyWith(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w700)),
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.verified_rounded,
-                                  size: 14, color: RvmColors.success),
-                            ],
-                          ),
-                          Text(_existing!.branchName ?? 'Branch not set',
-                              style: text.bodySmall?.copyWith(fontSize: 10)),
-                        ],
-                      ),
-                    ),
-                    if (_existing!.consentGivenAt != null)
-                      const TeamPill(
-                          label: 'Primary',
-                          tone: TeamPillTone.success,
-                          dense: true),
-                  ],
-                ),
-                const Divider(height: 24),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('ACCOUNT NUMBER',
-                              style: text.labelSmall?.copyWith(
-                                  fontSize: 8,
-                                  letterSpacing: 0.7,
-                                  color: RvmColors.subtle)),
-                          const SizedBox(height: 3),
-                          Text(masked,
-                              style: text.titleSmall?.copyWith(
-                                fontSize: 12,
-                                letterSpacing: 1.2,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures()
-                                ],
-                              )),
-                        ],
-                      ),
-                    ),
-                    Column(
+        TeamCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const TeamIconBadge(
+                    icon: Icons.account_balance_rounded,
+                    color: RvmColors.clay,
+                    background: RvmColors.cream,
+                    size: 42,
+                    iconSize: 20,
+                    radius: 13,
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('IFSC CODE',
-                            style: text.labelSmall?.copyWith(
-                                fontSize: 8,
-                                letterSpacing: 0.7,
-                                color: RvmColors.subtle)),
-                        const SizedBox(height: 3),
-                        Text(_existing!.ifscCode,
-                            style: text.titleSmall?.copyWith(
-                              fontSize: 12,
-                              letterSpacing: 1.2,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ],
-                            )),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(bank.bankName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: text.titleSmall?.copyWith(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w700)),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.verified_rounded,
+                                size: 14, color: RvmColors.success),
+                          ],
+                        ),
+                        Text(bank.branchName ?? 'Branch not set',
+                            style: text.bodySmall?.copyWith(fontSize: 10)),
                       ],
                     ),
-                  ],
+                  ),
+                  if (bank.consentGivenAt != null)
+                    const TeamPill(
+                        label: 'Primary',
+                        tone: TeamPillTone.success,
+                        dense: true),
+                ],
+              ),
+              const Divider(height: 24),
+              _ReadOnlyField(
+                label: 'Account number',
+                value: _showAccount ? account : masked,
+                trailing: IconButton(
+                  tooltip: _showAccount
+                      ? 'Hide account number'
+                      : 'Show account number',
+                  onPressed: () => setState(() => _showAccount = !_showAccount),
+                  icon: Icon(
+                      _showAccount
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 17),
+                  color: RvmColors.subtle,
+                  visualDensity: VisualDensity.compact,
                 ),
-              ],
-            ),
+              ),
+              _ReadOnlyField(label: 'IFSC code', value: bank.ifscCode),
+              if (bank.upiId != null && bank.upiId!.isNotEmpty)
+                _ReadOnlyField(label: 'UPI ID', value: bank.upiId!),
+              if (bank.consentName != null && bank.consentName!.isNotEmpty)
+                _ReadOnlyField(
+                    label: 'Consent given by', value: bank.consentName!),
+            ],
           ),
-          const SizedBox(height: RvmSpacing.md),
-        ],
+        ),
+        const SizedBox(height: RvmSpacing.md),
+        TeamPrimaryButton(
+          label: 'Edit Bank Details',
+          icon: Icons.edit_outlined,
+          onPressed: _startEditing,
+        ),
+      ],
+    );
+  }
+
+  Widget _editView() {
+    final text = Theme.of(context).textTheme;
+    final account = _account.text.replaceAll(' ', '');
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.xl),
+      children: [
         _FieldCard(
           label: 'Bank name',
           controller: _bank,
@@ -362,7 +382,59 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
           busy: _saving,
           onPressed: _saving ? null : _save,
         ),
+        if (_existing != null) ...[
+          const SizedBox(height: RvmSpacing.sm),
+          TextButton(
+            onPressed: _saving ? null : _cancelEditing,
+            child: const Text('Cancel'),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+class _ReadOnlyField extends StatelessWidget {
+  const _ReadOnlyField({
+    required this.label,
+    required this.value,
+    this.trailing,
+  });
+
+  final String label;
+  final String value;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label.toUpperCase(),
+                    style: text.labelSmall?.copyWith(
+                        fontSize: 8,
+                        letterSpacing: 0.7,
+                        color: RvmColors.subtle)),
+                const SizedBox(height: 3),
+                Text(value,
+                    style: text.titleSmall?.copyWith(
+                      fontSize: 12,
+                      letterSpacing: 0.6,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    )),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
     );
   }
 }

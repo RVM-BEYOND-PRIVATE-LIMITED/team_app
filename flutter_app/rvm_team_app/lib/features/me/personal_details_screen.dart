@@ -31,7 +31,16 @@ class _PersonalView extends StatefulWidget {
 }
 
 class _PersonalViewState extends State<_PersonalView> {
-  static const _bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  static const _bloodGroups = [
+    'A+',
+    'A-',
+    'B+',
+    'B-',
+    'AB+',
+    'AB-',
+    'O+',
+    'O-'
+  ];
 
   final _emergencyName = TextEditingController();
   final _emergencyRelation = TextEditingController();
@@ -64,23 +73,31 @@ class _PersonalViewState extends State<_PersonalView> {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: () => context.read<PersonalBloc>().add(const PersonalRefreshed()),
+            onPressed: () =>
+                context.read<PersonalBloc>().add(const PersonalRefreshed()),
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
       body: BlocConsumer<PersonalBloc, PersonalState>(
-        listenWhen: (a, b) => a.savedNonce != b.savedNonce || a.saveFailure != b.saveFailure,
+        listenWhen: (a, b) =>
+            a.savedNonce != b.savedNonce || a.saveFailure != b.saveFailure,
         listener: (context, state) {
           if (state.savedNonce > 0 && state.saveFailure == null) {
+            final messenger = ScaffoldMessenger.of(context);
+            messenger
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                  const SnackBar(content: Text('Personal details saved.')));
+            // The save is complete, so this form has nothing left to do. Going
+            // back is the confirmation the person expects; the SnackBar lives on
+            // the app's root messenger and stays visible over the previous page.
+            if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+          } else if (state.saveFailure != null) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
-              ..showSnackBar(const SnackBar(content: Text('Saved.')));
-          }
-          if (state.saveFailure != null) {
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(SnackBar(content: Text(state.saveFailure!.message)));
+              ..showSnackBar(
+                  SnackBar(content: Text(state.saveFailure!.message)));
           }
         },
         builder: (context, state) {
@@ -90,8 +107,10 @@ class _PersonalViewState extends State<_PersonalView> {
               return const AppLoading();
             case LoadStatus.failure:
               return AppError(
-                message: state.failure?.message ?? 'Could not load your personal details.',
-                onRetry: () => context.read<PersonalBloc>().add(const PersonalRefreshed()),
+                message: state.failure?.message ??
+                    'Could not load your personal details.',
+                onRetry: () =>
+                    context.read<PersonalBloc>().add(const PersonalRefreshed()),
               );
             case LoadStatus.empty:
             case LoadStatus.success:
@@ -113,9 +132,15 @@ class _PersonalViewState extends State<_PersonalView> {
         Card(
           child: Column(
             children: [
-              _ReadOnly(icon: Icons.cake_outlined, label: 'Date of birth', value: p?.dateOfBirth),
+              _ReadOnly(
+                  icon: Icons.cake_outlined,
+                  label: 'Date of birth',
+                  value: p?.dateOfBirth),
               const Divider(height: 1),
-              _ReadOnly(icon: Icons.home_outlined, label: 'Address', value: p?.addressOneLine),
+              _ReadOnly(
+                  icon: Icons.home_outlined,
+                  label: 'Address',
+                  value: p?.addressOneLine),
             ],
           ),
         ),
@@ -130,10 +155,12 @@ class _PersonalViewState extends State<_PersonalView> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: _bloodGroup,
-                  decoration: const InputDecoration(labelText: 'Blood group', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                      labelText: 'Blood group', border: OutlineInputBorder()),
                   items: [
                     const DropdownMenuItem(value: null, child: Text('Not set')),
-                    for (final g in _bloodGroups) DropdownMenuItem(value: g, child: Text(g)),
+                    for (final g in _bloodGroups)
+                      DropdownMenuItem(value: g, child: Text(g)),
                   ],
                   onChanged: (v) => setState(() => _bloodGroup = v),
                 ),
@@ -141,19 +168,22 @@ class _PersonalViewState extends State<_PersonalView> {
                 TextField(
                   controller: _emergencyName,
                   maxLength: 100,
-                  decoration: const InputDecoration(labelText: 'Emergency contact name', counterText: ''),
+                  decoration: const InputDecoration(
+                      labelText: 'Emergency contact name', counterText: ''),
                 ),
                 const SizedBox(height: RvmSpacing.sm),
                 TextField(
                   controller: _emergencyRelation,
                   maxLength: 50,
-                  decoration: const InputDecoration(labelText: 'Relationship', counterText: ''),
+                  decoration: const InputDecoration(
+                      labelText: 'Relationship', counterText: ''),
                 ),
                 const SizedBox(height: RvmSpacing.sm),
                 TextField(
                   controller: _emergencyPhone,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Emergency phone'),
+                  decoration:
+                      const InputDecoration(labelText: 'Emergency phone'),
                 ),
               ],
             ),
@@ -164,7 +194,8 @@ class _PersonalViewState extends State<_PersonalView> {
             padding: const EdgeInsets.only(top: RvmSpacing.sm),
             child: Text(
               [
-                if (p?.updatedByName != null) 'Last updated by ${p!.updatedByName}',
+                if (p?.updatedByName != null)
+                  'Last updated by ${p!.updatedByName}',
                 if (p?.updatedAt != null)
                   'on ${MaterialLocalizations.of(context).formatMediumDate(p!.updatedAt!.toLocal())}',
               ].join(' '),
@@ -175,7 +206,10 @@ class _PersonalViewState extends State<_PersonalView> {
         FilledButton.icon(
           onPressed: state.saving ? null : () => _save(context),
           icon: state.saving
-              ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.save_outlined),
           label: const Text('Save changes'),
         ),
@@ -196,7 +230,8 @@ class _PersonalViewState extends State<_PersonalView> {
 }
 
 class _ReadOnly extends StatelessWidget {
-  const _ReadOnly({required this.icon, required this.label, required this.value});
+  const _ReadOnly(
+      {required this.icon, required this.label, required this.value});
   final IconData icon;
   final String label;
   final String? value;
@@ -207,8 +242,10 @@ class _ReadOnly extends StatelessWidget {
     return ListTile(
       leading: Icon(icon, color: scheme.onSurfaceVariant),
       title: Text(label),
-      subtitle: Text((value == null || value!.isEmpty) ? 'Not recorded' : value!),
-      trailing: Icon(Icons.lock_outline, size: 18, color: scheme.onSurfaceVariant),
+      subtitle:
+          Text((value == null || value!.isEmpty) ? 'Not recorded' : value!),
+      trailing:
+          Icon(Icons.lock_outline, size: 18, color: scheme.onSurfaceVariant),
       enabled: false,
     );
   }

@@ -22,7 +22,13 @@ class ApprovalsScreen extends StatelessWidget {
     return BlocProvider(
       create: (_) =>
           getIt<ApprovalsBloc>()..add(const ApprovalsLoadRequested()),
-      child: const _ApprovalsView(),
+      child: BlocProvider(
+        // Needed to know whether this caller may ask the server for decided
+        // requests. A manager's Inbox is pending-only on the live API, so the
+        // status pills are hidden rather than opening a 403.
+        create: (_) => getIt<CapabilitiesBloc>()..add(const LoadRequested()),
+        child: const _ApprovalsView(),
+      ),
     );
   }
 }
@@ -32,6 +38,9 @@ class _ApprovalsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hrWide =
+        context.watch<CapabilitiesBloc>().state.data?.approvalsAnyRequest ==
+            true;
     return Scaffold(
       backgroundColor: RvmColors.ivory,
       body: Column(
@@ -87,7 +96,8 @@ class _ApprovalsView extends StatelessWidget {
                         const SnackBar(content: Text('Decision saved.')));
                 }
               },
-              builder: (context, state) => _body(context, state),
+              builder: (context, state) =>
+                  _body(context, state, hrWide: hrWide),
             ),
           ),
         ],
@@ -95,7 +105,8 @@ class _ApprovalsView extends StatelessWidget {
     );
   }
 
-  Widget _body(BuildContext context, ApprovalsState state) {
+  Widget _body(BuildContext context, ApprovalsState state,
+      {required bool hrWide}) {
     if (state.status == LoadStatus.initial ||
         state.status == LoadStatus.loading) {
       return const AppLoading();
@@ -114,6 +125,7 @@ class _ApprovalsView extends StatelessWidget {
         _FilterRow(
           selected: state.filter,
           inbox: inbox,
+          showAllStatuses: hrWide,
           onSelected: (f) =>
               context.read<ApprovalsBloc>().add(ApprovalsFiltered(f)),
         ),
@@ -212,31 +224,40 @@ class _SyncStat extends StatelessWidget {
 
 class _FilterRow extends StatelessWidget {
   const _FilterRow(
-      {required this.selected, required this.onSelected, this.inbox});
+      {required this.selected,
+      required this.onSelected,
+      required this.showAllStatuses,
+      this.inbox});
   final String selected;
   final ApprovalInbox? inbox;
   final ValueChanged<String> onSelected;
+
+  /// HR-wide callers may ask for any status; a manager's live Inbox is
+  /// pending-only, so showing the other pills would only produce a 403.
+  final bool showAllStatuses;
 
   @override
   Widget build(BuildContext context) {
     final pending = inbox?.total;
     final items = <(String, String, String?)>[
       ('pending', 'Pending', pending == null ? null : '$pending'),
-      (
-        'approved',
-        'Approved',
-        selected == 'approved' && inbox != null
-            ? '${inbox!.requests.length}'
-            : null
-      ),
-      (
-        'rejected',
-        'Rejected',
-        selected == 'rejected' && inbox != null
-            ? '${inbox!.requests.length}'
-            : null
-      ),
-      ('all', 'All', null),
+      if (showAllStatuses) ...[
+        (
+          'approved',
+          'Approved',
+          selected == 'approved' && inbox != null
+              ? '${inbox!.requests.length}'
+              : null
+        ),
+        (
+          'rejected',
+          'Rejected',
+          selected == 'rejected' && inbox != null
+              ? '${inbox!.requests.length}'
+              : null
+        ),
+        ('all', 'All', null),
+      ],
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,

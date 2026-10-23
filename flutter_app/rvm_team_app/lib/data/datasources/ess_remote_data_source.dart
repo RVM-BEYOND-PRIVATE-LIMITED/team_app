@@ -22,9 +22,25 @@ class KeptSession {
 /// Every call the Team RVM app makes to the ESS (`/api/ess`). Paths are
 /// relative to the ESS base URL configured on the injected Dio.
 class EssRemoteDataSource with DioExecutor {
-  EssRemoteDataSource(this._dio);
+  EssRemoteDataSource(this._dio)
+      : _bare = Dio(BaseOptions(
+          baseUrl: _dio.options.baseUrl,
+          connectTimeout: _dio.options.connectTimeout,
+          receiveTimeout: _dio.options.receiveTimeout,
+          sendTimeout: _dio.options.sendTimeout,
+          contentType: _dio.options.contentType,
+          headers: Map<String, dynamic>.of(_dio.options.headers),
+          // The refresh endpoint answers 401 when the kept sign-in has ended.
+          // That is an expected answer for the launch probe, not an exception.
+          validateStatus: (_) => true,
+        ))
+          ..httpClientAdapter = _dio.httpClientAdapter;
 
   final Dio _dio;
+
+  /// No auth interceptor: used only for the unauthenticated refresh rotation at
+  /// launch, where a 401 must come back as a value instead of a thrown error.
+  final Dio _bare;
 
   Map<String, dynamic> _body(Response<dynamic> res) {
     final status = res.statusCode ?? 0;
@@ -79,6 +95,43 @@ class EssRemoteDataSource with DioExecutor {
   Future<void> signOutEss() => guard(() async {
         await _dio.post('/session/sign-out');
       });
+
+  /// Rotate the kept sign-in without throwing when it has ended. The launch
+  /// probe uses this instead of `me()`: a 401 from `/session/refresh` means
+  /// "sign in again", and the splash must never pause on an exception for it.
+  Future<({KeptSession? session, Failure? failure})> refreshKeptSignIn({
+    required String refreshToken,
+    required String installId,
+  }) async {
+    try {
+      final res = await _bare.post('/session/refresh', data: {
+        'refresh_token': refreshToken,
+        'install_id': installId,
+      });
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        return (session: null, failure: failureFromResponse(status, res.data));
+      }
+      final data = _body(res);
+      final session = _obj(data['session']);
+      return (
+        session: KeptSession(
+          accessToken: data['access_token'] as String,
+          refreshToken: data['refresh_token'] as String,
+          accessExpiresAt: DateTime.tryParse('${data['access_expires_at']}'),
+          sessionId: session['id']?.toString(),
+        ),
+        failure: null,
+      );
+    } on DioException catch (e) {
+      return (session: null, failure: Failure.fromDio(e));
+    } catch (_) {
+      return (
+        session: null,
+        failure: const UnknownFailure('Could not restore your session.'),
+      );
+    }
+  }
 
   Future<List<TeamSession>> sessions() => guard(() async => _list(
         _body(await _dio.get('/sessions'))['sessions'],
@@ -273,6 +326,50 @@ class EssRemoteDataSource with DioExecutor {
       _body(await _dio.get('/attendance-requests'))['requests'],
       EssRequest.fromJson));
 
+  /// Creation without throwing for a server refusal. A 4xx is already a normal
+  /// response on this client (validateStatus keeps 401 as the only throwing
+  /// status), so a 409 LIMIT_REACHED / DUPLICATE_REQUEST can be returned as a
+  /// typed Failure. The form then shows the reason instead of the debugger
+  /// pausing on an exception that the app would only catch a moment later.
+  Future<({EssRequest? request, Failure? failure})>
+      createAttendanceRequestSafe({
+    required String type,
+    required String day,
+    required String reason,
+    String? place,
+    String? fixIn,
+    String? fixOut,
+    int? minutes,
+  }) async {
+    try {
+      final res = await _dio.post('/attendance-requests', data: {
+        'type': type,
+        'day': day,
+        'reason': reason,
+        if (place != null) 'place': place,
+        if (fixIn != null) 'fix_in': fixIn,
+        if (fixOut != null) 'fix_out': fixOut,
+        if (minutes != null) 'minutes': minutes,
+      });
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        return (request: null, failure: failureFromResponse(status, res.data));
+      }
+      return (
+        request: EssRequest.fromJson(
+            _obj((res.data as Map).cast<String, dynamic>()['request'])),
+        failure: null,
+      );
+    } on DioException catch (e) {
+      return (request: null, failure: Failure.fromDio(e));
+    } catch (_) {
+      return (
+        request: null,
+        failure: const UnknownFailure('Could not send the request.'),
+      );
+    }
+  }
+
   Future<EssRequest> withdrawAttendanceRequest(String id) =>
       guard(() async => EssRequest.fromJson(_obj(_body(
           await _dio.post('/attendance-requests/$id/withdraw'))['request'])));
@@ -292,6 +389,39 @@ class EssRemoteDataSource with DioExecutor {
       _body(await _dio.get('/leave-requests'))['requests'],
       EssRequest.fromJson));
 
+  /// Leave creation with the same non-throwing contract as
+  /// [createAttendanceRequestSafe] — used by the request form and the WFH
+  /// sheet, where a 409 LIMIT_REACHED / WFH_LIMIT is an expected answer.
+  Future<({EssRequest? request, Failure? failure})> createLeaveRequestSafe({
+    required String type,
+    required String day,
+    required String reason,
+  }) async {
+    try {
+      final res = await _dio.post('/leave-requests', data: {
+        'type': type,
+        'day': day,
+        'reason': reason,
+      });
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        return (request: null, failure: failureFromResponse(status, res.data));
+      }
+      return (
+        request: EssRequest.fromJson(
+            _obj((res.data as Map).cast<String, dynamic>()['request'])),
+        failure: null,
+      );
+    } on DioException catch (e) {
+      return (request: null, failure: Failure.fromDio(e));
+    } catch (_) {
+      return (
+        request: null,
+        failure: const UnknownFailure('Could not send the request.'),
+      );
+    }
+  }
+
   Future<EssRequest> withdrawLeaveRequest(String id) =>
       guard(() async => EssRequest.fromJson(_obj(
           _body(await _dio.post('/leave-requests/$id/withdraw'))['request'])));
@@ -301,8 +431,8 @@ class EssRemoteDataSource with DioExecutor {
           queryParameters: {if (month != null) 'month': month}))));
 
   /// My work-from-home allowance and this month (KP, 22 Oct).
-  Future<WfhAllowance> myWfh() =>
-      guard(() async => WfhAllowance.fromJson(_body(await _dio.get('/me/wfh'))));
+  Future<WfhAllowance> myWfh() => guard(
+      () async => WfhAllowance.fromJson(_body(await _dio.get('/me/wfh'))));
 
   Future<ApprovalInbox> approvals({String status = 'pending'}) =>
       guard(() async => ApprovalInbox.fromJson(_body(
@@ -527,6 +657,44 @@ class EssRemoteDataSource with DioExecutor {
 
   Future<void> ackAnnouncement(String id) =>
       guard(() async => _dio.post('/wall/announcements/$id/ack'));
+
+  /// Praise without throwing for a refusal. The sheet keeps the server's own
+  /// wording (self-praise, a badge, a reason) and the debugger no longer opens
+  /// on a 4xx that the app would catch a moment later.
+  Future<({WallPost? post, Failure? failure})> createPraiseSafe({
+    required String employeeId,
+    required String badge,
+    required String reason,
+    String scope = 'org',
+    List<Map<String, dynamic>>? attachments,
+  }) async {
+    try {
+      final res = await _dio.post('/wall/praise', data: {
+        'employee_id': employeeId,
+        'badge': badge,
+        'reason': reason,
+        'scope': scope,
+        if (attachments != null && attachments.isNotEmpty)
+          'attachments': attachments,
+      });
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        return (post: null, failure: failureFromResponse(status, res.data));
+      }
+      return (
+        post: WallPost.fromJson(
+            _obj((res.data as Map).cast<String, dynamic>()['post'])),
+        failure: null,
+      );
+    } on DioException catch (e) {
+      return (post: null, failure: Failure.fromDio(e));
+    } catch (_) {
+      return (
+        post: null,
+        failure: const UnknownFailure('Could not send the praise.'),
+      );
+    }
+  }
 
   Future<WallCelebrations> wallCelebrations() => guard(() async =>
       WallCelebrations.fromJson(_body(await _dio.get('/wall/celebrations'))));

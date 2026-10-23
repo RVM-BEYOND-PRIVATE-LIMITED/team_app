@@ -1,10 +1,11 @@
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
 
+import '../../app_feedback.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
+import '../../injection.dart';
 
 /// The Home card's work-from-home flow (KP, 22 Oct 2026): HR enables selected
 /// employees with a fixed monthly limit; the employee sees what is left and files
@@ -56,11 +57,7 @@ class _WfhSheetState extends State<_WfhSheet> {
     if (picked != null) setState(() => _day = picked);
   }
 
-  void _snack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
+  void _snack(String message) => showAppMessage(message);
 
   Future<void> _submit() async {
     final reason = _reason.text.trim();
@@ -70,24 +67,22 @@ class _WfhSheetState extends State<_WfhSheet> {
     }
     setState(() => _submitting = true);
     final messenger = ScaffoldMessenger.of(context);
-    try {
-      await getIt<EssRepository>()
-          .createLeaveRequest(type: 'wfh', day: _dayIso, reason: reason);
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-            const SnackBar(content: Text('Work-from-home request sent.')));
-    } on Failure catch (f) {
-      if (!mounted) return;
+    final result = await getIt<EssRepository>().createLeaveRequestSafe(
+      type: 'wfh',
+      day: _dayIso,
+      reason: reason,
+    );
+    if (!mounted) return;
+    if (result.failure != null) {
       setState(() => _submitting = false);
-      _snack(f.message);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _submitting = false);
-      _snack('Could not send the request. Try again.');
+      _snack(result.failure!.message);
+      return;
     }
+    Navigator.of(context).pop();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+          const SnackBar(content: Text('Work-from-home request sent.')));
   }
 
   @override
@@ -104,10 +99,13 @@ class _WfhSheetState extends State<_WfhSheet> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const SizedBox(
-                height: 140,
-                child: Center(child: CircularProgressIndicator()));
+                height: 140, child: Center(child: CircularProgressIndicator()));
           }
           if (snapshot.hasError) {
+            final error = snapshot.error;
+            final message = error is Failure
+                ? error.message
+                : 'Could not load your work-from-home allowance. Try again.';
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -115,12 +113,11 @@ class _WfhSheetState extends State<_WfhSheet> {
                 Text('Work from home',
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: RvmSpacing.sm),
-                const Text(
-                    'Could not load your work-from-home allowance. Try again.'),
+                Text(message),
                 const SizedBox(height: RvmSpacing.md),
                 TextButton(
-                  onPressed: () => setState(
-                      () => _future = getIt<EssRepository>().myWfh()),
+                  onPressed: () =>
+                      setState(() => _future = getIt<EssRepository>().myWfh()),
                   child: const Text('Retry'),
                 ),
               ],

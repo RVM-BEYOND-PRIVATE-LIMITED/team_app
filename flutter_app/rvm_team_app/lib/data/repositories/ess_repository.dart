@@ -53,6 +53,36 @@ class EssRepository with ConnectivityGuard {
     );
   }
 
+  /// Restore the launch session from the kept sign-in without throwing a 401.
+  /// Returns true when a fresh access token is in the Scheduler slot.
+  Future<bool> restoreKeptSignIn() async {
+    final refresh = await _tokens.readEssRefreshToken();
+    if (refresh == null || refresh.isEmpty) return false;
+    // Do not race the OS resolver on a cold start: offline is simply "no
+    // restored session", not a network exception on the splash.
+    if (!await connectivity.isOnline) return false;
+    final installId = await _tokens.installId();
+    final result = await _remote.refreshKeptSignIn(
+      refreshToken: refresh,
+      installId: installId,
+    );
+    if (result.failure != null || result.session == null) {
+      final status = result.failure?.statusCode;
+      if (status == 401 || status == 403) {
+        // The family has ended; keeping the refresh token only makes the next
+        // launch try a dead token again.
+        await _tokens.clearEssSession();
+      }
+      return false;
+    }
+    await _tokens.saveEssSession(
+      accessToken: result.session!.accessToken,
+      refreshToken: result.session!.refreshToken,
+      accessExpiresAt: result.session!.accessExpiresAt,
+    );
+    return true;
+  }
+
   Future<void> signOut() async {
     try {
       await ensureOnline();
@@ -217,6 +247,39 @@ class EssRepository with ConnectivityGuard {
     return _remote.myAttendanceRequests();
   }
 
+  /// Non-throwing request creation for the forms. See the data source: a 409
+  /// quota/duplicate refusal comes back as a Failure value, not an exception.
+  Future<({EssRequest? request, Failure? failure})>
+      createAttendanceRequestSafe({
+    required String type,
+    required String day,
+    required String reason,
+    String? place,
+    String? fixIn,
+    String? fixOut,
+    int? minutes,
+  }) async {
+    try {
+      await ensureOnline();
+      return await _remote.createAttendanceRequestSafe(
+        type: type,
+        day: day,
+        reason: reason,
+        place: place,
+        fixIn: fixIn,
+        fixOut: fixOut,
+        minutes: minutes,
+      );
+    } on Failure catch (f) {
+      return (request: null, failure: f);
+    } catch (_) {
+      return (
+        request: null,
+        failure: const UnknownFailure('Could not send the request.'),
+      );
+    }
+  }
+
   Future<EssRequest> withdrawAttendanceRequest(String id) async {
     await ensureOnline();
     return _remote.withdrawAttendanceRequest(id);
@@ -233,6 +296,28 @@ class EssRepository with ConnectivityGuard {
   Future<List<EssRequest>> myLeaveRequests() async {
     await ensureOnline();
     return _remote.myLeaveRequests();
+  }
+
+  Future<({EssRequest? request, Failure? failure})> createLeaveRequestSafe({
+    required String type,
+    required String day,
+    required String reason,
+  }) async {
+    try {
+      await ensureOnline();
+      return await _remote.createLeaveRequestSafe(
+        type: type,
+        day: day,
+        reason: reason,
+      );
+    } on Failure catch (f) {
+      return (request: null, failure: f);
+    } catch (_) {
+      return (
+        request: null,
+        failure: const UnknownFailure('Could not send the request.'),
+      );
+    }
   }
 
   Future<EssRequest> withdrawLeaveRequest(String id) async {
@@ -468,6 +553,32 @@ class EssRepository with ConnectivityGuard {
   Future<List<WallAnnouncement>> wallAnnouncements() async {
     await ensureOnline();
     return _remote.wallAnnouncements();
+  }
+
+  Future<({WallPost? post, Failure? failure})> createPraiseSafe({
+    required String employeeId,
+    required String badge,
+    required String reason,
+    String scope = 'org',
+    List<Map<String, dynamic>>? attachments,
+  }) async {
+    try {
+      await ensureOnline();
+      return await _remote.createPraiseSafe(
+        employeeId: employeeId,
+        badge: badge,
+        reason: reason,
+        scope: scope,
+        attachments: attachments,
+      );
+    } on Failure catch (f) {
+      return (post: null, failure: f);
+    } catch (_) {
+      return (
+        post: null,
+        failure: const UnknownFailure('Could not send the praise.'),
+      );
+    }
   }
 
   Future<void> readAnnouncement(String id) async {
