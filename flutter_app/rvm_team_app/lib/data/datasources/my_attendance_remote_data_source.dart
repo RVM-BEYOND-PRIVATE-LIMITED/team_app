@@ -1,3 +1,4 @@
+import 'package:core_network/core_network.dart';
 import 'package:dio/dio.dart';
 
 import '../../domain/attendance_models.dart';
@@ -18,9 +19,40 @@ class MyAttendanceRemoteDataSource with DioExecutor {
         return MyAttendance.fromJson((res.data as Map).cast<String, dynamic>());
       });
 
+  /// The Home/schedule read without throwing for a 401/403/5xx. A portal
+  /// token can be refused by the Scheduler's own employee link rules even
+  /// though the ESS capabilities passed; that must render a card, not a
+  /// DioException the debugger stops on.
+  Future<({MyAttendance? data, Failure? failure})> myAttendanceSafe(
+      {String? month}) async {
+    try {
+      final res = await _dio.get(
+        '/hr/my-attendance',
+        queryParameters: {if (month != null) 'month': month},
+        options: Options(validateStatus: (_) => true),
+      );
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        return (data: null, failure: failureFromResponse(status, res.data));
+      }
+      return (
+        data: MyAttendance.fromJson((res.data as Map).cast<String, dynamic>()),
+        failure: null,
+      );
+    } on DioException catch (e) {
+      return (data: null, failure: Failure.fromDio(e));
+    } catch (_) {
+      return (
+        data: null,
+        failure: const UnknownFailure('Could not load your attendance.'),
+      );
+    }
+  }
+
   Future<PunchChallenge> challenge() => guard(() async {
         final res = await _dio.get('/hr/my-attendance/challenge');
-        return PunchChallenge.fromJson((res.data as Map).cast<String, dynamic>());
+        return PunchChallenge.fromJson(
+            (res.data as Map).cast<String, dynamic>());
       });
 
   Future<PunchAccepted> punch({
@@ -42,7 +74,8 @@ class MyAttendanceRemoteDataSource with DioExecutor {
           if (clientAt != null) 'client_at': clientAt.toIso8601String(),
           if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
         });
-        return PunchAccepted.fromJson((res.data as Map).cast<String, dynamic>());
+        return PunchAccepted.fromJson(
+            (res.data as Map).cast<String, dynamic>());
       });
 
   Future<void> ping({
@@ -58,15 +91,20 @@ class MyAttendanceRemoteDataSource with DioExecutor {
         });
       });
 
-  Future<void> saveRemark({required String day, String? remarks}) => guard(() async {
-        await _dio.put('/hr/my-attendance/remarks', data: {'day': day, 'remarks': remarks});
+  Future<void> saveRemark({required String day, String? remarks}) =>
+      guard(() async {
+        await _dio.put('/hr/my-attendance/remarks',
+            data: {'day': day, 'remarks': remarks});
       });
 
   /// Set/replace the attendance password (first-time password / none yet). The
   /// reply's fresh 30-day token replaces the current session; every older
   /// session of this login stops working.
   Future<String> setAttendancePassword(String password) => guard(() async {
-        final res = await _dio.post('/hr/my-attendance/password', data: {'password': password});
-        return ((res.data as Map).cast<String, dynamic>()['token'] as String?) ?? '';
+        final res = await _dio
+            .post('/hr/my-attendance/password', data: {'password': password});
+        return ((res.data as Map).cast<String, dynamic>()['token']
+                as String?) ??
+            '';
       });
 }

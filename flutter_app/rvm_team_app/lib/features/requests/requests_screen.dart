@@ -112,11 +112,12 @@ class _RequestsView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, RequestsState state) {
+    final hasContent = state.requests.isNotEmpty || state.balances != null;
     if (state.status == LoadStatus.initial ||
-        state.status == LoadStatus.loading) {
+        (state.status == LoadStatus.loading && !hasContent)) {
       return const AppLoading();
     }
-    if (state.status == LoadStatus.failure) {
+    if (state.status == LoadStatus.failure && !hasContent) {
       return AppError(
         message: state.failure?.message ?? 'Could not load your requests.',
         onRetry: () =>

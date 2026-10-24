@@ -50,11 +50,12 @@ class _LeadersView extends StatelessWidget {
             child: BlocBuilder<LoadBloc<LeadersOverview>,
                 LoadState<LeadersOverview>>(
               builder: (context, state) {
-                if (state.status == LoadStatus.loading ||
-                    state.status == LoadStatus.initial) {
+                if (state.status == LoadStatus.initial ||
+                    (state.status == LoadStatus.loading &&
+                        state.data == null)) {
                   return const AppLoading();
                 }
-                if (state.status == LoadStatus.failure) {
+                if (state.status == LoadStatus.failure && state.data == null) {
                   return AppError(
                     message: state.failure?.message ??
                         'Could not load the overview.',

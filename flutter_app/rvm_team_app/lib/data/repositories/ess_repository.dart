@@ -11,12 +11,15 @@ class EssRepository with ConnectivityGuard {
   EssRepository({
     required EssRemoteDataSource remote,
     required EssTokenStore tokens,
+    required TokenStore schedulerTokens,
     required this.connectivity,
   })  : _remote = remote,
-        _tokens = tokens;
+        _tokens = tokens,
+        _schedulerTokens = schedulerTokens;
 
   final EssRemoteDataSource _remote;
   final EssTokenStore _tokens;
+  final TokenStore _schedulerTokens;
 
   @override
   final ConnectivityService connectivity;
@@ -40,19 +43,27 @@ class EssRepository with ConnectivityGuard {
     return _remote.capabilities();
   }
 
-  /// Trade the fresh Scheduler sign-in for a kept, rotating one (task A3).
-  /// Safe to call right after login; a failure must not block sign-in.
-  Future<void> keepSignIn({String? deviceLabel}) async {
-    final installId = await _tokens.installId();
-    final kept = await _remote.keepSignIn(
-        installId: installId, deviceLabel: deviceLabel);
-    await _tokens.saveEssSession(
-      accessToken: kept.accessToken,
-      refreshToken: kept.refreshToken,
-      accessExpiresAt: kept.accessExpiresAt,
-    );
+  Future<({EssCapabilities? data, Failure? failure})> capabilitiesSafe() async {
+    try {
+      await ensureOnline();
+      final token = await _schedulerTokens.readSchedulerToken();
+      final first = await _remote.capabilitiesSafe(token: token);
+      if (first.failure?.statusCode != 401) return first;
+      // The access token has expired. Restore through the kept sign-in (safe,
+      // non-throwing) and retry once; the shell still gets a value, not a throw.
+      final restored = await restoreKeptSignIn();
+      if (!restored) return first;
+      final fresh = await _schedulerTokens.readSchedulerToken();
+      return await _remote.capabilitiesSafe(token: fresh);
+    } on Failure catch (f) {
+      return (data: null, failure: f);
+    } catch (_) {
+      return (data: null, failure: const UnknownFailure());
+    }
   }
 
+  /// Trade the fresh Scheduler sign-in for a kept, rotating one (task A3).
+  /// Safe to call right after login; a failure must not block sign-in.
   /// Restore the launch session from the kept sign-in without throwing a 401.
   /// Returns true when a fresh access token is in the Scheduler slot.
   Future<bool> restoreKeptSignIn() async {
@@ -81,6 +92,33 @@ class EssRepository with ConnectivityGuard {
       accessExpiresAt: result.session!.accessExpiresAt,
     );
     return true;
+  }
+
+  /// Best-effort kept-sign-in exchange. Returns false when the server refuses
+  /// it (the common one is 403 NOT_LINKED for an HR login with no employee
+  /// record); the sign-in still works on the Scheduler token.
+  Future<bool> keepSignInSafe({String? deviceLabel}) async {
+    try {
+      if (!await connectivity.isOnline) return false;
+      final installId = await _tokens.installId();
+      final result = await _remote.keepSignInSafe(
+        installId: installId,
+        deviceLabel: deviceLabel,
+        token: await _schedulerTokens.readSchedulerToken(),
+      );
+      final kept = result.data;
+      if (kept == null) return false;
+      await _tokens.saveEssSession(
+        accessToken: kept.accessToken,
+        refreshToken: kept.refreshToken,
+        accessExpiresAt: kept.accessExpiresAt,
+      );
+      return true;
+    } on Failure {
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> signOut() async {

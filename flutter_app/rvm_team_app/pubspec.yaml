@@ -40,6 +40,11 @@ dependencies:
   # document/photo picker for multipart uploads (system picker → no storage perms)
   file_picker: ^8.1.2
   share_plus: ^10.1.4
+  crop_your_image: ^2.0.0
+  firebase_core: ^5.1.0
+  firebase_crashlytics: ^6.0.1
+  device_info_plus: ^12.4.0
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:

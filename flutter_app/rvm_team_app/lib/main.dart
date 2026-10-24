@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import 'app_bloc_observer.dart';
+import 'app_crash.dart';
 import 'app_feedback.dart';
 import 'bloc/connectivity_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
@@ -21,17 +22,13 @@ void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     Bloc.observer = const AppBlocObserver();
+    await CrashReporter.init();
     FlutterError.onError = (details) {
-      FlutterError.presentError(details);
-      // Keep the real cause in the log for diagnostics. Do not turn every
-      // framework diagnostic (most often a RenderFlex overflow in debug) into
-      // a repeated "Something went wrong" toast: the safe error widget and
-      // the console already report it, and the toast buried the real screen.
-      debugPrint(
-          'Flutter error: ${details.exceptionAsString()}\n${details.stack}');
+      CrashReporter.flutterError(details);
+      showAppMessage('Something went wrong. Please try again.');
     };
     PlatformDispatcher.instance.onError = (error, stack) {
-      debugPrint('Uncaught error: $error\n$stack');
+      CrashReporter.record(error, stack, fatal: true);
       showAppMessage('Something went wrong. Please try again.');
       return true;
     };
@@ -49,7 +46,7 @@ void main() {
 
     runApp(const TeamApp());
   }, (error, stack) {
-    debugPrint('Uncaught zone error: $error\n$stack');
+    CrashReporter.record(error, stack, fatal: true);
     showAppMessage('Something went wrong. Please try again.');
   });
 }
@@ -113,9 +110,13 @@ class _TeamAppState extends State<TeamApp> {
           title: 'Team RVM',
           scaffoldMessengerKey: rootScaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
+          // The whole design system (ivory scaffolds, white cards, clay
+          // surfaces) is authored for the light palette: following the system
+          // into dark mode mixes white cards with dark fills and washed-out
+          // text (OnePlus 12R, issue14). Locked to light so every device shows
+          // the same colors. Revisit only with a full dark-mode audit.
           theme: RvmTheme.light(seed: RvmColors.clay),
-          darkTheme: RvmTheme.dark(seed: RvmColors.clay),
-          themeMode: ThemeMode.system,
+          themeMode: ThemeMode.light,
           builder: (context, child) =>
               VersionGate(child: child ?? const SizedBox.shrink()),
           routerConfig: _router,

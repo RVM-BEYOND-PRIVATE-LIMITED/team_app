@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:core_network/core_network.dart';
-import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+
+import '../app_crash.dart';
 
 /// Wraps a raw dio call so every data source throws the shared typed [Failure]
 /// instead of a DioException — the same convention as the shared `data` package.
@@ -16,12 +20,22 @@ mixin DioExecutor {
       if (value is Response) {
         final status = value.statusCode ?? 0;
         if (status < 200 || status >= 300) {
+          CrashReporter.note('last_api',
+              '${CrashReporter.apiLine(value.requestOptions.method, value.requestOptions.path)} -> $status');
           throw failureFromResponse(status, value.data);
         }
       }
       return value;
     } on DioException catch (e) {
+      CrashReporter.note('last_api',
+          '${CrashReporter.apiLine(e.requestOptions.method, e.requestOptions.path)} -> ${e.response?.statusCode ?? e.type.name}');
       throw Failure.fromDio(e);
+    } on SocketException catch (e) {
+      // A DNS/connectivity error that reached us outside a DioException
+      // (custom connection factory, platform channel). Staff read this, not
+      // the raw `SocketException: Failed host lookup …` text.
+      debugPrint('Connectivity failure: $e');
+      throw const NoConnectionFailure();
     } catch (e, stack) {
       // A parse error or a plugin failure is still one failed request: make it
       // a typed Failure so every bloc's `on Failure` handler resets its loading

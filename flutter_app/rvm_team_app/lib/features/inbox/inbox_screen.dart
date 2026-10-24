@@ -3,6 +3,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_feedback.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -39,24 +40,26 @@ class InboxScreen extends StatelessWidget {
             Expanded(
               child: BlocBuilder<InboxBloc, LoadState<PriorityInbox>>(
                 builder: (context, state) {
-                  return switch (state.status) {
-                    LoadStatus.loading ||
-                    LoadStatus.initial =>
-                      const AppLoading(label: 'Loading your tasks'),
-                    LoadStatus.failure => AppError(
+                  final inbox = state.data;
+                  if (state.status == LoadStatus.initial ||
+                      (state.status == LoadStatus.loading && inbox == null)) {
+                    return const AppLoading(label: 'Loading your tasks');
+                  }
+                  if (state.status == LoadStatus.failure && inbox == null) {
+                    return AppError(
                         message: state.failure?.message ??
                             'Could not load your inbox.',
                         onRetry: () => context
                             .read<InboxBloc>()
-                            .add(const LoadRefreshed()),
-                      ),
-                    LoadStatus.empty => const AppEmpty(
+                            .add(const LoadRefreshed()));
+                  }
+                  if (inbox == null) {
+                    return const AppEmpty(
                         message:
                             'Nothing has landed on you yet. Priority tasks set by the CEO, HoO or super admin appear here.',
-                        icon: Icons.inbox_outlined,
-                      ),
-                    LoadStatus.success => _Inbox(inbox: state.data!),
-                  };
+                        icon: Icons.inbox_outlined);
+                  }
+                  return _Inbox(inbox: inbox);
                 },
               ),
             ),
@@ -212,33 +215,37 @@ class _TaskTile extends StatelessWidget {
   }
 
   void _open(BuildContext context) {
+    // The sheet opens on its own route, where the page's InboxBloc is not an
+    // ancestor — capture the refresh up front instead of reading the bloc
+    // from inside the sheet.
+    void refresh() => context.read<InboxBloc>().add(const LoadRefreshed());
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (_) => BlocProvider(
         create: (_) => getIt<TaskActionBloc>(),
-        child: _TaskSheet(task: task),
+        child: _TaskSheet(task: task, onDone: refresh),
       ),
     );
   }
 }
 
 class _TaskSheet extends StatelessWidget {
-  const _TaskSheet({required this.task});
+  const _TaskSheet({required this.task, required this.onDone});
   final PriorityTask task;
+  final VoidCallback onDone;
 
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<TaskActionBloc, TaskActionState>(
       listener: (context, state) {
         if (state.status == WriteStatus.success) {
-          context.read<InboxBloc>().add(const LoadRefreshed());
+          onDone();
+          showAppMessage('Task updated.');
           Navigator.of(context).pop();
         } else if (state.status == WriteStatus.failure && state.error != null) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(state.error!)));
+          showAppMessage(state.error!);
         }
       },
       builder: (context, state) {

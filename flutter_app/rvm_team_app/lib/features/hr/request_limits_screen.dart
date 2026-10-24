@@ -117,8 +117,8 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const AppLoading();
-    if (_failure != null) {
+    if (_loading && _limits.isEmpty) return const AppLoading();
+    if (_failure != null && _limits.isEmpty) {
       return AppError(message: _failure!.message, onRetry: _load);
     }
     if (_limits.isEmpty) {

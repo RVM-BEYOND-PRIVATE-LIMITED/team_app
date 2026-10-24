@@ -54,7 +54,13 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Future<void> _upload(DocumentType type) async {
-    final result = await FilePicker.platform.pickFiles(withData: true);
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(withData: true);
+    } catch (_) {
+      _snack('Could not open the file picker.');
+      return;
+    }
     final file = result?.files.single;
     final bytes = file?.bytes;
     if (file == null || bytes == null) return;
@@ -157,8 +163,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const AppLoading();
-    if (_failure != null) {
+    if (_loading && _page == null) return const AppLoading();
+    if (_failure != null && _page == null) {
       return AppError(message: _failure!.message, onRetry: _load);
     }
     final page = _page!;

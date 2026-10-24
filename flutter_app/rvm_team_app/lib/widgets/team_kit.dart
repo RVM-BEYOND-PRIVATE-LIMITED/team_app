@@ -81,11 +81,12 @@ class TeamCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final content = Padding(padding: padding, child: child);
     return Padding(
       padding: margin ?? EdgeInsets.zero,
       child: Material(
-        color: color ?? RvmColors.white,
+        color: color ?? theme.cardColor,
         borderRadius: BorderRadius.circular(radius),
         child: InkWell(
           onTap: onTap,
@@ -93,7 +94,7 @@ class TeamCard extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
-              border: Border.all(color: borderColor ?? RvmColors.line),
+              border: Border.all(color: borderColor ?? theme.dividerColor),
             ),
             child: content,
           ),
@@ -352,14 +353,31 @@ class TeamAvatar extends StatelessWidget {
         borderRadius: rounded ? BorderRadius.circular(radius) : null,
         color: background ?? const Color(0xFFC67B5C),
         image: hasPhoto && !rounded
-            ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover)
+            ? DecorationImage(
+                image: NetworkImage(url),
+                fit: BoxFit.cover,
+                // A dead avatar URL (offline DNS, expired link) must stay a
+                // blank avatar, never an image error reaching the framework.
+                onError: (_, __) {},
+              )
             : null,
       ),
       clipBehavior: rounded ? Clip.antiAlias : Clip.none,
       alignment: Alignment.center,
       child: hasPhoto
           ? (rounded
-              ? Image.network(url, fit: BoxFit.cover, width: size, height: size)
+              ? Image.network(url,
+                  fit: BoxFit.cover,
+                  width: size,
+                  height: size,
+                  errorBuilder: (_, __, ___) => Text(
+                        initial,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: foreground,
+                              fontSize: size * 0.38,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ))
               : null)
           : Text(
               initial,

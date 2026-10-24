@@ -6,7 +6,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
+import '../../widgets/team_kit.dart';
 import 'bloc/wall_bloc.dart';
+import 'praise_sheet.dart';
 
 const wallReactions = <String, String>{
   'like': '👍',
@@ -17,16 +19,436 @@ const wallReactions = <String, String>{
   'curious': '🤔',
 };
 
+const wallReactionLabels = <String, String>{
+  'like': 'Like',
+  'love': 'Love',
+  'laugh': 'Haha',
+  'clap': 'Applaud',
+  'insightful': 'Insightful',
+  'curious': 'Curious',
+};
+
+/// Facebook-style reaction picker: long-press Like opens this sheet with big
+/// emojis. Returns the picked key, or null when dismissed.
+Future<String?> showFbReactionPicker(BuildContext context,
+    {String? current}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => SafeArea(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('React',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              // Wrap instead of Row: on 320px phones six fixed chips
+              // overflowed by ~3px. Wrap centers and flows to a second
+              // row when needed, so no device can overflow.
+              Center(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 2,
+                  runSpacing: 8,
+                  children: [
+                    for (final r in wallReactions.entries)
+                      _PickerEmoji(
+                        emoji: r.value,
+                        label: wallReactionLabels[r.key] ?? r.key,
+                        selected: current == r.key,
+                        onTap: () => Navigator.pop(context, r.key),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _PickerEmoji extends StatelessWidget {
+  const _PickerEmoji(
+      {required this.emoji,
+      required this.label,
+      required this.selected,
+      required this.onTap});
+  final String emoji;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // Fixed width keeps every label on one line and lets the parent Wrap
+    // measure exactly — no RenderFlex overflow on 320px phones.
+    return SizedBox(
+      width: 52,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected ? scheme.primaryContainer : null,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 28)),
+              const SizedBox(height: 2),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(fontSize: 10)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Facebook-style summary: overlapping top emojis + total on the left,
+/// comments on the right. Tapping the left opens who-reacted.
+class FbReactionSummary extends StatelessWidget {
+  const FbReactionSummary(
+      {super.key,
+      this.counts,
+      this.total = 0,
+      this.commentCount,
+      this.onWhoReacted,
+      this.onOpen});
+  final WallReactionCounts? counts;
+  final int total;
+  final int? commentCount;
+  final VoidCallback? onWhoReacted;
+  final VoidCallback? onOpen;
+
+  List<String> get _top {
+    final c = counts?.counts ?? const <String, int>{};
+    final sorted = c.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.where((e) => e.value > 0).take(3).map((e) => e.key).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (total <= 0 && (commentCount ?? 0) <= 0) {
+      return const SizedBox.shrink();
+    }
+    final text = Theme.of(context).textTheme.bodySmall;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          if (total > 0)
+            InkWell(
+              onTap: onWhoReacted,
+              borderRadius: BorderRadius.circular(6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: _top.isEmpty
+                        ? 0
+                        : 20.0 + (_top.length - 1) * 14.0,
+                    height: 22,
+                    child: Stack(
+                      children: [
+                        for (var i = 0; i < _top.length; i++)
+                          Positioned(
+                            left: i * 14.0,
+                            child: Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(context).cardColor,
+                                border: Border.all(
+                                    color: Theme.of(context)
+                                        .dividerColor
+                                        .withValues(alpha: 0.4)),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                  wallReactions[_top[i]] ?? '👍',
+                                  style:
+                                      const TextStyle(fontSize: 13)),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text('$total',
+                      style: text?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant)),
+                ],
+              ),
+            ),
+          const Spacer(),
+          if ((commentCount ?? 0) > 0)
+            InkWell(
+              onTap: onOpen,
+              borderRadius: BorderRadius.circular(6),
+              child: Text(
+                  '$commentCount comment${commentCount == 1 ? '' : 's'}',
+                  style: text?.copyWith(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Facebook-style Like + Comment action row. Tap Like toggles 'like',
+/// long-press opens the emoji picker. Shows current reaction when set.
+class FbPostReactionBar extends StatelessWidget {
+  const FbPostReactionBar(
+      {super.key,
+      this.myReaction,
+      required this.onReact,
+      required this.onOpen});
+  final String? myReaction;
+  final ValueChanged<String?> onReact;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final liked = myReaction != null;
+    final label =
+        myReaction == null ? 'Like' : (wallReactionLabels[myReaction] ?? 'Like');
+    final icon = myReaction == null
+        ? '👍'
+        : (wallReactions[myReaction] ?? '👍');
+    return Column(
+      children: [
+        const Divider(height: 13),
+        Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onLongPress: () async {
+                  final picked = await showFbReactionPicker(context,
+                      current: myReaction);
+                  if (picked == null) return;
+                  if (picked == myReaction) {
+                    onReact(null);
+                  } else {
+                    onReact(picked);
+                  }
+                },
+                child: TextButton.icon(
+                  onPressed: () {
+                    if (liked) {
+                      onReact(null);
+                    } else {
+                      onReact('like');
+                    }
+                  },
+                  icon: Text(icon,
+                      style: const TextStyle(fontSize: 18)),
+                  label: Text(label,
+                      style: TextStyle(
+                          color: liked
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                          fontWeight:
+                              liked ? FontWeight.w700 : FontWeight.w500)),
+                ),
+              ),
+            ),
+            Expanded(
+              child: TextButton.icon(
+                onPressed: onOpen,
+                icon: Icon(Icons.mode_comment_outlined,
+                    size: 18, color: scheme.onSurfaceVariant),
+                label: Text('Comment',
+                    style: TextStyle(color: scheme.onSurfaceVariant)),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Compact Facebook-style bar for comments: summary + Like link with
+/// long-press picker.
+class FbCommentReactionBar extends StatelessWidget {
+  const FbCommentReactionBar(
+      {super.key,
+      this.counts,
+      this.total = 0,
+      this.myReaction,
+      required this.onReact,
+      this.onWhoReacted});
+  final WallReactionCounts? counts;
+  final int total;
+  final String? myReaction;
+  final ValueChanged<String?> onReact;
+  final VoidCallback? onWhoReacted;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (total <= 0 && myReaction == null) {
+      // Still offer Like so a comment with no reactions can get one.
+      return Row(
+        children: [
+          _LikeLink(
+              myReaction: myReaction,
+              onReact: onReact,
+              counts: counts,
+              total: total),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (total > 0)
+          InkWell(
+            onTap: onWhoReacted,
+            borderRadius: BorderRadius.circular(6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StackedEmojis(counts: counts),
+                const SizedBox(width: 4),
+                Text('$total',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+        _LikeLink(
+            myReaction: myReaction,
+            onReact: onReact,
+            counts: counts,
+            total: total),
+      ],
+    );
+  }
+}
+
+class _StackedEmojis extends StatelessWidget {
+  const _StackedEmojis({this.counts});
+  final WallReactionCounts? counts;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = counts?.counts ?? const <String, int>{};
+    final sorted = c.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top =
+        sorted.where((e) => e.value > 0).take(3).map((e) => e.key).toList();
+    if (top.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      width: 18.0 + (top.length - 1) * 12.0,
+      height: 20,
+      child: Stack(
+        children: [
+          for (var i = 0; i < top.length; i++)
+            Positioned(
+              left: i * 12.0,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).cardColor,
+                  border: Border.all(
+                      color: Theme.of(context)
+                          .dividerColor
+                          .withValues(alpha: 0.4)),
+                ),
+                alignment: Alignment.center,
+                child: Text(wallReactions[top[i]] ?? '👍',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LikeLink extends StatelessWidget {
+  const _LikeLink(
+      {this.myReaction, required this.onReact, this.counts, this.total = 0});
+  final String? myReaction;
+  final ValueChanged<String?> onReact;
+  final WallReactionCounts? counts;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final liked = myReaction != null;
+    return GestureDetector(
+      onLongPress: () async {
+        final picked =
+            await showFbReactionPicker(context, current: myReaction);
+        if (picked == null) return;
+        if (picked == myReaction) {
+          onReact(null);
+        } else {
+          onReact(picked);
+        }
+      },
+      child: TextButton(
+        style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            minimumSize: const Size(0, 30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        onPressed: () {
+          if (liked) {
+            onReact(null);
+          } else {
+            onReact('like');
+          }
+        },
+        child: Text(
+            liked
+                ? (wallReactionLabels[myReaction] ?? 'Liked')
+                : 'Like',
+            style: TextStyle(
+                fontSize: 12,
+                color: liked ? scheme.primary : scheme.onSurfaceVariant,
+                fontWeight:
+                    liked ? FontWeight.w700 : FontWeight.w500)),
+      ),
+    );
+  }
+}
+
 class CelebrationsCard extends StatelessWidget {
   const CelebrationsCard({super.key, required this.celebrations});
   final WallCelebrations celebrations;
 
   @override
   Widget build(BuildContext context) {
-    final cards = [
-      for (final c in celebrations.birthdays) (c, 'birthday'),
-      for (final c in celebrations.anniversaries) (c, 'anniversary'),
-    ];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(RvmSpacing.md),
@@ -36,34 +458,187 @@ class CelebrationsCard extends StatelessWidget {
             Text('Celebrations',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: RvmSpacing.sm),
-            for (final entry in cards)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: _Avatar(name: entry.$1.employee.fullName),
-                title: Text(entry.$1.employee.fullName),
-                subtitle: Text(
-                    entry.$2 == 'birthday' ? 'Birthday' : 'Work anniversary'),
-                trailing: entry.$1.wishedByMe
-                    ? const Icon(Icons.check_circle, color: RvmColors.success)
-                    : TextButton(
-                        onPressed: () =>
-                            context.read<WallBloc>().add(WallWished(
-                                  employeeId: entry.$1.employee.id,
-                                  occasion: entry.$2,
-                                  body: entry.$2 == 'birthday'
-                                      ? 'Happy birthday!'
-                                      : 'Happy anniversary!',
-                                )),
-                        child: const Text('Wish'),
-                      ),
+            for (final c in celebrations.birthdays)
+              _CelebrationRow(
+                card: c,
+                kind: _CelebrationKind.birthday,
+                onWish: () => context.read<WallBloc>().add(WallWished(
+                      employeeId: c.employee.id,
+                      occasion: 'birthday',
+                      body: 'Happy birthday!',
+                    )),
+              ),
+            for (final c in celebrations.anniversaries)
+              _CelebrationRow(
+                card: c,
+                kind: _CelebrationKind.anniversary,
+                onWish: () => context.read<WallBloc>().add(WallWished(
+                      employeeId: c.employee.id,
+                      occasion: 'anniversary',
+                      body: 'Happy anniversary!',
+                    )),
               ),
             for (final c in celebrations.newJoiners)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: _Avatar(name: c.employee.fullName),
-                title: Text(c.employee.fullName),
-                subtitle: Text('New joiner${c.on != null ? ' · ${c.on}' : ''}'),
+              _CelebrationRow(
+                card: c,
+                kind: _CelebrationKind.newJoiner,
+                onWish: null,
               ),
+            for (final c in celebrations.promotions)
+              _CelebrationRow(
+                card: c,
+                kind: _CelebrationKind.promotion,
+                onWish: null,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One celebration kind, one look: KP asked that birthdays, work
+/// anniversaries, promotions and new joiners each carry their own color and
+/// icon. Promotions have no celebration feed on the backend yet (raised to KP);
+/// the app already renders them when the server sends `promotions`.
+enum _CelebrationKind { birthday, anniversary, newJoiner, promotion }
+
+extension on _CelebrationKind {
+  IconData get icon => switch (this) {
+        _CelebrationKind.birthday => Icons.cake_outlined,
+        _CelebrationKind.anniversary => Icons.workspace_premium_outlined,
+        _CelebrationKind.newJoiner => Icons.waving_hand_outlined,
+        _CelebrationKind.promotion => Icons.trending_up_rounded,
+      };
+
+  Color get color => switch (this) {
+        _CelebrationKind.birthday => RvmColors.danger,
+        _CelebrationKind.anniversary => RvmColors.warning,
+        _CelebrationKind.newJoiner => RvmColors.success,
+        _CelebrationKind.promotion => RvmColors.info,
+      };
+
+  Color get soft => switch (this) {
+        _CelebrationKind.birthday => RvmColors.dangerSoft,
+        _CelebrationKind.anniversary => RvmColors.warningSoft,
+        _CelebrationKind.newJoiner => RvmColors.successSoft,
+        _CelebrationKind.promotion => RvmColors.infoSoft,
+      };
+
+  String label(String? on) => switch (this) {
+        _CelebrationKind.birthday =>
+          on == null ? 'Birthday' : 'Birthday · $on',
+        _CelebrationKind.anniversary =>
+          on == null ? 'Work anniversary' : 'Work anniversary · $on',
+        _CelebrationKind.newJoiner =>
+          on == null ? 'New joiner' : 'New joiner · $on',
+        _CelebrationKind.promotion =>
+          on == null ? 'Promotion' : 'Promotion · $on',
+      };
+}
+
+class _CelebrationRow extends StatelessWidget {
+  const _CelebrationRow({required this.card, required this.kind, this.onWish});
+  final CelebrationCard card;
+  final _CelebrationKind kind;
+  final VoidCallback? onWish;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: CircleAvatar(
+        backgroundColor: kind.soft,
+        child: Icon(kind.icon, color: kind.color, size: 20),
+      ),
+      title: Text(card.employee.fullName),
+      subtitle: Text(
+        [
+          kind.label(card.on),
+          if (card.wishCount > 0) '${card.wishCount} wishes',
+        ].join(' · '),
+      ),
+      trailing: onWish == null
+          ? Icon(Icons.check_circle, color: kind.color.withValues(alpha: 0.35))
+          : card.wishedByMe
+              ? const Icon(Icons.check_circle, color: RvmColors.success)
+              : TextButton(onPressed: onWish, child: const Text('Wish')),
+    );
+  }
+}
+
+/// RVM's twelve praise badges, grouped by what they are about
+/// (`for` in `policy/wall.js`), each with its own icon so staff can tell at a
+/// glance what every badge means.
+const _badgeGroupIcons = <String, IconData>{
+  'teaching': Icons.menu_book_outlined,
+  'placement': Icons.rocket_launch_outlined,
+  'teamwork': Icons.groups_outlined,
+  'care': Icons.favorite_outline,
+  'effort': Icons.bolt_outlined,
+  'people': Icons.diversity_3_outlined,
+  'outreach': Icons.campaign_outlined,
+  'quality': Icons.verified_outlined,
+};
+
+/// A card in the feed that lists every badge and opens the praise sheet with
+/// the tapped badge preselected, so giving a badge to a colleague takes one
+/// tap from the Wall.
+class GivePraiseCard extends StatelessWidget {
+  const GivePraiseCard({super.key, required this.badges});
+  final List<PraiseBadge> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(RvmSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const TeamIconBadge(
+                    icon: Icons.emoji_events_outlined,
+                    color: RvmColors.teamSeed,
+                    background: RvmColors.claySoft),
+                const SizedBox(width: RvmSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Give praise',
+                          style:
+                              Theme.of(context).textTheme.titleMedium),
+                      Text('Award a badge to a colleague',
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: RvmSpacing.sm),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final b in badges)
+                  ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: Icon(
+                      _badgeGroupIcons[b.forGroup] ??
+                          Icons.emoji_events_outlined,
+                      size: 15,
+                      color: RvmColors.teamSeed,
+                    ),
+                    label: Text(b.label,
+                        style: const TextStyle(fontSize: 11.5)),
+                    onPressed: () =>
+                        showPraiseSheet(context, initialBadge: b.id),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
@@ -152,10 +727,17 @@ class WallPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    // Compact by design (KP): tight padding and gaps so more of the feed fits
+    // on one screen, with the author's role on the meta line for context.
+    final meta = [
+      _when(post.createdAt),
+      if (post.author?.designation != null &&
+          post.author!.designation!.isNotEmpty)
+        post.author!.designation!,
+    ].where((s) => s.isNotEmpty).join(' · ');
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(RvmSpacing.md),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -169,8 +751,9 @@ class WallPostCard extends StatelessWidget {
                     children: [
                       Text(post.author?.fullName ?? 'Someone',
                           style: Theme.of(context).textTheme.titleSmall),
-                      Text(_when(post.createdAt),
-                          style: Theme.of(context).textTheme.labelSmall),
+                      if (meta.isNotEmpty)
+                        Text(meta,
+                            style: Theme.of(context).textTheme.labelSmall),
                     ],
                   ),
                 ),
@@ -202,68 +785,47 @@ class WallPostCard extends StatelessWidget {
               ],
             ),
             if (post.body != null && post.body!.isNotEmpty) ...[
-              const SizedBox(height: RvmSpacing.sm),
+              const SizedBox(height: 6),
               Text(post.body!),
             ],
             if (post.isPraise && post.about != null) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text('For ${post.about!.fullName}',
                   style: Theme.of(context).textTheme.bodySmall),
+            ]
+            else if (post.kind == 'wish' && post.about != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                [
+                  'For ${post.about!.fullName}',
+                  if (post.occasion == 'birthday')
+                    'Birthday'
+                  else if (post.occasion == 'anniversary')
+                    'Work anniversary',
+                ].join(' · '),
+                style: Theme.of(context).textTheme.bodySmall),
             ],
             if (post.poll != null) ...[
-              const SizedBox(height: RvmSpacing.sm),
+              const SizedBox(height: 6),
               _PollBlock(
                   poll: post.poll!,
                   postId: post.id,
                   mine: post.mine,
                   onChanged: onPollChanged ?? () {}),
             ],
-            const SizedBox(height: RvmSpacing.sm),
-            Row(
-              children: [
-                // Six reaction chips can be wider than a phone once the two
-                // action buttons are beside them. Give the wrap the remaining
-                // width instead of letting the Row overflow (a RenderFlex
-                // overflow is a FlutterError on every rebuild).
-                Expanded(
-                  child: Wrap(
-                    spacing: 2,
-                    runSpacing: 2,
-                    children: [
-                      for (final r in wallReactions.entries)
-                        InkWell(
-                          onTap: () =>
-                              onReact(post.myReaction == r.key ? null : r.key),
-                          borderRadius: BorderRadius.circular(999),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: post.myReaction == r.key
-                                  ? scheme.primaryContainer
-                                  : null,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                                '${r.value}${post.reactions?.counts[r.key] ?? 0}',
-                                style: const TextStyle(fontSize: 13)),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                if ((post.reactions?.total ?? 0) > 0)
-                  TextButton.icon(
-                    onPressed: onWhoReacted,
-                    icon: const Icon(Icons.groups_outlined, size: 16),
-                    label: Text('${post.reactions!.total}'),
-                  ),
-                TextButton.icon(
-                  onPressed: onOpen,
-                  icon: const Icon(Icons.mode_comment_outlined, size: 16),
-                  label: Text('${post.commentCount}'),
-                ),
-              ],
+            // Facebook-style: summary (stacked emojis + total · comments)
+            // then Like | Comment actions. Long-press Like opens the picker.
+            FbReactionSummary(
+              counts: post.reactions,
+              total: post.reactions?.total ?? 0,
+              commentCount: post.commentCount,
+              onWhoReacted: onWhoReacted,
+              onOpen: onOpen,
+            ),
+            FbPostReactionBar(
+              myReaction: post.myReaction,
+              onReact: onReact,
+              onOpen: onOpen,
             ),
           ],
         ),

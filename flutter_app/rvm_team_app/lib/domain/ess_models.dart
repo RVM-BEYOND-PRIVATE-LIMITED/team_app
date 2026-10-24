@@ -1612,6 +1612,7 @@ class WallCelebrations extends Equatable {
     required this.birthdays,
     required this.anniversaries,
     required this.newJoiners,
+    this.promotions = const [],
     required this.hiddenCount,
   });
   final String today;
@@ -1619,9 +1620,14 @@ class WallCelebrations extends Equatable {
   final List<CelebrationCard> birthdays;
   final List<CelebrationCard> anniversaries;
   final List<CelebrationCard> newJoiners;
+  final List<CelebrationCard> promotions;
   final int hiddenCount;
 
-  bool get isEmpty => birthdays.isEmpty && anniversaries.isEmpty && newJoiners.isEmpty;
+  bool get isEmpty =>
+      birthdays.isEmpty &&
+      anniversaries.isEmpty &&
+      newJoiners.isEmpty &&
+      promotions.isEmpty;
 
   factory WallCelebrations.fromJson(Map<String, dynamic> j) => WallCelebrations(
         today: _str(j['today']) ?? '',
@@ -1629,10 +1635,11 @@ class WallCelebrations extends Equatable {
         birthdays: _maps(j['birthdays']).map(CelebrationCard.fromJson).toList(growable: false),
         anniversaries: _maps(j['anniversaries']).map(CelebrationCard.fromJson).toList(growable: false),
         newJoiners: _maps(j['new_joiners']).map(CelebrationCard.fromJson).toList(growable: false),
+        promotions: _maps(j['promotions']).map(CelebrationCard.fromJson).toList(growable: false),
         hiddenCount: _int(j['birthdays_hidden']) ?? 0,
       );
   @override
-  List<Object?> get props => [today, birthdays, anniversaries, newJoiners, hiddenCount];
+  List<Object?> get props => [today, birthdays, anniversaries, newJoiners, promotions, hiddenCount];
 }
 
 /// One post with its comments (`GET /wall/posts/:id`).

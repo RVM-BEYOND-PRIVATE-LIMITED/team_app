@@ -52,32 +52,30 @@ class _PunchView extends StatelessWidget {
           }
         },
         builder: (context, state) {
-          switch (state.status) {
-            case LoadStatus.initial:
-            case LoadStatus.loading:
-              return const AppLoading(label: 'Getting your location...');
-            case LoadStatus.failure:
-              return AppError(
-                message: state.failure?.message ?? 'Could not load attendance.',
-                onRetry: () =>
-                    context.read<PunchBloc>().add(const PunchRefreshed()),
-              );
-            case LoadStatus.empty:
-            case LoadStatus.success:
-              final data = state.data;
-              if (data == null) {
-                return const AppEmpty(message: 'Nothing to show.');
-              }
-              if (!data.linked) {
-                return AppEmpty(
-                    message: data.message ??
-                        'Your login is not linked to an employee record yet.');
-              }
-              if (data.mustSetPassword) {
-                return _SetPasswordCard(name: data.employeeName);
-              }
-              return _body(context, state, data);
+          final data = state.data;
+          if (state.status == LoadStatus.initial ||
+              (state.status == LoadStatus.loading && data == null)) {
+            return const AppLoading(label: 'Getting your location...');
           }
+          if (state.status == LoadStatus.failure && data == null) {
+            return AppError(
+              message: state.failure?.message ?? 'Could not load attendance.',
+              onRetry: () =>
+                  context.read<PunchBloc>().add(const PunchRefreshed()),
+            );
+          }
+          if (data == null) {
+            return const AppEmpty(message: 'Nothing to show.');
+          }
+          if (!data.linked) {
+            return AppEmpty(
+                message: data.message ??
+                    'Your login is not linked to an employee record yet.');
+          }
+          if (data.mustSetPassword) {
+            return _SetPasswordCard(name: data.employeeName);
+          }
+          return _body(context, state, data);
         },
       ),
     );

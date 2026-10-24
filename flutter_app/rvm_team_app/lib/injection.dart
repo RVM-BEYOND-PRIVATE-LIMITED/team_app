@@ -145,6 +145,7 @@ void configureDependencies(AuthSession session) {
     ..registerLazySingleton<EssRepository>(() => EssRepository(
           remote: getIt(),
           tokens: getIt<AuthSession>(),
+          schedulerTokens: getIt<AuthSession>(),
           connectivity: getIt(),
         ))
     ..registerLazySingleton<PriorityTasksRepository>(

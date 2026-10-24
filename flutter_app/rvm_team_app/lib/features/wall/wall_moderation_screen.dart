@@ -4,6 +4,7 @@ import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
+import '../../app_feedback.dart';
 import '../../data/repositories/ess_repository.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -437,8 +438,14 @@ class _AnnouncementComposerState extends State<_AnnouncementComposer> {
 
   Future<void> _attach() async {
     if (_attachments.length >= 5) return;
-    final result = await FilePicker.platform
-        .pickFiles(allowMultiple: true, withData: true);
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform
+          .pickFiles(allowMultiple: true, withData: true);
+    } catch (_) {
+      showAppMessage('Could not open the file picker.');
+      return;
+    }
     if (result == null) return;
     for (final file in result.files) {
       if (_attachments.length >= 5) break;

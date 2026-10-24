@@ -71,8 +71,8 @@ class _HelpdeskQueueScreenState extends State<HelpdeskQueueScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const AppLoading();
-    if (_failure != null) {
+    if (_loading && _queue == null) return const AppLoading();
+    if (_failure != null && _queue == null) {
       return AppError(message: _failure!.message, onRetry: _load);
     }
     final queue = _queue;

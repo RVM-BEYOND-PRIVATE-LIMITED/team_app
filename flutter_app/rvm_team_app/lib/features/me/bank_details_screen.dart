@@ -3,6 +3,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../app_validators.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
@@ -94,12 +95,26 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
     final bankName = _bank.text.trim();
     final account = _account.text.replaceAll(' ', '').trim();
     final ifsc = _ifsc.text.trim().toUpperCase();
+    final upi = _upi.text.trim();
     final consent = _consentName.text.trim();
-    if (bankName.length < 2 ||
-        account.length < 8 ||
-        ifsc.length < 4 ||
-        consent.isEmpty) {
-      _snack('Fill the bank, account, IFSC and your consent name.');
+    if (bankName.length < 2) {
+      _snack('Enter your bank name.');
+      return;
+    }
+    if (!isValidAccountNumber(account)) {
+      _snack('Account number is 9 to 18 digits, no letters.');
+      return;
+    }
+    if (!isValidIfsc(ifsc)) {
+      _snack('IFSC looks like SBIN0010490: 4 letters, a 0, then 6 characters.');
+      return;
+    }
+    if (upi.isNotEmpty && !isValidUpi(upi)) {
+      _snack('UPI ID looks like yourname@bank.');
+      return;
+    }
+    if (consent.isEmpty) {
+      _snack('Type your full name to consent.');
       return;
     }
     setState(() => _saving = true);
@@ -285,10 +300,11 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
           keyboard: TextInputType.number,
           obscureText: !_showAccount,
           focusedBorder: true,
+          formatters: [FilteringTextInputFormatter.digitsOnly],
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (account.length >= 8)
+              if (isValidAccountNumber(account))
                 Row(
                   children: [
                     const Icon(Icons.check_rounded,
@@ -474,6 +490,7 @@ class _FieldCard extends StatelessWidget {
     this.focusedBorder = false,
     this.trailing,
     this.suffix,
+    this.formatters,
   });
 
   final String label;
@@ -485,6 +502,7 @@ class _FieldCard extends StatelessWidget {
   final bool focusedBorder;
   final Widget? trailing;
   final Widget? suffix;
+  final List<TextInputFormatter>? formatters;
 
   @override
   Widget build(BuildContext context) {
@@ -524,8 +542,10 @@ class _FieldCard extends StatelessWidget {
                   textCapitalization: uppercase
                       ? TextCapitalization.characters
                       : TextCapitalization.none,
-                  inputFormatters:
-                      uppercase ? [UpperCaseTextFormatter()] : null,
+                  inputFormatters: [
+                    if (uppercase) UpperCaseTextFormatter(),
+                    ...?formatters,
+                  ],
                   style: text.titleSmall
                       ?.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
                   decoration: InputDecoration(

@@ -5,11 +5,15 @@ import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_feedback.dart';
+import '../../app_validators.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
+import '../../widgets/image_crop_screen.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_kit.dart';
 import 'bloc/account_action_bloc.dart';
@@ -37,16 +41,17 @@ class _SecurityView extends StatelessWidget {
       title: 'Account & Security',
       body: BlocBuilder<MeBloc, LoadState<TeamProfile>>(
         builder: (context, state) {
-          return switch (state.status) {
-            LoadStatus.loading || LoadStatus.initial => const AppLoading(),
-            LoadStatus.failure => AppError(
-                message:
-                    state.failure?.message ?? 'Could not load your account.',
-                onRetry: () =>
-                    context.read<MeBloc>().add(const LoadRefreshed()),
-              ),
-            _ => _body(context, state.data!),
-          };
+          if (state.status == LoadStatus.initial ||
+              (state.status == LoadStatus.loading && state.data == null)) {
+            return const AppLoading();
+          }
+          if (state.status == LoadStatus.failure && state.data == null) {
+            return AppError(
+              message: state.failure?.message ?? 'Could not load your account.',
+              onRetry: () => context.read<MeBloc>().add(const LoadRefreshed()),
+            );
+          }
+          return _body(context, state.data!);
         },
       ),
     );
@@ -171,19 +176,35 @@ class _SecurityView extends StatelessWidget {
   }
 
   Future<void> _changePhoto(BuildContext context) async {
-    final result = await FilePicker.platform
-        .pickFiles(type: FileType.image, withData: true);
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform
+          .pickFiles(type: FileType.image, withData: true);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+              content: Text('Could not open the photo picker.')));
+      }
+      return;
+    }
     final file = result?.files.single;
-    final bytes = file?.bytes;
+    var bytes = file?.bytes;
     if (file == null || bytes == null || !context.mounted) return;
     // E10: the ESS path works for attendance-only staff too; the Scheduler upload is the
     // fallback for portal logins (e.g. an unsupported image type on the ESS).
-    final contentType = switch (file.extension?.toLowerCase()) {
+    var contentType = switch (file.extension?.toLowerCase()) {
       'jpg' || 'jpeg' => 'image/jpeg',
       'png' => 'image/png',
       'webp' => 'image/webp',
       _ => null,
     };
+    // Give the person the same crop option the Wall uses. Cancelling the crop
+    // keeps the photo as picked.
+    final cropped = await editImageBytes(context, bytes);
+    if (!context.mounted) return;
+    if (cropped != null) bytes = cropped;
     if (contentType != null) {
       final messenger = ScaffoldMessenger.of(context);
       try {
@@ -308,6 +329,10 @@ class _ActionDialog extends StatelessWidget {
       bloc: bloc,
       builder: (context, state) {
         return AlertDialog(
+          // The default 40px side insets squeeze forms on phones; 16px keeps
+          // every row (rules, buttons) inside the screen on 320px devices.
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           title: Row(
             children: [
               const TeamIconBadge(
@@ -396,9 +421,8 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
       listenWhen: (a, b) => a.status != b.status,
       listener: (context, s) {
         if (s.status == WriteStatus.success) {
+          showAppMessage('Password changed.');
           widget.close();
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Password changed.')));
         }
       },
       builder: (context, s) {
@@ -504,13 +528,16 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
                 ],
               ),
               const SizedBox(height: 6),
-              Row(
+              // Wrap, not Row: on narrow phones the three rules exceed the
+              // dialog width by ~10px ("overflowed by 9.8 pixels"). Wrapping
+              // keeps every rule visible on any screen width.
+              Wrap(
+                spacing: 10,
+                runSpacing: 4,
                 children: [
                   _rule(context, _new.text.length >= 8, '8+ chars'),
-                  const SizedBox(width: 10),
                   _rule(context, _new.text.contains(RegExp(r'[A-Z]')),
                       'Uppercase'),
-                  const SizedBox(width: 10),
                   _rule(context, _new.text.contains(RegExp(r'[0-9!@#\$%^&*]')),
                       'Symbol/digit'),
                 ],
@@ -569,6 +596,10 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
                       onPressed: s.status == WriteStatus.submitting || !strong
                           ? null
                           : () {
+                              if (_old.text.isEmpty) {
+                                showAppMessage('Enter your current password.');
+                                return;
+                              }
                               if (_new.text.length < 8) return;
                               if (_confirm.text != _new.text) {
                                 ScaffoldMessenger.of(context)
@@ -645,9 +676,8 @@ class _ChangeEmailFlowState extends State<_ChangeEmailFlow> {
       listener: (context, s) {
         if (s.codeSent) setState(() => _sent = true);
         if (s.status == WriteStatus.success && !s.codeSent) {
+          showAppMessage('Email updated.');
           widget.close();
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Email updated.')));
         }
       },
       builder: (context, s) => _ActionDialog(
@@ -661,14 +691,25 @@ class _ChangeEmailFlowState extends State<_ChangeEmailFlow> {
                 TextField(
                     controller: _code,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
                     decoration:
                         const InputDecoration(labelText: '6-digit code')),
                 const SizedBox(height: RvmSpacing.md),
                 FilledButton(
                   onPressed: s.status == WriteStatus.submitting
                       ? null
-                      : () => widget.bloc
-                          .add(AccountConfirmEmail(_code.text.trim())),
+                      : () {
+                          if (!RegExp(r'^\d{6}$')
+                              .hasMatch(_code.text.trim())) {
+                            showAppMessage('Enter the 6-digit code.');
+                            return;
+                          }
+                          widget.bloc
+                              .add(AccountConfirmEmail(_code.text.trim()));
+                        },
                   child: const Text('Confirm'),
                 ),
               ]
@@ -692,8 +733,20 @@ class _ChangeEmailFlowState extends State<_ChangeEmailFlow> {
                 FilledButton(
                   onPressed: s.status == WriteStatus.submitting
                       ? null
-                      : () => widget.bloc.add(AccountRequestEmail(
-                          email: _email.text.trim(), password: _password.text)),
+                      : () {
+                          if (!isValidEmail(_email.text)) {
+                            showAppMessage(
+                                'Enter a valid email address.');
+                            return;
+                          }
+                          if (_password.text.isEmpty) {
+                            showAppMessage('Enter your password.');
+                            return;
+                          }
+                          widget.bloc.add(AccountRequestEmail(
+                              email: _email.text.trim(),
+                              password: _password.text));
+                        },
                   child: const Text('Send code'),
                 ),
               ],
@@ -734,9 +787,8 @@ class _ChangePhoneFlowState extends State<_ChangePhoneFlow> {
       listener: (context, s) {
         if (s.codeSent) setState(() => _sent = true);
         if (s.status == WriteStatus.success && !s.codeSent) {
+          showAppMessage('Phone updated.');
           widget.close();
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Phone updated.')));
         }
       },
       builder: (context, s) => _ActionDialog(
@@ -750,14 +802,25 @@ class _ChangePhoneFlowState extends State<_ChangePhoneFlow> {
                 TextField(
                     controller: _code,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
                     decoration:
                         const InputDecoration(labelText: '6-digit code')),
                 const SizedBox(height: RvmSpacing.md),
                 FilledButton(
                   onPressed: s.status == WriteStatus.submitting
                       ? null
-                      : () => widget.bloc
-                          .add(AccountConfirmPhone(_code.text.trim())),
+                      : () {
+                          if (!RegExp(r'^\d{6}$')
+                              .hasMatch(_code.text.trim())) {
+                            showAppMessage('Enter the 6-digit code.');
+                            return;
+                          }
+                          widget.bloc
+                              .add(AccountConfirmPhone(_code.text.trim()));
+                        },
                   child: const Text('Confirm'),
                 ),
               ]
@@ -770,8 +833,13 @@ class _ChangePhoneFlowState extends State<_ChangePhoneFlow> {
                 TextField(
                     controller: _phone,
                     keyboardType: TextInputType.phone,
-                    decoration:
-                        const InputDecoration(labelText: 'New mobile number')),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(10),
+                    ],
+                    decoration: const InputDecoration(
+                        labelText: 'New mobile number',
+                        hintText: '10-digit mobile number')),
                 const SizedBox(height: RvmSpacing.sm),
                 TextField(
                     controller: _password,
@@ -782,9 +850,20 @@ class _ChangePhoneFlowState extends State<_ChangePhoneFlow> {
                 FilledButton(
                   onPressed: s.status == WriteStatus.submitting
                       ? null
-                      : () => widget.bloc.add(AccountRequestPhone(
-                          phoneNumber: _phone.text.trim(),
-                          password: _password.text)),
+                      : () {
+                          if (!isValidPhone10(_phone.text)) {
+                            showAppMessage(
+                                'Enter a valid 10-digit mobile number.');
+                            return;
+                          }
+                          if (_password.text.isEmpty) {
+                            showAppMessage('Enter your password.');
+                            return;
+                          }
+                          widget.bloc.add(AccountRequestPhone(
+                              phoneNumber: _phone.text.trim(),
+                              password: _password.text));
+                        },
                   child: const Text('Send code'),
                 ),
               ],
@@ -825,9 +904,8 @@ class _EnableTwoFactorFlowState extends State<_EnableTwoFactorFlow> {
       listener: (context, s) {
         if (s.codeSent) setState(() => _sent = true);
         if (s.status == WriteStatus.success && !s.codeSent) {
+          showAppMessage('Two-factor is on.');
           widget.close();
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Two-factor is on.')));
         }
       },
       builder: (context, s) => _ActionDialog(
@@ -841,14 +919,25 @@ class _EnableTwoFactorFlowState extends State<_EnableTwoFactorFlow> {
                 TextField(
                     controller: _code,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
                     decoration:
                         const InputDecoration(labelText: '6-digit code')),
                 const SizedBox(height: RvmSpacing.md),
                 FilledButton(
                   onPressed: s.status == WriteStatus.submitting
                       ? null
-                      : () => widget.bloc
-                          .add(AccountEnableTwoFactor(_code.text.trim())),
+                      : () {
+                          if (!RegExp(r'^\d{6}$')
+                              .hasMatch(_code.text.trim())) {
+                            showAppMessage('Enter the 6-digit code.');
+                            return;
+                          }
+                          widget.bloc
+                              .add(AccountEnableTwoFactor(_code.text.trim()));
+                        },
                   child: const Text('Turn on'),
                 ),
               ]
@@ -887,9 +976,8 @@ class _DisableTwoFactorFormState extends State<_DisableTwoFactorForm> {
       listenWhen: (a, b) => a.status != b.status,
       listener: (context, s) {
         if (s.status == WriteStatus.success) {
+          showAppMessage('Two-factor is off.');
           widget.close();
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Two-factor is off.')));
         }
       },
       builder: (context, s) => _ActionDialog(
@@ -904,8 +992,14 @@ class _DisableTwoFactorFormState extends State<_DisableTwoFactorForm> {
             FilledButton(
               onPressed: s.status == WriteStatus.submitting
                   ? null
-                  : () =>
-                      widget.bloc.add(AccountDisableTwoFactor(_password.text)),
+                  : () {
+                      if (_password.text.isEmpty) {
+                        showAppMessage('Enter your password.');
+                        return;
+                      }
+                      widget.bloc
+                          .add(AccountDisableTwoFactor(_password.text));
+                    },
               child: const Text('Turn off'),
             ),
           ]),
@@ -1030,10 +1124,8 @@ class _VerifyEmailFlowState extends State<_VerifyEmailFlow> {
       listener: (context, s) {
         if (s.codeSent) setState(() => _sent = true);
         if (s.status == WriteStatus.success && !s.codeSent) {
+          showAppMessage('Email verified.');
           widget.close();
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(const SnackBar(content: Text('Email verified.')));
         }
       },
       builder: (context, s) => _ActionDialog(
@@ -1047,14 +1139,25 @@ class _VerifyEmailFlowState extends State<_VerifyEmailFlow> {
                 TextField(
                     controller: _code,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
                     decoration:
                         const InputDecoration(labelText: '6-digit code')),
                 const SizedBox(height: RvmSpacing.md),
                 FilledButton(
                   onPressed: s.status == WriteStatus.submitting
                       ? null
-                      : () => widget.bloc
-                          .add(AccountConfirmEmail(_code.text.trim())),
+                      : () {
+                          if (!RegExp(r'^\d{6}$')
+                              .hasMatch(_code.text.trim())) {
+                            showAppMessage('Enter the 6-digit code.');
+                            return;
+                          }
+                          widget.bloc
+                              .add(AccountConfirmEmail(_code.text.trim()));
+                        },
                   child: const Text('Verify'),
                 ),
               ]
@@ -1073,8 +1176,19 @@ class _VerifyEmailFlowState extends State<_VerifyEmailFlow> {
                 FilledButton(
                   onPressed: s.status == WriteStatus.submitting
                       ? null
-                      : () => widget.bloc.add(AccountRequestEmail(
-                          email: widget.email, password: _password.text)),
+                      : () {
+                          if (!isValidEmail(widget.email)) {
+                            showAppMessage(
+                                'Your account email looks invalid. Ask HR to correct it.');
+                            return;
+                          }
+                          if (_password.text.isEmpty) {
+                            showAppMessage('Enter your current password.');
+                            return;
+                          }
+                          widget.bloc.add(AccountRequestEmail(
+                              email: widget.email, password: _password.text));
+                        },
                   child: const Text('Send code'),
                 ),
               ],

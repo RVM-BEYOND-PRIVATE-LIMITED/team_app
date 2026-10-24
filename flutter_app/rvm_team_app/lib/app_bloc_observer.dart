@@ -1,7 +1,7 @@
 import 'package:core_network/core_network.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'app_crash.dart';
 import 'app_feedback.dart';
 
 /// Last line of defence for an event handler that throws something a screen did
@@ -13,11 +13,11 @@ class AppBlocObserver extends BlocObserver {
   @override
   void onError(BlocBase<dynamic> bloc, Object error, StackTrace stackTrace) {
     super.onError(bloc, error, stackTrace);
-    debugPrint('Bloc error in ${bloc.runtimeType}: $error');
-    showAppMessage(
-      error is Failure
-          ? error.message
-          : 'Something went wrong. Please try again.',
-    );
+    final message =
+        error is Failure ? error.message : 'Something went wrong. Please try again.';
+    CrashReporter.record(error, stackTrace,
+        reason: 'bloc:${bloc.runtimeType}');
+    CrashReporter.note('last_user_message', message);
+    showAppMessage(message);
   }
 }

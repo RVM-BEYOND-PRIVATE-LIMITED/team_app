@@ -121,23 +121,28 @@ class _HrToolsView extends StatelessWidget {
                 }
               },
               builder: (context, state) {
-                switch (state.status) {
-                  case LoadStatus.initial:
-                  case LoadStatus.loading:
-                    return const AppLoading();
-                  case LoadStatus.failure:
-                    return AppError(
-                      message: state.failure?.message ??
-                          'Could not load this queue.',
-                      onRetry: () => context
-                          .read<HrToolsBloc>()
-                          .add(const HrToolsRefreshed()),
-                    );
-                  case LoadStatus.empty:
-                    return const AppEmpty(message: 'Nothing to review here.');
-                  case LoadStatus.success:
-                    return _list(context, state);
+                final visible = switch (state.queue) {
+                  HrQueue.dataRequests => state.dataRequests.isNotEmpty,
+                  HrQueue.reports => state.reports.isNotEmpty,
+                  HrQueue.devices => state.devices.isNotEmpty,
+                };
+                if (state.status == LoadStatus.initial ||
+                    (state.status == LoadStatus.loading && !visible)) {
+                  return const AppLoading();
                 }
+                if (state.status == LoadStatus.failure && !visible) {
+                  return AppError(
+                    message:
+                        state.failure?.message ?? 'Could not load this queue.',
+                    onRetry: () => context
+                        .read<HrToolsBloc>()
+                        .add(const HrToolsRefreshed()),
+                  );
+                }
+                if (state.status == LoadStatus.empty) {
+                  return const AppEmpty(message: 'Nothing to review here.');
+                }
+                return _list(context, state);
               },
             ),
           ),

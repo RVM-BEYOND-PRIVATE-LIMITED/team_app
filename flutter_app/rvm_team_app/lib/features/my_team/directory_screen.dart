@@ -42,7 +42,8 @@ class _DirectoryScreenState extends State<DirectoryScreen> {
 
   void _onChanged(String value) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () => _search(value.trim()));
+    _debounce =
+        Timer(const Duration(milliseconds: 350), () => _search(value.trim()));
   }
 
   Future<void> _search(String q) async {
@@ -72,9 +73,12 @@ class _DirectoryScreenState extends State<DirectoryScreen> {
     return Scaffold(
       body: Column(
         children: [
-          TeamPageHeader(title: 'Directory', subtitle: const Text('Search a colleague by name or code')),
+          TeamPageHeader(
+              title: 'Directory',
+              subtitle: const Text('Search a colleague by name or code')),
           Padding(
-            padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.sm),
+            padding: const EdgeInsets.fromLTRB(
+                RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.sm),
             child: TextField(
               controller: _query,
               autofocus: true,
@@ -94,25 +98,35 @@ class _DirectoryScreenState extends State<DirectoryScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const AppLoading();
-    if (_failure != null) {
-      return AppError(message: _failure!.message, onRetry: () => _search(_query.text.trim()));
+    if (_loading && _people.isEmpty) return const AppLoading();
+    if (_failure != null && _people.isEmpty) {
+      return AppError(
+          message: _failure!.message,
+          onRetry: () => _search(_query.text.trim()));
     }
     if (_people.isEmpty) {
-      return const AppEmpty(icon: Icons.person_search_outlined, message: 'No colleagues matched.');
+      return const AppEmpty(
+          icon: Icons.person_search_outlined,
+          message: 'No colleagues matched.');
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(RvmSpacing.md, RvmSpacing.sm, RvmSpacing.md, RvmSpacing.lg),
+      padding: const EdgeInsets.fromLTRB(
+          RvmSpacing.md, RvmSpacing.sm, RvmSpacing.md, RvmSpacing.lg),
       itemCount: _people.length + (_truncated ? 1 : 0),
       separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.sm),
       itemBuilder: (context, i) {
         if (i == _people.length) {
-          return const Padding(padding: EdgeInsets.all(8), child: Text('Showing the first 50 — narrow your search.'));
+          return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('Showing the first 50 — narrow your search.'));
         }
         final c = _people[i];
         return Card(
           child: ListTile(
-            leading: CircleAvatar(child: Text(c.fullName.trim().isEmpty ? '?' : c.fullName.trim().substring(0, 1).toUpperCase())),
+            leading: CircleAvatar(
+                child: Text(c.fullName.trim().isEmpty
+                    ? '?'
+                    : c.fullName.trim().substring(0, 1).toUpperCase())),
             title: Text(c.fullName),
             subtitle: Text([
               c.designation,

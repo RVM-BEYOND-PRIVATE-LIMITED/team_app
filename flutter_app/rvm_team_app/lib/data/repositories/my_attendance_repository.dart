@@ -26,6 +26,21 @@ class MyAttendanceRepository with ConnectivityGuard {
     return _remote.myAttendance(month: month);
   }
 
+  Future<({MyAttendance? data, Failure? failure})> myAttendanceSafe(
+      {String? month}) async {
+    try {
+      await ensureOnline();
+      return await _remote.myAttendanceSafe(month: month);
+    } on Failure catch (f) {
+      return (data: null, failure: f);
+    } catch (_) {
+      return (
+        data: null,
+        failure: const UnknownFailure('Could not load your attendance.'),
+      );
+    }
+  }
+
   /// Take one fix and return it. Throws [LocationException] for a permission,
   /// GPS or accuracy problem; a mocked fix comes back with `mocked: true` so the
   /// caller can report it to HR and stop.
@@ -52,7 +67,10 @@ class MyAttendanceRepository with ConnectivityGuard {
 
   Future<void> ping(LocationFix fix) async {
     await ensureOnline();
-    await _remote.ping(latitude: fix.latitude, longitude: fix.longitude, accuracyM: fix.accuracyM);
+    await _remote.ping(
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        accuracyM: fix.accuracyM);
   }
 
   Future<void> saveRemark({required String day, String? remarks}) async {

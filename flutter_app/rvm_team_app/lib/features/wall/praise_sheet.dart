@@ -10,22 +10,38 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
+import '../../widgets/image_crop_screen.dart';
 import '../../widgets/team_kit.dart';
 import 'bloc/wall_bloc.dart';
 
-Future<void> showPraiseSheet(BuildContext context) {
+Future<void> showPraiseSheet(BuildContext context, {String? initialBadge}) {
   final bloc = context.read<WallBloc>();
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) =>
-        BlocProvider.value(value: bloc, child: const _PraiseSheet()),
+    builder: (_) => BlocProvider.value(
+        value: bloc, child: _PraiseSheet(initialBadge: initialBadge)),
   );
 }
 
+/// Badge group icons match the Wall's Give praise card, so a badge means the
+/// same thing wherever staff see it.
+IconData _badgeIcon(String? forGroup) => switch (forGroup) {
+      'teaching' => Icons.menu_book_outlined,
+      'placement' => Icons.rocket_launch_outlined,
+      'teamwork' => Icons.groups_outlined,
+      'care' => Icons.favorite_outline,
+      'effort' => Icons.bolt_outlined,
+      'people' => Icons.diversity_3_outlined,
+      'outreach' => Icons.campaign_outlined,
+      'quality' => Icons.verified_outlined,
+      _ => Icons.emoji_events_outlined,
+    };
+
 class _PraiseSheet extends StatefulWidget {
-  const _PraiseSheet();
+  const _PraiseSheet({this.initialBadge});
+  final String? initialBadge;
 
   @override
   State<_PraiseSheet> createState() => _PraiseSheetState();
@@ -40,6 +56,12 @@ class _PraiseSheetState extends State<_PraiseSheet> {
   List<OrgCard> _results = const [];
   Map<String, dynamic>? _attachment;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _badge = widget.initialBadge;
+  }
 
   @override
   void dispose() {
@@ -131,6 +153,25 @@ class _PraiseSheetState extends State<_PraiseSheet> {
     setState(() => _error = message);
   }
 
+  Future<void> _cropAttachment() async {
+    final attachment = _attachment;
+    if (attachment == null) return;
+    final raw = attachment['data_base64']?.toString();
+    if (raw == null || raw.isEmpty) return;
+    final cropped = await editImageBytes(context, base64Decode(raw));
+    if (!mounted || cropped == null) return;
+    if (cropped.length > 1024 * 1024) {
+      _showError('The cropped photo must be under 1 MB.');
+      return;
+    }
+    setState(() {
+      _attachment = {
+        ...attachment,
+        'data_base64': base64Encode(cropped),
+      };
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final badges = context.select<WallBloc, List<PraiseBadge>>(
@@ -218,6 +259,10 @@ class _PraiseSheetState extends State<_PraiseSheet> {
                     for (final b in badges)
                       ChoiceChip(
                         label: Text(b.label),
+                        avatar: Icon(
+                          _badgeIcon(b.forGroup),
+                          size: 16,
+                        ),
                         selected: _badge == b.id,
                         onSelected: (_) => setState(() => _badge = b.id),
                       ),
@@ -246,9 +291,17 @@ class _PraiseSheetState extends State<_PraiseSheet> {
                         label: const Text('Add photo')),
                     if (_attachment != null)
                       InputChip(
+                        avatar: const Icon(Icons.crop_rounded, size: 14),
                         label:
                             Text(_attachment!['name']?.toString() ?? 'Photo'),
+                        onPressed: _cropAttachment,
                         onDeleted: () => setState(() => _attachment = null),
+                      ),
+                    if (_attachment != null)
+                      TextButton.icon(
+                        onPressed: _cropAttachment,
+                        icon: const Icon(Icons.crop_rounded, size: 18),
+                        label: const Text('Crop'),
                       ),
                   ],
                 ),

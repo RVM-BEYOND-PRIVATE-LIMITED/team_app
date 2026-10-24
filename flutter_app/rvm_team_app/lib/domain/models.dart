@@ -217,6 +217,9 @@ class TeamBatch extends Equatable {
     required this.name,
     this.startDate,
     this.endDate,
+    this.startTime,
+    this.endTime,
+    this.daysOfWeek = const [],
     this.schedule,
     this.facultyName,
     this.skillName,
@@ -230,6 +233,9 @@ class TeamBatch extends Equatable {
   final String name;
   final String? startDate;
   final String? endDate;
+  final String? startTime;
+  final String? endTime;
+  final List<String> daysOfWeek;
   final String? schedule;
   final String? facultyName;
   final String? skillName;
@@ -241,11 +247,17 @@ class TeamBatch extends Equatable {
   factory TeamBatch.fromJson(Map<String, dynamic> json) {
     final faculty = json['faculty'];
     final skill = json['skill'];
+    final days = json['days_of_week'];
     return TeamBatch(
       id: _str(json['id']) ?? '',
       name: _str(json['name']) ?? 'Batch',
       startDate: _str(json['start_date']),
       endDate: _str(json['end_date']),
+      startTime: _str(json['start_time']),
+      endTime: _str(json['end_time']),
+      daysOfWeek: days is List
+          ? days.map((e) => e.toString()).toList(growable: false)
+          : const [],
       schedule: _str(json['schedule']),
       facultyName: faculty is Map ? _str(faculty['name']) : null,
       skillName: skill is Map ? _str(skill['name']) : null,
@@ -257,7 +269,7 @@ class TeamBatch extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, name, startDate, endDate, schedule, facultyName, skillName, students, status];
+  List<Object?> get props => [id, name, startDate, endDate, startTime, endTime, daysOfWeek, schedule, facultyName, skillName, students, status];
 }
 
 /// One row of the marking roster (`GET /api/attendance/batch/:id/daily`).

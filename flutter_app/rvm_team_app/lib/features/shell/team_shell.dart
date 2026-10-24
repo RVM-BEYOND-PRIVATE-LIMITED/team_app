@@ -1,8 +1,13 @@
 import 'package:core_bloc/core_bloc.dart';
+import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_crash.dart';
+import '../../bloc/team_auth_bloc.dart';
+import '../../data/repositories/ess_repository.dart';
+import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../home/home_screen.dart';
 import '../inbox/inbox_screen.dart';
@@ -10,12 +15,13 @@ import '../me/me_screen.dart';
 import '../my_team/my_team_screen.dart';
 import '../wall/wall_screen.dart';
 
-/// The five Keka-style tabs: Home · Inbox · Wall · Me · My Team. Each is kept
-/// alive in an [IndexedStack]; role work sits inside Home, Inbox and Me.
+/// The five Keka-style tabs: Home · Inbox · Wall · My Team · Me.
 ///
-/// The backend's capabilities document decides which tabs this login gets
-/// (`tabs`: home, inbox, wall, me, team), so a role that must not see a tab
-/// never gets a destination for it.
+/// The shell checks the ESS capabilities BEFORE it builds any tab. A login that
+/// is not linked to an `hr_employees` record (an HR account that has no employee
+/// record yet) gets one clear explanation, not a Home screen whose five cards
+/// each throw the same 403. The check itself is non-throwing, so it cannot stop
+/// the debugger on an expected `NOT_LINKED`.
 class TeamShell extends StatefulWidget {
   const TeamShell({super.key});
 
@@ -28,39 +34,111 @@ class _TeamShellState extends State<TeamShell> {
 
   /// Tabs whose screen has been opened at least once. Everything in an
   /// [IndexedStack] is built, so opening all five at launch would fire every
-  /// tab's network calls (Wall included) before the person ever sees them —
-  /// one failing call then freezes a debug run on a screen they never opened.
+  /// tab's network calls before the person ever sees them.
   final Set<String> _opened = {'home'};
 
-  static const _allTabs = ['home', 'inbox', 'wall', 'me', 'team'];
+  static const _allTabs = ['home', 'inbox', 'wall', 'team', 'me'];
+
+  late final CapabilitiesBloc _caps = getIt<CapabilitiesBloc>();
+  bool _loading = true;
+  Failure? _failure;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _caps.close();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _failure = null;
+      });
+    }
+    try {
+      final result = await getIt<EssRepository>().capabilitiesSafe();
+      if (!mounted) return;
+      if (result.data != null) {
+        _caps.add(LoadSucceeded(result.data!));
+        setState(() => _loading = false);
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _failure = result.failure ?? const UnknownFailure();
+      });
+    } catch (e) {
+      // capabilitiesSafe itself never throws, but a DI or state error here
+      // must still land on the retry screen, never a dead loader.
+      CrashReporter.record(e, null, reason: 'shell:capabilities');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _failure = const UnknownFailure(
+            'Could not check your access. Try again.');
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => getIt<CapabilitiesBloc>()..add(const LoadRequested()),
-      child: Builder(builder: _build),
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: RvmColors.ivory,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('Checking your access…', style: TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
+    final caps = _caps.state.data;
+    if (_failure != null || caps == null) {
+      return _AccessError(
+        failure: _failure ?? const UnknownFailure(),
+        onRetry: _load,
+      );
+    }
+    return BlocProvider.value(
+      value: _caps,
+      child: Builder(builder: (context) => _tabs(context, caps)),
     );
   }
 
-  Widget _build(BuildContext context) {
-    final caps = context.watch<CapabilitiesBloc>().state.data;
-    final allowed = caps?.tabs ?? _allTabs;
+  Widget _tabs(BuildContext context, EssCapabilities caps) {
+    final attendance =
+        context.watch<TeamAuthBloc>().state.identity?.attendance == true;
+    final allowed = caps.tabs.isEmpty ? _allTabs : caps.tabs;
     final entries = <_ShellTab>[
       if (allowed.contains('home'))
         const _ShellTab(
             'Home', Icons.home_outlined, Icons.home_rounded, HomeScreen()),
-      if (allowed.contains('inbox'))
+      // Priority tasks are a Scheduler read; an attendance-only punch token is
+      // refused there. The Inbox tab is for portal sign-ins.
+      if (!attendance && allowed.contains('inbox'))
         const _ShellTab(
             'Inbox', Icons.inbox_outlined, Icons.inbox_rounded, InboxScreen()),
       if (allowed.contains('wall'))
         const _ShellTab(
             'Wall', Icons.forum_outlined, Icons.forum_rounded, WallScreen()),
-      if (allowed.contains('me'))
-        const _ShellTab('Me', Icons.person_outline_rounded,
-            Icons.person_rounded, MeScreen()),
       if (allowed.contains('team'))
         const _ShellTab('My Team', Icons.groups_outlined, Icons.groups_rounded,
             MyTeamScreen()),
+      if (allowed.contains('me'))
+        const _ShellTab('Me', Icons.person_outline_rounded,
+            Icons.person_rounded, MeScreen()),
     ];
     final safe = entries.isEmpty
         ? const [
@@ -69,7 +147,6 @@ class _TeamShellState extends State<TeamShell> {
           ]
         : entries;
     final index = _index.clamp(0, safe.length - 1);
-    // The selected tab always builds; the rest wait until first opened.
     final open = {..._opened, safe[index].label};
     return Scaffold(
       backgroundColor: RvmColors.ivory,
@@ -87,6 +164,72 @@ class _TeamShellState extends State<TeamShell> {
           _index = i;
           _opened.add(safe[i].label);
         }),
+      ),
+    );
+  }
+}
+
+/// Shown instead of the tabs when the ESS refuses the capabilities call. The
+/// usual case is `NOT_LINKED`: the login exists but no employee record points
+/// at it yet, so every ESS endpoint would answer the same 403.
+class _AccessError extends StatelessWidget {
+  const _AccessError({required this.failure, required this.onRetry});
+  final Failure failure;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Scaffold(
+      backgroundColor: RvmColors.ivory,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    color: RvmColors.ironwood,
+                    borderRadius: BorderRadius.circular(RvmRadii.lg),
+                  ),
+                  child: const Icon(Icons.link_off_rounded,
+                      color: RvmColors.ivory, size: 32),
+                ),
+                const SizedBox(height: 20),
+                Text('Team RVM',
+                    style: text.headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 10),
+                Text(
+                  failure.message,
+                  textAlign: TextAlign.center,
+                  style: text.bodyMedium?.copyWith(color: RvmColors.muted),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Try again'),
+                    style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: () =>
+                      context.read<TeamAuthBloc>().add(const TeamSignedOut()),
+                  child: const Text('Sign out'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

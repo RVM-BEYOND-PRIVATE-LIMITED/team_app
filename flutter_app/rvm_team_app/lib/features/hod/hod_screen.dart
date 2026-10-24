@@ -4,6 +4,7 @@ import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_feedback.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../../domain/models.dart';
@@ -20,42 +21,50 @@ class HodScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final role = context.read<TeamAuthBloc>().state.identity?.role ?? AppRole.unknown;
     final canWrite = TeamPermissions.forRole(role).canWriteHod;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Faculty Development'),
-        actions: [
-          if (canWrite) ...[
-            IconButton(
-              tooltip: 'New risk log / 1-on-1',
-              onPressed: () => _openRiskLog(context),
-              icon: const Icon(Icons.health_and_safety_outlined),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(
+            create: (_) =>
+                getIt<HodOverviewBloc>()..add(const LoadRequested())),
+        BlocProvider(
+            create: (_) =>
+                getIt<HodInterviewsBloc>()..add(const LoadRequested())),
+      ],
+      child: Builder(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Faculty Development'),
+            actions: [
+              if (canWrite) ...[
+                IconButton(
+                  tooltip: 'New risk log / 1-on-1',
+                  onPressed: () => _openRiskLog(context),
+                  icon: const Icon(Icons.health_and_safety_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Comment on a team member',
+                  onPressed: () => _openComment(context),
+                  icon: const Icon(Icons.rate_review_outlined),
+                ),
+              ],
+            ],
+          ),
+          body: RefreshIndicator(
+            onRefresh: () async {
+              context.read<HodOverviewBloc>().add(const LoadRefreshed());
+              context.read<HodInterviewsBloc>().add(const LoadRefreshed());
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const _OverviewSection(),
+                const SizedBox(height: RvmSpacing.md),
+                _InterviewsSection(
+                    canWrite: canWrite,
+                    onVerdict: (i) => _openVerdict(context, i)),
+              ],
             ),
-            IconButton(
-              tooltip: 'Comment on a team member',
-              onPressed: () => _openComment(context),
-              icon: const Icon(Icons.rate_review_outlined),
-            ),
-          ],
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          context.read<HodOverviewBloc>().add(const LoadRefreshed());
-          context.read<HodInterviewsBloc>().add(const LoadRefreshed());
-        },
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            BlocProvider(
-              create: (_) => getIt<HodOverviewBloc>()..add(const LoadRequested()),
-              child: const _OverviewSection(),
-            ),
-            const SizedBox(height: RvmSpacing.md),
-            BlocProvider(
-              create: (_) => getIt<HodInterviewsBloc>()..add(const LoadRequested()),
-              child: _InterviewsSection(canWrite: canWrite, onVerdict: (i) => _openVerdict(context, i)),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -252,10 +261,10 @@ class _RiskLogSheetState extends State<_RiskLogSheet> {
       listenWhen: (a, b) => a.status != b.status,
       listener: (context, s) {
         if (s.status == WriteStatus.success) {
+          showAppMessage(s.message ?? 'Saved.');
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.message ?? 'Saved.')));
         } else if (s.status == WriteStatus.failure && s.error != null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.error!)));
+          showAppMessage(s.error!);
         }
       },
       builder: (context, s) {
@@ -348,10 +357,10 @@ class _CommentSheetState extends State<_CommentSheet> {
       listenWhen: (a, b) => a.status != b.status,
       listener: (context, s) {
         if (s.status == WriteStatus.success) {
+          showAppMessage(s.message ?? 'Saved.');
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.message ?? 'Saved.')));
         } else if (s.status == WriteStatus.failure && s.error != null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.error!)));
+          showAppMessage(s.error!);
         }
       },
       builder: (context, s) {
@@ -410,10 +419,10 @@ class _VerdictSheetState extends State<_VerdictSheet> {
       listener: (context, s) {
         if (s.status == WriteStatus.success) {
           widget.onDone();
+          showAppMessage(s.message ?? 'Saved.');
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.message ?? 'Saved.')));
         } else if (s.status == WriteStatus.failure && s.error != null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.error!)));
+          showAppMessage(s.error!);
         }
       },
       builder: (context, s) {
