@@ -42,3 +42,12 @@ android {
 flutter {
     source = "../.."
 }
+
+// Firebase Crashlytics activates only when the Firebase console config is
+// present (android/app/google-services.json, Android app package
+// com.example.rvm_team_app). Until KP adds that file, the app builds and runs
+// normally with local-only crash logging.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
+}

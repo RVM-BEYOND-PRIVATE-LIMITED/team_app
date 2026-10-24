@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app_validators.dart';
 import '../../bloc/forgot_password_bloc.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -92,14 +93,16 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
         ],
         const SizedBox(height: RvmSpacing.lg),
         FilledButton(
-          onPressed: state.submitting
-              ? null
-              : () {
-                  final id = _identifier.text.trim();
-                  if (id.isEmpty) {
-                    setState(() => _localError = 'Enter your username or email.');
-                    return;
-                  }
+              onPressed: state.submitting
+                  ? null
+                  : () {
+                      final id = _identifier.text.trim();
+                      final idError = validateIdentifier(id,
+                          emptyMessage: 'Enter your username or email.');
+                      if (idError != null) {
+                        setState(() => _localError = idError);
+                        return;
+                      }
                   setState(() => _localError = null);
                   FocusScope.of(context).unfocus();
                   context.read<ForgotPasswordBloc>().add(ForgotRequested(id));

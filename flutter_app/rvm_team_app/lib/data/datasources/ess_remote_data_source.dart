@@ -72,29 +72,53 @@ class EssRemoteDataSource with DioExecutor {
   Future<EssCapabilities> capabilities() => guard(() async =>
       EssCapabilities.fromJson(_body(await _dio.get('/me/capabilities'))));
 
-  // ── kept sign-in (A3) ────────────────────────────────────────────────────
+  /// The launch menu without throwing. Uses the interceptor-free client with
+  /// the token passed explicitly, so an expected 401/403 is a value here and
+  /// never a DioException the debugger stops on.
+  Future<({EssCapabilities? data, Failure? failure})> capabilitiesSafe(
+          {String? token}) =>
+      _softBare(
+        () => _bare.get('/me/capabilities', options: _bearer(token)),
+        EssCapabilities.fromJson,
+      );
 
-  Future<KeptSession> keepSignIn(
-          {required String installId, String? deviceLabel}) =>
-      guard(() async {
-        final res = await _dio.post('/session', data: {
-          'install_id': installId,
-          if (deviceLabel != null && deviceLabel.trim().isNotEmpty)
-            'device_label': deviceLabel.trim(),
-        });
-        final data = _body(res);
-        final session = _obj(data['session']);
-        return KeptSession(
-          accessToken: data['access_token'] as String,
-          refreshToken: data['refresh_token'] as String,
-          accessExpiresAt: DateTime.tryParse('${data['access_expires_at']}'),
-          sessionId: session['id']?.toString(),
-        );
-      });
+  Options? _bearer(String? token) => token == null || token.isEmpty
+      ? null
+      : Options(headers: {'Authorization': 'Bearer $token'});
+
+  // ── kept sign-in (A3) ────────────────────────────────────────────────────
 
   Future<void> signOutEss() => guard(() async {
         await _dio.post('/session/sign-out');
       });
+
+  /// The kept-sign-in exchange without throwing. A fresh login for an
+  /// unlinked HR account answers 403 NOT_LINKED here; that is a reason the
+  /// upgrade was skipped, not an exception the splash/login screen should pause
+  /// on. The sign-in itself still works through the Scheduler token.
+  Future<({KeptSession? data, Failure? failure})> keepSignInSafe({
+    required String installId,
+    String? deviceLabel,
+    String? token,
+  }) =>
+      _softBare(
+        () => _bare.post('/session',
+            data: {
+              'install_id': installId,
+              if (deviceLabel != null && deviceLabel.trim().isNotEmpty)
+                'device_label': deviceLabel.trim(),
+            },
+            options: _bearer(token)),
+        (body) {
+          final session = _obj(body['session']);
+          return KeptSession(
+            accessToken: body['access_token'] as String,
+            refreshToken: body['refresh_token'] as String,
+            accessExpiresAt: DateTime.tryParse('${body['access_expires_at']}'),
+            sessionId: session['id']?.toString(),
+          );
+        },
+      );
 
   /// Rotate the kept sign-in without throwing when it has ended. The launch
   /// probe uses this instead of `me()`: a 401 from `/session/refresh` means
@@ -507,6 +531,29 @@ class EssRemoteDataSource with DioExecutor {
       _soft(() => _dio.get('/wall/celebrations'), WallCelebrations.fromJson);
 
   Future<({T? data, Failure? failure})> _soft<T>(
+    Future<Response<dynamic>> Function() request,
+    T Function(Map<String, dynamic> body) parse,
+  ) async {
+    try {
+      final res = await request();
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        return (data: null, failure: failureFromResponse(status, res.data));
+      }
+      final raw = res.data;
+      if (raw is! Map) return (data: null, failure: const ParseFailure());
+      return (data: parse(raw.cast<String, dynamic>()), failure: null);
+    } on DioException catch (e) {
+      return (data: null, failure: e.asFailure);
+    } on Object {
+      return (data: null, failure: const ParseFailure());
+    }
+  }
+
+  /// The non-throwing client: same result shape as [_soft], but no auth
+  /// interceptor and no thrown 401. Used only for the launch checks where a
+  /// refusal is an expected answer.
+  Future<({T? data, Failure? failure})> _softBare<T>(
     Future<Response<dynamic>> Function() request,
     T Function(Map<String, dynamic> body) parse,
   ) async {

@@ -29,47 +29,51 @@ class MyTeamScreen extends StatelessWidget {
             create: (_) =>
                 getIt<LoadBloc<TeamOffWeek>>()..add(const LoadRequested())),
       ],
-      child: Scaffold(
-        body: Column(
-          children: [
-            TeamPageHeader(
-              title: 'My Team',
-              subtitle: const Text('Your manager, peers and reporting chain'),
-              actions: [
-                Builder(
-                  builder: (context) => TeamHeaderAction(
-                    icon: Icons.search_rounded,
-                    tooltip: 'Search colleagues',
-                    onPressed: () => context.push('/team/directory'),
+      child: Builder(
+        builder: (context) => Scaffold(
+          body: Column(
+            children: [
+              TeamPageHeader(
+                title: 'My Team',
+                subtitle: const Text('Your manager, peers and reporting chain'),
+                actions: [
+                  Builder(
+                    builder: (context) => TeamHeaderAction(
+                      icon: Icons.search_rounded,
+                      tooltip: 'Search colleagues',
+                      onPressed: () => context.push('/team/directory'),
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    context
+                        .read<TeamTodayBloc>()
+                        .add(const TeamTodayLoadRequested());
+                    context
+                        .read<LoadBloc<OrgView>>()
+                        .add(const LoadRefreshed());
+                    context
+                        .read<LoadBloc<TeamOffWeek>>()
+                        .add(const LoadRefreshed());
+                  },
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(RvmSpacing.md,
+                        RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
+                    children: const [
+                      _TeamTodayCard(),
+                      SizedBox(height: RvmSpacing.md),
+                      _OffThisWeekCard(),
+                      SizedBox(height: RvmSpacing.md),
+                      _OrgCardSection(),
+                    ],
                   ),
                 ),
-              ],
-            ),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async {
-                  context
-                      .read<TeamTodayBloc>()
-                      .add(const TeamTodayLoadRequested());
-                  context.read<LoadBloc<OrgView>>().add(const LoadRefreshed());
-                  context
-                      .read<LoadBloc<TeamOffWeek>>()
-                      .add(const LoadRefreshed());
-                },
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(RvmSpacing.md,
-                      RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
-                  children: const [
-                    _TeamTodayCard(),
-                    SizedBox(height: RvmSpacing.md),
-                    _OffThisWeekCard(),
-                    SizedBox(height: RvmSpacing.md),
-                    _OrgCardSection(),
-                  ],
-                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -249,14 +253,11 @@ class _OrgCardSection extends StatelessWidget {
         final org = state.data!;
         return Column(
           children: [
-            _Panel(
-              title: 'Reporting chain',
-              child: org.managerChain.isEmpty
-                  ? const Text('No manager recorded.')
-                  : Column(children: [
-                      for (final m in org.managerChain) _PersonTile(card: m)
-                    ]),
-            ),
+            if (org.managerChain.isNotEmpty)
+              _Panel(
+                title: 'Reporting chain',
+                child: _ChainLadder(chain: org.managerChain),
+              ),
             if (org.peers.isNotEmpty) ...[
               const SizedBox(height: RvmSpacing.md),
               _Panel(
@@ -284,6 +285,120 @@ class _OrgCardSection extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The reporting line as a ladder: the server sends the chain bottom-up
+/// (direct manager first, CEO last), so it is reversed for display into a
+/// top-down spine — CEO at the top, each node joined to the level below.
+class _ChainLadder extends StatelessWidget {
+  const _ChainLadder({required this.chain});
+  final List<OrgCard> chain;
+
+  @override
+  Widget build(BuildContext context) {
+    final topDown = chain.reversed.toList(growable: false);
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Column(
+      children: [
+        for (var i = 0; i < topDown.length; i++)
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 22,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          color: i == 0
+                              ? Colors.transparent
+                              : scheme.outlineVariant,
+                        ),
+                      ),
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i == 0
+                              ? RvmColors.teamSeed
+                              : scheme.primary,
+                          border: Border.all(color: scheme.surface, width: 2),
+                        ),
+                      ),
+                      Expanded(
+                        child: Container(
+                          width: 2,
+                          color: scheme.outlineVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (i == 0)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 2),
+                          child: Text('Top · CEO',
+                              style: text.labelSmall?.copyWith(
+                                  color: RvmColors.subtle,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      _PersonTile(card: topDown[i]),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // Anchor the ladder: the viewer sits below their direct manager.
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 22,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        width: 2,
+                        color: scheme.outlineVariant,
+                      ),
+                    ),
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: scheme.surface,
+                        border: Border.all(color: scheme.primary, width: 2),
+                      ),
+                    ),
+                    const Expanded(child: SizedBox.shrink()),
+                  ],
+                ),
+              ),
+              const Expanded(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(child: Text('·')),
+                  title: Text('You'),
+                  subtitle: Text('Your position in this chain'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

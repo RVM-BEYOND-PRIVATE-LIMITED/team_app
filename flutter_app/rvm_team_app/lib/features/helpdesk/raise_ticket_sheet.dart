@@ -2,6 +2,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_feedback.dart';
 import '../../domain/ess_models.dart';
 import 'bloc/helpdesk_bloc.dart';
 
@@ -11,7 +12,8 @@ Future<void> showRaiseTicketSheet(BuildContext context) {
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => BlocProvider.value(value: bloc, child: const _RaiseTicketSheet()),
+    builder: (_) =>
+        BlocProvider.value(value: bloc, child: const _RaiseTicketSheet()),
   );
 }
 
@@ -43,7 +45,8 @@ class _RaiseTicketSheetState extends State<_RaiseTicketSheet> {
       return;
     }
     if (!category.isTicket) {
-      _snack('That category uses another flow: ${category.flow ?? 'not a ticket'}.');
+      _snack(
+          'That category uses another flow: ${category.flow ?? 'not a ticket'}.');
       return;
     }
     if (_subject.text.trim().length < 3) {
@@ -63,14 +66,14 @@ class _RaiseTicketSheetState extends State<_RaiseTicketSheet> {
     Navigator.of(context).pop();
   }
 
-  void _snack(String message) {
-    ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
-  }
+  void _snack(String message) => showAppMessage(message);
 
   @override
   Widget build(BuildContext context) {
-    final categories = context.select<HelpdeskBloc, List<HelpdeskCategory>>((b) => b.state.categories);
-    final submitting = context.select<HelpdeskBloc, bool>((b) => b.state.submitting);
+    final categories = context.select<HelpdeskBloc, List<HelpdeskCategory>>(
+        (b) => b.state.categories);
+    final submitting =
+        context.select<HelpdeskBloc, bool>((b) => b.state.submitting);
     return Padding(
       padding: EdgeInsets.only(
         left: RvmSpacing.md,
@@ -83,11 +86,13 @@ class _RaiseTicketSheetState extends State<_RaiseTicketSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Raise a ticket', style: Theme.of(context).textTheme.titleLarge),
+            Text('Raise a ticket',
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: RvmSpacing.md),
             DropdownButtonFormField<String>(
               initialValue: _category,
-              decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                  labelText: 'Category', border: OutlineInputBorder()),
               items: [
                 for (final c in categories)
                   if (c.isTicket)
@@ -98,14 +103,16 @@ class _RaiseTicketSheetState extends State<_RaiseTicketSheet> {
             if (categories.any((c) => !c.isTicket))
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('Leave, attendance fixes and assets use their own flows.',
+                child: Text(
+                    'Leave, attendance fixes and assets use their own flows.',
                     style: Theme.of(context).textTheme.labelSmall),
               ),
             const SizedBox(height: RvmSpacing.md),
             TextField(
               controller: _subject,
               maxLength: 200,
-              decoration: const InputDecoration(labelText: 'Subject', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                  labelText: 'Subject', border: OutlineInputBorder()),
             ),
             const SizedBox(height: RvmSpacing.sm),
             TextField(
@@ -113,7 +120,10 @@ class _RaiseTicketSheetState extends State<_RaiseTicketSheet> {
               minLines: 3,
               maxLines: 6,
               maxLength: 2000,
-              decoration: const InputDecoration(labelText: 'What happened?', alignLabelWithHint: true, border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                  labelText: 'What happened?',
+                  alignLabelWithHint: true,
+                  border: OutlineInputBorder()),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -126,7 +136,10 @@ class _RaiseTicketSheetState extends State<_RaiseTicketSheet> {
             FilledButton(
               onPressed: submitting ? null : () => _submit(categories),
               child: submitting
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
                   : const Text('Send to the team'),
             ),
           ],

@@ -15,7 +15,8 @@ class AttendanceDayScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => getIt<AttendanceDayBloc>()..add(const AttendanceDayLoadRequested()),
+      create: (_) =>
+          getIt<AttendanceDayBloc>()..add(const AttendanceDayLoadRequested()),
       child: const _AttendanceDayView(),
     );
   }
@@ -32,18 +33,23 @@ class _AttendanceDayView extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: () => context.read<AttendanceDayBloc>().add(const AttendanceDayRefreshed()),
+            onPressed: () => context
+                .read<AttendanceDayBloc>()
+                .add(const AttendanceDayRefreshed()),
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
       body: BlocConsumer<AttendanceDayBloc, AttendanceDayState>(
-        listenWhen: (a, b) => a.reportedNonce != b.reportedNonce || a.reportFailure != b.reportFailure,
+        listenWhen: (a, b) =>
+            a.reportedNonce != b.reportedNonce ||
+            a.reportFailure != b.reportFailure,
         listener: (context, state) {
           if (state.reportFailure != null) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
-              ..showSnackBar(SnackBar(content: Text(state.reportFailure!.message)));
+              ..showSnackBar(
+                  SnackBar(content: Text(state.reportFailure!.message)));
           } else if (state.reportedNonce > 0) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
@@ -54,12 +60,18 @@ class _AttendanceDayView extends StatelessWidget {
           switch (state.status) {
             case LoadStatus.initial:
             case LoadStatus.loading:
-              return const AppLoading();
+              if (state.day == null) return const AppLoading();
+              return _body(context, state);
             case LoadStatus.failure:
-              return AppError(
-                message: state.failure?.message ?? 'Could not load today.',
-                onRetry: () => context.read<AttendanceDayBloc>().add(const AttendanceDayRefreshed()),
-              );
+              if (state.day == null) {
+                return AppError(
+                  message: state.failure?.message ?? 'Could not load today.',
+                  onRetry: () => context
+                      .read<AttendanceDayBloc>()
+                      .add(const AttendanceDayRefreshed()),
+                );
+              }
+              return _body(context, state);
             case LoadStatus.empty:
             case LoadStatus.success:
               return _body(context, state);
@@ -108,13 +120,16 @@ class _AttendanceDayView extends StatelessWidget {
         ],
         if (day != null && day.myRemarks.isNotEmpty) ...[
           const SizedBox(height: RvmSpacing.md),
-          _NoteCard(title: 'My remarks', body: day.myRemarks.map((r) => r.remarks).join('\n')),
+          _NoteCard(
+              title: 'My remarks',
+              body: day.myRemarks.map((r) => r.remarks).join('\n')),
         ],
         const SizedBox(height: RvmSpacing.lg),
         OutlinedButton.icon(
           onPressed: state.reporting ? null : () => _report(context),
           icon: const Icon(Icons.my_location_outlined),
-          label: Text(state.reporting ? 'Reporting…' : 'Report a location problem'),
+          label: Text(
+              state.reporting ? 'Reporting…' : 'Report a location problem'),
         ),
         const SizedBox(height: RvmSpacing.sm),
         Text(
@@ -132,14 +147,21 @@ class _AttendanceDayView extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Report a location problem'),
-        content: const Text('Send HR a report that the location was refused on this phone?'),
+        content: const Text(
+            'Send HR a report that the location was refused on this phone?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Report')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Report')),
         ],
       ),
     );
-    if (ok == true) bloc.add(const MockLocationReportSubmitted(provider: 'device'));
+    if (ok == true) {
+      bloc.add(const MockLocationReportSubmitted(provider: 'device'));
+    }
   }
 
   static String _statusLabel(String? status) => switch (status) {
@@ -183,8 +205,12 @@ class _TodayHeader extends StatelessWidget {
         children: [
           Text(date ?? 'Today', style: Theme.of(context).textTheme.titleLarge),
           if (serverNow != null)
-            Text('Server time ${TimeOfDay.fromDateTime(serverNow!.toLocal()).format(context)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+            Text(
+                'Server time ${TimeOfDay.fromDateTime(serverNow!.toLocal()).format(context)}',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
         ],
       ),
     );

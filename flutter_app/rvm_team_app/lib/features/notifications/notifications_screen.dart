@@ -69,11 +69,12 @@ class _NotificationsView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, NotificationsState state) {
+    final page = state.page;
     if (state.status == LoadStatus.initial ||
-        state.status == LoadStatus.loading) {
+        (state.status == LoadStatus.loading && page == null)) {
       return const AppLoading();
     }
-    if (state.status == LoadStatus.failure) {
+    if (state.status == LoadStatus.failure && page == null) {
       return AppError(
         message: state.failure?.message ?? 'Could not load notifications.',
         onRetry: () => context
@@ -81,7 +82,6 @@ class _NotificationsView extends StatelessWidget {
             .add(const NotificationsRefreshed()),
       );
     }
-    final page = state.page;
     if (page == null || page.notifications.isEmpty) {
       return const AppEmpty(
           icon: Icons.notifications_none, message: 'No notifications yet.');

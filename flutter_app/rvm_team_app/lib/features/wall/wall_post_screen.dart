@@ -75,14 +75,18 @@ class _WallPostScreenState extends State<WallPostScreen> {
     }
   }
 
-  Future<void> _react(String reaction) async {
+  Future<void> _react(String? reaction) async {
     try {
       final repo = getIt<EssRepository>();
-      final current = _detail?.post.myReaction;
-      if (current == reaction) {
+      if (reaction == null) {
         await repo.unreactToPost(widget.postId);
       } else {
-        await repo.reactToPost(widget.postId, reaction);
+        final current = _detail?.post.myReaction;
+        if (current == reaction) {
+          await repo.unreactToPost(widget.postId);
+        } else {
+          await repo.reactToPost(widget.postId, reaction);
+        }
       }
       await _load();
     } on Failure {
@@ -241,9 +245,7 @@ class _WallPostScreenState extends State<WallPostScreen> {
       children: [
         WallPostCard(
           post: detail.post,
-          onReact: (reaction) {
-            if (reaction != null) _react(reaction);
-          },
+          onReact: (reaction) => _react(reaction),
           onOpen: () {},
           onWhoReacted: (detail.post.reactions?.total ?? 0) > 0
               ? () => showModalBottomSheet<void>(
@@ -310,7 +312,6 @@ class _CommentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -347,34 +348,14 @@ class _CommentTile extends StatelessWidget {
             const SizedBox(height: 4),
             Text(comment.hidden ? 'Hidden by HR' : (comment.body ?? '')),
             if (!comment.hidden) ...[
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 2,
-                children: [
-                  for (final r in wallReactions.entries)
-                    InkWell(
-                      onTap: () => onReact(comment.myReaction == r.key ? null : r.key),
-                      borderRadius: BorderRadius.circular(999),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: comment.myReaction == r.key ? scheme.primaryContainer : null,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text('${r.value}${comment.reactions?.counts[r.key] ?? 0}', style: const TextStyle(fontSize: 12)),
-                      ),
-                    ),
-                ],
+              const SizedBox(height: 2),
+              FbCommentReactionBar(
+                counts: comment.reactions,
+                total: comment.reactions?.total ?? 0,
+                myReaction: comment.myReaction,
+                onReact: onReact,
+                onWhoReacted: onWhoReacted,
               ),
-              if ((comment.reactions?.total ?? 0) > 0 && onWhoReacted != null)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: onWhoReacted,
-                    icon: const Icon(Icons.groups_outlined, size: 14),
-                    label: Text('${comment.reactions!.total}'),
-                  ),
-                ),
             ],
           ],
         ),

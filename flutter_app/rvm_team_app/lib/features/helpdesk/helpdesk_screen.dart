@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../bloc/team_auth_bloc.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -29,6 +30,10 @@ class _HelpdeskView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The team queue is a portal screen (the ESS role guard refuses an
+    // attendance-only punch token), so it is not offered to that session.
+    final attendance = context.select<TeamAuthBloc, bool>(
+        (b) => b.state.identity?.attendance == true);
     return BlocConsumer<HelpdeskBloc, HelpdeskState>(
       listenWhen: (a, b) =>
           a.actionFailure != b.actionFailure || a.actionNonce != b.actionNonce,
@@ -51,13 +56,14 @@ class _HelpdeskView extends StatelessWidget {
               title: 'Helpdesk',
               subtitle: const Text('Raise a ticket and follow its thread'),
               actions: [
-                Builder(
-                  builder: (context) => TeamHeaderAction(
-                    icon: Icons.support_agent_rounded,
-                    tooltip: 'Team queue',
-                    onPressed: () => context.push('/helpdesk/queue'),
+                if (!attendance)
+                  Builder(
+                    builder: (context) => TeamHeaderAction(
+                      icon: Icons.support_agent_rounded,
+                      tooltip: 'Team queue',
+                      onPressed: () => context.push('/helpdesk/queue'),
+                    ),
                   ),
-                ),
                 Builder(
                   builder: (context) => TeamHeaderAction(
                     icon: Icons.refresh_rounded,
@@ -83,10 +89,10 @@ class _HelpdeskView extends StatelessWidget {
 
   Widget _body(BuildContext context, HelpdeskState state) {
     if (state.status == LoadStatus.initial ||
-        state.status == LoadStatus.loading) {
+        (state.status == LoadStatus.loading && state.tickets.isEmpty)) {
       return const AppLoading();
     }
-    if (state.status == LoadStatus.failure) {
+    if (state.status == LoadStatus.failure && state.tickets.isEmpty) {
       return AppError(
         message: state.failure?.message ?? 'Could not load your tickets.',
         onRetry: () =>

@@ -108,10 +108,10 @@ class _ApprovalsView extends StatelessWidget {
   Widget _body(BuildContext context, ApprovalsState state,
       {required bool hrWide}) {
     if (state.status == LoadStatus.initial ||
-        state.status == LoadStatus.loading) {
+        (state.status == LoadStatus.loading && state.inbox == null)) {
       return const AppLoading();
     }
-    if (state.status == LoadStatus.failure) {
+    if (state.status == LoadStatus.failure && state.inbox == null) {
       return AppError(
         message: state.failure?.message ?? 'Could not load approvals.',
         onRetry: () =>

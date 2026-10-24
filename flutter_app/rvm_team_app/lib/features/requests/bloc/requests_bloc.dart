@@ -160,12 +160,14 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
           createdNonce: state.createdNonce));
     } catch (e) {
       // A parse or plugin error must not leave the form saying it is submitting
-      // (nor reach the debugger as an unhandled exception).
+      // (nor reach the debugger as an unhandled exception). Staff read the
+      // friendly line; the raw exception stays in the log.
       emit(RequestsState(
         status: state.status,
         requests: state.requests,
         balances: state.balances,
-        submitFailure: UnknownFailure(e.toString()),
+        submitFailure:
+            const UnknownFailure('Could not send the request. Try again.'),
         createdNonce: state.createdNonce,
       ));
     }

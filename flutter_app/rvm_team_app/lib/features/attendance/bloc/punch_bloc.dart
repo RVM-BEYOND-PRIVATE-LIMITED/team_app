@@ -162,15 +162,19 @@ class PunchBloc extends Bloc<PunchEvent, PunchState> {
 
   Future<void> _onLoad(PunchEvent e, Emitter<PunchState> emit) async {
     emit(state.copyWith(status: LoadStatus.loading));
-    try {
-      final data = await _repo.myAttendance();
-      emit(state.copyWith(status: LoadStatus.success, data: data));
-      _syncPing(data);
-      if (e is PunchLoadRequested && e.withDistance) {
-        await _refreshDistance(emit, data);
-      }
-    } on Failure catch (f) {
-      emit(state.copyWith(status: LoadStatus.failure, failure: f));
+    final result = await _repo.myAttendanceSafe();
+    if (result.failure != null || result.data == null) {
+      emit(state.copyWith(
+        status: LoadStatus.failure,
+        failure: result.failure ?? const UnknownFailure(),
+      ));
+      return;
+    }
+    final data = result.data!;
+    emit(state.copyWith(status: LoadStatus.success, data: data));
+    _syncPing(data);
+    if (e is PunchLoadRequested && e.withDistance) {
+      await _refreshDistance(emit, data);
     }
   }
 

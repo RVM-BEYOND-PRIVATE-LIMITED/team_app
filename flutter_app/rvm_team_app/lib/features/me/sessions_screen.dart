@@ -33,7 +33,8 @@ class _SessionsView extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: () => context.read<SessionsBloc>().add(const SessionsRefreshed()),
+            onPressed: () =>
+                context.read<SessionsBloc>().add(const SessionsRefreshed()),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -44,32 +45,69 @@ class _SessionsView extends StatelessWidget {
           if (state.endFailure != null) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
-              ..showSnackBar(SnackBar(content: Text(state.endFailure!.message)));
+              ..showSnackBar(
+                  SnackBar(content: Text(state.endFailure!.message)));
           }
         },
         builder: (context, state) {
           switch (state.status) {
             case LoadStatus.initial:
             case LoadStatus.loading:
-              return const AppLoading();
+              if (state.sessions.isEmpty) return const AppLoading();
+              return ListView.separated(
+                padding: const EdgeInsets.all(RvmSpacing.md),
+                itemCount: state.sessions.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: RvmSpacing.sm),
+                itemBuilder: (context, i) => _SessionCard(
+                  session: state.sessions[i],
+                  ending: state.endingId == state.sessions[i].id,
+                  onEnd: () => context
+                      .read<SessionsBloc>()
+                      .add(SessionEndRequested(state.sessions[i].id)),
+                ),
+              );
             case LoadStatus.failure:
-              return AppError(
-                message: state.failure?.message ?? 'Could not load your sign-ins.',
-                onRetry: () => context.read<SessionsBloc>().add(const SessionsRefreshed()),
+              if (state.sessions.isEmpty) {
+                return AppError(
+                  message:
+                      state.failure?.message ?? 'Could not load your sign-ins.',
+                  onRetry: () => context
+                      .read<SessionsBloc>()
+                      .add(const SessionsRefreshed()),
+                );
+              }
+              return ListView.separated(
+                padding: const EdgeInsets.all(RvmSpacing.md),
+                itemCount: state.sessions.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: RvmSpacing.sm),
+                itemBuilder: (context, i) => _SessionCard(
+                  session: state.sessions[i],
+                  ending: state.endingId == state.sessions[i].id,
+                  onEnd: () => context
+                      .read<SessionsBloc>()
+                      .add(SessionEndRequested(state.sessions[i].id)),
+                ),
               );
             case LoadStatus.empty:
-              return const AppEmpty(icon: Icons.devices_other_outlined, message: 'No kept sign-ins.');
+              return const AppEmpty(
+                  icon: Icons.devices_other_outlined,
+                  message: 'No kept sign-ins.');
             case LoadStatus.success:
               return ListView.separated(
                 padding: const EdgeInsets.all(RvmSpacing.md),
                 itemCount: state.sessions.length,
-                separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.sm),
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: RvmSpacing.sm),
                 itemBuilder: (context, i) {
                   final s = state.sessions[i];
                   return _SessionCard(
                     session: s,
                     ending: state.endingId == s.id,
-                    onEnd: () => context.read<SessionsBloc>().add(SessionEndRequested(s.id)),
+                    onEnd: () => context
+                        .read<SessionsBloc>()
+                        .add(SessionEndRequested(s.id)),
                   );
                 },
               );
@@ -81,7 +119,8 @@ class _SessionsView extends StatelessWidget {
 }
 
 class _SessionCard extends StatelessWidget {
-  const _SessionCard({required this.session, required this.ending, required this.onEnd});
+  const _SessionCard(
+      {required this.session, required this.ending, required this.onEnd});
   final TeamSession session;
   final bool ending;
   final VoidCallback onEnd;
@@ -91,8 +130,11 @@ class _SessionCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       child: ListTile(
-        leading: Icon(session.current ? Icons.smartphone : Icons.devices_other_outlined),
-        title: Text(session.deviceLabel?.isNotEmpty == true ? session.deviceLabel! : 'Unknown device'),
+        leading: Icon(
+            session.current ? Icons.smartphone : Icons.devices_other_outlined),
+        title: Text(session.deviceLabel?.isNotEmpty == true
+            ? session.deviceLabel!
+            : 'Unknown device'),
         subtitle: Text([
           if (session.current) 'This phone',
           if (session.lastUsedAt != null)
@@ -109,7 +151,10 @@ class _SessionCard extends StatelessWidget {
             : TextButton(
                 onPressed: ending ? null : onEnd,
                 child: ending
-                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('Sign out'),
               ),
       ),

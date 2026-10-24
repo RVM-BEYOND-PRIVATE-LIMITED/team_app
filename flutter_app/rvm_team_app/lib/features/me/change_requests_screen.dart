@@ -2,7 +2,9 @@ import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
+import '../../app_validators.dart';
 import '../../data/repositories/ess_repository.dart';
+import '../../app_feedback.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -84,8 +86,8 @@ class _ChangeRequestsScreenState extends State<ChangeRequestsScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const AppLoading();
-    if (_failure != null) {
+    if (_loading && _requests.isEmpty) return const AppLoading();
+    if (_failure != null && _requests.isEmpty) {
       return AppError(message: _failure!.message, onRetry: _load);
     }
     if (_requests.isEmpty) {
@@ -157,9 +159,21 @@ class _NewChangeDialogState extends State<_NewChangeDialog> {
   }
 
   Future<void> _submit() async {
-    final newValue = _new.text.trim();
     final reason = _reason.text.trim();
-    if (newValue.isEmpty || reason.length < 5) return;
+    var newValue = _new.text.trim();
+    if (_field == 'date_of_birth') {
+      if (!isValidDob(newValue)) {
+        showAppMessage('Pick your date of birth from the calendar.');
+        return;
+      }
+    } else if (newValue.isEmpty) {
+      showAppMessage('Enter the correct value.');
+      return;
+    }
+    if (reason.length < 5) {
+      showAppMessage('Give a reason (at least 5 characters).');
+      return;
+    }
     setState(() => _saving = true);
     try {
       final created = await getIt<EssRepository>().createChangeRequest(
@@ -173,10 +187,22 @@ class _NewChangeDialogState extends State<_NewChangeDialog> {
     } on Failure catch (f) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(f.message)));
+      showAppMessage(f.message);
     }
+  }
+
+  Future<void> _pickDob() async {
+    final now = DateTime.now();
+    final initial = isValidIsoDate(_new.text.trim())
+        ? DateTime.parse(_new.text.trim())
+        : DateTime(now.year - 25, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(now) ? DateTime(now.year - 18) : initial,
+      firstDate: DateTime(now.year - 100),
+      lastDate: DateTime(now.year, now.month, now.day),
+    );
+    if (picked != null) setState(() => _new.text = toIsoDate(picked));
   }
 
   @override
@@ -197,7 +223,9 @@ class _NewChangeDialogState extends State<_NewChangeDialog> {
                 DropdownMenuItem(
                     value: 'legal_name', child: Text('Legal name')),
               ],
-              onChanged: (v) => setState(() => _field = v ?? _field),
+              onChanged: (v) {
+                if (v != null) setState(() => _field = v);
+              },
             ),
             const SizedBox(height: 8),
             TextField(
@@ -205,9 +233,22 @@ class _NewChangeDialogState extends State<_NewChangeDialog> {
                 decoration: const InputDecoration(
                     labelText: 'Current value (optional)')),
             const SizedBox(height: 8),
-            TextField(
+            if (_field == 'date_of_birth')
+              TextField(
                 controller: _new,
-                decoration: const InputDecoration(labelText: 'Correct value')),
+                readOnly: true,
+                onTap: _pickDob,
+                decoration: const InputDecoration(
+                  labelText: 'Correct date of birth',
+                  hintText: 'Pick from the calendar',
+                  prefixIcon: Icon(Icons.cake_outlined),
+                ),
+              )
+            else
+              TextField(
+                  controller: _new,
+                  decoration:
+                      const InputDecoration(labelText: 'Correct value')),
             const SizedBox(height: 8),
             TextField(
                 controller: _reason,

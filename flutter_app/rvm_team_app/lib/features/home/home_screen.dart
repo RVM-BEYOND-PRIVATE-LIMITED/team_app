@@ -25,6 +25,7 @@ class HomeScreen extends StatelessWidget {
     return BlocBuilder<TeamAuthBloc, TeamAuthState>(
       builder: (context, auth) {
         final identity = auth.identity;
+        final attendance = identity?.attendance == true;
         final perms =
             TeamPermissions.forRole(identity?.role ?? AppRole.unknown);
         return Scaffold(
@@ -58,17 +59,25 @@ class HomeScreen extends StatelessWidget {
                               _HodCard(),
                               const SizedBox(height: RvmSpacing.md),
                             ],
-                            if (perms.canSeePriorityTasks) ...[
+                            if (!attendance && perms.canSeePriorityTasks) ...[
                               _PrioritySummaryCard(),
                               const SizedBox(height: RvmSpacing.md),
                             ],
-                            _InterviewsCard(perms: perms),
-                            const SizedBox(height: RvmSpacing.md),
-                            _QuickActions(perms: perms),
-                            const SizedBox(height: RvmSpacing.md),
-                            _WorkFromHomeCard(),
-                            const SizedBox(height: RvmSpacing.md),
-                            _AnnouncementsSection(),
+                            // Interviews, priority tasks and announcements are
+                            // Scheduler reads. An attendance-only session's punch
+                            // token is accepted only on the punch routes, so these
+                            // would answer 401. The ESS cards above still work.
+                            if (!attendance) ...[
+                              _InterviewsCard(perms: perms),
+                              const SizedBox(height: RvmSpacing.md),
+                              _QuickActions(perms: perms),
+                              const SizedBox(height: RvmSpacing.md),
+                              _WorkFromHomeCard(),
+                              const SizedBox(height: RvmSpacing.md),
+                              _AnnouncementsSection(),
+                            ] else ...[
+                              _QuickActions(perms: perms),
+                            ],
                           ],
                         ),
                       ),
@@ -303,9 +312,14 @@ class _ScheduleCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 _DistanceNote(
                   state: state,
-                  onRefresh: () => context
-                      .read<PunchBloc>()
-                      .add(const PunchDistanceRequested()),
+                  onRefresh: () {
+                    final bloc = context.read<PunchBloc>();
+                    if (state.data == null) {
+                      bloc.add(const PunchLoadRequested(withDistance: true));
+                    } else {
+                      bloc.add(const PunchDistanceRequested());
+                    }
+                  },
                 ),
               ],
             ),
@@ -374,10 +388,14 @@ class _DistanceNote extends StatelessWidget {
     final bool loading = state.distanceLoading;
 
     if (data == null) {
-      color = RvmColors.muted;
-      icon = Icons.location_searching_rounded;
-      title = 'Checking your location after attendance loads…';
-      subtitle = null;
+      final failure = state.failure;
+      color = failure == null ? RvmColors.muted : RvmColors.warning;
+      icon = failure == null
+          ? Icons.location_searching_rounded
+          : Icons.cloud_off_rounded;
+      title =
+          failure?.message ?? 'Checking your location after attendance loads…';
+      subtitle = failure == null ? null : 'Tap refresh to try again.';
     } else if (!configured) {
       color = RvmColors.warning;
       icon = Icons.location_off_rounded;

@@ -1,3 +1,4 @@
+import 'package:core_network/core_network.dart';
 import 'package:dio/dio.dart';
 import 'package:domain/domain.dart';
 
@@ -37,6 +38,55 @@ class AuthRemoteDataSource with DioExecutor {
         );
       });
 
+  /// Portal sign-in without throwing for a wrong password / unknown user.
+  /// `/users/login` answers 401 for a wrong password; that is an expected
+  /// result the login form shows, not an exception the debugger should stop on.
+  Future<({TeamLoginOutcome? outcome, Failure? failure})> loginSafe({
+    required String username,
+    required String password,
+    required String locationName,
+  }) async {
+    try {
+      final res = await _dio.post(
+        '/users/login',
+        data: {
+          'username': username,
+          'password': password,
+          'locationName': locationName,
+        },
+        // This one request returns 4xx as a value; other calls keep the normal
+        // auth/sign-out behaviour.
+        options: Options(validateStatus: (_) => true),
+      );
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        return (outcome: null, failure: failureFromResponse(status, res.data));
+      }
+      final data = (res.data as Map).cast<String, dynamic>();
+      if (data['two_factor_required'] == true) {
+        return (
+          outcome: TeamTwoFactorRequired(TeamTwoFactorChallenge.fromJson(data)),
+          failure: null,
+        );
+      }
+      final user = (data['user'] as Map).cast<String, dynamic>();
+      return (
+        outcome: TeamSignedIn(
+          token: data['token'] as String,
+          identity: StaffIdentity.fromLoginUser(user),
+        ),
+        failure: null,
+      );
+    } on DioException catch (e) {
+      return (outcome: null, failure: Failure.fromDio(e));
+    } catch (_) {
+      return (
+        outcome: null,
+        failure: const UnknownFailure('Could not sign in. Try again.'),
+      );
+    }
+  }
+
   Future<TeamSignedIn> verifyTwoFactor({
     required String challengeId,
     required String code,
@@ -50,13 +100,18 @@ class AuthRemoteDataSource with DioExecutor {
         });
         final data = (res.data as Map).cast<String, dynamic>();
         final user = (data['user'] as Map).cast<String, dynamic>();
-        return TeamSignedIn(token: data['token'] as String, identity: StaffIdentity.fromLoginUser(user));
+        return TeamSignedIn(
+            token: data['token'] as String,
+            identity: StaffIdentity.fromLoginUser(user));
       });
 
   Future<String?> forgotPasswordRequest(String identifier) => guard(() async {
-        final res = await _dio.post('/users/forgot-password', data: {'identifier': identifier});
+        final res = await _dio
+            .post('/users/forgot-password', data: {'identifier': identifier});
         final data = res.data;
-        if (data is Map && data['message'] != null) return data['message'].toString();
+        if (data is Map && data['message'] != null) {
+          return data['message'].toString();
+        }
         return null;
       });
 
@@ -82,12 +137,16 @@ class AuthRemoteDataSource with DioExecutor {
           'identifier': identifier,
           'password': password,
         });
-        return AttendanceLoginResult.fromJson((res.data as Map).cast<String, dynamic>());
+        return AttendanceLoginResult.fromJson(
+            (res.data as Map).cast<String, dynamic>());
       });
 
-  Future<AttendanceCodeSent> requestAttendanceCode(String identifier) => guard(() async {
-        final res = await _dio.post('/hr/my-attendance/otp/request', data: {'identifier': identifier});
-        return AttendanceCodeSent.fromJson((res.data as Map).cast<String, dynamic>());
+  Future<AttendanceCodeSent> requestAttendanceCode(String identifier) =>
+      guard(() async {
+        final res = await _dio.post('/hr/my-attendance/otp/request',
+            data: {'identifier': identifier});
+        return AttendanceCodeSent.fromJson(
+            (res.data as Map).cast<String, dynamic>());
       });
 
   Future<AttendanceLoginResult> verifyAttendanceCode({
@@ -99,6 +158,7 @@ class AuthRemoteDataSource with DioExecutor {
           'challenge_id': challengeId,
           'code': code,
         });
-        return AttendanceLoginResult.fromJson((res.data as Map).cast<String, dynamic>());
+        return AttendanceLoginResult.fromJson(
+            (res.data as Map).cast<String, dynamic>());
       });
 }

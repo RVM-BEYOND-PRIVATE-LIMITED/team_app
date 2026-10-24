@@ -3,6 +3,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_feedback.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -12,7 +13,8 @@ import 'bloc/mark_attendance_bloc.dart';
 /// Mark one batch's student attendance for today
 /// (`GET /api/attendance/batch/:id/daily`, `POST /api/attendance`).
 class MarkAttendanceScreen extends StatelessWidget {
-  const MarkAttendanceScreen({super.key, required this.batchId, this.batchName});
+  const MarkAttendanceScreen(
+      {super.key, required this.batchId, this.batchName});
   final String batchId;
   final String? batchName;
 
@@ -20,43 +22,61 @@ class MarkAttendanceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final today = DateTime.now();
     return BlocProvider(
-      create: (_) => getIt<MarkAttendanceBloc>(param1: batchId, param2: today)..add(const MarkRosterRequested()),
+      create: (_) => getIt<MarkAttendanceBloc>(param1: batchId, param2: today)
+        ..add(const MarkRosterRequested()),
       child: BlocListener<MarkAttendanceBloc, MarkAttendanceState>(
         listenWhen: (a, b) => a.writeStatus != b.writeStatus,
         listener: (context, state) {
           if (state.writeStatus == WriteStatus.success) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
-              ..showSnackBar(const SnackBar(content: Text('Attendance saved.')));
-          } else if (state.writeStatus == WriteStatus.failure && state.error != null) {
+              ..showSnackBar(
+                  const SnackBar(content: Text('Attendance saved.')));
+          } else if (state.writeStatus == WriteStatus.failure &&
+              state.error != null) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
               ..showSnackBar(SnackBar(content: Text(state.error!)));
           }
         },
-        child: Scaffold(
-          appBar: AppBar(
-            title: Text(batchName ?? 'Mark attendance'),
-            actions: [
-              IconButton(
-                tooltip: 'All present',
-                onPressed: () => context.read<MarkAttendanceBloc>().add(const MarkAllPresent()),
-                icon: const Icon(Icons.done_all),
-              ),
-            ],
-          ),
-          body: BlocBuilder<MarkAttendanceBloc, MarkAttendanceState>(
-            builder: (context, state) {
-              return switch (state.status) {
-                LoadStatus.loading || LoadStatus.initial => const AppLoading(label: 'Loading roster'),
-                LoadStatus.failure => AppError(
+        child: Builder(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(batchName ?? 'Mark attendance'),
+              actions: [
+                IconButton(
+                  tooltip: 'All present',
+                  onPressed: () => context
+                      .read<MarkAttendanceBloc>()
+                      .add(const MarkAllPresent()),
+                  icon: const Icon(Icons.done_all),
+                ),
+              ],
+            ),
+            body: BlocBuilder<MarkAttendanceBloc, MarkAttendanceState>(
+              builder: (context, state) {
+                if (state.status == LoadStatus.initial ||
+                    (state.status == LoadStatus.loading &&
+                        state.students.isEmpty)) {
+                  return const AppLoading(label: 'Loading roster');
+                }
+                if (state.status == LoadStatus.failure &&
+                    state.students.isEmpty) {
+                  return AppError(
                     message: state.error ?? 'Could not load the roster.',
-                    onRetry: () => context.read<MarkAttendanceBloc>().add(const MarkRosterRequested()),
-                  ),
-                LoadStatus.empty => const AppEmpty(message: 'No students are linked to this batch.', icon: Icons.people_outline),
-                LoadStatus.success => _Roster(state: state),
-              };
-            },
+                    onRetry: () => context
+                        .read<MarkAttendanceBloc>()
+                        .add(const MarkRosterRequested()),
+                  );
+                }
+                if (state.students.isEmpty) {
+                  return const AppEmpty(
+                      message: 'No students are linked to this batch.',
+                      icon: Icons.people_outline);
+                }
+                return _Roster(state: state);
+              },
+            ),
           ),
         ),
       ),
@@ -92,13 +112,18 @@ class _Roster extends StatelessWidget {
               final canRemark = !present && s.attendanceId != null && !disabled;
               return CheckboxListTile(
                 value: present,
-                onChanged: disabled ? null : (_) => context.read<MarkAttendanceBloc>().add(MarkToggled(s.studentId)),
+                onChanged: disabled
+                    ? null
+                    : (_) => context
+                        .read<MarkAttendanceBloc>()
+                        .add(MarkToggled(s.studentId)),
                 title: Text(s.name),
                 subtitle: Text([
                   if (s.rollCode != null) s.rollCode!,
                   if (s.isOnHold) 'on hold',
                   if (s.notYetJoined) 'not yet joined',
-                  if (!present && (s.absentReason?.isNotEmpty ?? false)) 'reason: ${s.absentReason}',
+                  if (!present && (s.absentReason?.isNotEmpty ?? false))
+                    'reason: ${s.absentReason}',
                 ].join(' · ')),
                 controlAffinity: ListTileControlAffinity.leading,
                 secondary: canRemark
@@ -113,7 +138,8 @@ class _Roster extends StatelessWidget {
           ),
         ),
         Container(
-          padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + MediaQuery.of(context).padding.bottom),
+          padding: EdgeInsets.fromLTRB(
+              16, 8, 16, 16 + MediaQuery.of(context).padding.bottom),
           decoration: BoxDecoration(
             color: scheme.surface,
             border: Border(top: BorderSide(color: scheme.outlineVariant)),
@@ -121,9 +147,14 @@ class _Roster extends StatelessWidget {
           child: FilledButton.icon(
             onPressed: state.writeStatus == WriteStatus.submitting
                 ? null
-                : () => context.read<MarkAttendanceBloc>().add(const MarkSubmitted()),
+                : () => context
+                    .read<MarkAttendanceBloc>()
+                    .add(const MarkSubmitted()),
             icon: state.writeStatus == WriteStatus.submitting
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.save_outlined),
             label: const Text('Save attendance'),
           ),
@@ -171,38 +202,39 @@ class _RemarkSheetState extends State<_RemarkSheet> {
       listenWhen: (a, b) => a.status != b.status,
       listener: (context, state) {
         if (state.status == WriteStatus.success) {
+          showAppMessage('Absent reason saved.');
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(const SnackBar(content: Text('Absent reason saved.')));
         } else if (state.status == WriteStatus.failure && state.error != null) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(state.error!)));
+          showAppMessage(state.error!);
         }
       },
       builder: (context, state) {
         final busy = state.status == WriteStatus.submitting;
         return Padding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+          padding: EdgeInsets.fromLTRB(
+              20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Absent reason', style: Theme.of(context).textTheme.titleLarge),
+              Text('Absent reason',
+                  style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 4),
-              Text(widget.student.name, style: Theme.of(context).textTheme.bodySmall),
+              Text(widget.student.name,
+                  style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: RvmSpacing.md),
               TextField(
                 controller: _reason,
                 maxLength: 200,
-                decoration: const InputDecoration(labelText: 'Reason for absence'),
+                decoration:
+                    const InputDecoration(labelText: 'Reason for absence'),
               ),
               const SizedBox(height: RvmSpacing.sm),
               TextField(
                 controller: _followUp,
                 maxLength: 200,
-                decoration: const InputDecoration(labelText: 'Follow-up comment (optional)'),
+                decoration: const InputDecoration(
+                    labelText: 'Follow-up comment (optional)'),
               ),
               const SizedBox(height: RvmSpacing.md),
               SizedBox(
@@ -210,13 +242,22 @@ class _RemarkSheetState extends State<_RemarkSheet> {
                 child: FilledButton.icon(
                   onPressed: busy
                       ? null
-                      : () => context.read<AbsentRemarkBloc>().add(AbsentRemarkSubmitted(
+                      : () => context
+                          .read<AbsentRemarkBloc>()
+                          .add(AbsentRemarkSubmitted(
                             attendanceId: widget.student.attendanceId!,
-                            reason: _reason.text.trim().isEmpty ? null : _reason.text.trim(),
-                            followUp: _followUp.text.trim().isEmpty ? null : _followUp.text.trim(),
+                            reason: _reason.text.trim().isEmpty
+                                ? null
+                                : _reason.text.trim(),
+                            followUp: _followUp.text.trim().isEmpty
+                                ? null
+                                : _followUp.text.trim(),
                           )),
                   icon: busy
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.save_outlined),
                   label: const Text('Save reason'),
                 ),

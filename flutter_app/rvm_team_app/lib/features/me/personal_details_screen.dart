@@ -1,8 +1,10 @@
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_validators.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -46,6 +48,7 @@ class _PersonalViewState extends State<_PersonalView> {
   final _emergencyRelation = TextEditingController();
   final _emergencyPhone = TextEditingController();
   String? _bloodGroup;
+  String? _phoneError;
   bool _seeded = false;
 
   @override
@@ -101,10 +104,11 @@ class _PersonalViewState extends State<_PersonalView> {
           }
         },
         builder: (context, state) {
+          if (state.status == LoadStatus.initial ||
+              (state.status == LoadStatus.loading && state.data == null)) {
+            return const AppLoading();
+          }
           switch (state.status) {
-            case LoadStatus.initial:
-            case LoadStatus.loading:
-              return const AppLoading();
             case LoadStatus.failure:
               return AppError(
                 message: state.failure?.message ??
@@ -112,6 +116,8 @@ class _PersonalViewState extends State<_PersonalView> {
                 onRetry: () =>
                     context.read<PersonalBloc>().add(const PersonalRefreshed()),
               );
+            case LoadStatus.initial:
+            case LoadStatus.loading:
             case LoadStatus.empty:
             case LoadStatus.success:
               _seed(state.data);
@@ -182,8 +188,21 @@ class _PersonalViewState extends State<_PersonalView> {
                 TextField(
                   controller: _emergencyPhone,
                   keyboardType: TextInputType.phone,
-                  decoration:
-                      const InputDecoration(labelText: 'Emergency phone'),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(10),
+                  ],
+                  onChanged: (_) {
+                    if (_phoneError != null) {
+                      setState(() => _phoneError = null);
+                    }
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Emergency phone',
+                    hintText: '10-digit mobile number',
+                    counterText: '',
+                    errorText: _phoneError,
+                  ),
                 ),
               ],
             ),
@@ -219,12 +238,17 @@ class _PersonalViewState extends State<_PersonalView> {
   }
 
   void _save(BuildContext context) {
-    _emergencyPhone.text = _emergencyPhone.text.trim();
+    final phone = _emergencyPhone.text.trim();
+    if (phone.isNotEmpty && !isValidPhone10(phone)) {
+      setState(() => _phoneError = 'Enter a valid 10-digit mobile number.');
+      return;
+    }
+    setState(() => _phoneError = null);
     context.read<PersonalBloc>().add(PersonalSubmitted(
           bloodGroup: _bloodGroup,
           emergencyName: _emergencyName.text.trim(),
           emergencyRelation: _emergencyRelation.text.trim(),
-          emergencyPhone: _emergencyPhone.text.trim(),
+          emergencyPhone: phone,
         ));
   }
 }

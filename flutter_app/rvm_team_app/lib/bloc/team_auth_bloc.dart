@@ -299,11 +299,17 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
         submitting: true, clearError: true, clearTwoFactor: true));
     _pending = e;
     try {
-      final outcome = await _repo.login(
+      final result = await _repo.loginSafe(
           username: e.username,
           password: e.password,
           locationName: e.locationName);
-      await _onOutcome(outcome, emit);
+      if (result.failure != null) {
+        _pending = null;
+        emit(state.copyWith(
+            submitting: false, errorMessage: _message(result.failure!)));
+        return;
+      }
+      await _onOutcome(result.outcome!, emit);
     } on Failure catch (f) {
       _pending = null;
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
@@ -333,12 +339,17 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
     if (pending == null || state.twoFactor == null) return;
     emit(state.copyWith(submitting: true, clearError: true));
     try {
-      final outcome = await _repo.login(
+      final result = await _repo.loginSafe(
         username: pending.username,
         password: pending.password,
         locationName: pending.locationName,
       );
-      await _onOutcome(outcome, emit);
+      if (result.failure != null) {
+        emit(state.copyWith(
+            submitting: false, errorMessage: _message(result.failure!)));
+        return;
+      }
+      await _onOutcome(result.outcome!, emit);
     } on Failure catch (f) {
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
     }
@@ -384,13 +395,11 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
   }
 
   Future<void> _keepSignIn() async {
-    try {
-      await _ess.keepSignIn(
-          deviceLabel: 'Team RVM · ${Platform.operatingSystem}');
-    } catch (_) {
-      // The Scheduler token still works; the kept sign-in is an upgrade. This
-      // runs unawaited after sign-in, so no error may escape to the zone.
-    }
+    // Non-throwing: an HR login that is not linked to an employee record gets
+    // 403 NOT_LINKED on /session. That only skips the kept-sign-in upgrade; the
+    // Scheduler token still works and the shell's access gate explains the link.
+    await _ess.keepSignInSafe(
+        deviceLabel: 'Team RVM · ${Platform.operatingSystem}');
   }
 
   Future<void> _onSignedOut(

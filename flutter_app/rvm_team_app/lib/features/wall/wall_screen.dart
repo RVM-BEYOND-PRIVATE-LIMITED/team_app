@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app_feedback.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
@@ -152,11 +153,15 @@ class _WallView extends StatelessWidget {
           ],
           if (state.celebrations != null && !state.celebrations!.isEmpty) ...[
             CelebrationsCard(celebrations: state.celebrations!),
-            const SizedBox(height: RvmSpacing.md),
+            const SizedBox(height: RvmSpacing.sm),
+          ],
+          if ((state.settings?.badges ?? const []).isNotEmpty) ...[
+            GivePraiseCard(badges: state.settings!.badges),
+            const SizedBox(height: RvmSpacing.sm),
           ],
           for (final a in state.announcements.take(3)) ...[
             AnnouncementCard(announcement: a),
-            const SizedBox(height: RvmSpacing.md),
+            const SizedBox(height: RvmSpacing.sm),
           ],
           if (state.posts.isEmpty)
             const Padding(
@@ -182,7 +187,7 @@ class _WallView extends StatelessWidget {
                 onPollChanged: () =>
                     context.read<WallBloc>().add(const WallRefreshed()),
               ),
-              const SizedBox(height: RvmSpacing.md),
+              const SizedBox(height: RvmSpacing.sm),
             ],
         ],
       ),
@@ -335,7 +340,7 @@ class _WallSettingsSheetState extends State<_WallSettingsSheet> {
     } on Failure catch (f) {
       if (!mounted) return;
       setState(() => _hidden = !hidden);
-      _snack(context, f.message);
+      showAppMessage(f.message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

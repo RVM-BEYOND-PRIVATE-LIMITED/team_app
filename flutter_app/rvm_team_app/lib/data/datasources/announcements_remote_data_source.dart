@@ -10,12 +10,21 @@ class AnnouncementsRemoteDataSource with DioExecutor {
 
   final Dio _dio;
 
-  Future<List<TeamAnnouncement>> list() => guard(() async {
-        final res = await _dio.get('/announcements');
-        final list = (res.data as List?) ?? const [];
-        return list
-            .whereType<Map>()
-            .map((e) => TeamAnnouncement.fromJson(e.cast<String, dynamic>()))
-            .toList();
-      });
+  Future<List<TeamAnnouncement>> list() async {
+    try {
+      final res = await _dio.get('/announcements',
+          options: Options(validateStatus: (_) => true));
+      final status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) return const [];
+      final list = (res.data as List?) ?? const [];
+      return list
+          .whereType<Map>()
+          .map((e) => TeamAnnouncement.fromJson(e.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      // Home announcements are an optional card; a refused/offline read must
+      // show the empty state, not a thrown exception.
+      return const [];
+    }
+  }
 }

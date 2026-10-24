@@ -18,32 +18,52 @@ class SecurityEventsScreen extends StatelessWidget {
         appBar: AppBar(title: const Text('Security activity')),
         body: BlocBuilder<SecurityEventsBloc, LoadState<List<SecurityEvent>>>(
           builder: (context, state) {
-            return switch (state.status) {
-              LoadStatus.loading || LoadStatus.initial => const AppLoading(),
-              LoadStatus.failure => AppError(
-                  message: state.failure?.message ?? 'Could not load security activity.',
-                  onRetry: () => context.read<SecurityEventsBloc>().add(const LoadRefreshed()),
-                ),
-              LoadStatus.empty => const AppEmpty(message: 'No security activity recorded yet.', icon: Icons.history),
-              LoadStatus.success => RefreshIndicator(
-                  onRefresh: () async => context.read<SecurityEventsBloc>().add(const LoadRefreshed()),
+            final data = state.data;
+            Widget list() => RefreshIndicator(
+                  onRefresh: () async => context
+                      .read<SecurityEventsBloc>()
+                      .add(const LoadRefreshed()),
                   child: ListView.separated(
-                    itemCount: state.data!.length,
+                    itemCount: data!.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, i) {
-                      final e = state.data![i];
+                      final e = data[i];
                       return ListTile(
                         leading: const Icon(Icons.shield_outlined),
                         title: Text(e.event.replaceAll('_', ' ')),
                         subtitle: Text([
-                          if (e.createdAt != null) e.createdAt!.toLocal().toString(),
                           if (e.ip != null) e.ip!,
+                          if (e.createdAt != null)
+                            MaterialLocalizations.of(context)
+                                .formatShortDate(e.createdAt!.toLocal()),
                         ].join(' · ')),
                       );
                     },
                   ),
-                ),
-            };
+                );
+            if (state.status == LoadStatus.initial ||
+                state.status == LoadStatus.loading) {
+              return data == null || data.isEmpty ? const AppLoading() : list();
+            }
+            if (state.status == LoadStatus.failure) {
+              return data == null || data.isEmpty
+                  ? AppError(
+                      message: state.failure?.message ??
+                          'Could not load security activity.',
+                      onRetry: () => context
+                          .read<SecurityEventsBloc>()
+                          .add(const LoadRefreshed()),
+                    )
+                  : list();
+            }
+            if (state.status == LoadStatus.empty ||
+                data == null ||
+                data.isEmpty) {
+              return const AppEmpty(
+                  message: 'No security activity recorded yet.',
+                  icon: Icons.history);
+            }
+            return list();
           },
         ),
       ),

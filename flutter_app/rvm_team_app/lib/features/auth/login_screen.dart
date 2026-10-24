@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app_validators.dart';
 import '../../auth/team_branches.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
@@ -163,9 +164,8 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: const InputDecoration(
                 labelText: 'Phone, email or employee code',
                 prefixIcon: Icon(Icons.badge_outlined)),
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Enter your phone, email or employee code'
-                : null,
+            validator: (v) => validateIdentifier(v ?? '',
+                emptyMessage: 'Enter your phone, email or employee code'),
           ),
           const SizedBox(height: RvmSpacing.md),
           TextFormField(
@@ -299,11 +299,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _requestCode() {
     final identifier = _attIdentifier.text.trim();
-    if (identifier.isEmpty) {
+    final idError = validateIdentifier(identifier,
+        emptyMessage: 'Enter your phone, email or employee code first.');
+    if (idError != null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-            content: Text('Enter your phone, email or employee code first.')));
+        ..showSnackBar(SnackBar(content: Text(idError)));
       return;
     }
     context.read<TeamAuthBloc>().add(TeamAttendanceCodeRequested(identifier));
@@ -352,9 +353,8 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: const InputDecoration(
                 labelText: 'Username or phone',
                 prefixIcon: Icon(Icons.person_outline)),
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Enter your username or phone'
-                : null,
+            validator: (v) => validateIdentifier(v ?? '',
+                emptyMessage: 'Enter your username or phone'),
           ),
           if (_resolverHint != null) ...[
             const SizedBox(height: RvmSpacing.sm),

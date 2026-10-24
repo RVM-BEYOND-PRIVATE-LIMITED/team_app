@@ -116,8 +116,8 @@ class _HrChangeRequestsScreenState extends State<HrChangeRequestsScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const AppLoading();
-    if (_failure != null) {
+    if (_loading && _requests.isEmpty) return const AppLoading();
+    if (_failure != null && _requests.isEmpty) {
       return AppError(message: _failure!.message, onRetry: _load);
     }
     if (_requests.isEmpty) {

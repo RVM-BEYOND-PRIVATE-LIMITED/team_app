@@ -6,7 +6,9 @@ import '../../domain/models.dart';
 
 /// Sign-in / 2FA / password reset. Fails fast when offline.
 class AuthRepository with ConnectivityGuard {
-  AuthRepository({required AuthRemoteDataSource remote, required this.connectivity}) : _remote = remote;
+  AuthRepository(
+      {required AuthRemoteDataSource remote, required this.connectivity})
+      : _remote = remote;
 
   final AuthRemoteDataSource _remote;
 
@@ -19,7 +21,30 @@ class AuthRepository with ConnectivityGuard {
     required String locationName,
   }) async {
     await ensureOnline();
-    return _remote.login(username: username, password: password, locationName: locationName);
+    return _remote.login(
+        username: username, password: password, locationName: locationName);
+  }
+
+  Future<({TeamLoginOutcome? outcome, Failure? failure})> loginSafe({
+    required String username,
+    required String password,
+    required String locationName,
+  }) async {
+    try {
+      await ensureOnline();
+      return await _remote.loginSafe(
+        username: username,
+        password: password,
+        locationName: locationName,
+      );
+    } on Failure catch (f) {
+      return (outcome: null, failure: f);
+    } catch (_) {
+      return (
+        outcome: null,
+        failure: const UnknownFailure('Could not sign in. Try again.'),
+      );
+    }
   }
 
   Future<TeamSignedIn> verifyTwoFactor({
@@ -28,7 +53,8 @@ class AuthRepository with ConnectivityGuard {
     String? locationName,
   }) async {
     await ensureOnline();
-    return _remote.verifyTwoFactor(challengeId: challengeId, code: code, locationName: locationName);
+    return _remote.verifyTwoFactor(
+        challengeId: challengeId, code: code, locationName: locationName);
   }
 
   Future<String?> forgotPasswordRequest(String identifier) async {
@@ -42,7 +68,8 @@ class AuthRepository with ConnectivityGuard {
     required String newPassword,
   }) async {
     await ensureOnline();
-    return _remote.forgotPasswordConfirm(identifier: identifier, code: code, newPassword: newPassword);
+    return _remote.forgotPasswordConfirm(
+        identifier: identifier, code: code, newPassword: newPassword);
   }
 
   // ── Attendance-only sign-in (A2) ────────────────────────────────────────
@@ -52,7 +79,8 @@ class AuthRepository with ConnectivityGuard {
     required String password,
   }) async {
     await ensureOnline();
-    return _remote.attendancePasswordLogin(identifier: identifier, password: password);
+    return _remote.attendancePasswordLogin(
+        identifier: identifier, password: password);
   }
 
   Future<AttendanceCodeSent> requestAttendanceCode(String identifier) async {

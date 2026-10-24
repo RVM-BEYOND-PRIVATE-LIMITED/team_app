@@ -3,6 +3,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../app_feedback.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -16,7 +17,8 @@ class DataRequestsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => getIt<DataRequestsBloc>()..add(const DataRequestsLoadRequested()),
+      create: (_) =>
+          getIt<DataRequestsBloc>()..add(const DataRequestsLoadRequested()),
       child: const _DataRequestsView(),
     );
   }
@@ -33,7 +35,9 @@ class _DataRequestsView extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: () => context.read<DataRequestsBloc>().add(const DataRequestsRefreshed()),
+            onPressed: () => context
+                .read<DataRequestsBloc>()
+                .add(const DataRequestsRefreshed()),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -44,39 +48,67 @@ class _DataRequestsView extends StatelessWidget {
         label: const Text('New request'),
       ),
       body: BlocConsumer<DataRequestsBloc, DataRequestsState>(
-        listenWhen: (a, b) => a.createdNonce != b.createdNonce || a.submitFailure != b.submitFailure,
+        listenWhen: (a, b) =>
+            a.createdNonce != b.createdNonce ||
+            a.submitFailure != b.submitFailure,
         listener: (context, state) {
           if (state.submitFailure != null) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
-              ..showSnackBar(SnackBar(content: Text(state.submitFailure!.message)));
+              ..showSnackBar(
+                  SnackBar(content: Text(state.submitFailure!.message)));
           } else if (state.createdNonce > 0) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
-              ..showSnackBar(const SnackBar(content: Text('Request sent to HR.')));
+              ..showSnackBar(
+                  const SnackBar(content: Text('Request sent to HR.')));
           }
         },
         builder: (context, state) {
           switch (state.status) {
             case LoadStatus.initial:
             case LoadStatus.loading:
-              return const AppLoading();
+              if (state.requests.isEmpty) return const AppLoading();
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                itemCount: state.requests.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: RvmSpacing.sm),
+                itemBuilder: (context, i) =>
+                    _RequestCard(request: state.requests[i]),
+              );
             case LoadStatus.failure:
-              return AppError(
-                message: state.failure?.message ?? 'Could not load your requests.',
-                onRetry: () => context.read<DataRequestsBloc>().add(const DataRequestsRefreshed()),
+              if (state.requests.isEmpty) {
+                return AppError(
+                  message:
+                      state.failure?.message ?? 'Could not load your requests.',
+                  onRetry: () => context
+                      .read<DataRequestsBloc>()
+                      .add(const DataRequestsRefreshed()),
+                );
+              }
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                itemCount: state.requests.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: RvmSpacing.sm),
+                itemBuilder: (context, i) =>
+                    _RequestCard(request: state.requests[i]),
               );
             case LoadStatus.empty:
               return const AppEmpty(
                 icon: Icons.privacy_tip_outlined,
-                message: 'No requests yet.\nRaise one to correct or delete your data.',
+                message:
+                    'No requests yet.\nRaise one to correct or delete your data.',
               );
             case LoadStatus.success:
               return ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                 itemCount: state.requests.length,
-                separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.sm),
-                itemBuilder: (context, i) => _RequestCard(request: state.requests[i]),
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: RvmSpacing.sm),
+                itemBuilder: (context, i) =>
+                    _RequestCard(request: state.requests[i]),
               );
           }
         },
@@ -90,7 +122,8 @@ class _DataRequestsView extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => BlocProvider.value(value: bloc, child: const _NewRequestSheet()),
+      builder: (_) =>
+          BlocProvider.value(value: bloc, child: const _NewRequestSheet()),
     );
   }
 }
@@ -110,12 +143,15 @@ class _RequestCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text(request.kindLabel, style: Theme.of(context).textTheme.titleMedium)),
+                Expanded(
+                    child: Text(request.kindLabel,
+                        style: Theme.of(context).textTheme.titleMedium)),
                 _StatusChip(status: request.status),
               ],
             ),
             const SizedBox(height: RvmSpacing.sm),
-            Text(request.details, style: Theme.of(context).textTheme.bodyMedium),
+            Text(request.details,
+                style: Theme.of(context).textTheme.bodyMedium),
             if (request.resolutionNote != null) ...[
               const SizedBox(height: RvmSpacing.sm),
               Container(
@@ -130,7 +166,8 @@ class _RequestCard extends StatelessWidget {
                     Text('HR: ${request.resolutionNote}',
                         style: Theme.of(context).textTheme.bodyMedium),
                     if (request.resolvedByName != null)
-                      Text('— ${request.resolvedByName}', style: Theme.of(context).textTheme.bodySmall),
+                      Text('— ${request.resolvedByName}',
+                          style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ),
@@ -160,7 +197,9 @@ class _StatusChip extends StatelessWidget {
         color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(RvmRadii.sm),
       ),
-      child: Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color)),
+      child: Text(label,
+          style:
+              Theme.of(context).textTheme.labelMedium?.copyWith(color: color)),
     );
   }
 }
@@ -184,7 +223,8 @@ class _NewRequestSheetState extends State<_NewRequestSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final submitting = context.select<DataRequestsBloc, bool>((b) => b.state.submitting);
+    final submitting =
+        context.select<DataRequestsBloc, bool>((b) => b.state.submitting);
     return Padding(
       padding: EdgeInsets.only(
         left: RvmSpacing.md,
@@ -196,12 +236,19 @@ class _NewRequestSheetState extends State<_NewRequestSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('New data request', style: Theme.of(context).textTheme.titleLarge),
+          Text('New data request',
+              style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: RvmSpacing.md),
           SegmentedButton<String>(
             segments: const [
-              ButtonSegment(value: 'correct', label: Text('Correct'), icon: Icon(Icons.edit_outlined)),
-              ButtonSegment(value: 'delete', label: Text('Delete'), icon: Icon(Icons.delete_outline)),
+              ButtonSegment(
+                  value: 'correct',
+                  label: Text('Correct'),
+                  icon: Icon(Icons.edit_outlined)),
+              ButtonSegment(
+                  value: 'delete',
+                  label: Text('Delete'),
+                  icon: Icon(Icons.delete_outline)),
             ],
             selected: {_kind},
             onSelectionChanged: (s) => setState(() => _kind = s.first),
@@ -222,7 +269,10 @@ class _NewRequestSheetState extends State<_NewRequestSheet> {
           FilledButton(
             onPressed: submitting ? null : _submit,
             child: submitting
-                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : const Text('Send to HR'),
           ),
         ],
@@ -233,12 +283,12 @@ class _NewRequestSheetState extends State<_NewRequestSheet> {
   void _submit() {
     final details = _details.text.trim();
     if (details.length < 5) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Please describe your request (at least 5 characters).')));
+      showAppMessage('Please describe your request (at least 5 characters).');
       return;
     }
-    context.read<DataRequestsBloc>().add(DataRequestCreateRequested(kind: _kind, details: details));
+    context
+        .read<DataRequestsBloc>()
+        .add(DataRequestCreateRequested(kind: _kind, details: details));
     Navigator.of(context).pop();
   }
 }

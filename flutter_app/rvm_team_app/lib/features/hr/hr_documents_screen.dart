@@ -159,8 +159,8 @@ class _HrDocumentsScreenState extends State<HrDocumentsScreen> {
             label: const Text('Choose an employee')),
       );
     }
-    if (_loading) return const AppLoading();
-    if (_failure != null) {
+    if (_loading && _page == null) return const AppLoading();
+    if (_failure != null && _page == null) {
       return AppError(message: _failure!.message, onRetry: _load);
     }
     final page = _page;
