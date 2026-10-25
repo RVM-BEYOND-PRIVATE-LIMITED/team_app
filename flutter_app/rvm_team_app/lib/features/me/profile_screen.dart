@@ -8,6 +8,7 @@ import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import '../../widgets/team_kit.dart';
 
 /// Phase 1E, E1/E12: Summary, Job and Timeline from the HR record, plus praise (F3).
 class ProfileScreen extends StatelessWidget {
@@ -101,31 +102,15 @@ class _ProfileBody extends StatelessWidget {
                 padding: const EdgeInsets.all(RvmSpacing.md),
                 child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor:
-                        RvmColors.teamSeed.withValues(alpha: 0.16),
-                    // Image.network with an errorBuilder: a dead avatar URL
-                    // (offline DNS, expired signed link) falls back to the
-                    // initial instead of reporting an image error.
-                    child: (e.photoUrl == null || e.photoUrl!.isEmpty)
-                        ? Text(e.fullName.isEmpty
-                            ? '?'
-                            : e.fullName.substring(0, 1).toUpperCase())
-                        : ClipOval(
-                            child: Image.network(
-                              e.photoUrl!,
-                              width: 64,
-                              height: 64,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Text(
-                                  e.fullName.isEmpty
-                                      ? '?'
-                                      : e.fullName
-                                          .substring(0, 1)
-                                          .toUpperCase()),
-                            ),
-                          ),
+                  // Single audited avatar path (TeamAvatar): dead Supabase
+                  // signed URL (issue13 DNS) falls back to the initial and
+                  // never reaches the framework as an image error (issue22).
+                  TeamAvatar(
+                    name: e.fullName,
+                    photoUrl: e.photoUrl,
+                    size: 64,
+                    background: RvmColors.teamSeed.withValues(alpha: 0.16),
+                    foreground: RvmColors.ink,
                   ),
                     const SizedBox(width: RvmSpacing.md),
                     Expanded(

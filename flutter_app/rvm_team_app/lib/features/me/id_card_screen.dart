@@ -9,6 +9,7 @@ import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import '../../widgets/team_kit.dart';
 
 /// Phase 2C, E7: the digital staff ID card with its signed verification link.
 class IdCardScreen extends StatefulWidget {
@@ -114,23 +115,31 @@ class _IdCardScreenState extends State<IdCardScreen> {
             ),
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: RvmColors.ivory,
-                  backgroundImage:
-                      (card.photoUrl != null && card.photoUrl!.isNotEmpty)
-                          ? NetworkImage(card.photoUrl!)
-                          : null,
-                  child: (card.photoUrl == null || card.photoUrl!.isEmpty)
-                      ? Text(
+                ClipOval(
+                  child: SizedBox(
+                    width: 80,
+                    height: 80,
+                    // SafePhoto: a dead Supabase photo host shows the initial
+                    // instead of throwing from the image pipeline (issue13/22).
+                    child: SafePhoto(
+                      url: card.photoUrl ?? '',
+                      width: 80,
+                      height: 80,
+                      fallback: Container(
+                        color: RvmColors.ivory,
+                        alignment: Alignment.center,
+                        child: Text(
                           card.fullName.isEmpty
                               ? '?'
                               : card.fullName.substring(0, 1).toUpperCase(),
                           style: Theme.of(context)
                               .textTheme
                               .headlineSmall
-                              ?.copyWith(color: RvmColors.ironwood))
-                      : null,
+                              ?.copyWith(color: RvmColors.ironwood),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: RvmSpacing.md),
                 Text(card.fullName,
