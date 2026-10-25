@@ -173,8 +173,8 @@ class _ApprovalsView extends StatelessWidget {
                         RvmSpacing.sm, RvmSpacing.md, RvmSpacing.lg),
                     itemCount: inbox.requests.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, i) =>
-                        _ApprovalCard(request: inbox.requests[i]),
+                    itemBuilder: (context, i) => _ApprovalCard(
+                        request: inbox.requests[i], hrWide: hrWide),
                   ),
                 ),
         ),
@@ -333,8 +333,16 @@ class _FilterPill extends StatelessWidget {
 }
 
 class _ApprovalCard extends StatelessWidget {
-  const _ApprovalCard({required this.request});
+  const _ApprovalCard({required this.request, required this.hrWide});
   final EssRequest request;
+
+  /// HR, the CEO and super admins may decide any request, so a faculty leave
+  /// they open is finalised in one step; only a manager sees "Send to HR".
+  final bool hrWide;
+
+  /// True only for a manager's first round on a faculty member's leave.
+  bool get _advanceOnly =>
+      request.requiresFinalApproval && request.stage == 'manager' && !hrWide;
 
   @override
   Widget build(BuildContext context) {
@@ -474,7 +482,7 @@ class _ApprovalCard extends StatelessWidget {
           if (request.decisionNote != null &&
               request.decisionNote!.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('Manager’s remark: ${request.decisionNote!.trim()}',
+            Text('Final remark: ${request.decisionNote!.trim()}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 10.5,
                       height: 1.45,
@@ -539,10 +547,7 @@ class _ApprovalCard extends StatelessWidget {
                     onPressed: () => _approve(context),
                     style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(40)),
-                    child: Text(
-                        request.requiresFinalApproval && request.stage == 'manager'
-                            ? 'Send to HR'
-                            : 'Approve',
+                    child: Text(_advanceOnly ? 'Send to HR' : 'Approve',
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
@@ -718,7 +723,7 @@ class _ApprovalCard extends StatelessWidget {
     final note = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(request.requiresFinalApproval && request.stage == 'manager'
+        title: Text(_advanceOnly
             ? 'Approve and send to HR'
             : 'Approve this leave'),
         content: TextField(
@@ -726,8 +731,10 @@ class _ApprovalCard extends StatelessWidget {
             minLines: 2,
             maxLines: 4,
             maxLength: 1000,
-            decoration: const InputDecoration(
-                labelText: 'Manager’s remark (optional)',
+            decoration: InputDecoration(
+                labelText: _advanceOnly
+                    ? 'Manager’s remark (optional)'
+                    : 'Final approval remark (optional)',
                 alignLabelWithHint: true,
                 hintText: 'Anything the employee should know')),
         actions: [
@@ -737,9 +744,7 @@ class _ApprovalCard extends StatelessWidget {
           FilledButton(
               onPressed: () =>
                   Navigator.pop(dialogContext, controller.text.trim()),
-              child: Text(request.requiresFinalApproval && request.stage == 'manager'
-                  ? 'Send to HR'
-                  : 'Approve leave')),
+              child: Text(_advanceOnly ? 'Send to HR' : 'Approve leave')),
         ],
       ),
     );

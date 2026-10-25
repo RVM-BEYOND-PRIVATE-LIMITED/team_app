@@ -296,10 +296,12 @@ describe('half days, single days and ranges', () => {
     expect(db.tables.hr_staff_attendance.filter((d) => d.employee_id === people.faculty.employee.id
       && d.day === '2026-10-20')).toHaveLength(0);
 
-    // The manager cannot take the final round.
-    expectRefusal(await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
+    // The manager cannot take the final round, and the refusal says why.
+    const lockedOut = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
       .set(bearer(tokens.portal(people.hod)))
-      .send({ decision: 'approve' }), 403, 'NOT_AN_APPROVER');
+      .send({ decision: 'approve' });
+    expectRefusal(lockedOut, 403, 'NOT_AN_APPROVER');
+    expect(lockedOut.body.error).toBe(MESSAGES.FINAL_APPROVAL_ONLY);
 
     const final = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
       .set(bearer(tokens.portal(people.hr)))

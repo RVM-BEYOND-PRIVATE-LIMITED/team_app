@@ -207,7 +207,12 @@ function decideRequest({ store, now }) {
       ? mayDecideLeave({ auth: req.auth, entries, request })
       : mayDecide({ auth: req.auth, entries });
     if (!requester || !allowed) {
-      throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
+      // A manager who somehow opens a faculty request at the final stage gets
+      // the reason in words, not the generic "not an approver" line.
+      const finalBlocked = family === 'leave' && request.requires_final_approval
+        && request.stage === 'final';
+      throw new HttpError(403, 'NOT_AN_APPROVER',
+        finalBlocked ? MESSAGES.FINAL_APPROVAL_ONLY : MESSAGES.NOT_AN_APPROVER);
     }
 
     // A faculty member's manager advances the request; they do not finish it. HR, the CEO and a

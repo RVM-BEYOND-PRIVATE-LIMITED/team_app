@@ -115,6 +115,32 @@ attendance login uses. The Scheduler is not widened to accept the punch token (A
 | Approvals Inbox | `GET /approvals?status=`, `POST /approvals/{family}/{id}/decide`, `POST /approvals/{family}/{id}/archive` |
 | The chain | `GET /approvals/{family}/{id}/chain` |
 
+**Half days, date ranges and the final round (26 Oct 2026).**
+
+- **Filing a leave:** `POST /leave-requests { type, day, end_day?, portion?, reason }`.
+  `day` is the first day; `end_day` is the last (send the same day for a single day).
+  `portion` is `full`, `first_half` or `second_half`. A half day must be a single day, and a
+  range is capped at 62 days. `reason` is 5–1000 characters.
+- **A range skips non-working days:** Sundays, weekly offs and `hr_holidays` are excluded before
+  the counter moves. The reply carries `working_days` (the actual dates) and `day_count` (the
+  working days in the range). An all-day-off range is refused with 409 `DAY_OFF`.
+- **Balances are fractional:** `allowed`, `used`, `pending` and `remaining` are numbers, not
+  integers. A half day costs `0.5`. Format `0.5`, `1`, `1.5` — never `0.5 days` twice.
+- **The request reply carries:** `end_day`, `portion`, `day_count`, `working_days`,
+  `requires_final_approval`, `stage` (`manager` | `final`), `manager_approved_by_name`,
+  `manager_approved_at`, `manager_remark`. `decision_note` is the **final** decider's remark;
+  show it as "Final remark", and `manager_remark` as "Manager's remark".
+- **A faculty member's leave takes two rounds.** `requires_final_approval: true` and
+  `stage: manager` when filed. The manager's approve is a hand-over: it stores `manager_remark`
+  and moves the request to `stage: final` **without writing the days**. Only HR, the CEO or a
+  super admin may decide at `final`; anyone else gets 403 `NOT_AN_APPROVER` with
+  "Only HR, the CEO or a super admin can give the final approval for this leave."
+  The manager's Inbox stops showing the request once it is at `final`.
+- **HR, the CEO and super admins** may decide a faculty request at either stage; deciding at
+  `manager` is the final approval and writes the days in the same call.
+- **WFH is unchanged:** one full day, the employee's own monthly allowance, no range or half day
+  (`end_day`/`portion` are refused for `wfh` with 400 `VALIDATION_FAILED`).
+
 ### Notifications
 
 `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all`,
