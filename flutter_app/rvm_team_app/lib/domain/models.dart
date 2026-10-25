@@ -221,6 +221,7 @@ class TeamBatch extends Equatable {
     this.endTime,
     this.daysOfWeek = const [],
     this.schedule,
+    this.scheduleDays = const [],
     this.facultyName,
     this.skillName,
     this.students = 0,
@@ -237,6 +238,10 @@ class TeamBatch extends Equatable {
   final String? endTime;
   final List<String> daysOfWeek;
   final String? schedule;
+
+  /// `batches.schedule` is an integer[] (1 = Monday). The design shows it as
+  /// the "Class roll" chips.
+  final List<int> scheduleDays;
   final String? facultyName;
   final String? skillName;
   final int students;
@@ -259,6 +264,20 @@ class TeamBatch extends Equatable {
           ? days.map((e) => e.toString()).toList(growable: false)
           : const [],
       schedule: _str(json['schedule']),
+      scheduleDays: () {
+        final raw = json['schedule'];
+        if (raw is List) {
+          return raw
+              .map((e) => e is int ? e : int.tryParse(e.toString()))
+              .whereType<int>()
+              .toList(growable: false);
+        }
+        final text = raw?.toString() ?? '';
+        return RegExp(r'\d+')
+            .allMatches(text)
+            .map((m) => int.parse(m.group(0)!))
+            .toList(growable: false);
+      }(),
       facultyName: faculty is Map ? _str(faculty['name']) : null,
       skillName: skill is Map ? _str(skill['name']) : null,
       students: _int(json['students']) ?? 0,
@@ -269,7 +288,7 @@ class TeamBatch extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, name, startDate, endDate, startTime, endTime, daysOfWeek, schedule, facultyName, skillName, students, status];
+  List<Object?> get props => [id, name, startDate, endDate, startTime, endTime, daysOfWeek, schedule, scheduleDays, facultyName, skillName, students, status];
 }
 
 /// One row of the marking roster (`GET /api/attendance/batch/:id/daily`).

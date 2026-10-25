@@ -19,6 +19,8 @@ List<TeamBatch> _batches() => const [
         startTime: '10:00:00',
         endTime: '13:00:00',
         daysOfWeek: ['Monday', 'Wednesday', 'Friday'],
+        schedule: '[1, 2, 3, 4, 5]',
+        scheduleDays: [1, 2, 3, 4, 5],
         startDate: '2026-05-01',
         endDate: '2026-07-31',
       ),
@@ -47,6 +49,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+    // design1 shell: header, subtitle, and no floating action button.
+    expect(find.text('My batches'), findsOneWidget);
+    expect(find.text('Instructor portal & schedules'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
+    // Card fields from the design: code, status badge, class roll, faculty.
+    expect(find.textContaining('#BATCH-'), findsWidgets);
+    expect(find.text('Class roll:'), findsOneWidget);
+    expect(find.text('Faculty: Mohit'), findsWidgets);
+    expect(find.text('COMPLETED'), findsOneWidget);
+    expect(find.text('ACTIVE'), findsOneWidget);
     // Timing, short days and dates render on the card.
     expect(find.textContaining('10:00 – 13:00'), findsOneWidget);
     expect(find.textContaining('Mon, Wed, Fri'), findsOneWidget);
