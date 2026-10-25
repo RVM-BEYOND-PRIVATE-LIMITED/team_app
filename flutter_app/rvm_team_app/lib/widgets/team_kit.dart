@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -47,8 +48,6 @@ class _SafePhotoState extends State<SafePhoto> {
   static final Map<String, Uint8List> _cache = {};
   static const _maxCache = 60;
 
-  static const _connectTimeout = Duration(seconds: 6);
-
   Uint8List? _bytes;
   int _token = 0;
 
@@ -82,35 +81,58 @@ class _SafePhotoState extends State<SafePhoto> {
       if (mounted && token == _token) setState(() => _bytes = cached);
       return;
     }
-    HttpClient? client;
-    try {
-      client = HttpClient()..connectionTimeout = _connectTimeout;
-      final request = await client.getUrl(Uri.parse(url));
-      // Deliberately NO `.timeout()` here (issue23). The DNS lookup for the
-      // host completes on this future; abandoning it with `timeout()` leaves
-      // the lookup with no listener, and its late SocketException is reported
-      // as an UNCAUGHT async error — Android Studio stops on it ("Paused on
-      // exception", stack `_NativeSocket.staggeredLookup`, only
-      // `<asynchronous gap>` frames) even though this try/catch is present.
-      final response = await request.close();
-      if (response.statusCode != HttpStatus.ok) return;
-      final builder = BytesBuilder(copy: false);
-      // Same rule while reading: no timeout, so no chunk future is orphaned.
-      await for (final chunk in response) {
-        builder.add(chunk);
-      }
-      final bytes = builder.takeBytes();
-      if (bytes.isEmpty) return;
-      if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
-      _cache[url] = bytes;
-      if (mounted && token == _token) setState(() => _bytes = bytes);
-    } catch (_) {
-      // Offline, NXDOMAIN, TLS, a bad URL: the fallback is the answer.
-    } finally {
-      // Graceful close only. `close(force: true)` aborts an in-flight lookup
-      // and its future then fails with nobody listening (same uncaught error).
-      client?.close();
+    final bytes = await _fetchGuarded(url);
+    if (bytes == null) return;
+    if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
+    _cache[url] = bytes;
+    if (mounted && token == _token) setState(() => _bytes = bytes);
+  }
+
+  /// Fetches the bytes and can NEVER let an error escape (issues 22/23).
+  ///
+  /// Three separate dart:io behaviours had to be removed, each of which turned
+  /// a failing DNS lookup into an UNCAUGHT async error (the debugger then
+  /// stops on `_NativeSocket.staggeredLookup` and the app freezes):
+  ///   1. `request.close().timeout()` — abandoned the lookup future;
+  ///   2. `client.close(force: true)` — aborted the in-flight lookup;
+  ///   3. `HttpClient.connectionTimeout` — aborts the connect internally and
+  ///      abandons the lookup the same way. So there is no timeout at all:
+  ///      a hung lookup just never completes, and the fallback stays on screen
+  ///      (nothing in the UI waits for it).
+  /// On top of that the whole fetch runs in its own guarded zone, so even an
+  /// internal dart:io future error with no listener lands in the handler below
+  /// instead of the root zone / debugger.
+  static Future<Uint8List?> _fetchGuarded(String url) {
+    final done = Completer<Uint8List?>();
+    void finish(Uint8List? value) {
+      if (!done.isCompleted) done.complete(value);
     }
+
+    runZonedGuarded(() async {
+      HttpClient? client;
+      try {
+        client = HttpClient();
+        final request = await client.getUrl(Uri.parse(url));
+        final response = await request.close();
+        if (response.statusCode != HttpStatus.ok) return;
+        final builder = BytesBuilder(copy: false);
+        await for (final chunk in response) {
+          builder.add(chunk);
+        }
+        final bytes = builder.takeBytes();
+        if (bytes.isNotEmpty) finish(bytes);
+      } catch (_) {
+        // Offline, NXDOMAIN, TLS, a bad URL: the fallback is the answer.
+      } finally {
+        finish(null);
+        client?.close();
+      }
+    }, (_, __) {
+      // An async error that escaped dart:io; swallow it and settle the future.
+      finish(null);
+    });
+
+    return done.future;
   }
 
   @override
