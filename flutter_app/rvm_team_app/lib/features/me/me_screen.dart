@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app_version.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../../domain/models.dart';
@@ -258,6 +259,19 @@ class _MeBody extends StatelessWidget {
               context.read<TeamAuthBloc>().add(const TeamSignedOut()),
           icon: const Icon(Icons.logout),
           label: const Text('Sign out'),
+        ),
+        const SizedBox(height: RvmSpacing.sm),
+        // Which build is actually on the phone. Cable installs used to pick up
+        // a stale APK and there was no way to tell the difference; this line
+        // makes it obvious (issues 22/23).
+        Center(
+          child: Text(
+            'Team RVM v$appVersion',
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(fontSize: 9.5, color: RvmColors.subtle),
+          ),
         ),
         const SizedBox(height: RvmSpacing.lg),
       ],
