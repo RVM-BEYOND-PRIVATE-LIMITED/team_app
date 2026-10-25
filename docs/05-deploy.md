@@ -144,7 +144,7 @@ Twenty-nine in all: Wave 2's five, Wave 3's five, Wave 4's two, Phase 2A's four,
 | 29 | `db/migrations/20261113000001_hr_ess_wfh_allowances.sql` | `db/rollbacks/20261113000001_hr_ess_wfh_allowances.sql` |
 
 **Applying them (KP):**
-1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all twenty-nine against a throwaway Postgres and must end "Every migration check passed."
+1. Before, on any machine with Docker: `npm run test:migrations` from the repository root. It runs all thirty against a throwaway Postgres and must end "Every migration check passed."
 2. In the Supabase dashboard, open the SQL editor of the Scheduler's project.
 3. Paste one file whole, from the `main` branch, and run it. Then the next, in the order above. Each is safe to run again if a run is interrupted.
 4. Each file ends by telling PostgREST to reload its schema, so the endpoints work within seconds, with no restart.

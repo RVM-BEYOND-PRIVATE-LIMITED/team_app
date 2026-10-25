@@ -46,8 +46,21 @@ const POST_KINDS = Object.freeze(['post', 'praise', 'wish', 'poll']);
 /** The two wall scopes: everybody, or one branch (F1: "the organisation wall and one wall per branch"). */
 const SCOPES = Object.freeze(['org', 'branch']);
 
-/** The two occasions a one-tap wish covers (F6). */
-const OCCASIONS = Object.freeze(['birthday', 'anniversary']);
+/** The occasions a one-tap wish covers (F6). */
+const OCCASIONS = Object.freeze(['birthday', 'anniversary', 'promotion']);
+
+/**
+ * Whether one HR activity event is a promotion. A formal promotion is its own
+ * EMPLOYEE_PROMOTED event; a designation move made directly on the HR record is an
+ * EMPLOYEE_UPDATED carrying `designation` in its changed keys. Nothing else counts.
+ */
+function isPromotionEvent(event) {
+  if (!event) return false;
+  if (event.event_type === 'EMPLOYEE_PROMOTED') return true;
+  return event.event_type === 'EMPLOYEE_UPDATED'
+    && Array.isArray(event.changed_keys)
+    && event.changed_keys.includes('designation');
+}
 
 /**
  * F3: RVM's badges, fixed. `for` says what the badge is about, which the app uses to group the
@@ -226,6 +239,7 @@ module.exports = {
   POST_KINDS,
   SCOPES,
   OCCASIONS,
+  isPromotionEvent,
   PRAISE_BADGES,
   AUDIENCE_ROLES,
   LOG_READ_ROLES,

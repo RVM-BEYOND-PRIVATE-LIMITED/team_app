@@ -1,23 +1,25 @@
 const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
 const { bodyWith, requiredText, idParam, oneQueryValue, invalid } = require('../lib/validate');
-const { istDay, addDays } = require('../lib/time');
-const { NEW_JOINER_DAYS, OCCASIONS } = require('../policy/wall');
+const { istDay, istDayStart, addDays } = require('../lib/time');
+const { NEW_JOINER_DAYS, OCCASIONS, isPromotionEvent } = require('../policy/wall');
 const { notFound } = require('../lib/wallKit');
 const { postView } = require('./wallViews');
 const { isActive } = require('../policy/employment');
 const { recordAfter } = require('../lib/audit');
 
 /**
- * Task F6, celebrations: today's birthdays and work anniversaries, the new joiners of the last 15
-/**
- * Task F6, celebrations: today's birthdays and work anniversaries, the new joiners of the last 15
- * days, and a one-tap wish.
+ * Task F6, celebrations: today's birthdays and work anniversaries, recent promotions, the new
+ * joiners of the last 15 days, and a one-tap wish.
  *
  *   * **Birthdays** are DAY AND MONTH ONLY, never the year (the brief's rule, and why the year is
  *     not even stored in the reply). A birthday is hidden for anyone who opted out -- the opt-out
  *     is `hr_ess_celebration_optouts`, one row per person, and it is honoured here and nowhere
  *     else, so HR's personal-details screen is unchanged.
  *   * **Work anniversaries** come from `hr_employees.date_of_joining`, which HR already keeps.
+ *   * **Promotions** come from the Scheduler's own HR activity trail: an EMPLOYEE_PROMOTED event,
+ *     or an EMPLOYEE_UPDATED whose designation moved. The latest one per person inside the
+ *     look-back window is shown. Only the event's date is read, never its values, so pay cannot
+ *     reach the Wall.
  *   * **New joiners** are the people in their first 15 days.
  *   * **A wish** is a short feed post addressed to the person (kind 'wish'): one per person per
  *     occasion per year, so a birthday does not gather four hundred of them, and the card shows
@@ -44,6 +46,8 @@ function listCelebrations({ store, now }) {
     if (!Number.isInteger(days) || days < 1 || days > 90) throw invalid(MESSAGES.WALL_CELEBRATIONS);
     const today = istDay(now());
     const until = addDays(today, days);
+    // Promotions are recent events: `days` looks back for them, not ahead.
+    const from = addDays(today, -(days - 1));
     const [people, optouts] = await Promise.all([
       store.listAudienceEmployees(),
       store.listCelebrationOptouts(),
@@ -51,8 +55,12 @@ function listCelebrations({ store, now }) {
     const optedOut = new Set(optouts.filter((o) => o.hidden !== false).map((o) => o.employee_id));
     const active = people.filter((e) => isActive(e, today));
 
-    // The personal details of everybody still on strength, for the birthdays only.
-    const details = await store.listPersonalDetailsFor(active.map((e) => e.id));
+    // The dates of birth for the birthdays, and the promotion events for the promotion cards.
+    // Neither read touches a value that can carry pay.
+    const [details, promotionEvents] = await Promise.all([
+      store.listPersonalDetailsFor(active.map((e) => e.id)),
+      store.listPromotionEventsFor(active.map((e) => e.id), istDayStart(from).toISOString()),
+    ]);
     const byId = new Map(active.map((e) => [e.id, e]));
     const detailsById = new Map(details.map((d) => [d.employee_id, d]));
 
@@ -86,9 +94,11 @@ function listCelebrations({ store, now }) {
       .filter((e) => e.date_of_joining && e.date_of_joining <= today && e.date_of_joining > addDays(today, -NEW_JOINER_DAYS))
       .map((e) => ({ employee: card(e), date_of_joining: e.date_of_joining, days: daysSince(e.date_of_joining, today) }));
 
+    const promotions = promotionCards(promotionEvents, byId, from, today);
+
     // Who has already been wished, so a card can show it.
     const year = Number(today.slice(0, 4));
-    const aboutIds = [...new Set([...birthdays, ...anniversaries].map((c) => c.employee.id))];
+    const aboutIds = [...new Set([...birthdays, ...anniversaries, ...promotions].map((c) => c.employee.id))];
     const wishes = aboutIds.length ? await store.listWishesFor(aboutIds, year) : [];
     const wishedBy = new Map();
     for (const wish of wishes) {
@@ -108,9 +118,27 @@ function listCelebrations({ store, now }) {
       birthdays: birthdays.sort((a, b) => a.on.localeCompare(b.on)).map((c) => markWished(c, 'birthday')),
       anniversaries: anniversaries.sort((a, b) => a.on.localeCompare(b.on)).map((c) => markWished(c, 'anniversary')),
       new_joiners: newJoiners.sort((a, b) => b.date_of_joining.localeCompare(a.date_of_joining)),
+      promotions: promotions.map((c) => markWished(c, 'promotion')),
       birthdays_hidden: hiddenCount,
     });
   });
+}
+
+/**
+ * The latest promotion per active person inside the look-back window, from `from` to `today`
+ * inclusive. The route reads only events since `from`, and this keeps the same boundary in one
+ * place. Newest first, as the feed reads.
+ */
+function promotionCards(events, byId, from, today) {
+  const latest = new Map();
+  for (const event of events) {
+    if (!isPromotionEvent(event) || !byId.has(event.entity_id)) continue;
+    const on = istDay(new Date(event.occurred_at));
+    if (on < from || on > today) continue;
+    const current = latest.get(event.entity_id);
+    if (!current || on > current.on) latest.set(event.entity_id, { employee: card(byId.get(event.entity_id)), on });
+  }
+  return [...latest.values()].sort((a, b) => b.on.localeCompare(a.on));
 }
 
 /** The day this year's mark falls on, if it is inside the window (leap days land on the 28th). */

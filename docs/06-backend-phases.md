@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (22 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct.** **All 29 migrations are applied** — the read-only check on 23 Oct 2026 (`.github/workflows/verify-migrations.yml`, run 39939895079) found every table, column and seed, including 28's Wall poll repair and 29's WFH allowance. The pilot gate is next.
+**Where it stands (25 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct.** **Migrations 1 to 30 are applied** — 30 was applied by KP on 25 Oct 2026. The read-only check on 23 Oct 2026 (`.github/workflows/verify-migrations.yml`, run 39939895079) had found every table, column and seed through 29, including 28's Wall poll repair and 29's WFH allowance. The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -181,7 +181,7 @@ The brief's Phase 1. ## Phase 1E: Me and My Team
 
 **Built and deployed 19 Oct 2026; no migrations needed.**
 
-- **Profile:** Summary and Job from the HR record, Personal from 1B, the Timeline from HR events (an allowlist: joining, promotion, status, reporting line, designation and branch changes, increments as dates; HR remarks and event values are never read). Never pay, performance tags or background notes.
+- **Profile:** Summary and Job from the HR record, Personal from 1B, the Timeline from HR events (an allowlist: joining, promotion, status, reporting line, designation and branch changes, increments as dates; HR remarks and event values are never read). Each Timeline item carries a stable machine `kind` alongside its unchanged `title` and date. Never pay, performance tags or background notes.
 - **Photo:** short-lived signed links; the employee's own change goes through the ESS into the private bucket, audited. Old files are left for cleanup. **KP to confirm:** no HR approval is needed (the build's default).
 - **Org and directory:** the chain up to the CEO with "Reports to the CEO (not recorded)", peers, direct reports, the department, and colleague search by name or code. Email to everyone; phone to HR's roles and the manager chain only (decision 5's default: a report does not see a manager's phone).
 - **Team:** Team today for anyone with reports, the whole branch for a HoO (H4); Off this week on Home (reports, else peers). Names and days only, never the leave type or reason.
@@ -211,7 +211,7 @@ uploads) and [09-data-inventory.md](09-data-inventory.md) (the Play Data safety 
 - **Backend:**
   - the Flutter handover note (base URLs, the sign-in flow, endpoints per screen, error codes) —
     **written**;
-  - the contract complete for Phase 1 - **0.12.0**;
+  - the contract complete for Phase 1 - **0.13.0**;
   - every Phase 1 migration applied — **yes**;
   - the pilot branch's phones reset — **RVM to do** with `POST /hr/devices/reset`;
   - a data inventory for Play's Data safety form — **written**;
@@ -234,7 +234,7 @@ The brief's Phase 2.
 | Praise with RVM's own badges (8 to 12, HR edits them), a reason of up to 280 characters, an optional photo and certificate PDF, shown on the receiver's profile | F3 |
 | Polls, anonymous ones included; options fixed after the first vote | F4 |
 | Staff announcements by branch, department, role or people, published now or scheduled, with a closing date, acknowledgement, read and acknowledgement counts for the sender, reminders to those who have not acknowledged, up to 3 pinned; sent by push and by email. New tables; the students' notices stay as they are | F5 |
-| Birthdays (day and month only, hidden for anyone who opts out), anniversaries, new joiners for 15 days, one-tap wishes | F6 |
+| Birthdays (day and month only, hidden for anyone who opts out), anniversaries, recent promotions from the HR event trail, new joiners for 15 days, one-tap wishes (birthday, anniversary and promotion) | F6 |
 | Reporting, moderation with a reason, and its log; who may post what | F7, F8 |
 | Photos under 1 MB, stored in an ESS storage bucket | F9 |
 | An ESS scheduler for scheduled announcements, acknowledgement reminders and polls closing | F4, F5 |

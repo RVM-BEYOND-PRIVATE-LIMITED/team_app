@@ -15,7 +15,7 @@ Read these before working on Team RVM, RVM CAD's Android employee app, which is 
 | [08-flutter-handover.md](08-flutter-handover.md) | The app/backend contract by screen, with the attendance-only screen rule |
 | [09-data-inventory.md](09-data-inventory.md) | The Play Data safety answers |
 | [10-wfh-flow.md](10-wfh-flow.md) | Work from home end to end: HR's per-employee allowance, the leave request, the approval's present day, the punch caveat and the Scheduler handover |
-| [11-migration-status-2026-10-23.md](11-migration-status-2026-10-23.md) | The read-only production check: all 29 migrations applied, and the 28/29 conflict settled |
+| [11-migration-status-2026-10-23.md](11-migration-status-2026-10-23.md) | The read-only production check: migrations 1-29 applied, and the 28/29 conflict settled (migration 30, promotion wishes, applied by KP on 25 Oct) |
 | [adr/](adr/README.md) | Architecture decision records |
 | [inputs/](inputs/) | Copies of the brief, the gap report and the developer's prompt |
 

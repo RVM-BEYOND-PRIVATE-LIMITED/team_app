@@ -206,6 +206,7 @@ const REFUSALS = [
   refusal('a praise with no badge', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, about_employee_id) VALUES (e, 'praise', 'Well done.', o)"),
   refusal('a praise about yourself', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, badge, about_employee_id) VALUES (e, 'praise', 'Well done.', 'mentor', e)"),
   refusal('a wish with no occasion', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, about_employee_id) VALUES (e, 'wish', 'Many happy returns!', o)"),
+  refusal('a wish of an occasion it does not take', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, occasion, about_employee_id) VALUES (e, 'wish', 'Happy new year!', 'new_year', o)"),
   refusal('a wish over 200 characters', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, occasion, about_employee_id) VALUES (e, 'wish', repeat('x', 201), 'birthday', o)"),
   refusal('a poll with no closing day', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body) VALUES (e, 'poll', 'Where shall we go?')"),
   refusal('a praise reason of two characters', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, badge, about_employee_id) VALUES (e, 'praise', 'ok', 'mentor', o)"),
@@ -621,10 +622,13 @@ BEGIN
   IF r.voter_employee_id <> e THEN RAISE EXCEPTION 'the vote'; END IF;
   UPDATE public.hr_ess_wall_posts SET options_locked_at = now(), poll_closed_at = now() WHERE id = post;
 
-  -- Praise with a badge the catalogue holds, and a wish the wish book keeps once.
+  -- Praise with a badge the catalogue holds, and the wishes the wish book keeps once: a birthday
+  -- and the promotion occasion migration 30 adds.
   INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, badge, about_employee_id) VALUES (hr, 'praise', 'Always helping the batch.', 'mentor', o);
   INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, occasion, about_employee_id) VALUES (hr, 'wish', 'Many happy returns!', 'birthday', o) RETURNING id INTO post;
   INSERT INTO public.hr_ess_wall_wishes (post_id, about_id, wisher_id, occasion, year) VALUES (post, o, hr, 'birthday', 2026);
+  INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body, occasion, about_employee_id) VALUES (hr, 'wish', 'Congratulations on the promotion!', 'promotion', o) RETURNING id INTO post;
+  INSERT INTO public.hr_ess_wall_wishes (post_id, about_id, wisher_id, occasion, year) VALUES (post, o, hr, 'promotion', 2026);
 
   -- The mentions a post carries, and a report HR answers.
   INSERT INTO public.hr_ess_wall_mentions (post_id, mentioned_id, mentioned_by_id) VALUES (post, o, hr);
