@@ -1,9 +1,126 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
 /// Shared building blocks for the Team RVM design language: warm ivory canvas,
 /// white cards with hairline sand borders, pill badges, soft icon tiles and
 /// segmented controls. Every screen uses these so the app reads as one product.
+
+// ── remote photos ─────────────────────────────────────────────────────────
+
+/// A remote photo that can never crash the screen (issues 13 / 22).
+///
+/// `Image.network` / `NetworkImage` run inside Flutter's image pipeline, which
+/// rethrows the socket error before it reaches `errorBuilder`. On a device
+/// whose DNS hiccups for the storage host (a Supabase signed link), the
+/// debugger stops on `SocketException: Failed host lookup …` and the framework
+/// reports an image error — on the Work profile screen that looks like a crash.
+///
+/// Here the request is an ordinary `HttpClient` call inside try/catch: DNS,
+/// TLS, timeout, an empty body or a non-200 every one of them simply means
+/// "show the fallback". Nothing is ever thrown, so no debugger stop and no
+/// framework error is possible.
+class SafePhoto extends StatefulWidget {
+  const SafePhoto({
+    super.key,
+    required this.url,
+    required this.fallback,
+    this.fit = BoxFit.cover,
+    this.width,
+    this.height,
+  });
+
+  final String url;
+  final Widget fallback;
+  final BoxFit fit;
+  final double? width;
+  final double? height;
+
+  @override
+  State<SafePhoto> createState() => _SafePhotoState();
+}
+
+class _SafePhotoState extends State<SafePhoto> {
+  /// Small in-memory cache so scrolling the Wall does not refetch avatars.
+  static final Map<String, Uint8List> _cache = {};
+  static const _maxCache = 60;
+
+  static const _connectTimeout = Duration(seconds: 6);
+  static const _readTimeout = Duration(seconds: 12);
+
+  Uint8List? _bytes;
+  int _token = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant SafePhoto oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      setState(() => _bytes = null);
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _token++;
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final url = widget.url;
+    final token = ++_token;
+    if (url.isEmpty) return;
+    final cached = _cache[url];
+    if (cached != null) {
+      if (mounted && token == _token) setState(() => _bytes = cached);
+      return;
+    }
+    HttpClient? client;
+    try {
+      client = HttpClient()..connectionTimeout = _connectTimeout;
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close().timeout(_readTimeout);
+      if (response.statusCode != HttpStatus.ok) return;
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(_readTimeout)) {
+        builder.add(chunk);
+      }
+      final bytes = builder.takeBytes();
+      if (bytes.isEmpty) return;
+      if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
+      _cache[url] = bytes;
+      if (mounted && token == _token) setState(() => _bytes = bytes);
+    } catch (_) {
+      // Offline, NXDOMAIN, TLS, timeout, a bad URL: the fallback is the answer.
+    } finally {
+      client?.close(force: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _bytes;
+    // While loading (or after any failure) the fallback is shown at once, so
+    // the avatar is never an empty circle.
+    if (bytes == null) return widget.fallback;
+    return Image.memory(
+      bytes,
+      fit: widget.fit,
+      width: widget.width,
+      height: widget.height,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => widget.fallback,
+    );
+  }
+}
 
 // ── layout ────────────────────────────────────────────────────────────────
 
@@ -345,48 +462,60 @@ class TeamAvatar extends StatelessWidget {
     final initial = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
     final url = photoUrl;
     final hasPhoto = url != null && url.isNotEmpty;
+    final fallback = Text(
+      initial,
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: foreground,
+            fontSize: size * 0.38,
+            fontWeight: FontWeight.w700,
+          ),
+    );
+    // One image path for every shape: SafePhoto. It swallows DNS/TLS/timeout
+    // failures (issue13's Supabase host on issue22's profile screen) so the
+    // fallback initial is always shown and nothing reaches the framework.
+    if (!hasPhoto) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: rounded ? BoxShape.rectangle : BoxShape.circle,
+          borderRadius: rounded ? BorderRadius.circular(radius) : null,
+          color: background ?? const Color(0xFFC67B5C),
+        ),
+        clipBehavior: rounded ? Clip.antiAlias : Clip.none,
+        alignment: Alignment.center,
+        child: fallback,
+      );
+    }
+    final image = SafePhoto(
+      url: url,
+      fallback: fallback,
+      width: size,
+      height: size,
+    );
+    if (rounded) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          color: background ?? const Color(0xFFC67B5C),
+        ),
+        clipBehavior: Clip.antiAlias,
+        alignment: Alignment.center,
+        child: image,
+      );
+    }
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        shape: rounded ? BoxShape.rectangle : BoxShape.circle,
-        borderRadius: rounded ? BorderRadius.circular(radius) : null,
+        shape: BoxShape.circle,
         color: background ?? const Color(0xFFC67B5C),
-        image: hasPhoto && !rounded
-            ? DecorationImage(
-                image: NetworkImage(url),
-                fit: BoxFit.cover,
-                // A dead avatar URL (offline DNS, expired link) must stay a
-                // blank avatar, never an image error reaching the framework.
-                onError: (_, __) {},
-              )
-            : null,
       ),
-      clipBehavior: rounded ? Clip.antiAlias : Clip.none,
+      clipBehavior: Clip.none,
       alignment: Alignment.center,
-      child: hasPhoto
-          ? (rounded
-              ? Image.network(url,
-                  fit: BoxFit.cover,
-                  width: size,
-                  height: size,
-                  errorBuilder: (_, __, ___) => Text(
-                        initial,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: foreground,
-                              fontSize: size * 0.38,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ))
-              : null)
-          : Text(
-              initial,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: foreground,
-                    fontSize: size * 0.38,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
+      child: ClipOval(child: image),
     );
   }
 }

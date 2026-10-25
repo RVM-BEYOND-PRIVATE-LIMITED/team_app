@@ -24,10 +24,23 @@ void main() {
     Bloc.observer = const AppBlocObserver();
     await CrashReporter.init();
     FlutterError.onError = (details) {
+      if (_isImageNoise(details.exception)) {
+        // Dead avatar/photo URL (offline DNS like issue13's Supabase host,
+        // expired signed link). UI already shows the initial via errorBuilder
+        // (issue22); reporting it as fatal + toasting would look like a crash.
+        CrashReporter.record(details.exception, details.stack,
+            reason: 'image-load (handled by fallback)');
+        return;
+      }
       CrashReporter.flutterError(details);
       showAppMessage('Something went wrong. Please try again.');
     };
     PlatformDispatcher.instance.onError = (error, stack) {
+      if (_isImageNoise(error)) {
+        CrashReporter.record(error, stack,
+            reason: 'image-load (handled by fallback)');
+        return true;
+      }
       CrashReporter.record(error, stack, fatal: true);
       showAppMessage('Something went wrong. Please try again.');
       return true;
@@ -46,9 +59,26 @@ void main() {
 
     runApp(const TeamApp());
   }, (error, stack) {
+    if (_isImageNoise(error)) {
+      CrashReporter.record(error, stack,
+          reason: 'image-load (handled by fallback)');
+      return;
+    }
     CrashReporter.record(error, stack, fatal: true);
     showAppMessage('Something went wrong. Please try again.');
   });
+}
+
+/// Image-load noise (DNS for a photo host, expired signed URL, 404) is
+/// expected offline and already has a UI fallback (initial avatar). It must
+/// never toast or count as a fatal crash (issue13 text on issue22 screen).
+bool _isImageNoise(Object error) {
+  final s = error.toString();
+  return s.contains('SocketException') ||
+      s.contains('Failed host lookup') ||
+      s.contains('NetworkImage') ||
+      s.contains('ImageInfo') ||
+      s.contains('HttpException');
 }
 
 /// Shown in place of the red framework error screen when a widget build fails.
