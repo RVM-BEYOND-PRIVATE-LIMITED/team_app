@@ -55,6 +55,17 @@ jobs:
             table "$t"
           done
 
+          column hr_ess_leave_requests end_day
+          column hr_ess_leave_requests portion
+          column hr_ess_leave_requests day_count
+          column hr_ess_leave_requests working_days
+          column hr_ess_leave_requests days_before
+          column hr_ess_leave_requests requires_final_approval
+          column hr_ess_leave_requests stage
+          column hr_ess_leave_requests manager_approved_by_employee_id
+          column hr_ess_leave_requests manager_approved_by_name
+          column hr_ess_leave_requests manager_approved_at
+          column hr_ess_leave_requests manager_remark
           column hr_ess_attendance_requests minutes
           column hr_ess_helpdesk_tickets assigned_at
           column hr_ess_documents remark

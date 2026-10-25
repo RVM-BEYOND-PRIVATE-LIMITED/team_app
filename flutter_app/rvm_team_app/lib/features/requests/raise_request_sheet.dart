@@ -236,6 +236,14 @@ class _RaiseSheetState extends State<_RaiseSheet> {
               'Only $remaining short-leave minutes are left this month.');
           return;
         }
+      } else if (_family == 'leave' && !_multiDay) {
+        // A half day costs 0.5, a full day 1. A range is left to the server,
+        // which knows the working days after skipping weekly offs and holidays.
+        final needed = _portion == 'full' ? 1 : 0.5;
+        if (remaining < needed) {
+          _showError(_limitMessage(balance));
+          return;
+        }
       } else if (remaining <= 0) {
         _showError(_limitMessage(balance));
         return;

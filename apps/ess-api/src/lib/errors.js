@@ -165,6 +165,7 @@ const MESSAGES = Object.freeze({
   DECIDE_REJECT_NOTE: 'Say why the request is rejected, in at least 3 characters. The employee sees it.',
   ALREADY_DECIDED: 'That request has already been decided.',
   NOT_AN_APPROVER: "Only the person's manager or HR can decide this request.",
+  FINAL_APPROVAL_ONLY: 'Only HR, the CEO or a super admin can give the final approval for this leave.',
   NOT_LATE: 'That day is not a late arrival.',
   TIMES_INCOMPLETE: 'The day would still be missing an in or out time. Ask the employee for the full times.',
   DAY_LOCKED: 'That day is recorded as leave, a week off or a holiday. Change the day first.',
