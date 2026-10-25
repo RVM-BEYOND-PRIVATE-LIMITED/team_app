@@ -28,6 +28,17 @@ const withDates = (w) => {
   w.people.hoo.employee.date_of_joining = '2021-10-20';
 };
 
+/** One HR activity row the celebrations read for a promotion. */
+const promotionEvent = (employeeId, n, change = {}) => ({
+  id: `86000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+  event_type: 'EMPLOYEE_PROMOTED',
+  entity_type: 'employee',
+  entity_id: employeeId,
+  occurred_at: '2026-10-16T05:00:00+00:00',
+  changed_keys: [],
+  ...change,
+});
+
 describe('GET /api/ess/wall/celebrations', () => {
   it('finds today\'s birthday, the ones coming and the new joiners, with no year on a birthday', async () => {
     const { app, people } = buildApp({ setup: withDates });
@@ -41,6 +52,60 @@ describe('GET /api/ess/wall/celebrations', () => {
     expect(res.body.anniversaries[0]).toMatchObject({ years: 2, date_of_joining: '2024-10-16' });
     expect(res.body.new_joiners.map((j) => j.employee.full_name)).toEqual(['Test Branch Admin']);
     expect(res.body.new_joiners[0].days).toBe(10);
+  });
+
+  it('finds recent promotions from the HR trail, latest per person, and looks back only inside days', async () => {
+    const { app, db, people } = buildApp({ setup: (w) => {
+      w.tables.hr_activity_events = [
+        promotionEvent(w.people.faculty.employee.id, 1),
+        promotionEvent(w.people.admin.employee.id, 2, {
+          event_type: 'EMPLOYEE_UPDATED',
+          changed_keys: ['designation'],
+          occurred_at: '2026-10-10T05:00:00+00:00',
+        }),
+        promotionEvent(w.people.hod.employee.id, 3, { occurred_at: '2026-09-20T05:00:00+00:00' }),
+        promotionEvent(w.people.hr.employee.id, 4, { occurred_at: '2026-08-01T05:00:00+00:00' }),
+        promotionEvent(w.people.hoo.employee.id, 5, {
+          event_type: 'EMPLOYEE_UPDATED',
+          changed_keys: ['phone'],
+          occurred_at: '2026-10-12T05:00:00+00:00',
+        }),
+        promotionEvent(w.people.faculty.employee.id, 6, {
+          event_type: 'EMPLOYEE_UPDATED',
+          changed_keys: ['phone'],
+          occurred_at: '2026-10-15T05:00:00+00:00',
+        }),
+      ];
+    } });
+    const res = await cards(app, tokens.portal(people.faculty));
+    expect(res.status).toBe(200);
+    expect(res.body.promotions.map((p) => p.employee.full_name))
+      .toEqual(['Test CAD Faculty', 'Test Branch Admin', 'Test CAD HOD']);
+    expect(res.body.promotions[0]).toMatchObject({ on: '2026-10-16', wished_by_me: false, wish_count: 0 });
+    // A one-day window is today only; the older promotion and the designation update fall out.
+    const today = await cards(app, tokens.portal(people.faculty), '?days=1');
+    expect(today.body.promotions.map((p) => p.employee.full_name)).toEqual(['Test CAD Faculty']);
+    // Only the date is read, never the event's values.
+    expect(JSON.stringify(res.body)).not.toContain('EMPLOYEE_');
+    const promotionQuery = db.queries.find((q) => q.table === 'hr_activity_events' && q.columns.includes('entity_id'));
+    expect(promotionQuery.columns).toEqual(['id', 'entity_id', 'event_type', 'occurred_at', 'changed_keys']);
+  });
+
+  it('shows who has wished a promotion, and whether I have', async () => {
+    const { app, people } = buildApp({ setup: (w) => {
+      w.tables.hr_activity_events = [promotionEvent(w.people.faculty.employee.id, 1)];
+      w.tables.hr_ess_wall_posts = [W.postRow(w.people.hr.employee.id, 1, {
+        kind: 'wish', body: 'Congratulations!', occasion: 'promotion', about_employee_id: w.people.faculty.employee.id,
+      })];
+      w.tables.hr_ess_wall_wishes = [{
+        id: W.uuid('a6', 1), post_id: W.POST_ID(1), about_id: w.people.faculty.employee.id,
+        wisher_id: w.people.hr.employee.id, occasion: 'promotion', year: 2026, created_at: W.AT,
+      }];
+    } });
+    const mine = await cards(app, tokens.portal(people.hr));
+    expect(mine.body.promotions[0]).toMatchObject({ wished_by_me: true, wish_count: 1 });
+    const other = await cards(app, tokens.portal(people.hod));
+    expect(other.body.promotions[0]).toMatchObject({ wished_by_me: false, wish_count: 1 });
   });
 
   it('narrows the window with days, and refuses a window it cannot take', async () => {
@@ -99,6 +164,13 @@ describe('GET /api/ess/wall/celebrations', () => {
     db.dropTable('hr_ess_personal_details');
     expectRefusal(await cards(app, tokens.portal(people.faculty)), 503, 'MODULE_NOT_INSTALLED');
   });
+
+  it('answers 503 when the HR activity trail cannot be read', async () => {
+    quietErrors();
+    const { app, people, db } = buildApp({ setup: withDates });
+    db.dropTable('hr_activity_events');
+    expectRefusal(await cards(app, tokens.portal(people.faculty)), 503, 'MODULE_NOT_INSTALLED');
+  });
 });
 
 describe('POST /api/ess/wall/wishes', () => {
@@ -115,6 +187,22 @@ describe('POST /api/ess/wall/wishes', () => {
     expect(db.tables.hr_ess_wall_wishes).toHaveLength(1);
     expect(db.tables.hr_ess_wall_wishes[0]).toMatchObject({
       about_id: people.faculty.employee.id, wisher_id: people.hr.employee.id, occasion: 'birthday', year: 2026,
+    });
+  });
+
+  it('accepts a promotion wish, in the feed and in the wish book', async () => {
+    const { app, people, db } = buildApp();
+    const res = await wish(app, tokens.portal(people.hr), {
+      employee_id: people.faculty.employee.id, occasion: 'promotion', body: 'Congratulations on the promotion!',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.post).toMatchObject({
+      kind: 'wish', occasion: 'promotion', body: 'Congratulations on the promotion!',
+      about: { id: people.faculty.employee.id }, mine: true,
+    });
+    expect(db.tables.hr_ess_wall_wishes).toHaveLength(1);
+    expect(db.tables.hr_ess_wall_wishes[0]).toMatchObject({
+      about_id: people.faculty.employee.id, wisher_id: people.hr.employee.id, occasion: 'promotion', year: 2026,
     });
   });
 

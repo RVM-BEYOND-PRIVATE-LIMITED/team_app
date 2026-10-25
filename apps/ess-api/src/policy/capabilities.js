@@ -15,7 +15,7 @@ const { offeredRequestTypes, requestPolicy } = require('./requestLimits');
  * this document is a menu, not a permission.
  */
 
-const TABS = Object.freeze(['home', 'inbox', 'wall', 'me', 'team']);
+const TABS = Object.freeze(['home', 'inbox', 'wall', 'team', 'me']);
 
 /**
  * The Work section: teaching and the leaders' views. Admin, Admin Manager and Finance Admin get

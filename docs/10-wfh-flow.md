@@ -67,5 +67,5 @@ under ADR-0018. The handover to whoever owns the Scheduler:
 | HR's allowance routes, the employee's own reading | `apps/ess-api/src/routes/wfh.js` |
 | The request type and the leave window | `apps/ess-api/src/routes/leaveRequests.js`, `src/policy/requests.js` |
 | Store reads and writes | `apps/ess-api/src/lib/store.js` (`getWfhAllowance`, `listWfhAllowances`, `upsertWfhAllowance`, `countWfhDays`) |
-| Contract | `packages/contracts/openapi.yaml` 0.11.0 |
+| Contract | `packages/contracts/openapi.yaml` 0.13.0 |
 | Tests | `apps/ess-api/tests/wfh.test.js`, `tests/helpers/wave11.js` |

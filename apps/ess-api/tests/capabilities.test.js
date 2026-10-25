@@ -43,7 +43,7 @@ describe('GET /api/ess/me/capabilities, role by role', () => {
     const body = res.body;
 
     // Every staff login gets all five tabs, Admin, Admin Manager and Finance Admin included.
-    expect(body.tabs).toEqual(['home', 'inbox', 'wall', 'me', 'team']);
+    expect(body.tabs).toEqual(['home', 'inbox', 'wall', 'team', 'me']);
     expect(body.sections).toEqual({ time: true, helpdesk: true, documents: true, profile: true, work });
     expect(body.team).toEqual({ has_reports: reports > 0, direct_reports: reports });
     expect(body.approvals).toEqual({

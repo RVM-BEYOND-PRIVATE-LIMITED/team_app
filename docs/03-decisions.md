@@ -210,6 +210,6 @@ handler runs. The fix is split by what each side owns:
 - **The 401 rule.** A non-token 401 must keep the server's wording and must not sign the person
   out; the app-side fix for that already shipped. This change adds no 401 for a valid token.
 
-The ESS half is live in `apps/ess-api` (`src/routes/account.js`, contract 0.12.0). The Flutter
+The ESS half is live in `apps/ess-api` (`src/routes/account.js`, contract 0.13.0). The Flutter
 hiding of the Scheduler-only tiles is the remaining app change; the endpoint table is in
 [08-flutter-handover.md](08-flutter-handover.md).

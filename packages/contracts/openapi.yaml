@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.12.0
+  version: 0.13.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -276,7 +276,7 @@ paths:
                 facultyWithReports:
                   summary: A faculty member with two direct reports
                   value:
-                    tabs: [home, inbox, wall, me, team]
+                    tabs: [home, inbox, wall, team, me]
                     sections:
                       time: true
                       helpdesk: true
@@ -313,7 +313,7 @@ paths:
                 hr:
                   summary: HR, with no direct reports
                   value:
-                    tabs: [home, inbox, wall, me, team]
+                    tabs: [home, inbox, wall, team, me]
                     sections:
                       time: true
                       helpdesk: true
@@ -350,7 +350,7 @@ paths:
                 attendanceOnly:
                   summary: Attendance-only staff with no direct reports
                   value:
-                    tabs: [home, inbox, wall, me, team]
+                    tabs: [home, inbox, wall, team, me]
                     sections:
                       time: true
                       helpdesk: true
@@ -3711,7 +3711,7 @@ paths:
       x-owner: ess
       summary: My profile, personal details, timeline and photo (E1, E10, E12)
       description: |
-        Either token kind (attendance-only staff included). Summary, Job and Personal come from the HR record and the personal-details table; the designation is the HR record's, never the login role. The Timeline is an allowlist of employee events — joining, promotion, status, reporting line, designation and branch changes, increments (dates only) — mapped to one line each; HR remarks and unknown events never appear, and the event values are never read, so pay cannot leak. Pay, performance tags and background notes are never selected.
+        Either token kind (attendance-only staff included). Summary, Job and Personal come from the HR record and the personal-details table; the designation is the HR record's, never the login role. The Timeline is an allowlist of employee events — joining, promotion, status, reporting line, designation and branch changes, increments (dates only) — mapped to one stable `kind` and one plain line each; HR remarks and unknown events never appear, and the event values are never read, so pay cannot leak. Pay, performance tags and background notes are never selected. Clients filter on `kind`, never on the English `title`.
 
         `photo_url` is a 300-second signed link to the private bucket, null when there is no photo.
       responses:
@@ -3750,8 +3750,8 @@ paths:
                       emergency_relation: Mother
                       emergency_phone: '9876543210'
                     timeline:
-                      - { id: 5c4b3a29-1807-4f6e-9d5c-4b3a291807f6, title: Designation changed, at: '2026-06-01T05:00:00+00:00' }
-                      - { id: 6d5c4b3a-2918-407f-8e6d-5c4b3a291807, title: Joined RVM, at: '2025-06-01T05:00:00+00:00' }
+                      - { id: 5c4b3a29-1807-4f6e-9d5c-4b3a291807f6, kind: DESIGNATION_CHANGED, title: Designation changed, at: '2026-06-01T05:00:00+00:00' }
+                      - { id: 6d5c4b3a-2918-407f-8e6d-5c4b3a291807, kind: JOINING_RECORDED, title: Joined RVM, at: '2025-06-01T05:00:00+00:00' }
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
@@ -6134,11 +6134,11 @@ paths:
       operationId: listCelebrations
       tags: [ESS]
       x-owner: ess
-      summary: Birthdays, anniversaries and new joiners (F6)
+      summary: Birthdays, anniversaries, promotions and new joiners (F6)
       description: |
-        One call for the Wall's celebration cards: the birthdays and work anniversaries falling inside the window, and the people in their first 15 days.
+        One call for the Wall's celebration cards: the birthdays and work anniversaries falling inside the next `days` days, recent promotions from the last `days` days, and the people in their first 15 days.
 
-        **A birthday is day and month only** — the year is never stored in the reply, and a birthday is left out entirely for anybody who opted out (`PUT /ess/me/celebration-optout`); `birthdays_hidden` says how many did, never who. A work anniversary comes from the HR record's date of joining, and `years` is what the card celebrates. Data: `hr_employees.date_of_joining` and the 1B table's date of birth, which HR keeps (KP, 19 Oct).
+        **A birthday is day and month only** — the year is never stored in the reply, and a birthday is left out entirely for anybody who opted out (`PUT /ess/me/celebration-optout`); `birthdays_hidden` says how many did, never who. A work anniversary comes from the HR record's date of joining, and `years` is what the card celebrates. A promotion is read from the Scheduler's HR activity trail: an `EMPLOYEE_PROMOTED` event, or an `EMPLOYEE_UPDATED` whose designation moved. The latest promotion per person is shown, newest first; only its date is read, never its values, so pay cannot leak. Data: `hr_employees.date_of_joining`, the 1B table's date of birth, and the HR event trail, all of which HR keeps (KP, 19 Oct).
       parameters:
         - name: days
           in: query
@@ -6177,6 +6177,11 @@ paths:
                       - employee: { id: 7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d, full_name: 'Neha Verma', employee_code: RVM-064, designation: 'Counsellor', branch_id: 6f5e4d3c-2b1a-4f8e-9d7c-6b5a4f3e2d1c }
                         date_of_joining: '2026-10-06'
                         days: 10
+                    promotions:
+                      - employee: { id: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f, full_name: 'Priya Sharma', employee_code: RVM-021, designation: 'Admin Manager', branch_id: 6f5e4d3c-2b1a-4f8e-9d7c-6b5a4f3e2d1c }
+                        on: '2026-10-10'
+                        wished_by_me: false
+                        wish_count: 3
                     birthdays_hidden: 2
         '400':
           $ref: '#/components/responses/EssWallRequestBad'
@@ -6205,7 +6210,7 @@ paths:
       x-owner: ess
       summary: Wish somebody (F6)
       description: |
-        A one-tap wish: a short feed post addressed to the person, marked with its occasion. **One each**: a second wish for the same person, occasion and year is 409 `ALREADY_WISHED`, and the refused one leaves nothing behind. Wishing yourself is refused.
+        A one-tap wish — birthday, work anniversary or promotion: a short feed post addressed to the person, marked with its occasion. **One each**: a second wish for the same person, occasion and year is 409 `ALREADY_WISHED`, and the refused one leaves nothing behind. Wishing yourself is refused.
       requestBody:
         required: true
         content:
@@ -10979,7 +10984,7 @@ components:
           description: The bottom tabs, in display order. All five for every staff login.
           items:
             type: string
-            enum: [home, inbox, wall, me, team]
+            enum: [home, inbox, wall, team, me]
         sections:
           type: object
           required: [time, helpdesk, documents, profile, work]
@@ -12411,9 +12416,23 @@ components:
 
     TimelineEntry:
       type: object
-      required: [id, title, at]
+      required: [id, kind, title, at]
       properties:
         id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum:
+            - JOINING_RECORDED
+            - PROMOTED
+            - DESIGNATION_CHANGED
+            - BRANCH_CHANGED
+            - STATUS_CHANGED
+            - REPORTING_LINE_CHANGED
+            - CODE_ISSUED
+            - CODE_ASSIGNED
+            - INCREMENT_RECORDED
+            - TRIVIAL_UPDATE
+          description: The stable machine kind. Filter on this, never on the English `title`.
         title: { type: string }
         at: { type: string, format: date-time }
 
@@ -14284,9 +14303,26 @@ components:
           minimum: 0
           maximum: 15
 
+    PromotionCard:
+      type: object
+      description: A recent promotion from the Scheduler's HR event trail (F6). Only the event's date is read, never its values.
+      required: [employee, on, wished_by_me, wish_count]
+      properties:
+        employee:
+          $ref: '#/components/schemas/CelebrationPerson'
+        on:
+          type: string
+          format: date
+          description: The IST day the promotion was recorded, inside the look-back window.
+        wished_by_me:
+          type: boolean
+        wish_count:
+          type: integer
+          minimum: 0
+
     Celebrations:
       type: object
-      required: [today, window_days, birthdays, anniversaries, new_joiners, birthdays_hidden]
+      required: [today, window_days, birthdays, anniversaries, new_joiners, promotions, birthdays_hidden]
       properties:
         today:
           type: string
@@ -14308,6 +14344,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NewJoinerCard'
+        promotions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromotionCard'
         birthdays_hidden:
           type: integer
           minimum: 0
@@ -14323,7 +14363,7 @@ components:
           description: Who the wish is for. Yourself is refused.
         occasion:
           type: string
-          enum: [birthday, anniversary]
+          enum: [birthday, anniversary, promotion]
         body:
           type: string
           minLength: 1

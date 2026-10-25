@@ -79,28 +79,42 @@ function weekBounds(today) {
   return { from, to };
 }
 
-/** Event types the Timeline may show, and what each reads as. Anything else is dropped. */
-const TIMELINE_TITLES = Object.freeze({
-  EMPLOYEE_CREATED: 'Joined RVM',
-  EMPLOYEE_PROMOTED: 'Promoted',
-  EMPLOYEE_STATUS_CHANGED: 'Employment status changed',
-  EMPLOYEE_MANAGER_CHANGED: 'Reporting line changed',
-  EMPLOYEE_CODE_ISSUED: 'Employee code issued',
-  EMPLOYEE_CODE_ASSIGNED: 'Employee code set',
-  INCREMENT_DATE_CHANGED: 'Increment date recorded',
+/**
+ * Event types the Timeline may show: one stable machine `kind` and one plain line each.
+ * `kind` is what clients filter on; `title` is the staff-facing wording and never changes with
+ * it. Anything not on this list is dropped.
+ */
+const TIMELINE_EVENTS = Object.freeze({
+  EMPLOYEE_CREATED: Object.freeze({ kind: 'JOINING_RECORDED', title: 'Joined RVM' }),
+  EMPLOYEE_PROMOTED: Object.freeze({ kind: 'PROMOTED', title: 'Promoted' }),
+  EMPLOYEE_STATUS_CHANGED: Object.freeze({ kind: 'STATUS_CHANGED', title: 'Employment status changed' }),
+  EMPLOYEE_MANAGER_CHANGED: Object.freeze({ kind: 'REPORTING_LINE_CHANGED', title: 'Reporting line changed' }),
+  EMPLOYEE_CODE_ISSUED: Object.freeze({ kind: 'CODE_ISSUED', title: 'Employee code issued' }),
+  EMPLOYEE_CODE_ASSIGNED: Object.freeze({ kind: 'CODE_ASSIGNED', title: 'Employee code set' }),
+  INCREMENT_DATE_CHANGED: Object.freeze({ kind: 'INCREMENT_RECORDED', title: 'Increment date recorded' }),
 });
+
+/** The title-only view of the same table, for callers that only need the line. */
+const TIMELINE_TITLES = Object.freeze(Object.fromEntries(
+  Object.entries(TIMELINE_EVENTS).map(([eventType, event]) => [eventType, event.title]),
+));
+
+/** The kind and line for one employee event, or null when the Timeline never shows it. */
+function timelineEntry(eventType, changedKeys) {
+  if (TIMELINE_EVENTS[eventType]) return TIMELINE_EVENTS[eventType];
+  if (eventType === 'EMPLOYEE_UPDATED') {
+    const keys = Array.isArray(changedKeys) ? changedKeys : [];
+    if (keys.includes('designation')) return { kind: 'DESIGNATION_CHANGED', title: 'Designation changed' };
+    if (keys.includes('branch_id')) return { kind: 'BRANCH_CHANGED', title: 'Branch changed' };
+    if (keys.includes('date_of_joining')) return { kind: 'JOINING_RECORDED', title: 'Joining date recorded' };
+    return { kind: 'TRIVIAL_UPDATE', title: 'Details updated' };
+  }
+  return null;
+}
 
 /** The line for one employee event, or null when the Timeline never shows it. */
 function timelineTitle(eventType, changedKeys) {
-  if (TIMELINE_TITLES[eventType]) return TIMELINE_TITLES[eventType];
-  if (eventType === 'EMPLOYEE_UPDATED') {
-    const keys = Array.isArray(changedKeys) ? changedKeys : [];
-    if (keys.includes('designation')) return 'Designation changed';
-    if (keys.includes('branch_id')) return 'Branch changed';
-    if (keys.includes('date_of_joining')) return 'Joining date recorded';
-    return 'Details updated';
-  }
-  return null;
+  return timelineEntry(eventType, changedKeys)?.title ?? null;
 }
 
 /**
@@ -128,7 +142,9 @@ module.exports = {
   canSeePhone,
   personCard,
   weekBounds,
+  TIMELINE_EVENTS,
   TIMELINE_TITLES,
+  timelineEntry,
   timelineTitle,
   teamDayState,
 };

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
 const { bodyWith, requiredText, invalid } = require('../lib/validate');
 const { recordAfter } = require('../lib/audit');
-const { isNotice, timelineTitle } = require('../policy/me');
+const { isNotice, timelineEntry } = require('../policy/me');
 
 /**
  * Tasks E1, E10 and E12: my profile — Summary, Job and Timeline from the HR record, Personal
@@ -67,8 +67,11 @@ function myProfile({ store }) {
       },
       personal: personalView(personal),
       timeline: timeline
-        .map((e) => ({ id: e.id, title: timelineTitle(e.event_type, e.changed_keys), at: e.occurred_at }))
-        .filter((e) => e.title),
+        .map((e) => {
+          const entry = timelineEntry(e.event_type, e.changed_keys);
+          return entry ? { id: e.id, kind: entry.kind, title: entry.title, at: e.occurred_at } : null;
+        })
+        .filter(Boolean),
     });
   });
 }

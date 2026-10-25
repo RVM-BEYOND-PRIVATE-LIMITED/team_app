@@ -1,6 +1,6 @@
 # Team RVM app: backend handover to the Flutter developer
 
-22 Oct 2026 · Contract `packages/contracts/openapi.yaml` **0.11.0** · ESS live at
+25 Oct 2026 · Contract `packages/contracts/openapi.yaml` **0.13.0** · ESS live at
 `https://team-api.rvmcad.org`
 
 This note is the single handover: the two hosts, the sign-in flow, every endpoint by screen, the
@@ -99,6 +99,11 @@ attendance login uses. The Scheduler is not widened to accept the punch token (A
 | Personal change requests | `POST /me/change-requests`, `GET /me/change-requests` |
 | Bank details | `GET /me/bank-details`, `PUT /me/bank-details` |
 
+**Timeline kinds (issue #15).** Every item from `GET /me/profile` now carries a stable `kind`
+(`JOINING_RECORDED`, `PROMOTED`, `DESIGNATION_CHANGED`, `BRANCH_CHANGED`,
+`REPORTING_LINE_CHANGED`, `STATUS_CHANGED`, `CODE_ISSUED`, `CODE_ASSIGNED`,
+`INCREMENT_RECORDED`, `TRIVIAL_UPDATE`). Filter on `kind`, never on the English `title`.
+
 ### Requests, leave and approvals
 
 | Screen | Calls |
@@ -127,7 +132,7 @@ attendance login uses. The Scheduler is not widened to accept the punch token (A
 | Praise | `POST /wall/praise` (fixed badges), `GET /me/praise` |
 | Polls | `GET /wall/polls/{id}`, `POST /wall/polls/{id}/vote`, `DELETE /wall/polls/{id}/vote`, `POST /wall/polls/{id}/close` |
 | Announcements | `GET /wall/announcements`, `GET /wall/announcements/{id}`, `POST .../read`, `POST .../ack`, `GET .../counts`; sender: `POST /wall/announcements`, `PATCH/DELETE /wall/announcements/{id}`, `GET /wall/hr/announcements` |
-| Celebrations | `GET /wall/celebrations`, `POST /wall/wishes`, `GET/PUT /me/celebration-optout` |
+| Celebrations | `GET /wall/celebrations` (birthdays, anniversaries, recent `promotions`, new joiners), `POST /wall/wishes` (`birthday`, `anniversary`, `promotion`), `GET/PUT /me/celebration-optout` |
 | Report/moderation | `POST /wall/posts/{id}/reports`, `/wall/comments/{id}/reports`; HR: `GET /wall/hr/reports`, `POST /wall/hr/reports/{id}/resolve`, `POST /wall/posts/{id}/hide`, `/wall/comments/{id}/hide`, `GET /wall/hr/moderation-log` |
 
 **The path is `/wall/posts`, not `/feed`.** The old placeholder in `wall_screen.dart` is stale.

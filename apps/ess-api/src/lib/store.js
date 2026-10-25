@@ -161,6 +161,8 @@ const COLUMNS = Object.freeze({
     + 'employment_status, date_of_exit, is_archived',
   // E12: the events the Timeline reads. before/after and notes are never selected.
   timeline: 'id, event_type, occurred_at, changed_keys',
+  // F6: the promotion events the celebrations read. before/after, pay and notes are never selected.
+  promotionEvent: 'id, entity_id, event_type, occurred_at, changed_keys',
   // E6: a team member's day (never the leave type or the reason).
   teamDay: 'employee_id, day, status, first_in, last_out, late_minutes, late_excused',
   userRole: 'id, role',
@@ -389,6 +391,15 @@ class NoRealtime {
  */
 function storeError(table, error) {
   if (error && NOT_INSTALLED_CODES.has(error.code)) {
+    return new HttpError(
+      503,
+      'MODULE_NOT_INSTALLED',
+      `Team RVM needs a database update that has not been applied yet (it cannot read ${table}). Ask the tech team.`,
+    );
+  }
+  // The Wall's `occasion` CHECK before migration 30: a promotion wish is not a bad row, it is
+  // the database update KP has not applied yet. Answer 503, as every other pending module does.
+  if (error && error.code === '23514' && /hr_ess_wall_(posts|wishes)_occasion_check/.test(String(error.message || ''))) {
     return new HttpError(
       503,
       'MODULE_NOT_INSTALLED',
@@ -1069,6 +1080,14 @@ function createSupabaseStore(config, { client } = {}) {
     listTimeline: async (employeeId, limit = 50) =>
       (await read('hr_activity_events', (q) => q.select(COLUMNS.timeline).eq('entity_type', 'employee')
         .eq('entity_id', employeeId).order('occurred_at', { ascending: false }).limit(limit))) || [],
+    /**
+     * The promotion events for these people since an instant, newest first (F6). A promotion is
+     * recorded either as its own EMPLOYEE_PROMOTED event or as an EMPLOYEE_UPDATED whose
+     * designation moved. Values and notes are never selected, so pay cannot reach the Wall.
+     */
+    listPromotionEventsFor: (employeeIds, sinceIso) => readIn('hr_activity_events', COLUMNS.promotionEvent, 'entity_id', employeeIds,
+      (q) => q.eq('entity_type', 'employee').in('event_type', ['EMPLOYEE_PROMOTED', 'EMPLOYEE_UPDATED'])
+        .gte('occurred_at', sinceIso).order('occurred_at', { ascending: false })),
     /** The portal roles behind these user ids: the "Reports to the CEO (not recorded)" test. */
     listUserRolesFor: async (userIds) => readIn('users', COLUMNS.userRole, 'id', userIds),
 

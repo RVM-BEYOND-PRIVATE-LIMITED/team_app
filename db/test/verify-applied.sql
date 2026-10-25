@@ -1,4 +1,4 @@
--- Team RVM (ESS): are all 27 migrations applied?
+-- Team RVM (ESS): are all 30 migrations applied?
 --
 -- Read-only. Run in the Supabase SQL editor. One row per check, MISSING first; every row must
 -- read OK. Nothing is created, changed or deleted.
@@ -53,6 +53,16 @@ checks AS (
          EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_schema = 'public' AND table_name = 'hr_ess_wall_posts'
                     AND column_name = 'poll_closed_at')
+  UNION ALL
+  SELECT 'wall post occasions include promotion (migration 30)',
+         EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'hr_ess_wall_posts_occasion_check'
+                    AND pg_get_constraintdef(oid) LIKE '%promotion%')
+  UNION ALL
+  SELECT 'wall wish occasions include promotion (migration 30)',
+         EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'hr_ess_wall_wishes_occasion_check'
+                    AND pg_get_constraintdef(oid) LIKE '%promotion%')
   UNION ALL
   SELECT 'leave type check includes wfh (migration 29)',
          EXISTS (SELECT 1 FROM pg_constraint
