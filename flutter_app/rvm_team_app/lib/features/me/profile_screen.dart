@@ -41,17 +41,21 @@ class ProfileScreen extends StatelessWidget {
                     title: 'My profile',
                     subtitle: Text('Your HR record and timeline')),
                 Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () async {
-                      context
-                          .read<LoadBloc<MyProfile>>()
-                          .add(const LoadRefreshed());
-                      context
-                          .read<LoadBloc<PraisePage>>()
-                          .add(const LoadRefreshed());
-                    },
-                    child: ListView(
-                      padding: const EdgeInsets.all(RvmSpacing.md),
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    context
+                        .read<LoadBloc<MyProfile>>()
+                        .add(const LoadRefreshed());
+                    context
+                        .read<LoadBloc<PraisePage>>()
+                        .add(const LoadRefreshed());
+                  },
+                  child: ListView(
+                    // First install offline shows AppError as the only child.
+                    // AlwaysScrollable keeps pull-to-refresh working even
+                    // when the list is too short to scroll (issue13).
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(RvmSpacing.md),
                       children: const [
                         _ProfileBody(),
                         SizedBox(height: RvmSpacing.md),

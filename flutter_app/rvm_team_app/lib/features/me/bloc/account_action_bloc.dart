@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_network/core_network.dart';
+import 'package:dio/dio.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -136,8 +139,24 @@ class AccountActionBloc extends Bloc<AccountActionEvent, AccountActionState> {
       emit(state.copyWith(status: WriteStatus.success, profile: profile, message: message, codeSent: codeSent));
     } on Failure catch (f) {
       emit(state.copyWith(status: WriteStatus.failure, error: f.message));
-    } catch (e) {
-      emit(state.copyWith(status: WriteStatus.failure, error: e.toString()));
+    } on DioException catch (e) {
+      // A raw Dio error that bypassed the repository guard (connectivity
+      // probe, DNS outside Dio). Staff read the typed line, never the raw
+      // `SocketException: Failed host lookup …` text from issue13.
+      emit(state.copyWith(
+          status: WriteStatus.failure,
+          error: Failure.fromDio(e).message));
+    } on SocketException {
+      emit(state.copyWith(
+          status: WriteStatus.failure,
+          error: const NoConnectionFailure().message));
+    } catch (_) {
+      // Never leak raw `e.toString()` to the dialog (issue13). Unknown
+      // errors get the friendly line; raw detail stays in the log.
+      emit(state.copyWith(
+          status: WriteStatus.failure,
+          error: const UnknownFailure('Could not complete that. Try again.')
+              .message));
     }
   }
 
