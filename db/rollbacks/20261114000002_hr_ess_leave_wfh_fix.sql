@@ -1,0 +1,6 @@
+-- Rollback: 20261114000002_hr_ess_leave_wfh_fix.sql
+--
+-- This migration only replaces two functions with their corrected bodies. The rollback that
+-- matters is 20261114000001's, which puts the original single-day functions back; by the time
+-- the runner reaches it, this file has nothing left to undo. Kept as a comment-only rollback so
+-- every migration has its pair (db/test/run-migrations.js).

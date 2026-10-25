@@ -76,14 +76,27 @@ function monthProblem(month, today) {
  * ones still pending. `rows` are request rows of one family for the month; `written` is how many
  * days of that type the sheet already records (leave only, where the sheet is the ledger).
  */
-function countForMonth(rows, type, { written = 0 } = {}) {
-  let used = written;
+function countForMonth(rows, type, { written = 0, unit = 'count', month = null } = {}) {
+  const step = (r) => {
+    if (unit !== 'days') return 1;
+    // A range may cross a month boundary: count only the days in this month. Old rows have no
+    // working_days, so their stored day_count is the fallback.
+    if (r.portion && r.portion !== 'full') return 0.5;
+    if (month && Array.isArray(r.working_days) && r.working_days.length) {
+      return r.working_days.filter((d) => String(d).slice(0, 7) === month).length;
+    }
+    return Number(r.day_count ?? 1);
+  };
+  let approved = 0;
   let pending = 0;
   for (const r of rows) {
     if (r.type !== type) continue;
-    if (r.status === 'approved') used += 1;
-    else if (r.status === 'pending') pending += 1;
+    if (r.status === 'approved') approved += step(r);
+    else if (r.status === 'pending') pending += step(r);
   }
+  // An approved leave request has already written its days to the sheet. Count the ledger and
+  // the approved requests once, not twice: the larger of the two is the month's used days.
+  const used = unit === 'days' ? Math.max(Number(written) || 0, approved) : written + approved;
   return { used, pending };
 }
 
@@ -140,6 +153,17 @@ function requestView(r, family, { employee = null } = {}) {
     cancelled_by_name: r.cancelled_by_name ?? null,
     cancel_reason: r.cancel_reason ?? null,
   };
+  if (family === 'leave') {
+    view.end_day = r.end_day ?? r.day;
+    view.portion = r.portion ?? 'full';
+    view.day_count = Number(r.day_count ?? 1);
+    view.working_days = Array.isArray(r.working_days) ? r.working_days : [r.day];
+    view.requires_final_approval = Boolean(r.requires_final_approval);
+    view.stage = r.stage ?? 'manager';
+    view.manager_approved_by_name = r.manager_approved_by_name ?? null;
+    view.manager_approved_at = r.manager_approved_at ?? null;
+    view.manager_remark = r.manager_remark ?? null;
+  }
   if (family === 'attendance') {
     view.place = r.place ?? null;
     view.fix_in = hhmm(r.fix_in);

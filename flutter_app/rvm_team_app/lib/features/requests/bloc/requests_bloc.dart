@@ -25,6 +25,8 @@ class RequestCreateRequested extends RequestsEvent {
     required this.family,
     required this.type,
     required this.day,
+    this.endDay,
+    this.portion = 'full',
     required this.reason,
     this.place,
     this.fixIn,
@@ -34,6 +36,8 @@ class RequestCreateRequested extends RequestsEvent {
   final String family;
   final String type;
   final String day;
+  final String? endDay;
+  final String portion;
   final String reason;
   final String? place;
   final String? fixIn;
@@ -126,7 +130,11 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
     try {
       final result = e.family == 'leave'
           ? await _repo.createLeaveRequestSafe(
-              type: e.type, day: e.day, reason: e.reason)
+              type: e.type,
+              day: e.day,
+              endDay: e.endDay,
+              portion: e.portion,
+              reason: e.reason)
           : await _repo.createAttendanceRequestSafe(
               type: e.type,
               day: e.day,

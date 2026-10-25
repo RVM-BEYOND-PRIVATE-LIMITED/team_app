@@ -30,7 +30,22 @@ CREATE TABLE public.users (
 CREATE TABLE public.hr_employees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name text,
-  branch_id uuid
+  branch_id uuid,
+  -- 20261022000000_hr_attendance_shifts.sql:83. hr_ess_leave_working_days reads it.
+  week_off_days smallint[] NOT NULL DEFAULT '{0}',
+  -- Read only when an attendance-only faculty member has no portal login.
+  email text
+);
+
+-- hr_holidays: 20261022000000_hr_attendance_shifts.sql:91-100. A leave range skips them.
+CREATE TABLE public.hr_holidays (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  day date NOT NULL,
+  name text NOT NULL,
+  branch_id uuid REFERENCES public.hr_branches(id) ON DELETE CASCADE,
+  created_by uuid,
+  created_by_name text,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- hr_branches: supabase/migrations/20260826000001_hrms_tables.sql:39-48. Referenced by
@@ -43,8 +58,9 @@ CREATE TABLE public.hr_branches (
 -- 20261020000000_hr_attendance_punch.sql:62-66 and the rule columns of
 -- 20261022000000_hr_attendance_shifts.sql:106-127. The ESS's request functions read and write it
 -- through hr_attendance_apply_override (and, for an excused late, exactly the columns HR's own
--- excuse-late writes). The one-CL unique index (20261022000000:142-145) is here too: the decision
--- function's own check is the first line, and this index is the backstop the tests provoke.
+-- excuse-late writes). The one-CL unique index (20261022000000:142-145) is NOT here: the Scheduler
+-- migration 20261114000001 replaced it with a units trigger, so a multi-day CL can fit a raised
+-- allowance. The decision function's own allowance check is the first line in this snapshot.
 CREATE TABLE public.hr_staff_attendance (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_id    uuid NOT NULL REFERENCES public.hr_employees(id) ON DELETE CASCADE,
@@ -78,9 +94,47 @@ CREATE TABLE public.hr_staff_attendance (
   UNIQUE (employee_id, day)
 );
 
-CREATE UNIQUE INDEX uq_hr_staff_attendance_one_cl_a_month
-  ON public.hr_staff_attendance (employee_id, (date_trunc('month', day::timestamp)))
-  WHERE status = 'leave' AND leave_type = 'cl';
+-- The Scheduler's 20261114000001 trigger, copied for this snapshot: full day 1, half day 0.5,
+-- against hr_ess_request_limits.leave_cl when that table exists (the team_app migrations create
+-- it later in the run, so the trigger checks the catalogue at execution time).
+CREATE FUNCTION public.hr_staff_attendance_cl_allowance()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_unit  numeric;
+  v_limit numeric := 1::numeric;
+  v_used  numeric := 0::numeric;
+BEGIN
+  IF NEW.status NOT IN ('leave', 'half_day') OR NEW.leave_type IS DISTINCT FROM 'cl' THEN
+    RETURN NEW;
+  END IF;
+  v_unit := CASE WHEN NEW.status = 'leave' THEN 1::numeric ELSE 0.5::numeric END;
+  IF to_regclass('public.hr_ess_request_limits') IS NOT NULL THEN
+    SELECT limit_count::numeric INTO v_limit
+      FROM public.hr_ess_request_limits WHERE type = 'leave_cl';
+    IF NOT FOUND THEN v_limit := 1::numeric;
+    ELSIF v_limit IS NULL THEN RETURN NEW; END IF;
+  END IF;
+  SELECT COALESCE(SUM(CASE WHEN status = 'leave' THEN 1::numeric ELSE 0.5::numeric END), 0)
+    INTO v_used FROM public.hr_staff_attendance
+   WHERE employee_id = NEW.employee_id AND leave_type = 'cl'
+     AND status IN ('leave', 'half_day')
+     AND day >= date_trunc('month', NEW.day::timestamp)::date
+     AND day <  (date_trunc('month', NEW.day::timestamp) + interval '1 month')::date
+     AND (TG_OP = 'INSERT' OR id <> NEW.id);
+  IF v_used + v_unit > v_limit THEN
+    RAISE EXCEPTION 'hr_staff_attendance_one_cl_a_month: allowance exceeded'
+      USING ERRCODE = '23505';
+  END IF;
+  RETURN NEW;
+END $$;
+
+CREATE TRIGGER hr_staff_attendance_cl_allowance_trg
+  BEFORE INSERT OR UPDATE OF status, leave_type, day
+  ON public.hr_staff_attendance
+  FOR EACH ROW EXECUTE FUNCTION public.hr_staff_attendance_cl_allowance();
 
 -- hr_attendance_overrides: 20261020000000_hr_attendance_punch.sql (the log
 -- hr_attendance_apply_override writes). Referenced by the stub below only.

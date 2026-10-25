@@ -3,6 +3,7 @@ const { bodyWith, requiredText, idParam, oneQueryValue, invalid } = require('../
 const { istDay, isCalendarDay, monthBounds } = require('../lib/time');
 const { REQUEST_TYPES, effectiveLimit } = require('../policy/requestLimits');
 const { LEAVE_TYPES, windowProblem, monthProblem, countForMonth, minutesForMonth, balanceOf, requestView } = require('../policy/requests');
+const { needsFinalApproval } = require('../policy/approvals');
 const { notifyApprovers } = require('../lib/notify');
 
 /**
@@ -14,14 +15,38 @@ const { notifyApprovers } = require('../lib/notify');
  * not offered in this phase.
  */
 
-/** POST /api/ess/leave-requests { type: cl|lwp|wfh, day, reason } */
+/** The units a sheet day counts: a full leave day 1, a half-day leave 0.5. */
+const dayUnits = (d) => (d.status === 'half_day' ? 0.5 : 1);
+const unitsOf = (days, type) =>
+  (days || []).filter((d) => d.leave_type === type).reduce((sum, d) => sum + dayUnits(d), 0);
+
+/**
+ * POST /api/ess/leave-requests
+ *   { type: cl|lwp|wfh, day, end_day?, portion?, reason }
+ *
+ * `day` is the first day and `end_day` the last (the same day when a single day is filed).
+ * `portion` is full | first_half | second_half; a half day must be a single day.
+ */
 function createMyLeaveRequest({ store, now }) {
   return asyncRoute(async (req, res) => {
     const { employee } = req.auth;
-    const body = bodyWith(req, ['type', 'day', 'reason']);
+    const body = bodyWith(req, ['type', 'day', 'end_day', 'portion', 'reason']);
     if (!LEAVE_TYPES.includes(body.type)) throw invalid(MESSAGES.LEAVE_REQUEST_TYPE);
     if (!isCalendarDay(body.day)) throw invalid(MESSAGES.DATE_FORMAT);
+
     const day = body.day;
+    const endDay = body.end_day === undefined ? day : body.end_day;
+    const portion = body.portion === undefined ? 'full' : body.portion;
+    if (!isCalendarDay(endDay)) throw invalid(MESSAGES.DATE_FORMAT);
+    if (endDay < day) throw invalid(MESSAGES.LEAVE_RANGE);
+    if (!['full', 'first_half', 'second_half'].includes(portion)) {
+      throw invalid(MESSAGES.LEAVE_PORTION);
+    }
+    if (portion !== 'full' && endDay !== day) throw invalid(MESSAGES.LEAVE_HALF_SINGLE);
+    // Two months is the picker's reach; a longer range is a typo, not a leave.
+    if ((Date.parse(`${endDay}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86400000 > 62) {
+      throw invalid(MESSAGES.LEAVE_RANGE);
+    }
     const reason = requiredText(body.reason, { min: 5, max: 1000, message: MESSAGES.REQUEST_REASON });
 
     const today = istDay(now());
@@ -32,13 +57,9 @@ function createMyLeaveRequest({ store, now }) {
         : invalid(MESSAGES[problem]);
     }
 
-    if (await store.countPendingRequests({ family: 'leave', employeeId: employee.id, type: body.type, day }) > 0) {
-      throw new HttpError(409, 'DUPLICATE_REQUEST', MESSAGES.DUPLICATE_REQUEST);
-    }
-
-    // WFH (KP, 22 Oct): the employee's own allowance IS the limit. HR enables it per person; the
-    // month's approved and pending WFH days count, whether they came from here or another row.
+    // WFH is still one day and keeps its own allowance (KP, 22 Oct).
     if (body.type === 'wfh') {
+      if (endDay !== day || portion !== 'full') throw invalid(MESSAGES.WFH_ONE_DAY);
       const allowance = await store.getWfhAllowance(employee.id);
       if (!allowance || !allowance.is_enabled) {
         throw new HttpError(409, 'WFH_NOT_ALLOWED', MESSAGES.WFH_NOT_ALLOWED);
@@ -49,23 +70,64 @@ function createMyLeaveRequest({ store, now }) {
       if (taken >= allowance.monthly_limit_days) {
         throw new HttpError(409, 'WFH_LIMIT', MESSAGES.WFH_LIMIT);
       }
-    } else {
+    }
+
+    const workingDays = body.type === 'wfh'
+      ? [day]
+      : await store.leaveWorkingDays(employee.id, day, endDay);
+    if (!workingDays.length) throw new HttpError(409, 'DAY_OFF', MESSAGES.LEAVE_DAY_OFF);
+    if (portion !== 'full' && workingDays.length !== 1) throw invalid(MESSAGES.LEAVE_DAY_OFF);
+
+    const units = portion === 'full' ? workingDays.length : 0.5;
+
+    if (await store.countPendingLeaveOverlap({
+      employeeId: employee.id, type: body.type, from: day, to: endDay,
+    }) > 0) {
+      throw new HttpError(409, 'DUPLICATE_REQUEST', MESSAGES.DUPLICATE_LEAVE_REQUEST);
+    }
+
+    if (body.type !== 'wfh') {
       // The month's counter. For leave the sheet's own days count too, so a request cannot be
-      // filed around a CL or an unpaid day somebody recorded by hand.
+      // filed around a CL or an unpaid day somebody recorded by hand. Half days cost 0.5.
       const limits = await store.getRequestLimits();
       const type = REQUEST_TYPES.find((t) => t.type === `leave_${body.type}`);
       const { from, to } = monthBounds(day);
       const rows = await store.listMyRequestFacts('leave', employee.id, from, to);
       const leaveDays = await store.listMyLeaveDays(employee.id, from, to);
-      const written = leaveDays.filter((d) => d.leave_type === body.type).length;
-      const { used, pending } = countForMonth(rows, body.type, { written });
+      const written = unitsOf(leaveDays, body.type);
+      const { used, pending } = countForMonth(rows, body.type,
+        { written, unit: 'days', month: day.slice(0, 7) });
       const allowed = effectiveLimit(type, limits);
-      if (allowed != null && used + pending >= allowed) {
+      if (allowed != null && used + pending + units > allowed) {
         throw new HttpError(409, 'LIMIT_REACHED', MESSAGES.LIMIT_REACHED);
       }
     }
 
-    const created = await store.createLeaveRequest({ employee_id: employee.id, type: body.type, day, reason });
+    // A faculty member's request takes a final round after the manager (RVM, 26 Oct 2026).
+    const approvalInfo = await store.getEmployeeApproval(employee.id);
+    const account = approvalInfo && approvalInfo.user_id ? await store.getUser(approvalInfo.user_id) : null;
+    let legacyFaculty = false;
+    if (!account && approvalInfo && approvalInfo.email) {
+      try {
+        legacyFaculty = Boolean(await store.getFacultyByEmail(approvalInfo.email));
+      } catch {
+        legacyFaculty = false; // the legacy faculty table is not part of every install
+      }
+    }
+    const finalRound = needsFinalApproval(account && account.role) || legacyFaculty;
+
+    const created = await store.createLeaveRequest({
+      employee_id: employee.id,
+      type: body.type,
+      day,
+      end_day: endDay,
+      portion,
+      day_count: units,
+      working_days: workingDays,
+      requires_final_approval: finalRound,
+      stage: 'manager',
+      reason,
+    });
     // The approver hears about it (best effort; D6/D7).
     await notifyApprovers({ store, requester: employee, request: created, family: 'leave' });
     res.status(201).json({ request: requestView(created, 'leave') });
@@ -125,8 +187,8 @@ function myLeaveBalances({ store, now }) {
     const leaveFacts = await store.listMyRequestFacts('leave', employee.id, from, to);
     const days = await store.listMyLeaveDays(employee.id, from, to);
     const written = {
-      leave_cl: days.filter((d) => d.leave_type === 'cl').length,
-      leave_lwp: days.filter((d) => d.leave_type === 'lwp').length,
+      leave_cl: unitsOf(days, 'cl'),
+      leave_lwp: unitsOf(days, 'lwp'),
     };
     const wfhUsed = await store.countWfhDays({ employeeId: employee.id, month, statuses: ['approved'] });
     const wfhPending = await store.countWfhDays({ employeeId: employee.id, month, statuses: ['pending'] });
@@ -139,7 +201,8 @@ function myLeaveBalances({ store, now }) {
         // C3: short leave counts by minutes, and the balance shows the minutes used and waiting.
         counts = minutesForMonth(attendanceFacts, t.type);
       } else if (t.type === 'leave_cl' || t.type === 'leave_lwp') {
-        counts = countForMonth(leaveFacts, t.type.slice('leave_'.length), { written: written[t.type] });
+        counts = countForMonth(leaveFacts, t.type.slice('leave_'.length),
+          { written: written[t.type], unit: 'days', month });
       } else if (t.type === 'wfh') {
         // WFH's limit is the employee's own allowance, never a generic request-limit row.
         const enabled = Boolean(allowance && allowance.is_enabled);

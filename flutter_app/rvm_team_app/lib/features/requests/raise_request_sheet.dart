@@ -28,6 +28,9 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   String _family = 'attendance';
   String _type = 'on_duty';
   DateTime _day = DateTime.now();
+  DateTime _endDay = DateTime.now();
+  bool _multiDay = false;
+  String _portion = 'full';
   final _reason = TextEditingController();
   final _place = TextEditingController();
   final _fixIn = TextEditingController();
@@ -49,6 +52,8 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     setState(() {
       _family = family;
       _type = family == 'leave' ? 'cl' : 'on_duty';
+      _multiDay = false;
+      _portion = 'full';
       _error = null;
       _keepDayInWindow();
     });
@@ -81,8 +86,11 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     if (_day.isBefore(_firstSelectable)) _day = today;
   }
 
-  String get _dayIso => '${_day.year.toString().padLeft(4, '0')}-'
-      '${_day.month.toString().padLeft(2, '0')}-${_day.day.toString().padLeft(2, '0')}';
+  String _iso(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String get _dayIso => _iso(_day);
+  String get _endDayIso => _iso(_multiDay ? _endDay : _day);
 
   Future<void> _pickDay() async {
     final now = DateTime.now();
@@ -91,11 +99,29 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       initialDate: _day,
       firstDate: _firstSelectable,
       lastDate: _mayBeAhead ? now.add(const Duration(days: 62)) : now,
-      helpText: 'Pick the day',
+      helpText: _multiDay ? 'Pick the first day' : 'Pick the day',
     );
     if (picked != null) {
       setState(() {
         _day = picked;
+        if (_endDay.isBefore(_day)) _endDay = _day;
+        _error = null;
+      });
+    }
+  }
+
+  Future<void> _pickEndDay() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDay.isBefore(_day) ? _day : _endDay,
+      firstDate: _day,
+      lastDate: now.add(const Duration(days: 62)),
+      helpText: 'Pick the last day',
+    );
+    if (picked != null) {
+      setState(() {
+        _endDay = picked;
         _error = null;
       });
     }
@@ -176,6 +202,16 @@ class _RaiseSheetState extends State<_RaiseSheet> {
         return;
       }
     }
+    if (_family == 'leave') {
+      if (_multiDay && _endDay.isBefore(_day)) {
+        _showError('The last day cannot be before the first day.');
+        return;
+      }
+      if (_portion != 'full' && _multiDay) {
+        _showError('A half day is a single day. Choose one day, or a full day.');
+        return;
+      }
+    }
     int? minutes;
     if (_family == 'attendance' && _type == 'short_leave') {
       minutes = int.tryParse(_minutes.text.trim());
@@ -207,20 +243,23 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     }
     // Stop the known duplicate before the server answers 409. The list may be
     // stale by a few seconds, so the bloc still handles a server refusal.
-    final duplicate = bloc.state.requests.any((r) =>
-        r.isPending &&
-        r.family == _family &&
-        r.type == _type &&
-        r.day == _dayIso);
+    final duplicate = bloc.state.requests.any((r) {
+      if (!r.isPending || r.family != _family || r.type != _type) return false;
+      if (_family != 'leave') return r.day == _dayIso;
+      final otherEnd = r.endDay ?? r.day;
+      return r.day.compareTo(_endDayIso) <= 0 && otherEnd.compareTo(_dayIso) >= 0;
+    });
     if (duplicate) {
       _showError(
-          'You already have a request for that day. Wait for it to be decided.');
+          'You already have a pending request overlapping those dates. Wait for it to be decided.');
       return;
     }
     bloc.add(RequestCreateRequested(
       family: _family,
       type: _type,
       day: _dayIso,
+      endDay: _family == 'leave' ? _endDayIso : null,
+      portion: _family == 'leave' ? _portion : 'full',
       reason: reason,
       place: _type == 'on_duty' ? _place.text.trim() : null,
       fixIn: _type == 'fix_a_day' ? _normalizeTime(fixInRaw) : null,
@@ -243,8 +282,12 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     return null;
   }
 
+  String _formatDays(num value) =>
+      value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+
   String _limitMessage(LeaveBalanceType balance) {
-    final detail = '(${balance.used} used, ${balance.pending} pending)';
+    final detail =
+        '(${_formatDays(balance.used)} used, ${_formatDays(balance.pending)} pending)';
     return switch (_type) {
       'leave_cl' =>
         'You have no casual leave left this month $detail. Choose Leave without pay or another day.',
@@ -341,8 +384,64 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                 onPressed: _pickDay,
                 icon: const Icon(Icons.calendar_month_rounded),
                 label: Text(
-                    'Date: ${MaterialLocalizations.of(context).formatMediumDate(_day)}'),
+                    '${_multiDay ? 'From' : 'Date'}: ${MaterialLocalizations.of(context).formatMediumDate(_day)}'),
               ),
+              if (_family == 'leave') ...[
+                const SizedBox(height: RvmSpacing.sm),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                        value: false,
+                        label: Text('Single day'),
+                        icon: Icon(Icons.today_rounded)),
+                    ButtonSegment(
+                        value: true,
+                        label: Text('Multiple days'),
+                        icon: Icon(Icons.date_range_rounded)),
+                  ],
+                  selected: {_multiDay},
+                  onSelectionChanged: (s) => setState(() {
+                    _multiDay = s.first;
+                    _endDay = _day;
+                    _error = null;
+                  }),
+                ),
+                if (_multiDay) ...[
+                  const SizedBox(height: RvmSpacing.sm),
+                  OutlinedButton.icon(
+                    onPressed: _pickEndDay,
+                    icon: const Icon(Icons.event_available_rounded),
+                    label: Text(
+                        'To: ${MaterialLocalizations.of(context).formatMediumDate(_endDay)}'),
+                  ),
+                ],
+                const SizedBox(height: RvmSpacing.sm),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'full', label: Text('Full day')),
+                    ButtonSegment(
+                        value: 'first_half', label: Text('First half')),
+                    ButtonSegment(
+                        value: 'second_half', label: Text('Second half')),
+                  ],
+                  selected: {_portion},
+                  onSelectionChanged: (s) => setState(() {
+                    _portion = s.first;
+                    if (_portion != 'full') _multiDay = false;
+                    _error = null;
+                  }),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _multiDay
+                      ? 'Working days are counted when you send. Sundays, weekly offs and holidays are skipped.'
+                      : 'A half day counts as 0.5 against the monthly allowance.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 10.5,
+                        color: RvmColors.subtle,
+                      ),
+                ),
+              ],
               const SizedBox(height: RvmSpacing.md),
               if (_type == 'on_duty')
                 TextField(

@@ -7,6 +7,19 @@ import 'package:equatable/equatable.dart';
 Map<String, dynamic>? _map(dynamic v) => v is Map ? v.cast<String, dynamic>() : null;
 String? _str(dynamic v) => v?.toString();
 int? _int(dynamic v) => v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
+num? _num(dynamic v) => v is num ? v : (v is String ? num.tryParse(v) : null);
+/// '1', '0.5', '1.5' — never '1.0'.
+String _daysLabel(num? v) {
+  if (v == null) return '—';
+  return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+}
+
+const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+String _shortDate(String iso) {
+  final d = DateTime.tryParse(iso);
+  if (d == null) return iso;
+  return '${d.day} ${_months[d.month - 1]}';
+}
 bool _bool(dynamic v) => v == true;
 DateTime? _date(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
 List<String> _strings(dynamic v) =>
@@ -929,6 +942,14 @@ class EssRequest extends Equatable {
     required this.type,
     required this.status,
     required this.day,
+    this.endDay,
+    this.portion = 'full',
+    this.dayCount = 1,
+    this.workingDays = const [],
+    this.requiresFinalApproval = false,
+    this.stage = 'manager',
+    this.managerApprovedByName,
+    this.managerRemark,
     required this.reason,
     this.createdAt,
     this.decidedAt,
@@ -949,6 +970,16 @@ class EssRequest extends Equatable {
   final String type; // on_duty | fix_a_day | excuse_late | cl | lwp
   final String status; // pending | approved | rejected | withdrawn | cancelled
   final String day;
+  /// Leave only: the last day, and the half-day choice. Equal/single for attendance.
+  final String? endDay;
+  final String portion; // full | first_half | second_half
+  final num dayCount;
+  final List<String> workingDays;
+  /// A faculty member's leave takes a manager round and then HR/CEO/super-admin final approval.
+  final bool requiresFinalApproval;
+  final String stage; // manager | final
+  final String? managerApprovedByName;
+  final String? managerRemark;
   final String reason;
   final DateTime? createdAt;
   final DateTime? decidedAt;
@@ -965,6 +996,32 @@ class EssRequest extends Equatable {
 
   bool get isPending => status == 'pending';
 
+  bool get isLeave => family == 'leave';
+  bool get isHalfDay => portion == 'first_half' || portion == 'second_half';
+
+  /// '12 Nov', or '12 Nov – 15 Nov' for a range.
+  String get dateLabel {
+    final last = endDay;
+    if (last == null || last == day) return _shortDate(day);
+    return '${_shortDate(day)} – ${_shortDate(last)}';
+  }
+
+  String get portionLabel => switch (portion) {
+        'first_half' => 'First half',
+        'second_half' => 'Second half',
+        _ => 'Full day',
+      };
+
+  String get daysLabel => '${_daysLabel(dayCount)} ${dayCount == 1 ? 'day' : 'days'}';
+
+  /// 'Waiting for manager' / 'Waiting for HR final approval' on a pending faculty request.
+  String? get stageLabel {
+    if (!isPending || !requiresFinalApproval) return null;
+    return stage == 'final'
+        ? 'Manager approved — waiting for HR/CEO final approval'
+        : 'Waiting for manager approval';
+  }
+
   String get typeLabel => switch (type) {
         'on_duty' => 'On duty',
         'fix_a_day' => 'Fix a day',
@@ -980,6 +1037,16 @@ class EssRequest extends Equatable {
         type: _str(j['type']) ?? '',
         status: _str(j['status']) ?? 'pending',
         day: _str(j['day']) ?? '',
+        endDay: _str(j['end_day']),
+        portion: _str(j['portion']) ?? 'full',
+        dayCount: _num(j['day_count']) ?? 1,
+        workingDays: (j['working_days'] is List)
+            ? (j['working_days'] as List).map((e) => e.toString()).toList(growable: false)
+            : const [],
+        requiresFinalApproval: _bool(j['requires_final_approval']),
+        stage: _str(j['stage']) ?? 'manager',
+        managerApprovedByName: _str(j['manager_approved_by_name']),
+        managerRemark: _str(j['manager_remark']),
         reason: _str(j['reason']) ?? '',
         createdAt: _date(j['created_at']),
         decidedAt: _date(j['decided_at']),
@@ -996,7 +1063,7 @@ class EssRequest extends Equatable {
       );
 
   @override
-  List<Object?> get props => [id, family, type, status, day, reason, decidedByName, decisionNote];
+  List<Object?> get props => [id, family, type, status, day, endDay, portion, dayCount, stage, reason, decidedByName, decisionNote];
 }
 
 /// `GET /approvals`.
@@ -1037,10 +1104,10 @@ class LeaveBalanceType extends Equatable {
   final bool offered;
   final String unit; // days | minutes
   final int phase;
-  final int? allowed;
-  final int used;
-  final int pending;
-  final int? remaining;
+  final num? allowed;
+  final num used;
+  final num pending;
+  final num? remaining;
 
   String get label => switch (type) {
         'on_duty' => 'On duty',
@@ -1058,10 +1125,10 @@ class LeaveBalanceType extends Equatable {
         offered: _bool(j['offered']),
         unit: _str(j['unit']) ?? 'days',
         phase: _int(j['phase']) ?? 1,
-        allowed: _int(j['allowed']),
-        used: _int(j['used']) ?? 0,
-        pending: _int(j['pending']) ?? 0,
-        remaining: _int(j['remaining']),
+        allowed: _num(j['allowed']),
+        used: _num(j['used']) ?? 0,
+        pending: _num(j['pending']) ?? 0,
+        remaining: _num(j['remaining']),
       );
   @override
   List<Object?> get props => [type, offered, allowed, used, pending, remaining];

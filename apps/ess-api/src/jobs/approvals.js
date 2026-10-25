@@ -62,7 +62,10 @@ function startApprovalsJob({ store, now = () => new Date(), log = console, inter
           const already = new Set(
             (await store.listEscalationsFor(family, row.id)).map((e) => e.to_employee_id),
           );
-          const target = nextEscalation({ entries, escalatedIds: already });
+          // A faculty request at its final stage is already with HR/CEO; do not send it back
+          // up the manager line.
+          const finalStage = family === 'leave' && row.requires_final_approval && row.stage === 'final';
+          const target = finalStage ? null : nextEscalation({ entries, escalatedIds: already });
           const targets = target ? [target] : hrPeople
             .filter((e) => !already.has(e.id))
             .map((employee) => ({ employee, skipped: null }));

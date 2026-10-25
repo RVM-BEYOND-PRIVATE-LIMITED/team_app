@@ -1,6 +1,7 @@
 const { chainOf } = require('./me');
 const { isActive } = require('./employment');
 const { canDecideAny } = require('./requests');
+const { TEACHING_ROLES } = require('./roles');
 
 /**
  * Phase 2D (task D4): the request's approval chain, the levels it skips, and the escalation the
@@ -70,6 +71,21 @@ function mayDecide({ auth, entries }) {
 }
 
 /**
+ * RVM, 26 Oct 2026: a faculty member's leave takes one more round. Their manager may advance it
+ * from `manager` to `final`, but only HR, the CEO or a super admin may approve it at `final`.
+ * Those three (canDecideAny) may also decide at either stage, and every request that is not a
+ * faculty member's keeps the ordinary rule.
+ */
+function mayDecideLeave({ auth, entries, request }) {
+  if (canDecideAny(auth.kind, auth.role)) return true;
+  if (request && request.requires_final_approval && request.stage === 'final') return false;
+  return mayDecide({ auth, entries });
+}
+
+/** Whether this person's linked portal role makes them faculty for the final-round rule. */
+const needsFinalApproval = (role) => TEACHING_ROLES.has(role);
+
+/**
  * The escalation target: the first unskipped level that no escalation has been recorded for yet,
  * or null when the chain is exhausted (the job then falls back to HR).
  */
@@ -83,5 +99,7 @@ module.exports = {
   chainEntries,
   firstUnskipped,
   mayDecide,
+  mayDecideLeave,
+  needsFinalApproval,
   nextEscalation,
 };

@@ -50,6 +50,8 @@ const SCHEMA = {
   hr_activity_events: ['id', 'event_type', 'entity_type', 'entity_id', 'entity_label', 'actor_user_id', 'actor_name',
     'actor_role', 'before', 'after', 'changed_keys', 'metadata', 'note', 'occurred_at'],
   hr_branches: ['id', 'name', 'is_active', 'latitude', 'longitude', 'geofence_radius_m', 'office_ips', 'created_at', 'updated_at'],
+  // The legacy teaching record, read only to identify an attendance-only faculty member.
+  faculty: ['id', 'email'],
   hr_departments: ['id', 'name', 'is_active', 'source', 'created_at', 'updated_at'],
   hr_shifts: ['id', 'name', 'start_time', 'end_time', 'grace_minutes', 'is_active'],
   hr_holidays: ['id', 'day', 'name', 'branch_id'],
@@ -105,8 +107,11 @@ const SCHEMA = {
     'created_at', 'updated_at'],
   hr_ess_attendance_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
     'action', 'note', 'details'],
-  // 20261106000002_hr_ess_leave_requests.sql
-  hr_ess_leave_requests: ['id', 'employee_id', 'type', 'status', 'day', 'reason', 'day_before', 'day_written_at',
+  // 20261106000002_hr_ess_leave_requests.sql, plus the range/half-day columns of
+  // 20261114000001 (end_day, portion, day_count, working_days, days_before).
+  hr_ess_leave_requests: ['id', 'employee_id', 'type', 'status', 'day', 'end_day', 'portion', 'day_count',
+    'working_days', 'days_before', 'requires_final_approval', 'stage', 'manager_approved_by_employee_id',
+    'manager_approved_by_name', 'manager_remark', 'manager_approved_at', 'reason', 'day_before', 'day_written_at',
     'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name', 'decided_at', 'decision_note',
     'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason', 'created_at', 'updated_at'],
   hr_ess_leave_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
@@ -375,6 +380,10 @@ const TRIGGERS = {
     return filedHistory(fake, 'hr_ess_attendance_request_history', row);
   },
   hr_ess_leave_requests(fake, row) {
+    if (row.end_day == null) row.end_day = row.day;
+    if (row.portion == null) row.portion = 'full';
+    if (row.day_count == null) row.day_count = row.portion === 'full' ? 1 : 0.5;
+    if (row.working_days == null) row.working_days = [row.day];
     return filedHistory(fake, 'hr_ess_leave_request_history', row);
   },
   // The ticket ref, from hr_ess_helpdesk_ticket_ref_seq (20261109000001): the column default
@@ -402,7 +411,10 @@ function filedHistory(fake, historyTable, row) {
     actor_name: employee ? employee.full_name : null,
     action: 'filed',
     note: null,
-    details: { type: row.type, day: row.day },
+    details: {
+      type: row.type, day: row.day, end_day: row.end_day,
+      portion: row.portion, day_count: row.day_count,
+    },
   });
   return null;
 }
@@ -808,6 +820,25 @@ const monthBefore = (day) => {
   return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
 };
 
+/** hr_ess_leave_working_days: week offs, holidays and days already marked off are skipped. */
+function leaveWorkingDays(fake, employeeId, from, to) {
+  const employee = fake.rows('hr_employees').find((e) => e.id === employeeId);
+  if (!employee) return [];
+  const weekOff = Array.isArray(employee.week_off_days) ? employee.week_off_days : [0];
+  const holidays = fake.rows('hr_holidays') || [];
+  const attendance = fake.rows('hr_staff_attendance');
+  const out = [];
+  for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += 86400000) {
+    const day = new Date(t).toISOString().slice(0, 10);
+    if (weekOff.includes(new Date(t).getUTCDay())) continue;
+    if (holidays.some((h) => h.day === day && (h.branch_id == null || h.branch_id === employee.branch_id))) continue;
+    if (attendance.some((a) => a.employee_id === employeeId && a.day === day
+      && ['week_off', 'holiday'].includes(a.status))) continue;
+    out.push(day);
+  }
+  return out;
+}
+
 /** One history row, as the functions and the triggers write them. */
 function pushHistory(fake, table, { requestId, at, action, note = null, details = {}, employeeId = null, userId = null, name = null }) {
   fake.rows(table).push({
@@ -826,11 +857,16 @@ function fakeApplyOverride(fake, a) {
   const rows = fake.rows('hr_staff_attendance');
   const existing = rows.find((r) => r.employee_id === a.employee_id && r.day === a.day);
   const before = existing ? clone(existing) : null;
-  if (a.status === 'leave' && a.leave_type === 'cl') {
-    const clash = rows.find((r) => r !== existing && r.employee_id === a.employee_id
-      && (r.day || '').slice(0, 7) === a.day.slice(0, 7) && r.status === 'leave' && r.leave_type === 'cl');
-    if (clash) {
-      return { error: { code: '23505', message: 'duplicate key value violates unique constraint "uq_hr_staff_attendance_one_cl_a_month"' } };
+  if (a.leave_type === 'cl' && ['leave', 'half_day'].includes(a.status)) {
+    const unit = a.status === 'leave' ? 1 : 0.5;
+    const limitRow = fake.rows('hr_ess_request_limits').find((r) => r.type === 'leave_cl');
+    const limit = limitRow ? limitRow.limit_count : 1;
+    const used = rows.filter((r) => r !== existing && r.employee_id === a.employee_id
+      && (r.day || '').slice(0, 7) === a.day.slice(0, 7) && r.leave_type === 'cl'
+      && ['leave', 'half_day'].includes(r.status))
+      .reduce((sum, r) => sum + (r.status === 'leave' ? 1 : 0.5), 0);
+    if (limit != null && used + unit > limit) {
+      return { error: { code: '23505', message: 'hr_staff_attendance_one_cl_a_month: this month\'s CL allowance is used' } };
     }
   }
   const at = fake.now().toISOString();
@@ -919,6 +955,33 @@ const FUNCTIONS = {
   },
 
   /* ── the request functions (db/migrations/20261106000004_hr_ess_request_functions.sql) ── */
+
+  hr_ess_leave_working_days: {
+    table: 'hr_ess_leave_requests',
+    run(fake, { p_employee_id, p_from, p_to }) {
+      return { data: leaveWorkingDays(fake, p_employee_id, p_from, p_to), error: null };
+    },
+  },
+
+  hr_ess_leave_cl_units: {
+    table: 'hr_ess_leave_requests',
+    run(fake, { p_employee_id, p_month }) {
+      const month = String(p_month).slice(0, 7);
+      const units = fake.rows('hr_staff_attendance')
+        .filter((d) => d.employee_id === p_employee_id && d.leave_type === 'cl'
+          && ['leave', 'half_day'].includes(d.status) && String(d.day).slice(0, 7) === month)
+        .reduce((sum, d) => sum + (d.status === 'leave' ? 1 : 0.5), 0);
+      return { data: units, error: null };
+    },
+  },
+
+  hr_ess_leave_cl_limit: {
+    table: 'hr_ess_leave_requests',
+    run(fake) {
+      const row = fake.rows('hr_ess_request_limits').find((r) => r.type === 'leave_cl');
+      return { data: row ? row.limit_count : 1, error: null };
+    },
+  },
 
   hr_ess_withdraw_attendance_request: {
     table: 'hr_ess_attendance_requests',
@@ -1080,28 +1143,58 @@ const FUNCTIONS = {
           && x.type === 'wfh' && x.status === 'approved' && (x.day || '').slice(0, 7) === r.day.slice(0, 7)).length;
         if (taken >= allowance.monthly_limit_days) return { data: { outcome: 'wfh_limit' }, error: null };
       }
-      if (r.type === 'cl') {
-        const taken = fake.rows('hr_staff_attendance').some((d) => d.employee_id === r.employee_id
-          && d.status === 'leave' && d.leave_type === 'cl'
-          && (d.day || '').slice(0, 7) === r.day.slice(0, 7) && d.day !== r.day);
-        if (taken) return { data: { outcome: 'cl_limit' }, error: null };
-      }
-      const dayRow = fake.rows('hr_staff_attendance').find((a) => a.employee_id === r.employee_id && a.day === r.day);
-      const employee = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
+
       const isWfh = r.type === 'wfh';
-      const applied = fakeApplyOverride(fake, {
-        employee_id: r.employee_id, day: r.day,
-        branch_id: dayRow ? dayRow.branch_id : (isWfh && employee ? employee.branch_id ?? null : null),
-        // WFH writes the day present, with the WFH note; leave writes the leave row, as before.
-        status: isWfh ? 'present' : 'leave', leave_type: isWfh ? null : r.type,
-        // Whatever times the day records are kept, as the controller's own merge does.
-        first_in: dayRow ? dayRow.first_in ?? null : null,
-        last_out: dayRow ? dayRow.last_out ?? null : null,
-        worked_minutes: dayRow ? dayRow.worked_minutes ?? null : null,
-        reason: isWfh ? `Work from home: ${r.reason}` : r.reason, by: p_decider_user_id ?? null, by_name: p_decider_name,
-      });
-      if (applied.error) return { data: null, error: applied.error };
-      r.day_before = applied.before;
+      const from = r.day;
+      const to = r.end_day && r.end_day >= r.day ? r.end_day : r.day;
+      const daysToWrite = isWfh ? [from] : leaveWorkingDays(fake, r.employee_id, from, to);
+      if (!daysToWrite.length) return { data: { outcome: 'no_working_days' }, error: null };
+      const portion = r.portion || 'full';
+      if (portion !== 'full' && daysToWrite.length !== 1) {
+        return { data: { outcome: 'invalid_range' }, error: null };
+      }
+      const units = isWfh ? 1 : (portion === 'full' ? daysToWrite.length : 0.5);
+
+      if (r.type === 'cl') {
+        const month = from.slice(0, 7);
+        const written = fake.rows('hr_staff_attendance')
+          .filter((d) => d.employee_id === r.employee_id && d.leave_type === 'cl'
+            && ['leave', 'half_day'].includes(d.status)
+            && (d.day || '').slice(0, 7) === month && !daysToWrite.includes(d.day))
+          .reduce((sum, d) => sum + (d.status === 'leave' ? 1 : 0.5), 0);
+        const limitRow = fake.rows('hr_ess_request_limits').find((x) => x.type === 'leave_cl');
+        const limit = limitRow ? limitRow.limit_count : 1;
+        if (limit != null && written + units > limit) {
+          return { data: { outcome: 'cl_limit' }, error: null };
+        }
+      }
+
+      const daysBefore = {};
+      const employee = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
+      for (const day of daysToWrite) {
+        const dayRow = fake.rows('hr_staff_attendance').find((a) => a.employee_id === r.employee_id && a.day === day);
+        const status = isWfh ? 'present' : (portion === 'full' ? 'leave' : 'half_day');
+        const noteText = isWfh
+          ? `Work from home: ${r.reason}`
+          : portion === 'full' ? r.reason
+            : `${r.reason} (${portion === 'first_half' ? 'first half' : 'second half'})`;
+        const applied = fakeApplyOverride(fake, {
+          employee_id: r.employee_id, day,
+          branch_id: dayRow ? dayRow.branch_id : (employee ? employee.branch_id ?? null : null),
+          status, leave_type: isWfh ? null : r.type,
+          // Whatever times the day records are kept, as the controller's own merge does.
+          first_in: dayRow ? dayRow.first_in ?? null : null,
+          last_out: dayRow ? dayRow.last_out ?? null : null,
+          worked_minutes: dayRow ? dayRow.worked_minutes ?? null : null,
+          reason: noteText, by: p_decider_user_id ?? null, by_name: p_decider_name,
+        });
+        if (applied.error) return { data: null, error: applied.error };
+        daysBefore[day] = applied.before;
+      }
+      r.day_before = daysBefore[daysToWrite[0]] ?? null;
+      r.days_before = daysBefore;
+      r.working_days = daysToWrite;
+      r.day_count = units;
       r.day_written_at = p_now;
       Object.assign(r, {
         status: 'approved', decided_by_employee_id: p_decider_employee_id ?? null,
@@ -1111,9 +1204,9 @@ const FUNCTIONS = {
       pushHistory(fake, 'hr_ess_leave_request_history', {
         requestId: r.id, at: p_now, action: 'approved', note: note || null, employeeId: p_decider_employee_id ?? null,
         userId: p_decider_user_id ?? null, name: p_decider_name,
-        details: { type: r.type, day: r.day, day_written: true },
+        details: { type: r.type, day: r.day, end_day: r.end_day, portion: r.portion, day_count: units, days_written: daysToWrite },
       });
-      return { data: { outcome: 'approved', request: clone(r), day_written: true }, error: null };
+      return { data: { outcome: 'approved', request: clone(r), day_written: true, days_written: daysToWrite }, error: null };
     },
   },
 
@@ -1169,19 +1262,31 @@ const FUNCTIONS = {
       if (!r) return { data: { outcome: 'not_found' }, error: null };
       if (r.status !== 'approved') return { data: { outcome: 'not_approved', request: clone(r) }, error: null };
       const days = fake.rows('hr_staff_attendance');
-      const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === r.day);
-      if (dayRow) {
-        if (!r.day_before) {
-          days.splice(days.indexOf(dayRow), 1);
+      const restore = (day, before) => {
+        const dayRow = days.find((a) => a.employee_id === r.employee_id && a.day === day);
+        if (!dayRow) return;
+        if (!before) {
+          if (dayRow.first_in == null && dayRow.last_out == null) {
+            days.splice(days.indexOf(dayRow), 1);
+          } else {
+            Object.assign(dayRow, {
+              status: (dayRow.worked_minutes ?? 0) >= 240 ? 'present' : 'half_day',
+              leave_type: null, note: null, source: 'self_punch', updated_at: p_now,
+            });
+          }
         } else {
-          const b = r.day_before;
           Object.assign(dayRow, {
-            status: b.status, leave_type: b.leave_type ?? null, note: b.note ?? null, source: b.source ?? null,
-            first_in: b.first_in ?? null, last_out: b.last_out ?? null, worked_minutes: b.worked_minutes ?? null,
-            marked_by: b.marked_by ?? null, marked_by_name: b.marked_by_name ?? null, marked_at: b.marked_at ?? null,
+            status: before.status, leave_type: before.leave_type ?? null, note: before.note ?? null, source: before.source ?? null,
+            first_in: before.first_in ?? null, last_out: before.last_out ?? null, worked_minutes: before.worked_minutes ?? null,
+            marked_by: before.marked_by ?? null, marked_by_name: before.marked_by_name ?? null, marked_at: before.marked_at ?? null,
             updated_at: p_now,
           });
         }
+      };
+      if (r.days_before && Object.keys(r.days_before).length) {
+        for (const [day, before] of Object.entries(r.days_before)) restore(day, before);
+      } else {
+        restore(r.day, r.day_before ?? null);
       }
       Object.assign(r, {
         status: 'cancelled', cancelled_by_user_id: p_by_user_id ?? null, cancelled_by_name: p_by_name,
@@ -1190,7 +1295,7 @@ const FUNCTIONS = {
       pushHistory(fake, 'hr_ess_leave_request_history', {
         requestId: r.id, at: p_now, action: 'cancelled', note: (p_reason || '').trim(),
         employeeId: p_by_employee_id ?? null, userId: p_by_user_id ?? null, name: p_by_name,
-        details: { type: r.type, day: r.day, day_restored: true },
+        details: { type: r.type, day: r.day, end_day: r.end_day, portion: r.portion, day_count: r.day_count, day_restored: true },
       });
       return { data: { outcome: 'cancelled', request: clone(r), day_restored: true }, error: null };
     },
@@ -1313,6 +1418,18 @@ function createFakeSupabase(tables = {}, { now = () => new Date() } = {}) {
     },
     rows(table) {
       if (!fake.tables[table]) fake.tables[table] = [];
+      if (table === 'hr_ess_leave_requests') {
+        // A row written before 20261114000001 (or a fixture that predates it) is a single full day.
+        for (const r of fake.tables[table]) {
+          if (r.end_day == null) r.end_day = r.day;
+          if (r.portion == null) r.portion = 'full';
+          if (r.day_count == null) r.day_count = r.portion === 'full' ? 1 : 0.5;
+          if (r.working_days == null) r.working_days = [r.day];
+          if (r.requires_final_approval == null) r.requires_final_approval = false;
+          if (r.stage == null) r.stage = 'manager';
+          if (r.manager_remark === undefined) r.manager_remark = null;
+        }
+      }
       return fake.tables[table];
     },
     /** The writes made, oldest first: { op, table, values, conditions }. */

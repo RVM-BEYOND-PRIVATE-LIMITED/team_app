@@ -21,6 +21,11 @@ const leaveRequestRow = (employeeId, n, change = {}) => ({
   type: 'cl',
   status: 'pending',
   day: '2026-10-20',
+  end_day: '2026-10-20',
+  portion: 'full',
+  day_count: 1,
+  working_days: ['2026-10-20'],
+  days_before: null,
   reason: 'Family function at home.',
   day_before: null,
   day_written_at: null,
@@ -82,6 +87,15 @@ describe('POST /api/ess/leave-requests', () => {
         type,
         status: 'pending',
         day,
+        end_day: day,
+        portion: 'full',
+        day_count: 1,
+        working_days: [day],
+        requires_final_approval: false,
+        stage: 'manager',
+        manager_approved_by_name: null,
+        manager_approved_at: null,
+        manager_remark: null,
         reason: 'Family function at home.',
         created_at: NOW.toISOString(),
         decided_at: null,
@@ -162,8 +176,8 @@ describe('GET /api/ess/leave/balances', () => {
     expect(by.fix_a_day).toEqual({ type: 'fix_a_day', offered: true, unit: 'count', phase: 1, allowed: 3, used: 0, pending: 0, remaining: 3 });
     expect(by.on_duty).toEqual({ type: 'on_duty', offered: true, unit: 'count', phase: 1, allowed: null, used: 1, pending: 0, remaining: null });
     // The CL on the sheet counts as used even though no request wrote it; the pending request counts too.
-    expect(by.leave_cl).toEqual({ type: 'leave_cl', offered: true, unit: 'count', phase: 1, allowed: 1, used: 1, pending: 1, remaining: 0 });
-    expect(by.leave_lwp).toEqual({ type: 'leave_lwp', offered: true, unit: 'count', phase: 1, allowed: null, used: 1, pending: 0, remaining: null });
+    expect(by.leave_cl).toEqual({ type: 'leave_cl', offered: true, unit: 'days', phase: 1, allowed: 1, used: 1, pending: 1, remaining: 0 });
+    expect(by.leave_lwp).toEqual({ type: 'leave_lwp', offered: true, unit: 'days', phase: 1, allowed: null, used: 1, pending: 0, remaining: null });
     expect(by.wfh.offered).toBe(false);
   });
 
@@ -193,6 +207,120 @@ describe('GET /api/ess/leave/balances', () => {
     const { app, db, people } = buildApp();
     db.dropTable('hr_ess_request_limits');
     expectRefusal(await balances(app, tokens.attendance(people.attendance)), 503, 'MODULE_NOT_INSTALLED');
+  });
+});
+
+describe('half days, single days and ranges', () => {
+  it('files a half day, counts it as 0.5, and leaves the other half', async () => {
+    const { app, db, people } = buildApp();
+    const res = await file(app, tokens.portal(people.faculty), {
+      type: 'cl', day: '2026-10-20', portion: 'first_half', reason: 'Bank work in the morning.',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.request).toMatchObject({
+      day: '2026-10-20', end_day: '2026-10-20', portion: 'first_half', day_count: 0.5,
+    });
+    expect(db.tables.hr_ess_leave_requests[0]).toMatchObject({ day_count: 0.5, portion: 'first_half' });
+
+    const balances = await request(app).get(BALANCES).set(bearer(tokens.portal(people.faculty)));
+    const cl = balances.body.types.find((t) => t.type === 'leave_cl');
+    expect(cl).toMatchObject({ allowed: 1, used: 0, pending: 0.5, remaining: 0.5 });
+  });
+
+  it('counts a range of working days and skips Sunday', async () => {
+    const { app, db, people } = buildApp();
+    const res = await file(app, tokens.portal(people.faculty), {
+      type: 'lwp', day: '2026-10-23', end_day: '2026-10-26', reason: 'Family function out of town.',
+    });
+    expect(res.status).toBe(201);
+    // Friday 23, Saturday 24 and Monday 26; Sunday 25 is the weekly off.
+    expect(res.body.request).toMatchObject({
+      day: '2026-10-23', end_day: '2026-10-26', day_count: 3,
+      working_days: ['2026-10-23', '2026-10-24', '2026-10-26'],
+    });
+    expect(db.tables.hr_ess_leave_requests[0].day_count).toBe(3);
+  });
+
+  it('refuses a range that overlaps a pending request', async () => {
+    const { app, people } = buildApp();
+    expect((await file(app, tokens.portal(people.faculty), {
+      type: 'lwp', day: '2026-10-20', end_day: '2026-10-22', reason: 'Family function out of town.',
+    })).status).toBe(201);
+    expectRefusal(await file(app, tokens.portal(people.faculty), {
+      type: 'lwp', day: '2026-10-22', end_day: '2026-10-24', reason: 'The same trip, longer.',
+    }), 409, 'DUPLICATE_REQUEST');
+  });
+
+  it('writes every working day on approval and restores them on HR cancel', async () => {
+    const { app, db, people } = buildApp();
+    const filed = await file(app, tokens.portal(people.faculty), {
+      type: 'lwp', day: '2026-10-23', end_day: '2026-10-26', reason: 'Family function out of town.',
+    });
+    const id = filed.body.request.id;
+    const decided = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
+      .set(bearer(tokens.portal(people.hr)))
+      .send({ decision: 'approve', note: 'Approved; cover arranged.' });
+    expect(decided.status).toBe(200);
+    expect(decided.body.request).toMatchObject({ status: 'approved', decision_note: 'Approved; cover arranged.' });
+
+    const written = () => db.tables.hr_staff_attendance
+      .filter((d) => d.employee_id === people.faculty.employee.id && d.day >= '2026-10-23');
+    expect(written().map((d) => d.day)).toEqual(['2026-10-23', '2026-10-24', '2026-10-26']);
+    expect(written().every((d) => d.status === 'leave' && d.leave_type === 'lwp')).toBe(true);
+
+    const cancelled = await request(app).post(`/api/ess/hr/leave-requests/${id}/cancel`)
+      .set(bearer(tokens.portal(people.hr)))
+      .send({ reason: 'The trip was called off.' });
+    expect(cancelled.status).toBe(200);
+    expect(written()).toHaveLength(0);
+  });
+
+  it('takes a faculty request through the manager and then HR final approval', async () => {
+    const { app, db, people } = buildApp();
+    const filed = await file(app, tokens.portal(people.faculty), {
+      type: 'cl', day: '2026-10-20', reason: 'Family function at home.',
+    });
+    expect(filed.status).toBe(201);
+    expect(filed.body.request).toMatchObject({ requires_final_approval: true, stage: 'manager' });
+    const id = filed.body.request.id;
+
+    const manager = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
+      .set(bearer(tokens.portal(people.hod)))
+      .send({ decision: 'approve', note: 'Approved by the HOD; please finalise.' });
+    expect(manager.status).toBe(200);
+    expect(manager.body.request).toMatchObject({
+      status: 'pending', stage: 'final', manager_approved_by_name: 'Test CAD HOD',
+      manager_remark: 'Approved by the HOD; please finalise.',
+    });
+    // The manager's round writes no day and does not consume the CL.
+    expect(db.tables.hr_staff_attendance.filter((d) => d.employee_id === people.faculty.employee.id
+      && d.day === '2026-10-20')).toHaveLength(0);
+
+    // The manager cannot take the final round.
+    expectRefusal(await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
+      .set(bearer(tokens.portal(people.hod)))
+      .send({ decision: 'approve' }), 403, 'NOT_AN_APPROVER');
+
+    const final = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
+      .set(bearer(tokens.portal(people.hr)))
+      .send({ decision: 'approve', note: 'Final approval by HR.' });
+    expect(final.status).toBe(200);
+    expect(final.body.request).toMatchObject({ status: 'approved', decision_note: 'Final approval by HR.' });
+    expect(db.tables.hr_staff_attendance.find((d) => d.employee_id === people.faculty.employee.id
+      && d.day === '2026-10-20')).toMatchObject({ status: 'leave', leave_type: 'cl' });
+  });
+
+  it('lets two half days use the one-day CL allowance and refuses a third', async () => {
+    const { app, people } = buildApp();
+    expect((await file(app, tokens.portal(people.faculty), {
+      type: 'cl', day: '2026-10-20', portion: 'first_half', reason: 'Bank work in the morning.',
+    })).status).toBe(201);
+    expect((await file(app, tokens.portal(people.faculty), {
+      type: 'cl', day: '2026-10-21', portion: 'second_half', reason: 'Bank work in the afternoon.',
+    })).status).toBe(201);
+    expectRefusal(await file(app, tokens.portal(people.faculty), {
+      type: 'cl', day: '2026-10-22', portion: 'first_half', reason: 'One more morning.',
+    }), 409, 'LIMIT_REACHED');
   });
 });
 

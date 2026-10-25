@@ -326,9 +326,12 @@ class EssRepository with ConnectivityGuard {
   Future<EssRequest> createLeaveRequest(
       {required String type,
       required String day,
+      String? endDay,
+      String portion = 'full',
       required String reason}) async {
     await ensureOnline();
-    return _remote.createLeaveRequest(type: type, day: day, reason: reason);
+    return _remote.createLeaveRequest(
+        type: type, day: day, endDay: endDay, portion: portion, reason: reason);
   }
 
   Future<List<EssRequest>> myLeaveRequests() async {
@@ -339,6 +342,8 @@ class EssRepository with ConnectivityGuard {
   Future<({EssRequest? request, Failure? failure})> createLeaveRequestSafe({
     required String type,
     required String day,
+    String? endDay,
+    String portion = 'full',
     required String reason,
   }) async {
     try {
@@ -346,6 +351,8 @@ class EssRepository with ConnectivityGuard {
       return await _remote.createLeaveRequestSafe(
         type: type,
         day: day,
+        endDay: endDay,
+        portion: portion,
         reason: reason,
       );
     } on Failure catch (f) {

@@ -4,7 +4,7 @@ const { istDay, monthBounds } = require('../lib/time');
 const { LIST_LIMITS } = require('../lib/store');
 const { effectiveLimit, requestType } = require('../policy/requestLimits');
 const { isActive } = require('../policy/employment');
-const { chainEntries, firstUnskipped, mayDecide } = require('../policy/approvals');
+const { chainEntries, firstUnskipped, mayDecide, mayDecideLeave } = require('../policy/approvals');
 const { canDecideAny, STATUSES, requestView, employeeCardView } = require('../policy/requests');
 const { HALF_DAY_MINUTES, ensureShiftSnapshot, recomputeMonth } = require('../policy/attendance');
 const { notifyDecision } = require('../lib/notify');
@@ -74,10 +74,16 @@ function listApprovals({ store, now }) {
 
     const filter = status === 'all' ? null : status;
     const fetch = (family, wanted) => store.listRequestsForApprover({ family, employeeIds: reportIds, status: wanted });
-    const [shownAttendance, shownLeave] = await Promise.all([fetch('attendance', filter), fetch('leave', filter)]);
-    const [pendingAttendance, pendingLeave] = filter === 'pending'
-      ? [shownAttendance, shownLeave]
+    // A faculty member's request at the final stage is HR's/CEO's/super admin's queue, not the
+    // manager's any longer. It stays pending, so hide it from a manager's inbox by name.
+    const visibleLeave = (rows) => (hrWide ? rows
+      : rows.filter((r) => !(r.requires_final_approval && r.stage === 'final')));
+    const [shownAttendance, leaveRows] = await Promise.all([fetch('attendance', filter), fetch('leave', filter)]);
+    const shownLeave = visibleLeave(leaveRows);
+    const [pendingAttendance, pendingLeaveRows] = filter === 'pending'
+      ? [shownAttendance, leaveRows]
       : await Promise.all([fetch('attendance', 'pending'), fetch('leave', 'pending')]);
+    const pendingLeave = visibleLeave(pendingLeaveRows);
 
     // Archived requests stay out of the caller's Inbox (archiving is per approver, task D1).
     const archives = await store.listMyArchives(employee.id);
@@ -122,7 +128,13 @@ function listApprovals({ store, now }) {
     const addTypeCount = (family, rows) => {
       for (const r of rows) {
         if (r.status !== 'pending' && r.status !== 'approved') continue;
-        const step = family === 'attendance' && r.type === 'short_leave' ? (r.minutes ?? 0) : 1;
+        const month = r.day.slice(0, 7);
+        const leaveStep = Array.isArray(r.working_days) && r.working_days.length
+          ? r.working_days.filter((d) => String(d).slice(0, 7) === month).length
+          : Number(r.day_count ?? 1);
+        const step = family === 'attendance' && r.type === 'short_leave'
+          ? (r.minutes ?? 0)
+          : family === 'leave' ? leaveStep : 1;
         const key = `${family}:${r.employee_id}:${r.type}:${r.day.slice(0, 7)}`;
         typeCounts.set(key, (typeCounts.get(key) || 0) + step);
       }
@@ -190,8 +202,68 @@ function decideRequest({ store, now }) {
     if (!request) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
     const requester = await store.getEmployeeById(request.employee_id);
     const today = istDay(now());
-    if (!requester || !(await mayDecide({ auth: req.auth, entries: await chainFor({ store, requester, day: request.day, today }) }))) {
+    const entries = requester ? await chainFor({ store, requester, day: request.day, today }) : [];
+    const allowed = family === 'leave'
+      ? mayDecideLeave({ auth: req.auth, entries, request })
+      : mayDecide({ auth: req.auth, entries });
+    if (!requester || !allowed) {
       throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
+    }
+
+    // A faculty member's manager advances the request; they do not finish it. HR, the CEO and a
+    // super admin skip this branch and approve at once (mayDecideLeave let them in).
+    const managerStage = family === 'leave'
+      && request.requires_final_approval
+      && request.stage === 'manager'
+      && body.decision === 'approve'
+      && !canDecideAny(req.auth.kind, req.auth.role);
+    if (managerStage) {
+      const at = now().toISOString();
+      const advanced = await store.markLeaveManagerApproved({
+        id,
+        employeeId: req.auth.employee.id,
+        name: req.auth.employee.full_name,
+        note,
+        now: at,
+      });
+      if (!advanced) throw new HttpError(409, 'ALREADY_DECIDED', MESSAGES.ALREADY_DECIDED);
+      await store.createLeaveHistory({
+        request_id: id,
+        at,
+        actor_employee_id: req.auth.employee.id,
+        actor_user_id: req.auth.userId ?? null,
+        actor_name: req.auth.employee.full_name,
+        action: 'manager_approved',
+        note: note || null,
+        details: {
+          type: request.type, day: request.day, end_day: request.end_day,
+          portion: request.portion, day_count: request.day_count, stage: 'final',
+        },
+      });
+      try {
+        await store.createNotification({
+          employee_id: request.employee_id,
+          category: 'decisions',
+          title: 'Manager approved your leave',
+          body: `Your manager approved the leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''}. It now waits for HR/CEO final approval.`,
+          data: { request_id: id, request_family: 'leave' },
+        });
+        // The final approvers' queue gets a line too, so nobody has to poll for it.
+        const userIds = (await store.listFinalDeciderUserIds()).map((u) => u.id);
+        const deciders = await store.listEmployeesByUserIds(userIds);
+        for (const person of deciders) {
+          if (person.id === req.auth.employee.id) continue;
+          await store.createNotification({
+            employee_id: person.id,
+            category: 'approvals',
+            title: 'Faculty leave needs final approval',
+            body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} was approved by their manager and waits for final approval.`,
+            data: { request_id: id, request_family: 'leave' },
+          });
+        }
+      } catch { /* best effort */ }
+      const fresh = await store.getLeaveRequest(id);
+      return res.json({ request: requestView(fresh, family, { employee: requester }), stage: 'final' });
     }
 
     const common = {
@@ -216,6 +288,9 @@ function decideRequest({ store, now }) {
     if (outcome === 'not_late') throw new HttpError(409, 'NOT_LATE', MESSAGES.NOT_LATE);
     if (outcome === 'times_incomplete') throw new HttpError(409, 'TIMES_INCOMPLETE', MESSAGES.TIMES_INCOMPLETE);
     if (outcome === 'day_off') throw new HttpError(409, 'DAY_LOCKED', MESSAGES.DAY_LOCKED);
+    if (outcome === 'no_working_days' || outcome === 'invalid_range') {
+      throw new HttpError(409, 'DAY_OFF', MESSAGES.LEAVE_DAY_OFF);
+    }
     if (outcome === 'cl_limit') throw new HttpError(409, 'CL_LIMIT', MESSAGES.CL_TAKEN);
     if (outcome === 'wfh_not_allowed') throw new HttpError(409, 'WFH_NOT_ALLOWED', MESSAGES.WFH_NOT_ALLOWED);
     if (outcome === 'wfh_limit') throw new HttpError(409, 'WFH_LIMIT', MESSAGES.WFH_LIMIT);
@@ -259,7 +334,11 @@ function archiveRequest({ store, now }) {
     const request = family === 'leave' ? await store.getLeaveRequest(id) : await store.getAttendanceRequest(id);
     if (!request) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
     const requester = await store.getEmployeeById(request.employee_id);
-    if (!requester || !(await mayDecide({ auth: req.auth, entries: await chainFor({ store, requester, day: request.day, today: istDay(now()) }) }))) {
+    const entries = requester ? await chainFor({ store, requester, day: request.day, today: istDay(now()) }) : [];
+    const allowed = family === 'leave'
+      ? mayDecideLeave({ auth: req.auth, entries, request })
+      : mayDecide({ auth: req.auth, entries });
+    if (!requester || !allowed) {
       throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
     }
     await store.createArchive({ family, request_id: id, employee_id: req.auth.employee.id });
@@ -290,14 +369,16 @@ function requestChain({ store, now }) {
       || canDecideAny(req.auth.kind, req.auth.role);
     if (!involved) throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
     const first = firstUnskipped(entries);
+    const finalOnly = family === 'leave' && request.requires_final_approval && request.stage === 'final';
     res.json({
       request: requestView(request, family, { employee: requester }),
+      stage: request.stage ?? 'manager',
       chain: entries.map((e) => ({
         employee: employeeCardView(e.employee),
-        may_decide: Boolean(first && first.employee.id === e.employee.id),
+        may_decide: !finalOnly && Boolean(first && first.employee.id === e.employee.id),
         skipped: e.skipped,
       })),
-      hr_fallback: !first,
+      hr_fallback: !first || finalOnly,
     });
   });
 }

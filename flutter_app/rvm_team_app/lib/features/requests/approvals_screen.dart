@@ -341,9 +341,11 @@ class _ApprovalCard extends StatelessWidget {
     final ctx = request.context;
     final employee = request.employee?.fullName ?? 'Employee';
     final isLeave = request.family == 'leave';
-    final date = _prettyDate(request.day);
+    final date = isLeave ? request.dateLabel : _prettyDate(request.day);
     final typeChip = _typeChip(request);
-    final category = isLeave ? '1 Day Off' : 'Regularization';
+    final category = isLeave
+        ? '${request.daysLabel}${request.isHalfDay ? ' · ${request.portionLabel}' : ''}'
+        : 'Regularization';
     final contextLine = ctx == null
         ? null
         : [
@@ -432,6 +434,27 @@ class _ApprovalCard extends StatelessWidget {
               ),
             ],
           ),
+          if (request.requiresFinalApproval) ...[
+            const SizedBox(height: 6),
+            TeamPill(
+                label: request.stage == 'final'
+                    ? 'Final round · HR / CEO / Superadmin'
+                    : 'First round · manager',
+                tone: request.stage == 'final'
+                    ? TeamPillTone.warning
+                    : TeamPillTone.neutral,
+                dense: true),
+          ],
+          if (request.managerRemark != null &&
+              request.managerRemark!.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Manager’s remark: ${request.managerRemark!.trim()}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 10.5,
+                      color: RvmColors.teamSeed,
+                      fontWeight: FontWeight.w600,
+                    )),
+          ],
           const SizedBox(height: 8),
           Container(
             width: double.infinity,
@@ -448,6 +471,17 @@ class _ApprovalCard extends StatelessWidget {
                       color: RvmColors.muted,
                     )),
           ),
+          if (request.decisionNote != null &&
+              request.decisionNote!.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Manager’s remark: ${request.decisionNote!.trim()}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 10.5,
+                      height: 1.45,
+                      color: RvmColors.teamSeed,
+                      fontWeight: FontWeight.w600,
+                    )),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
@@ -502,16 +536,14 @@ class _ApprovalCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
-                    onPressed: () => context.read<ApprovalsBloc>().add(
-                          ApprovalDecided(
-                              family: request.family,
-                              id: request.id,
-                              decision: 'approve'),
-                        ),
+                    onPressed: () => _approve(context),
                     style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(40)),
-                    child: const Text('Approve',
-                        style: TextStyle(
+                    child: Text(
+                        request.requiresFinalApproval && request.stage == 'manager'
+                            ? 'Send to HR'
+                            : 'Approve',
+                        style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
                 ),
@@ -554,9 +586,10 @@ class _ApprovalCard extends StatelessWidget {
 
   (IconData, String) _typeChip(EssRequest r) {
     final late = r.context?.late?.lateMinutes;
+    final leaveDetail = r.isHalfDay ? r.portionLabel : r.daysLabel;
     return switch (r.type) {
-      'cl' => (Icons.calendar_today_rounded, 'Casual Leave (Full Day)'),
-      'lwp' => (Icons.event_busy_rounded, 'Leave Without Pay'),
+      'cl' => (Icons.calendar_today_rounded, 'Casual Leave ($leaveDetail)'),
+      'lwp' => (Icons.event_busy_rounded, 'Leave Without Pay ($leaveDetail)'),
       'excuse_late' => (
           Icons.access_time_rounded,
           late == null ? 'Late Punch In' : 'Late Punch In ($late mins late)'
@@ -676,6 +709,46 @@ class _ApprovalCard extends StatelessWidget {
           ..showSnackBar(SnackBar(content: Text(f.message)));
       }
     }
+  }
+
+  /// Approving opens a small remark box: the manager's word travels with the decision and
+  /// the employee reads it on the request card. A remark is optional to approve.
+  Future<void> _approve(BuildContext context) async {
+    final controller = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(request.requiresFinalApproval && request.stage == 'manager'
+            ? 'Approve and send to HR'
+            : 'Approve this leave'),
+        content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 1000,
+            decoration: const InputDecoration(
+                labelText: 'Manager’s remark (optional)',
+                alignLabelWithHint: true,
+                hintText: 'Anything the employee should know')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Back')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: Text(request.requiresFinalApproval && request.stage == 'manager'
+                  ? 'Send to HR'
+                  : 'Approve leave')),
+        ],
+      ),
+    );
+    if (note == null || !context.mounted) return;
+    context.read<ApprovalsBloc>().add(ApprovalDecided(
+        family: request.family,
+        id: request.id,
+        decision: 'approve',
+        note: note.isEmpty ? null : note));
   }
 
   Future<void> _reject(BuildContext context) async {

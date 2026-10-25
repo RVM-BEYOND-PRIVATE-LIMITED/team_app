@@ -70,6 +70,10 @@ const COLUMNS = Object.freeze({
   employeeForSignIn: 'id, employee_code, email, phone, user_id, is_archived, employment_status, date_of_exit',
   report: 'id, employment_status, date_of_exit, is_archived',
   employeeName: 'id, full_name',
+  // What the leave approval needs to know about the person, and no more: who they report to
+  // and which portal account is theirs (its role decides the faculty final round).
+  employeeApproval: 'id, full_name, user_id, manager_id, branch_id, email',
+  faculty: 'id',
   // What HR's lists show about a person: never their phone, email or anything else on the record.
   employeeCard: 'id, full_name, employee_code, branch_id',
   branch: 'id, name',
@@ -123,11 +127,13 @@ const COLUMNS = Object.freeze({
   // cancel reads them inside SQL), and the decided_by and cancelled_by account ids are never sent.
   attendanceRequest: 'id, employee_id, type, status, day, reason, place, fix_in, fix_out, minutes, '
     + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
-  leaveRequest: 'id, employee_id, type, status, day, reason, '
+  leaveRequest: 'id, employee_id, type, status, day, end_day, portion, day_count, working_days, '
+    + 'requires_final_approval, stage, manager_approved_by_employee_id, manager_approved_by_name, '
+    + 'manager_remark, manager_approved_at, reason, '
     + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
   // The counters and duplicate checks read these. The leave table has no `minutes` column, so the
   // attendance family names its own facts (short leave counts by minutes, C3).
-  requestFacts: 'id, employee_id, type, status, day',
+  requestFacts: 'id, employee_id, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage',
   attendanceRequestFacts: 'id, employee_id, type, status, day, minutes',
   // D4: one escalation as the record reads it; nothing here is secret.
   approvalEscalation: 'id, family, request_id, from_employee_id, to_employee_id, reason, escalated_at',
@@ -488,6 +494,9 @@ function createSupabaseStore(config, { client } = {}) {
     getEmployeeContact: (employeeId) => one('hr_employees', COLUMNS.employeeContact, 'id', employeeId),
     getAttendancePasswordHash: (employeeId) => one('hr_attendance_accounts', COLUMNS.attendancePassword, 'employee_id', employeeId),
     getEmployeeById: (employeeId) => one('hr_employees', COLUMNS.employee, 'id', employeeId),
+    getEmployeeApproval: (employeeId) => one('hr_employees', COLUMNS.employeeApproval, 'id', employeeId),
+    /** An attendance-only faculty member: the legacy faculty record by email, when there is no login. */
+    getFacultyByEmail: (email) => one('faculty', COLUMNS.faculty, 'email', email),
     // hr_employees.user_id is unique where set (hr_employees_user_id_key), so a login is at
     // most one employee.
     getEmployeeByUserId: (userId) => one('hr_employees', COLUMNS.employee, 'user_id', userId),
@@ -852,7 +861,7 @@ function createSupabaseStore(config, { client } = {}) {
       const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
       const columns = family === 'leave' ? COLUMNS.requestFacts : COLUMNS.attendanceRequestFacts;
       return (await read(table, (q) => q.select(columns).eq('employee_id', employeeId)
-        .gte('day', from).lte('day', to))) || [];
+        .lte('day', to).gte(family === 'leave' ? 'end_day' : 'day', from))) || [];
     },
     /** Whether the same type+day already waits: the duplicate check before a request goes in. */
     countPendingRequests: async ({ family, employeeId, type, day }) => {
@@ -867,13 +876,47 @@ function createSupabaseStore(config, { client } = {}) {
     createLeaveRequest: (row) =>
       write('hr_ess_leave_requests', (q) => q.insert([row]).select(COLUMNS.leaveRequest).single()),
     getLeaveRequest: (id) => one('hr_ess_leave_requests', COLUMNS.leaveRequest, 'id', id),
+    /** The working days of a leave range: week offs and holidays left out (SQL function). */
+    leaveWorkingDays: (employeeId, from, to) =>
+      call('hr_ess_leave_working_days', { p_employee_id: employeeId, p_from: from, p_to: to },
+        { table: 'hr_ess_leave_requests' }),
+    /**
+     * A faculty member's manager has approved: move the request to its final stage, leaving it
+     * pending. Conditional on it still being at the manager stage, so two managers cannot both
+     * advance it (the loser gets no row and answers 409).
+     */
+    markLeaveManagerApproved: async ({ id, employeeId, name, note, now }) => {
+      const rows = await write('hr_ess_leave_requests', (q) => q.update({
+        stage: 'final',
+        manager_approved_by_employee_id: employeeId,
+        manager_approved_by_name: name,
+        manager_remark: note || null,
+        manager_approved_at: now,
+        updated_at: now,
+      }).eq('id', id).eq('status', 'pending').eq('stage', 'manager').select(COLUMNS.leaveRequest));
+      return (rows || [])[0] || null;
+    },
+    /** The history row the manager-stage approval writes (the SQL functions write their own). */
+    createLeaveHistory: (row) =>
+      write('hr_ess_leave_request_history', (q) => q.insert([row])),
+    /** A pending leave request of the same type that overlaps this range, if any. */
+    countPendingLeaveOverlap: async ({ employeeId, type, from, to }) => {
+      const rows = await read('hr_ess_leave_requests', (q) => q.select('id')
+        .eq('employee_id', employeeId).eq('type', type).eq('status', 'pending')
+        .lte('day', to).gte('end_day', from));
+      return (rows || []).length;
+    },
     listMyLeaveRequests: async (employeeId) =>
       (await read('hr_ess_leave_requests', (q) => q.select(COLUMNS.leaveRequest)
         .eq('employee_id', employeeId).order('created_at', { ascending: false }).limit(LIST_LIMITS.myRequests))) || [],
-    /** The CL and LWP days the sheet records for the month: the leave ledger the balance shows. */
+    /**
+     * The CL and LWP days the sheet records for the month: the leave ledger the balance shows.
+     * A half-day leave is a `half_day` row with leave_type set, and counts 0.5.
+     */
     listMyLeaveDays: async (employeeId, from, to) =>
-      (await read('hr_staff_attendance', (q) => q.select('day, leave_type').eq('employee_id', employeeId)
-        .eq('status', 'leave').in('leave_type', ['cl', 'lwp']).gte('day', from).lte('day', to))) || [],
+      (await read('hr_staff_attendance', (q) => q.select('day, leave_type, status')
+        .eq('employee_id', employeeId).in('status', ['leave', 'half_day'])
+        .in('leave_type', ['cl', 'lwp']).gte('day', from).lte('day', to))) || [],
 
     /* ── D1, H6: the approvals Inbox ── */
 
@@ -897,7 +940,10 @@ function createSupabaseStore(config, { client } = {}) {
     listRequestCountsFor: async ({ family, employeeIds, from, to }) => {
       const table = family === 'leave' ? 'hr_ess_leave_requests' : 'hr_ess_attendance_requests';
       const columns = family === 'leave' ? COLUMNS.requestFacts : COLUMNS.attendanceRequestFacts;
-      return readIn(table, columns, 'employee_id', employeeIds, (q) => q.gte('day', from).lte('day', to));
+      return readIn(table, columns, 'employee_id', employeeIds,
+        family === 'leave'
+          ? (q) => q.lte('day', to).gte('end_day', from)
+          : (q) => q.gte('day', from).lte('day', to));
     },
     /** The day rows' late marks for the Inbox's context, for these days. */
     listDayLateMarks: async (days) => {
@@ -1068,6 +1114,8 @@ function createSupabaseStore(config, { client } = {}) {
         .gte('created_at', sinceIso).order('created_at', { ascending: true }).limit(limit))) || [],
     listEmployeesByUserIds: async (userIds) => readIn('hr_employees', COLUMNS.employeeForUser, 'user_id', userIds),
     listHrUserIds: () => list('users', (q) => q.select('id').eq('role', 'hr')),
+    /** Who may give a faculty request its final approval: HR, the CEO and super admins. */
+    listFinalDeciderUserIds: () => list('users', (q) => q.select('id').in('role', ['hr', 'ceo', 'super_admin'])),
 
     /* ── E1, E2, E12: the profile, the org and the timeline ── */
 

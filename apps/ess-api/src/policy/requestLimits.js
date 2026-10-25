@@ -21,9 +21,9 @@ const REQUEST_TYPES = Object.freeze([
   { type: 'fix_a_day', offered: true, limit: 3, unit: 'count', phase: 1 },
   { type: 'excuse_late', offered: true, limit: 3, unit: 'count', phase: 1 },
   { type: 'short_leave', offered: true, limit: 180, unit: 'minutes', phase: 2 },
-  // The database already allows one CL a month with a unique index; this is the same rule.
-  { type: 'leave_cl', offered: true, limit: 1, unit: 'count', phase: 1 },
-  { type: 'leave_lwp', offered: true, limit: null, unit: 'count', phase: 1 },
+  // One CL day a month until HR changes it. A half day costs 0.5, so two half days fit.
+  { type: 'leave_cl', offered: true, limit: 1, unit: 'days', phase: 1 },
+  { type: 'leave_lwp', offered: true, limit: null, unit: 'days', phase: 1 },
   { type: 'wfh', offered: false, limit: 0, unit: 'count', phase: 1 },
 ].map((t) => Object.freeze(t)));
 

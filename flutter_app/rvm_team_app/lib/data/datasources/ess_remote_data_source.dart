@@ -401,11 +401,15 @@ class EssRemoteDataSource with DioExecutor {
   Future<EssRequest> createLeaveRequest(
           {required String type,
           required String day,
+          String? endDay,
+          String portion = 'full',
           required String reason}) =>
       guard(() async => EssRequest.fromJson(
               _obj(_body(await _dio.post('/leave-requests', data: {
             'type': type,
             'day': day,
+            if (endDay != null) 'end_day': endDay,
+            'portion': portion,
             'reason': reason,
           }))['request'])));
 
@@ -419,12 +423,16 @@ class EssRemoteDataSource with DioExecutor {
   Future<({EssRequest? request, Failure? failure})> createLeaveRequestSafe({
     required String type,
     required String day,
+    String? endDay,
+    String portion = 'full',
     required String reason,
   }) async {
     try {
       final res = await _dio.post('/leave-requests', data: {
         'type': type,
         'day': day,
+        if (endDay != null) 'end_day': endDay,
+        'portion': portion,
         'reason': reason,
       });
       final status = res.statusCode ?? 0;

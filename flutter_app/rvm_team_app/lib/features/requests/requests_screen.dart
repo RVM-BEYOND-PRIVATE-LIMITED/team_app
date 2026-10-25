@@ -340,13 +340,13 @@ class _QuotaCard extends StatelessWidget {
     final progress =
         (allowed == null || allowed == 0) ? 0.0 : ((remaining ?? 0) / allowed);
     final value = unitMinutes
-        ? '${remaining ?? used}'
-        : '${remaining ?? allowed ?? used}';
+        ? _n(remaining ?? used)
+        : _n(remaining ?? allowed ?? used);
     final suffix = unitMinutes
-        ? '/ ${allowed ?? '—'} mins'
+        ? '/ ${_n(allowed)} mins'
         : available
-            ? '/ ${allowed ?? '—'} available'
-            : '/ ${allowed ?? '—'} ${allowed == 1 ? 'day' : 'days'} left';
+            ? '/ ${_n(allowed)} available'
+            : '/ ${_n(allowed)} ${allowed == 1 ? 'day' : 'days'} left';
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
@@ -370,7 +370,7 @@ class _QuotaCard extends StatelessWidget {
               ),
               if (showPending && (t?.pending ?? 0) > 0)
                 TeamPill(
-                    label: '${t!.pending} Pending',
+                    label: '${_n(t!.pending)} Pending',
                     tone: TeamPillTone.warning,
                     dense: true)
               else if (available)
@@ -412,7 +412,7 @@ class _QuotaCard extends StatelessWidget {
     );
   }
 
-  Widget _secondaryUsage(BuildContext context, String label, int used) {
+  Widget _secondaryUsage(BuildContext context, String label, num used) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -428,7 +428,7 @@ class _QuotaCard extends StatelessWidget {
                 .textTheme
                 .labelSmall
                 ?.copyWith(fontSize: 9.5, color: RvmColors.subtle)),
-        Text('$used used',
+        Text('${_n(used)} used',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontSize: 9.5,
                 color: RvmColors.muted,
@@ -533,6 +533,41 @@ class _RequestCard extends StatelessWidget {
                       )),
             ),
           ],
+          if (!compact && request.stageLabel != null) ...[
+            const SizedBox(height: 8),
+            TeamPill(
+                label: request.stageLabel!,
+                tone: TeamPillTone.warning,
+                dense: true),
+          ],
+          if (!compact &&
+              request.managerRemark != null &&
+              request.managerRemark!.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Manager’s remark: ${request.managerRemark!.trim()}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 10.5,
+                    height: 1.45,
+                    color: RvmColors.teamSeed,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ],
+          if (!compact &&
+              request.decisionNote != null &&
+              request.decisionNote!.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Final remark: ${request.decisionNote!.trim()}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 10.5,
+                    height: 1.45,
+                    color: RvmColors.teamSeed,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -612,7 +647,13 @@ class _RequestCard extends StatelessWidget {
   String _typeSubtitle(EssRequest r) {
     final parts = <String>[];
     if (r.place != null && r.place!.isNotEmpty) parts.add(r.place!);
-    parts.add(_prettyDate(r.day));
+    if (r.isLeave) {
+      parts.add(r.dateLabel);
+      if (r.isHalfDay) parts.add(r.portionLabel.toLowerCase());
+      parts.add(r.daysLabel);
+    } else {
+      parts.add(_prettyDate(r.day));
+    }
     if (r.context?.othersOffCount != null && r.context!.othersOffCount > 0) {
       parts.add('${r.context!.othersOffCount} others off');
     }
@@ -621,7 +662,6 @@ class _RequestCard extends StatelessWidget {
 
   String _decisionText(EssRequest r) {
     if (r.decidedByName != null) return 'by ${r.decidedByName}';
-    if (r.decisionNote != null) return r.decisionNote!;
     return '';
   }
 
@@ -648,4 +688,12 @@ class _RequestCard extends StatelessWidget {
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
+}
+
+/// '1', '0.5', '2.5': balances can be half days now.
+String _n(num? value) {
+  if (value == null) return '—';
+  return value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toString();
 }

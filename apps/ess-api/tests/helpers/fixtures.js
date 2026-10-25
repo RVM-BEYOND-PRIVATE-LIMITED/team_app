@@ -285,6 +285,7 @@ function company() {
     hr_ess_request_limits: requestLimits,
     hr_shifts: [],
     hr_holidays: [],
+    faculty: [],
   };
   return { tables, people };
 }
