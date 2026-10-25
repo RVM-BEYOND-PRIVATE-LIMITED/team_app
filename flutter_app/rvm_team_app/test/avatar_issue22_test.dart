@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:core_bloc/core_bloc.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,39 @@ import 'package:rvm_team_app/domain/ess_models.dart';
 import 'package:rvm_team_app/features/me/profile_screen.dart';
 import 'package:rvm_team_app/injection.dart';
 import 'package:rvm_team_app/widgets/team_kit.dart';
+
+/// A client whose request fails with the real issue23 exception, i.e. a DNS
+/// `SocketException` raised when the connection is attempted.
+class _DnsFailClient implements HttpClient {
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async => _DnsFailRequest();
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+class _DnsFailRequest implements HttpClientRequest {
+  @override
+  Future<HttpClientResponse> close() => Future<HttpClientResponse>.error(
+        const SocketException(
+          "Failed host lookup: 'gzgkhrqdiphxoopuhayh.supabase.co'",
+          osError: OSError('No address associated with hostname', 7),
+        ),
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+class _DnsFailOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) => _DnsFailClient();
+}
 
 /// Regression for issues_image/issue22 (crash text from issue13).
 ///
@@ -43,10 +78,33 @@ MyProfile _issue22Profile() => MyProfile(
 
 void main() {
   setUp(() => getIt.reset());
-  tearDown(() => getIt.reset());
+  tearDown(() {
+    getIt.reset();
+    HttpOverrides.global = null;
+  });
+
+  testWidgets('issue23: a real DNS SocketException is caught, fallback shown',
+      (tester) async {
+    // This reproduces the exact failure: the DNS lookup for the Supabase photo
+    // host throws SocketException. Before the fix the future was abandoned by
+    // `.timeout()`/`close(force: true)`, so the error surfaced as an UNCAUGHT
+    // async error and the debugger paused. If it is uncaught again, the test
+    // framework fails this test.
+    HttpOverrides.global = _DnsFailOverrides();
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: SafePhoto(url: _supabasePhoto, fallback: Text('fallback')),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('fallback'), findsOneWidget);
+  });
 
   testWidgets('issue22 profile with failing Supabase photo shows R, no crash',
       (tester) async {
+    HttpOverrides.global = _DnsFailOverrides();
     getIt
       ..registerSingleton<LoadBloc<MyProfile>>(
           LoadBloc<MyProfile>(() async => _issue22Profile()))
@@ -84,6 +142,7 @@ void main() {
 
   testWidgets('TeamAvatar with a dead photo URL shows the initial',
       (tester) async {
+    HttpOverrides.global = _DnsFailOverrides();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: TeamAvatar(

@@ -48,7 +48,6 @@ class _SafePhotoState extends State<SafePhoto> {
   static const _maxCache = 60;
 
   static const _connectTimeout = Duration(seconds: 6);
-  static const _readTimeout = Duration(seconds: 12);
 
   Uint8List? _bytes;
   int _token = 0;
@@ -87,10 +86,17 @@ class _SafePhotoState extends State<SafePhoto> {
     try {
       client = HttpClient()..connectionTimeout = _connectTimeout;
       final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close().timeout(_readTimeout);
+      // Deliberately NO `.timeout()` here (issue23). The DNS lookup for the
+      // host completes on this future; abandoning it with `timeout()` leaves
+      // the lookup with no listener, and its late SocketException is reported
+      // as an UNCAUGHT async error — Android Studio stops on it ("Paused on
+      // exception", stack `_NativeSocket.staggeredLookup`, only
+      // `<asynchronous gap>` frames) even though this try/catch is present.
+      final response = await request.close();
       if (response.statusCode != HttpStatus.ok) return;
       final builder = BytesBuilder(copy: false);
-      await for (final chunk in response.timeout(_readTimeout)) {
+      // Same rule while reading: no timeout, so no chunk future is orphaned.
+      await for (final chunk in response) {
         builder.add(chunk);
       }
       final bytes = builder.takeBytes();
@@ -99,9 +105,11 @@ class _SafePhotoState extends State<SafePhoto> {
       _cache[url] = bytes;
       if (mounted && token == _token) setState(() => _bytes = bytes);
     } catch (_) {
-      // Offline, NXDOMAIN, TLS, timeout, a bad URL: the fallback is the answer.
+      // Offline, NXDOMAIN, TLS, a bad URL: the fallback is the answer.
     } finally {
-      client?.close(force: true);
+      // Graceful close only. `close(force: true)` aborts an in-flight lookup
+      // and its future then fails with nobody listening (same uncaught error).
+      client?.close();
     }
   }
 
