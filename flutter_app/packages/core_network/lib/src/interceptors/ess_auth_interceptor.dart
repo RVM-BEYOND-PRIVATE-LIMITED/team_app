@@ -83,12 +83,15 @@ class EssAuthInterceptor extends Interceptor {
     ErrorInterceptorHandler handler,
   ) async {
     final options = err.requestOptions;
-    final isRejected = err.response?.statusCode == 401;
-    if (!isRejected || options.extra[_retriedKey] == true) {
-      // A 401 that could not be rotated (or survived the rotation) ends the
-      // session: sign out here so the app returns to login instead of leaving
-      // every screen on a raw "bad response" error.
-      if (isRejected) await _endSession(options);
+    // Only a 401 about the TOKEN ends a session. The ESS's account surface
+    // answers 401 WRONG_PASSWORD for a bad current password (issue #13) and
+    // that must reach the screen as a message, not sign the person out.
+    final tokenRejected = _isTokenRejection(err);
+    if (!tokenRejected || options.extra[_retriedKey] == true) {
+      // A token rejection that could not be rotated (or survived the rotation)
+      // ends the session: sign out here so the app returns to login instead of
+      // leaving every screen on a raw "bad response" error.
+      if (tokenRejected) await _endSession(options);
       handler.next(err);
       return;
     }
@@ -117,6 +120,24 @@ class EssAuthInterceptor extends Interceptor {
       if (e.response?.statusCode == 401) await _endSession(options);
       handler.next(e);
     }
+  }
+
+  /// True when a 401 is about the token itself. The ESS marks those
+  /// `NOT_AUTHENTICATED`; any other 401 (`WRONG_PASSWORD` on `/me/password`)
+  /// is a refusal of what the request said and belongs on the screen.
+  /// A 401 with no readable body keeps the old behaviour (treated as a token).
+  bool _isTokenRejection(DioException err) {
+    if (err.response?.statusCode != 401) return false;
+    final data = err.response?.data;
+    if (data is Map) {
+      final code = data['code']?.toString();
+      if (code != null && code.isNotEmpty) return code == 'NOT_AUTHENTICATED';
+      final error = data['error']?.toString();
+      if (error != null && error.isNotEmpty) {
+        return error == 'Please authenticate' || error == 'No token provided';
+      }
+    }
+    return true;
   }
 
   /// The ESS refused this token and no rotation can rescue it. Drop both halves

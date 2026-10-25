@@ -147,6 +147,66 @@ class EssMe extends Equatable {
   List<Object?> get props => [employee, login];
 }
 
+/// `GET /me/account` — the account surface for the signed-in kind (issue #13).
+///
+/// A portal sign-in has the Scheduler's own Account & Security. An
+/// attendance-only sign-in has no `users` row, so the ESS answers the small
+/// part it owns: the identifiers (read-only, HR-managed) and the password.
+class EssAccount extends Equatable {
+  const EssAccount({
+    required this.loginKind,
+    this.role,
+    this.username,
+    this.email,
+    this.emailVerified = false,
+    this.phoneNumber,
+    this.twoFactorEnabled = false,
+    required this.canChangeEmail,
+    required this.canChangePhone,
+    required this.canChangePassword,
+    required this.canUseTwoFactor,
+    this.note,
+  });
+
+  /// `portal` or `attendance`.
+  final String loginKind;
+  final String? role;
+  final String? username;
+  final String? email;
+  final bool emailVerified;
+  final String? phoneNumber;
+  final bool twoFactorEnabled;
+  final bool canChangeEmail;
+  final bool canChangePhone;
+  final bool canChangePassword;
+  final bool canUseTwoFactor;
+
+  /// The sentence HR's policy puts on the screen (e.g. "Ask HR to change your
+  /// email or phone number."), null for a portal login.
+  final String? note;
+
+  bool get isAttendance => loginKind == 'attendance';
+
+  factory EssAccount.fromJson(Map<String, dynamic> j) => EssAccount(
+        loginKind: _str(j['login_kind']) ?? 'portal',
+        role: _str(j['role']),
+        username: _str(j['username']),
+        email: _str(j['email']),
+        emailVerified: _bool(j['email_verified']),
+        phoneNumber: _str(j['phone_number']),
+        twoFactorEnabled: _bool(j['two_factor_enabled']),
+        canChangeEmail: _bool(j['can_change_email']),
+        canChangePhone: _bool(j['can_change_phone']),
+        canChangePassword: _bool(j['can_change_password']),
+        canUseTwoFactor: _bool(j['can_use_two_factor']),
+        note: _str(j['note']),
+      );
+
+  @override
+  List<Object?> get props =>
+      [loginKind, role, username, email, emailVerified, phoneNumber, canChangeEmail, canChangePhone, canChangePassword];
+}
+
 /// `Capabilities` schema — what the app may show this person.
 class EssCapabilities extends Equatable {
   const EssCapabilities({

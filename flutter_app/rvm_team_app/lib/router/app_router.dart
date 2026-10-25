@@ -41,6 +41,28 @@ import '../features/work/interviews_screen.dart';
 import '../features/work/mark_attendance_screen.dart';
 import '../features/work/my_batches_screen.dart';
 
+/// Locations that only a portal sign-in can use (issue #13).
+///
+/// An attendance-only session carries a punch token: the Scheduler's own guards
+/// refuse it, and the ESS's portal-role routes refuse it too. The tiles are
+/// already hidden, but a deep link or a stale history entry must not land on a
+/// screen that can only draw a 401/403. Everything else (the ESS surface: Me,
+/// requests, documents, Wall, Helpdesk tickets, notifications, sessions,
+/// directory) stays open.
+bool attendanceBlockedLocation(String location) {
+  const exact = {
+    '/account/security-events', // Scheduler /api/me/security-events
+    '/helpdesk/queue', // ESS portal-role route (403 PORTAL_LOGIN_REQUIRED)
+    '/leaders', // CEO / super admin only
+  };
+  if (exact.contains(location)) return true;
+  // Teaching screens and the Scheduler-backed HR desks (/work/..., /hr/...).
+  return location == '/work' ||
+      location.startsWith('/work/') ||
+      location == '/hr' ||
+      location.startsWith('/hr/');
+}
+
 /// Auth-gated router. Redirect reads [TeamAuthBloc] state; the app calls
 /// `router.refresh()` when that state changes: splash → login → five-tab shell.
 GoRouter createRouter(TeamAuthBloc authBloc,
@@ -57,6 +79,10 @@ GoRouter createRouter(TeamAuthBloc authBloc,
         case TeamAuthStatus.unauthenticated:
           return authOnly.contains(loc) ? null : '/login';
         case TeamAuthStatus.authenticated:
+          if (authBloc.state.identity?.attendance == true &&
+              attendanceBlockedLocation(loc)) {
+            return '/home';
+          }
           return (loc == '/splash' || authOnly.contains(loc)) ? '/home' : null;
       }
     },

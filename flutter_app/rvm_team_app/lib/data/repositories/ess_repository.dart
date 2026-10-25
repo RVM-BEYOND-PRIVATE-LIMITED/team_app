@@ -38,6 +38,24 @@ class EssRepository with ConnectivityGuard {
     return _remote.me();
   }
 
+  Future<EssAccount> myAccount() async {
+    await ensureOnline();
+    return _remote.myAccount();
+  }
+
+  Future<void> changeMyPassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    await ensureOnline();
+    return _remote.changeMyPassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+      confirmPassword: confirmPassword,
+    );
+  }
+
   Future<EssCapabilities> capabilities() async {
     await ensureOnline();
     return _remote.capabilities();
