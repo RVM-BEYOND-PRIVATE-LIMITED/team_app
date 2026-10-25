@@ -69,6 +69,27 @@ class EssRemoteDataSource with DioExecutor {
   Future<EssMe> me() =>
       guard(() async => EssMe.fromJson(_body(await _dio.get('/me'))));
 
+  /// `GET /me/account` — the identifiers and what this sign-in may change
+  /// (issue #13). Works for both a portal and an attendance-only session.
+  Future<EssAccount> myAccount() =>
+      guard(() async => EssAccount.fromJson(_body(await _dio.get('/me/account'))));
+
+  /// `POST /me/password` — attendance logins only; a portal login is 409
+  /// `USE_SCHEDULER`. A wrong current password is a 401 `WRONG_PASSWORD` that
+  /// must be shown, never treated as an expired session.
+  Future<void> changeMyPassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) =>
+      guard(() async {
+        await _dio.post('/me/password', data: {
+          'current_password': currentPassword,
+          'new_password': newPassword,
+          'confirm_password': confirmPassword,
+        });
+      });
+
   Future<EssCapabilities> capabilities() => guard(() async =>
       EssCapabilities.fromJson(_body(await _dio.get('/me/capabilities'))));
 

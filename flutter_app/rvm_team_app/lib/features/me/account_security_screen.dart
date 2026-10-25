@@ -7,10 +7,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../app_feedback.dart';
 import '../../app_validators.dart';
+import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
+import '../../domain/ess_models.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/image_crop_screen.dart';
@@ -25,9 +28,233 @@ class AccountSecurityScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Issue #13: an attendance-only sign-in has no users row, so the
+    // Scheduler's /api/me guard rejects its punch token. That sign-in gets the
+    // ESS's own small account surface instead; a portal session keeps the
+    // Scheduler screen exactly as before.
+    final attendance = context.select<TeamAuthBloc, bool>(
+        (b) => b.state.identity?.attendance == true);
+    if (attendance) return const _AttendanceAccountScreen();
     return BlocProvider(
       create: (_) => getIt<MeBloc>()..add(const LoadRequested()),
       child: const _SecurityView(),
+    );
+  }
+}
+
+/// Account & Security for an attendance-only sign-in (issue #13).
+///
+/// Email and phone are the person's login identifiers on the HR record, so
+/// they are read-only here and the screen says HR owns them; the data-request
+/// flow (A8) is the path. Only the password is changed here, through the ESS,
+/// and a change ends every ESS sign-in for the person — including this one.
+class _AttendanceAccountScreen extends StatelessWidget {
+  const _AttendanceAccountScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) =>
+          getIt<LoadBloc<EssAccount>>()..add(const LoadRequested()),
+      child: const _AttendanceSecurityView(),
+    );
+  }
+}
+
+class _AttendanceSecurityView extends StatelessWidget {
+  const _AttendanceSecurityView();
+
+  @override
+  Widget build(BuildContext context) {
+    return TeamScaffold(
+      title: 'Account & Security',
+      body: BlocBuilder<LoadBloc<EssAccount>, LoadState<EssAccount>>(
+        builder: (context, state) {
+          if (state.status == LoadStatus.initial ||
+              (state.status == LoadStatus.loading && state.data == null)) {
+            return const AppLoading();
+          }
+          if (state.status == LoadStatus.failure && state.data == null) {
+            return AppError(
+              message: state.failure?.message ?? 'Could not load your account.',
+              onRetry: () => context
+                  .read<LoadBloc<EssAccount>>()
+                  .add(const LoadRefreshed()),
+            );
+          }
+          return _body(context, state.data!);
+        },
+      ),
+    );
+  }
+
+  Widget _body(BuildContext context, EssAccount account) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const TeamSectionHeader(
+            title: 'Sign-in details', caption: 'Kept private to you'),
+        const SizedBox(height: 8),
+        _InfoCard(rows: [
+          if (account.username != null)
+            _InfoRow('Employee code', account.username!),
+          _InfoRow(
+            'Email',
+            account.email ?? 'Not set',
+            status: account.email == null
+                ? null
+                : (account.emailVerified ? 'Verified' : 'Unverified'),
+          ),
+          _InfoRow('Phone', account.phoneNumber ?? 'Not set'),
+        ]),
+        if (account.note != null) ...[
+          const SizedBox(height: RvmSpacing.md),
+          TeamNotice(
+            icon: Icons.info_outline_rounded,
+            tone: TeamPillTone.warning,
+            text: account.note!,
+          ),
+          const SizedBox(height: RvmSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: () => context.push('/me/data-requests'),
+            icon: const Icon(Icons.privacy_tip_outlined, size: 18),
+            label: const Text('Ask HR to change my email or phone'),
+          ),
+        ],
+        const SizedBox(height: RvmSpacing.lg),
+        const TeamSectionHeader(
+            title: 'Password', caption: 'The password this sign-in uses'),
+        const SizedBox(height: 8),
+        _AttendancePasswordCard(enabled: account.canChangePassword),
+        const SizedBox(height: RvmSpacing.md),
+        Center(
+          child: Text(
+            'Changing your password signs you out on this phone and every other phone.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The ESS password change (`POST /me/password`). A wrong current password is
+/// a 401 WRONG_PASSWORD and is shown as-is; it never signs the person out.
+class _AttendancePasswordCard extends StatefulWidget {
+  const _AttendancePasswordCard({required this.enabled});
+  final bool enabled;
+
+  @override
+  State<_AttendancePasswordCard> createState() =>
+      _AttendancePasswordCardState();
+}
+
+class _AttendancePasswordCardState extends State<_AttendancePasswordCard> {
+  final _current = TextEditingController();
+  final _next = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final current = _current.text;
+    final next = _next.text;
+    final confirm = _confirm.text;
+    if (next.length < 8) {
+      setState(() => _error = 'Use at least 8 characters.');
+      return;
+    }
+    if (next != confirm) {
+      setState(() => _error = 'The new passwords do not match.');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await getIt<EssRepository>().changeMyPassword(
+        currentPassword: current,
+        newPassword: next,
+        confirmPassword: confirm,
+      );
+      if (!mounted) return;
+      showAppMessage('Password changed. Sign in again with the new one.');
+      // The server ended every live ESS sign-in, this one included.
+      context.read<TeamAuthBloc>().add(const TeamSignedOut());
+    } on Failure catch (f) {
+      // 'Wrong password.' for a real refusal (401 WRONG_PASSWORD).
+      if (mounted) setState(() => _error = f.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() =>
+            _error = 'Could not change the password. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return TeamCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _current,
+            obscureText: true,
+            decoration: const InputDecoration(
+                labelText: 'Current password',
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _next,
+            obscureText: true,
+            decoration: const InputDecoration(
+                labelText: 'New password (min. 8 characters)',
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _confirm,
+            obscureText: true,
+            decoration: const InputDecoration(
+                labelText: 'Confirm new password',
+                border: OutlineInputBorder()),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!,
+                style: text.bodySmall?.copyWith(color: RvmColors.danger)),
+          ],
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: !widget.enabled || _submitting ? null : _submit,
+            child: _submitting
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Update password'),
+          ),
+        ],
+      ),
     );
   }
 }

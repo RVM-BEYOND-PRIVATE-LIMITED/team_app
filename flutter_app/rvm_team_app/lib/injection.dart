@@ -214,6 +214,11 @@ void configureDependencies(AuthSession session) {
     // ── Team RVM ESS (1A/1B) ──────────────────────────────────────────────
     ..registerFactory<CapabilitiesBloc>(() =>
         LoadBloc<EssCapabilities>(() => getIt<EssRepository>().capabilities()))
+    // Issue #13: the identity and account card for an attendance-only sign-in.
+    ..registerFactory<LoadBloc<EssMe>>(
+        () => LoadBloc<EssMe>(() => getIt<EssRepository>().me()))
+    ..registerFactory<LoadBloc<EssAccount>>(
+        () => LoadBloc<EssAccount>(() => getIt<EssRepository>().myAccount()))
     ..registerFactory<PersonalBloc>(() => PersonalBloc(getIt()))
     ..registerFactory<DataRequestsBloc>(() => DataRequestsBloc(getIt()))
     ..registerFactory<AttendanceDayBloc>(() => AttendanceDayBloc(getIt()))

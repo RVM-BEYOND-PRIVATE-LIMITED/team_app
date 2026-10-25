@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../app_version.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
+import '../../domain/ess_models.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -79,33 +80,53 @@ class _AttendanceMe extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final profile = TeamProfile(
-      id: auth.identity?.userId ?? '',
-      username: auth.attendanceName?.trim().isNotEmpty == true
-          ? auth.attendanceName!.trim()
-          : 'My account',
-      role: 'attendance',
-    );
-    return Scaffold(
-      backgroundColor: RvmColors.ivory,
-      body: Column(
-        children: [
-          const TeamPageHeader(
-            title: 'Me',
-            eyebrow: 'My account',
-            subtitle: Text('Your profile, documents and requests'),
+    // The Scheduler /me is refused to a punch token, so the header comes from
+    // the ESS's own GET /me (full name, code, designation, branch) — issue #13.
+    return BlocProvider(
+      create: (_) => getIt<LoadBloc<EssMe>>()..add(const LoadRequested()),
+      child: Builder(builder: (context) {
+        final employee =
+            context.watch<LoadBloc<EssMe>>().state.data?.employee;
+        final profile = TeamProfile(
+          id: employee?.id ?? auth.identity?.userId ?? '',
+          username: employee?.fullName ??
+              (auth.attendanceName?.trim().isNotEmpty == true
+                  ? auth.attendanceName!.trim()
+                  : 'My account'),
+          role: 'attendance',
+        );
+        return Scaffold(
+          backgroundColor: RvmColors.ivory,
+          body: Column(
+            children: [
+              const TeamPageHeader(
+                title: 'Me',
+                eyebrow: 'My account',
+                subtitle: Text('Your profile, documents and requests'),
+              ),
+              Expanded(
+                child: _MeBody(
+                  profile: profile,
+                  attendanceOnly: true,
+                  attendanceEmployee: employee,
+                ),
+              ),
+            ],
           ),
-          Expanded(child: _MeBody(profile: profile, attendanceOnly: true)),
-        ],
-      ),
+        );
+      }),
     );
   }
 }
 
 class _MeBody extends StatelessWidget {
-  const _MeBody({this.profile, this.attendanceOnly = false});
+  const _MeBody(
+      {this.profile, this.attendanceOnly = false, this.attendanceEmployee});
   final TeamProfile? profile;
   final bool attendanceOnly;
+
+  /// The HR record behind an attendance-only sign-in, for the header.
+  final EssEmployee? attendanceEmployee;
 
   @override
   Widget build(BuildContext context) {
@@ -117,7 +138,7 @@ class _MeBody extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _ProfileHeader(profile: p),
+        _ProfileHeader(profile: p, employee: attendanceEmployee),
         const SizedBox(height: RvmSpacing.lg),
         _Section(
           title: 'Me',
@@ -222,13 +243,16 @@ class _MeBody extends StatelessWidget {
         _Section(
           title: 'Account',
           children: [
-            if (!attendanceOnly) ...[
-              _Tile(
-                  icon: Icons.shield_outlined,
-                  title: 'Account & security',
-                  subtitle: 'Password, email, phone, two-factor',
-                  onTap: () => context.push('/account/security')),
-            ],
+            // The same route serves both kinds of sign-in: the screen shows
+            // the Scheduler card for a portal session and the ESS card (password
+            // only; email/phone are HR-managed) for an attendance session.
+            _Tile(
+                icon: Icons.shield_outlined,
+                title: 'Account & security',
+                subtitle: attendanceOnly
+                    ? 'Password; email and phone via HR'
+                    : 'Password, email, phone, two-factor',
+                onTap: () => context.push('/account/security')),
             _Tile(
                 icon: Icons.devices_other_outlined,
                 title: 'Signed-in devices',
@@ -280,13 +304,17 @@ class _MeBody extends StatelessWidget {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({this.profile});
+  const _ProfileHeader({this.profile, this.employee});
   final TeamProfile? profile;
+
+  /// Set for an attendance-only sign-in: its HR record carries the code,
+  /// designation, department and branch the header shows.
+  final EssEmployee? employee;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final name = profile?.username ?? '—';
+    final name = employee?.fullName ?? profile?.username ?? '—';
     final url = profile?.photoUrl;
     return TeamCard(
       child: Row(
@@ -300,10 +328,39 @@ class _ProfileHeader extends StatelessWidget {
                 Text(name, style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 3),
                 TeamPill(
-                    label: (profile?.role ?? 'Member').toUpperCase(),
+                    label: (employee != null
+                            ? 'ATTENDANCE'
+                            : (profile?.role ?? 'Member'))
+                        .toUpperCase(),
                     tone: TeamPillTone.clay,
                     dense: true),
-                if (profile?.email != null)
+                if (employee != null) ...[
+                  if (employee!.designation != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(employee!.designation!,
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      [
+                        if (employee!.employeeCode != null)
+                          employee!.employeeCode!,
+                        if (employee!.department != null)
+                          employee!.department!.name,
+                        if (employee!.branch != null) employee!.branch!.name,
+                      ].join(' · '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+                if (employee == null && profile?.email != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(profile!.email!,
@@ -314,7 +371,7 @@ class _ProfileHeader extends StatelessWidget {
                             .bodySmall
                             ?.copyWith(color: scheme.onSurfaceVariant)),
                   ),
-                if (profile?.phoneNumber != null)
+                if (employee == null && profile?.phoneNumber != null)
                   Text(profile!.phoneNumber!,
                       style: Theme.of(context)
                           .textTheme

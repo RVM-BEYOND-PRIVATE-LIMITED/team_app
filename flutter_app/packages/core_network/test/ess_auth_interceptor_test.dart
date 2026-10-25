@@ -121,6 +121,28 @@ void main() {
     expect(tokens.unauthorized, 1);
   });
 
+  test('a 401 WRONG_PASSWORD reaches the screen and never signs out',
+      () async {
+    final tokens = _FakeTokens();
+    final refreshAdapter = _RecordingAdapter(
+        200, '{"access_token":"fresh-token","refresh_token":"next-refresh"}');
+    final apiAdapter = _RecordingAdapter(
+        401, '{"error":"Wrong password.","code":"WRONG_PASSWORD"}');
+    final dio = _dioWith(apiAdapter)
+      ..interceptors.add(EssAuthInterceptor(
+        tokens: tokens,
+        essTokens: tokens,
+        refreshDio: _dioWith(refreshAdapter),
+      ));
+
+    await expectLater(
+        dio.post<dynamic>('/me/password'), throwsA(isA<DioException>()));
+
+    expect(tokens.unauthorized, 0, reason: 'a wrong password is not a session');
+    expect(refreshAdapter.calls, 0, reason: 'no rotation for a refusal');
+    expect(apiAdapter.calls, 1, reason: 'not replayed');
+  });
+
   test('a 401 on the kept-sign-in exchange never signs out', () async {
     final tokens = _FakeTokens();
     final refreshDio = _dioWith(_RefusingAdapter(401));
