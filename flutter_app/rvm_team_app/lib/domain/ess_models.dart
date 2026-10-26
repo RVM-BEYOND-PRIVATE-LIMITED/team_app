@@ -913,14 +913,25 @@ class MyProfileEmployee extends Equatable {
 }
 
 class TimelineEvent extends Equatable {
-  const TimelineEvent({required this.id, required this.title, this.at});
+  const TimelineEvent(
+      {required this.id, required this.title, this.kind, this.at});
   final String id;
+
+  /// The stable backend kind (`PROMOTED`, `BRANCH_CHANGED`, `TRIVIAL_UPDATE`, …).
+  /// Clients filter on this, never on the English [title] (issue #15).
+  final String? kind;
   final String title;
   final DateTime? at;
-  factory TimelineEvent.fromJson(Map<String, dynamic> j) =>
-      TimelineEvent(id: _str(j['id']) ?? '', title: _str(j['title']) ?? '', at: _date(j['at']));
+
+  factory TimelineEvent.fromJson(Map<String, dynamic> j) => TimelineEvent(
+        id: _str(j['id']) ?? '',
+        kind: _str(j['kind']),
+        title: _str(j['title']) ?? '',
+        at: _date(j['at']),
+      );
+
   @override
-  List<Object?> get props => [id, title, at];
+  List<Object?> get props => [id, kind, title, at];
 }
 
 class MyProfile extends Equatable {
