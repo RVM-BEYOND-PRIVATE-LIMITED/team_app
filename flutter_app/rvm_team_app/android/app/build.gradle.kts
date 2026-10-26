@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.rvm_team_app"
+    namespace = "com.rvm.rvmteam"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.rvm_team_app"
+        applicationId = "com.rvm.rvmteam"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -45,7 +45,7 @@ flutter {
 
 // Firebase Crashlytics activates only when the Firebase console config is
 // present (android/app/google-services.json, Android app package
-// com.example.rvm_team_app). Until KP adds that file, the app builds and runs
+// com.rvm.rvmteam). Until KP adds that file, the app builds and runs
 // normally with local-only crash logging.
 if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")

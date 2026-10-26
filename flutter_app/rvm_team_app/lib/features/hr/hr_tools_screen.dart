@@ -66,6 +66,10 @@ class _HrToolsView extends StatelessWidget {
                   ActionChip(
                       label: const Text('Request limits'),
                       onPressed: () => context.push('/hr/request-limits')),
+                if (canAttendance)
+                  ActionChip(
+                      label: const Text('WFH allowances'),
+                      onPressed: () => context.push('/hr/wfh-allowances')),
                 ActionChip(
                     label: const Text('Profile changes'),
                     onPressed: () => context.push('/hr/change-requests')),

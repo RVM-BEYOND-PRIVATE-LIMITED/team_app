@@ -60,7 +60,8 @@ class _TicketScreenState extends State<TicketScreen> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await getIt<EssRepository>().ticketAction(widget.ticketId, action, data: data);
+      await getIt<EssRepository>()
+          .ticketAction(widget.ticketId, action, data: data);
       await _load();
     } on Failure catch (f) {
       _snack(f.message);
@@ -74,7 +75,8 @@ class _TicketScreenState extends State<TicketScreen> {
     if (text.isEmpty || _busy) return;
     setState(() => _busy = true);
     try {
-      await getIt<EssRepository>().addTicketComment(id: widget.ticketId, body: text);
+      await getIt<EssRepository>()
+          .addTicketComment(id: widget.ticketId, body: text);
       _comment.clear();
       await _load();
     } on Failure catch (f) {
@@ -97,11 +99,13 @@ class _TicketScreenState extends State<TicketScreen> {
   }
 
   Future<void> _assign() async {
-    final person = await showDialog<OrgCard>(context: context, builder: (_) => const _AssignDialog());
+    final person = await showDialog<OrgCard>(
+        context: context, builder: (_) => const _AssignDialog());
     if (person == null || !mounted) return;
     setState(() => _busy = true);
     try {
-      await getIt<EssRepository>().assignTicket(id: widget.ticketId, employeeId: person.id);
+      await getIt<EssRepository>()
+          .assignTicket(id: widget.ticketId, employeeId: person.id);
       await _load();
     } on Failure catch (f) {
       _snack(f.message);
@@ -110,7 +114,9 @@ class _TicketScreenState extends State<TicketScreen> {
     }
   }
 
-  void _snack(String message) => ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+  void _snack(String message) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +128,10 @@ class _TicketScreenState extends State<TicketScreen> {
             title: ticket == null ? 'Ticket' : ticket.ref,
             subtitle: Text(ticket?.category.name ?? 'Support ticket'),
             actions: [
-              IconButton(tooltip: 'Assign', onPressed: _busy ? null : _assign, icon: const Icon(Icons.person_add_alt)),
+              IconButton(
+                  tooltip: 'Assign',
+                  onPressed: _busy ? null : _assign,
+                  icon: const Icon(Icons.person_add_alt)),
             ],
           ),
           Expanded(child: _body()),
@@ -138,11 +147,16 @@ class _TicketScreenState extends State<TicketScreen> {
                         controller: _comment,
                         minLines: 1,
                         maxLines: 3,
-                        decoration: const InputDecoration(hintText: 'Write a message…', border: OutlineInputBorder(), isDense: true),
+                        decoration: const InputDecoration(
+                            hintText: 'Write a message…',
+                            border: OutlineInputBorder(),
+                            isDense: true),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton.filled(onPressed: _busy ? null : _comment_, icon: const Icon(Icons.send)),
+                    IconButton.filled(
+                        onPressed: _busy ? null : _comment_,
+                        icon: const Icon(Icons.send)),
                   ],
                 ),
               ),
@@ -154,7 +168,9 @@ class _TicketScreenState extends State<TicketScreen> {
 
   Widget _body() {
     if (_loading) return const AppLoading();
-    if (_failure != null) return AppError(message: _failure!.message, onRetry: _load);
+    if (_failure != null) {
+      return AppError(message: _failure!.message, onRetry: _load);
+    }
     final detail = _detail!;
     final t = detail.ticket;
     return ListView(
@@ -168,9 +184,24 @@ class _TicketScreenState extends State<TicketScreen> {
               children: [
                 Text(t.subject, style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 4),
-                Text('${t.category.name} · ${t.status.replaceAll('_', ' ')} · ${t.priority ?? ''}'),
-                if (t.assignee != null) Text('With ${t.assignee!.fullName}', style: Theme.of(context).textTheme.bodySmall),
-                if (t.overdue) Text('Overdue by ${t.overdueMinutes} working minutes', style: const TextStyle(color: RvmColors.danger)),
+                Text(
+                    '${t.category.name} · ${t.status.replaceAll('_', ' ')} · ${t.priority ?? ''}'),
+                if (t.assignee != null)
+                  Text('With ${t.assignee!.fullName}',
+                      style: Theme.of(context).textTheme.bodySmall),
+                if (t.infra != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Infra register'
+                    '${t.infra!.ticketNo != null ? ' #${t.infra!.ticketNo}' : ''}'
+                    ' · ${t.infra!.status}'
+                    '${t.infra!.closedOn != null ? ' since ${t.infra!.closedOn!.toLocal().toString().split(' ').first}' : ''}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                if (t.overdue)
+                  Text('Overdue by ${t.overdueMinutes} working minutes',
+                      style: const TextStyle(color: RvmColors.danger)),
                 if (t.body != null) ...[
                   const SizedBox(height: RvmSpacing.sm),
                   Text(t.body!),
@@ -181,17 +212,35 @@ class _TicketScreenState extends State<TicketScreen> {
                   runSpacing: 8,
                   children: [
                     if (t.isOpen && t.assignee == null)
-                      FilledButton.tonal(onPressed: _busy ? null : () => _act('claim'), child: const Text('Claim')),
+                      FilledButton.tonal(
+                          onPressed: _busy ? null : () => _act('claim'),
+                          child: const Text('Claim')),
                     if (t.isOpen)
-                      OutlinedButton(onPressed: _busy ? null : () => _act('status', data: {'status': 'in_progress'}), child: const Text('In progress')),
+                      OutlinedButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _act('status',
+                                  data: {'status': 'in_progress'}),
+                          child: const Text('In progress')),
                     if (t.isOpen)
-                      OutlinedButton(onPressed: _busy ? null : () => _act('status', data: {'status': 'resolved'}), child: const Text('Resolved')),
+                      OutlinedButton(
+                          onPressed: _busy
+                              ? null
+                              : () =>
+                                  _act('status', data: {'status': 'resolved'}),
+                          child: const Text('Resolved')),
                     if (t.status == 'resolved')
-                      OutlinedButton(onPressed: _busy ? null : () => _act('reopen'), child: const Text('Reopen')),
+                      OutlinedButton(
+                          onPressed: _busy ? null : () => _act('reopen'),
+                          child: const Text('Reopen')),
                     if (t.status == 'open' && t.mine)
-                      OutlinedButton(onPressed: _busy ? null : () => _act('withdraw'), child: const Text('Withdraw')),
+                      OutlinedButton(
+                          onPressed: _busy ? null : () => _act('withdraw'),
+                          child: const Text('Withdraw')),
                     if (t.mine || t.status == 'resolved')
-                      OutlinedButton(onPressed: _busy ? null : _close, child: const Text('Close')),
+                      OutlinedButton(
+                          onPressed: _busy ? null : _close,
+                          child: const Text('Close')),
                   ],
                 ),
               ],
@@ -235,7 +284,8 @@ class _CloseDialogState extends State<_CloseDialog> {
             controller: _reason,
             minLines: 2,
             maxLines: 3,
-            decoration: const InputDecoration(hintText: 'Reason (at least 3 characters)'),
+            decoration: const InputDecoration(
+                hintText: 'Reason (at least 3 characters)'),
           ),
           const SizedBox(height: 12),
           Row(
@@ -243,8 +293,11 @@ class _CloseDialogState extends State<_CloseDialog> {
             children: [
               for (var i = 1; i <= 5; i++)
                 IconButton(
-                  onPressed: () => setState(() => _rating = _rating == i ? null : i),
-                  icon: Icon(i <= (_rating ?? 0) ? Icons.star : Icons.star_border, color: RvmColors.warning),
+                  onPressed: () =>
+                      setState(() => _rating = _rating == i ? null : i),
+                  icon: Icon(
+                      i <= (_rating ?? 0) ? Icons.star : Icons.star_border,
+                      color: RvmColors.warning),
                 ),
             ],
           ),
@@ -252,7 +305,9 @@ class _CloseDialogState extends State<_CloseDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
         FilledButton(
           onPressed: () {
             final reason = _reason.text.trim();
@@ -288,7 +343,8 @@ class _AssignDialogState extends State<_AssignDialog> {
 
   void _onChanged(String value) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () => _run(value.trim()));
+    _debounce =
+        Timer(const Duration(milliseconds: 300), () => _run(value.trim()));
   }
 
   Future<void> _run(String q) async {
@@ -322,16 +378,24 @@ class _AssignDialogState extends State<_AssignDialog> {
               controller: _query,
               autofocus: true,
               onChanged: _onChanged,
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search a colleague'),
+              decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  hintText: 'Search a colleague'),
             ),
-            if (_loading) const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
+            if (_loading)
+              const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator()),
             Flexible(
               child: ListView(
                 shrinkWrap: true,
                 children: [
                   for (final p in _results.take(8))
                     ListTile(
-                      leading: CircleAvatar(child: Text(p.fullName.isEmpty ? '?' : p.fullName.substring(0, 1).toUpperCase())),
+                      leading: CircleAvatar(
+                          child: Text(p.fullName.isEmpty
+                              ? '?'
+                              : p.fullName.substring(0, 1).toUpperCase())),
                       title: Text(p.fullName),
                       subtitle: Text(p.designation ?? p.employeeCode ?? ''),
                       onTap: () => Navigator.pop(context, p),
@@ -342,7 +406,11 @@ class _AssignDialogState extends State<_AssignDialog> {
           ],
         ),
       ),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))],
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'))
+      ],
     );
   }
 }
@@ -368,9 +436,15 @@ class _MessageTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(event ? _eventLabel(message.event) : (message.author?.fullName ?? 'Someone'),
+            Text(
+                event
+                    ? _eventLabel(message.event)
+                    : (message.author?.fullName ?? 'Someone'),
                 style: Theme.of(context).textTheme.labelMedium),
-            if (message.body != null) ...[const SizedBox(height: 4), Text(message.body!)],
+            if (message.body != null) ...[
+              const SizedBox(height: 4),
+              Text(message.body!)
+            ],
           ],
         ),
       ),

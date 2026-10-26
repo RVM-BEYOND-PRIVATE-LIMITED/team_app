@@ -71,8 +71,8 @@ class EssRemoteDataSource with DioExecutor {
 
   /// `GET /me/account` — the identifiers and what this sign-in may change
   /// (issue #13). Works for both a portal and an attendance-only session.
-  Future<EssAccount> myAccount() =>
-      guard(() async => EssAccount.fromJson(_body(await _dio.get('/me/account'))));
+  Future<EssAccount> myAccount() => guard(
+      () async => EssAccount.fromJson(_body(await _dio.get('/me/account'))));
 
   /// `POST /me/password` — attendance logins only; a portal login is 409
   /// `USE_SCHEDULER`. A wrong current password is a 401 `WRONG_PASSWORD` that
@@ -339,6 +339,32 @@ class EssRemoteDataSource with DioExecutor {
 
   Future<TeamOffWeek> teamOffThisWeek() => guard(() async =>
       TeamOffWeek.fromJson(_body(await _dio.get('/team/off-this-week'))));
+
+  // ── HR: per-employee WFH allowances (KP, 22 Oct) ─────────────────────────
+
+  /// `GET /hr/wfh-allowances?q=` — HR's list (hr, CEO, super admin).
+  Future<HrWfhAllowancePage> wfhAllowances({String? query}) =>
+      guard(() async => HrWfhAllowancePage.fromJson(
+              _body(await _dio.get('/hr/wfh-allowances', queryParameters: {
+            if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+          }))));
+
+  /// `PUT /hr/wfh-allowances/{employeeId}` — enable/disable or change the
+  /// monthly days. `enabled: false` keeps the limit for the next switch-on.
+  Future<HrWfhAllowance> setWfhAllowance({
+    required String employeeId,
+    required bool enabled,
+    required int monthlyLimitDays,
+    String? note,
+  }) =>
+      guard(() async => HrWfhAllowance.fromJson(_obj(_body(await _dio.put(
+            '/hr/wfh-allowances/$employeeId',
+            data: {
+              'enabled': enabled,
+              'monthly_limit_days': monthlyLimitDays,
+              if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+            },
+          ))['allowance'])));
 
   Future<PraisePage> myPraise({String? employeeId}) => guard(() async =>
       PraisePage.fromJson(_body(await _dio.get('/me/praise', queryParameters: {
@@ -993,6 +1019,53 @@ class EssRemoteDataSource with DioExecutor {
   Future<ApprovalChain> approvalChain(String family, String id) =>
       guard(() async => ApprovalChain.fromJson(
           _body(await _dio.get('/approvals/$family/$id/chain'))));
+
+  // ── H1: faculty class marking (decision 8) ───────────────────────────────
+
+  Future<ClassRoster> classRoster(
+          {required String batchId, required String date}) =>
+      guard(() async => ClassRoster.fromJson(_body(await _dio.get(
+          '/me/batches/$batchId/roster',
+          queryParameters: {'date': date}))));
+
+  Future<void> saveClassAttendance({
+    required String batchId,
+    required String date,
+    required Map<String, bool> present,
+    Map<String, String?> absentReasons = const {},
+    Map<String, String?> followUps = const {},
+  }) =>
+      guard(() async => _dio.post('/me/batches/$batchId/attendance', data: {
+            'date': date,
+            'attendance': [
+              for (final entry in present.entries)
+                {
+                  'student_id': entry.key,
+                  'present': entry.value,
+                  if (!entry.value &&
+                      (absentReasons[entry.key]?.trim().isNotEmpty ?? false))
+                    'absent_reason': absentReasons[entry.key]!.trim(),
+                  if (!entry.value &&
+                      (followUps[entry.key]?.trim().isNotEmpty ?? false))
+                    'follow_up_comment': followUps[entry.key]!.trim(),
+                },
+            ],
+          }));
+
+  Future<ClassRosterStudent> updateClassRemark({
+    required String batchId,
+    required String date,
+    required String studentId,
+    required String absentReason,
+    String? followUpComment,
+  }) =>
+      guard(() async => ClassRosterStudent.fromJson(_obj(_body(await _dio
+              .patch('/me/batches/$batchId/attendance/$date/remarks', data: {
+            'student_id': studentId,
+            'absent_reason': absentReason,
+            if (followUpComment != null && followUpComment.trim().isNotEmpty)
+              'follow_up_comment': followUpComment.trim(),
+          }))['student'])));
 
   // ── HR desk ──────────────────────────────────────────────────────────────
 
