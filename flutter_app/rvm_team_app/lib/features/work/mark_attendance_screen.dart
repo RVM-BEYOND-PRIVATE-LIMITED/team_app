@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../app_feedback.dart';
-import '../../domain/models.dart';
+import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import 'bloc/absent_remark_bloc.dart';
 import 'bloc/mark_attendance_bloc.dart';
 
-/// Mark one batch's student attendance for today
-/// (`GET /api/attendance/batch/:id/daily`, `POST /api/attendance`).
+/// Mark one batch's student attendance for today through the ESS
+/// (`GET /me/batches/{id}/roster`, `POST /me/batches/{id}/attendance`, H1).
 class MarkAttendanceScreen extends StatelessWidget {
   const MarkAttendanceScreen(
       {super.key, required this.batchId, this.batchName});
@@ -44,12 +44,17 @@ class MarkAttendanceScreen extends StatelessWidget {
             appBar: AppBar(
               title: Text(batchName ?? 'Mark attendance'),
               actions: [
-                IconButton(
-                  tooltip: 'All present',
-                  onPressed: () => context
-                      .read<MarkAttendanceBloc>()
-                      .add(const MarkAllPresent()),
-                  icon: const Icon(Icons.done_all),
+                BlocBuilder<MarkAttendanceBloc, MarkAttendanceState>(
+                  buildWhen: (a, b) => a.canEdit != b.canEdit,
+                  builder: (context, state) => IconButton(
+                    tooltip: 'All present',
+                    onPressed: state.canEdit
+                        ? () => context
+                            .read<MarkAttendanceBloc>()
+                            .add(const MarkAllPresent())
+                        : null,
+                    icon: const Icon(Icons.done_all),
+                  ),
                 ),
               ],
             ),
@@ -93,6 +98,18 @@ class _Roster extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
+        if (!state.canEdit)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Card(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text(
+                    'This day is already marked. The marks are locked; an absent student’s reason can still be updated.'),
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(
@@ -107,22 +124,19 @@ class _Roster extends StatelessWidget {
             itemCount: state.students.length,
             itemBuilder: (context, i) {
               final s = state.students[i];
-              final present = state.present[s.studentId] ?? false;
-              final disabled = !s.isEligible || s.isOnHold;
-              final canRemark = !present && s.attendanceId != null && !disabled;
+              final present = state.present[s.id] ?? false;
+              final canRemark = s.isAbsent;
               return CheckboxListTile(
                 value: present,
-                onChanged: disabled
-                    ? null
-                    : (_) => context
+                onChanged: state.canEdit
+                    ? (_) => context
                         .read<MarkAttendanceBloc>()
-                        .add(MarkToggled(s.studentId)),
-                title: Text(s.name),
+                        .add(MarkToggled(s.id))
+                    : null,
+                title: Text(s.fullName ?? 'Student'),
                 subtitle: Text([
-                  if (s.rollCode != null) s.rollCode!,
-                  if (s.isOnHold) 'on hold',
-                  if (s.notYetJoined) 'not yet joined',
-                  if (!present && (s.absentReason?.isNotEmpty ?? false))
+                  if (s.admissionNumber != null) s.admissionNumber!,
+                  if (s.isAbsent && (s.absentReason?.isNotEmpty ?? false))
                     'reason: ${s.absentReason}',
                 ].join(' · ')),
                 controlAffinity: ListTileControlAffinity.leading,
@@ -145,11 +159,12 @@ class _Roster extends StatelessWidget {
             border: Border(top: BorderSide(color: scheme.outlineVariant)),
           ),
           child: FilledButton.icon(
-            onPressed: state.writeStatus == WriteStatus.submitting
-                ? null
-                : () => context
-                    .read<MarkAttendanceBloc>()
-                    .add(const MarkSubmitted()),
+            onPressed:
+                state.canEdit && state.writeStatus != WriteStatus.submitting
+                    ? () => context
+                        .read<MarkAttendanceBloc>()
+                        .add(const MarkSubmitted())
+                    : null,
             icon: state.writeStatus == WriteStatus.submitting
                 ? const SizedBox(
                     width: 18,
@@ -163,23 +178,39 @@ class _Roster extends StatelessWidget {
     );
   }
 
-  void _openRemark(BuildContext context, AttendanceStudent s) {
-    showModalBottomSheet<void>(
+  Future<void> _openRemark(BuildContext context, ClassRosterStudent s) async {
+    final bloc = context.read<MarkAttendanceBloc>();
+    final saved = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (_) => BlocProvider(
         create: (_) => getIt<AbsentRemarkBloc>(),
-        child: _RemarkSheet(student: s),
+        child: _RemarkSheet(
+          batchId: bloc.batchId,
+          date: bloc.dateIso,
+          student: s,
+        ),
       ),
     );
+    if (saved == true && context.mounted) {
+      bloc.add(const MarkRosterRequested());
+    }
   }
 }
 
-/// The mandatory absent reason for one student (`PATCH /api/attendance/remarks`).
+/// The mandatory absent reason for one student
+/// (`PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks`).
 class _RemarkSheet extends StatefulWidget {
-  const _RemarkSheet({required this.student});
-  final AttendanceStudent student;
+  const _RemarkSheet({
+    required this.batchId,
+    required this.date,
+    required this.student,
+  });
+
+  final String batchId;
+  final String date;
+  final ClassRosterStudent student;
 
   @override
   State<_RemarkSheet> createState() => _RemarkSheetState();
@@ -203,7 +234,7 @@ class _RemarkSheetState extends State<_RemarkSheet> {
       listener: (context, state) {
         if (state.status == WriteStatus.success) {
           showAppMessage('Absent reason saved.');
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(true);
         } else if (state.status == WriteStatus.failure && state.error != null) {
           showAppMessage(state.error!);
         }
@@ -220,19 +251,19 @@ class _RemarkSheetState extends State<_RemarkSheet> {
               Text('Absent reason',
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 4),
-              Text(widget.student.name,
+              Text(widget.student.fullName ?? 'Student',
                   style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: RvmSpacing.md),
               TextField(
                 controller: _reason,
-                maxLength: 200,
+                maxLength: 500,
                 decoration:
                     const InputDecoration(labelText: 'Reason for absence'),
               ),
               const SizedBox(height: RvmSpacing.sm),
               TextField(
                 controller: _followUp,
-                maxLength: 200,
+                maxLength: 1000,
                 decoration: const InputDecoration(
                     labelText: 'Follow-up comment (optional)'),
               ),
@@ -242,17 +273,25 @@ class _RemarkSheetState extends State<_RemarkSheet> {
                 child: FilledButton.icon(
                   onPressed: busy
                       ? null
-                      : () => context
-                          .read<AbsentRemarkBloc>()
-                          .add(AbsentRemarkSubmitted(
-                            attendanceId: widget.student.attendanceId!,
-                            reason: _reason.text.trim().isEmpty
-                                ? null
-                                : _reason.text.trim(),
-                            followUp: _followUp.text.trim().isEmpty
-                                ? null
-                                : _followUp.text.trim(),
-                          )),
+                      : () {
+                          final reason = _reason.text.trim();
+                          if (reason.length < 3) {
+                            showAppMessage(
+                                'Enter a reason of at least 3 characters.');
+                            return;
+                          }
+                          context.read<AbsentRemarkBloc>().add(
+                                AbsentRemarkSubmitted(
+                                  batchId: widget.batchId,
+                                  date: widget.date,
+                                  studentId: widget.student.id,
+                                  reason: reason,
+                                  followUp: _followUp.text.trim().isEmpty
+                                      ? null
+                                      : _followUp.text.trim(),
+                                ),
+                              );
+                        },
                   icon: busy
                       ? const SizedBox(
                           width: 18,

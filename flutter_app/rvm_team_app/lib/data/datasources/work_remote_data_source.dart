@@ -4,11 +4,10 @@ import 'package:dio/dio.dart';
 import '../../domain/models.dart';
 import '../dio_executor.dart';
 
-/// Role work that the Scheduler serves today:
+/// Role work that the Scheduler still serves:
 ///   GET  /api/batches                                   (faculty sees own; filtered server-side)
-///   GET  /api/attendance/batch/:batchId/daily?date=     (marking roster)
-///   POST /api/attendance                                (upsert the day's marks)
 ///   GET  /api/interviews/mine/upcoming                  (panel member's next 24h)
+/// Class marking moved to the ESS (H1); this client no longer writes attendance.
 class WorkRemoteDataSource with DioExecutor {
   WorkRemoteDataSource(this._dio);
 
@@ -22,32 +21,6 @@ class WorkRemoteDataSource with DioExecutor {
             .map((e) => TeamBatch.fromJson(e.cast<String, dynamic>()))
             .toList();
       });
-
-  Future<List<AttendanceStudent>> dailyAttendance(
-          String batchId, String date) =>
-      guard(() async {
-        final res = await _dio.get('/attendance/batch/$batchId/daily',
-            queryParameters: {'date': date});
-        final list = (res.data as List?) ?? const [];
-        return list
-            .whereType<Map>()
-            .map((e) => AttendanceStudent.fromJson(e.cast<String, dynamic>()))
-            .toList();
-      });
-
-  Future<void> markAttendance({
-    required String batchId,
-    required String date,
-    required Map<String, bool> present,
-  }) =>
-      guard(() => _dio.post('/attendance', data: {
-            'batchId': batchId,
-            'date': date,
-            'attendance': [
-              for (final entry in present.entries)
-                {'student_id': entry.key, 'is_present': entry.value},
-            ],
-          }));
 
   Future<List<InterviewRound>> upcomingInterviews() async {
     try {
@@ -102,18 +75,6 @@ class WorkRemoteDataSource with DioExecutor {
       guard(() => _dio.post('/interviews/$roundId/postpone', data: {
             'proposed_at': proposedAt.toUtc().toIso8601String(),
             'reason': reason,
-          }));
-
-  /// Absent-student remark (`PATCH /api/attendance/remarks`).
-  Future<void> updateAbsentRemarks({
-    required String attendanceId,
-    String? absentReason,
-    String? followUpComment,
-  }) =>
-      guard(() => _dio.patch('/attendance/remarks', data: {
-            'attendance_id': attendanceId,
-            'absent_reason': absentReason,
-            'follow_up_comment': followUpComment,
           }));
 
   /// Faculty indicators (`GET /api/attendance/reports/faculty/:id`).

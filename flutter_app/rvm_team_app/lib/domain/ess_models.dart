@@ -4,24 +4,42 @@ import 'package:equatable/equatable.dart';
 /// `packages/contracts/openapi.yaml` (v0.2.1). Kept apart from the Scheduler
 /// `models.dart` so the two backends never blur.
 
-Map<String, dynamic>? _map(dynamic v) => v is Map ? v.cast<String, dynamic>() : null;
+Map<String, dynamic>? _map(dynamic v) =>
+    v is Map ? v.cast<String, dynamic>() : null;
 String? _str(dynamic v) => v?.toString();
-int? _int(dynamic v) => v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
+int? _int(dynamic v) =>
+    v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
 num? _num(dynamic v) => v is num ? v : (v is String ? num.tryParse(v) : null);
+
 /// '1', '0.5', '1.5' — never '1.0'.
 String _daysLabel(num? v) {
   if (v == null) return '—';
   return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 }
 
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 String _shortDate(String iso) {
   final d = DateTime.tryParse(iso);
   if (d == null) return iso;
   return '${d.day} ${_months[d.month - 1]}';
 }
+
 bool _bool(dynamic v) => v == true;
-DateTime? _date(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
+DateTime? _date(dynamic v) =>
+    v == null ? null : DateTime.tryParse(v.toString());
 List<String> _strings(dynamic v) =>
     v is List ? v.map((e) => e.toString()).toList(growable: false) : const [];
 
@@ -72,8 +90,8 @@ class EssManagerRef extends Equatable {
   const EssManagerRef({required this.id, required this.fullName});
   final String id;
   final String fullName;
-  factory EssManagerRef.fromJson(Map<String, dynamic> j) =>
-      EssManagerRef(id: _str(j['id']) ?? '', fullName: _str(j['full_name']) ?? '');
+  factory EssManagerRef.fromJson(Map<String, dynamic> j) => EssManagerRef(
+      id: _str(j['id']) ?? '', fullName: _str(j['full_name']) ?? '');
   @override
   List<Object?> get props => [id, fullName];
 }
@@ -106,14 +124,20 @@ class EssEmployee extends Equatable {
         employeeCode: _str(j['employee_code']),
         designation: _str(j['designation']),
         employmentStatus: _str(j['employment_status']) ?? 'active',
-        branch: _map(j['branch']) == null ? null : EssOrganizationRef.fromJson(_map(j['branch'])!),
-        department:
-            _map(j['department']) == null ? null : EssOrganizationRef.fromJson(_map(j['department'])!),
-        manager: _map(j['manager']) == null ? null : EssManagerRef.fromJson(_map(j['manager'])!),
+        branch: _map(j['branch']) == null
+            ? null
+            : EssOrganizationRef.fromJson(_map(j['branch'])!),
+        department: _map(j['department']) == null
+            ? null
+            : EssOrganizationRef.fromJson(_map(j['department'])!),
+        manager: _map(j['manager']) == null
+            ? null
+            : EssManagerRef.fromJson(_map(j['manager'])!),
       );
 
   @override
-  List<Object?> get props => [id, fullName, employeeCode, designation, employmentStatus];
+  List<Object?> get props =>
+      [id, fullName, employeeCode, designation, employmentStatus];
 }
 
 /// `Login` schema — which token the request carried.
@@ -203,8 +227,17 @@ class EssAccount extends Equatable {
       );
 
   @override
-  List<Object?> get props =>
-      [loginKind, role, username, email, emailVerified, phoneNumber, canChangeEmail, canChangePhone, canChangePassword];
+  List<Object?> get props => [
+        loginKind,
+        role,
+        username,
+        email,
+        emailVerified,
+        phoneNumber,
+        canChangeEmail,
+        canChangePhone,
+        canChangePassword
+      ];
 }
 
 /// `Capabilities` schema — what the app may show this person.
@@ -278,7 +311,8 @@ class EssCapabilities extends Equatable {
   }
 
   @override
-  List<Object?> get props => [tabs, sectionTime, sectionWork, directReports, hrScope, wallPost];
+  List<Object?> get props =>
+      [tabs, sectionTime, sectionWork, directReports, hrScope, wallPost];
 }
 
 /// `PersonalDetails` schema (E9).
@@ -335,14 +369,24 @@ class PersonalDetails extends Equatable {
 
   @override
   List<Object?> get props => [
-        dateOfBirth, bloodGroup, addressLine1, addressLine2, city, state, pincode,
-        emergencyName, emergencyRelation, emergencyPhone, updatedAt,
+        dateOfBirth,
+        bloodGroup,
+        addressLine1,
+        addressLine2,
+        city,
+        state,
+        pincode,
+        emergencyName,
+        emergencyRelation,
+        emergencyPhone,
+        updatedAt,
       ];
 }
 
 /// `EmployeeCard` — who a row is about.
 class EmployeeCard extends Equatable {
-  const EmployeeCard({required this.id, required this.fullName, this.employeeCode});
+  const EmployeeCard(
+      {required this.id, required this.fullName, this.employeeCode});
   final String id;
   final String fullName;
   final String? employeeCode;
@@ -391,7 +435,8 @@ class EssDataRequest extends Equatable {
 
   bool get isOpen => status == 'open';
 
-  String get kindLabel => kind == 'delete' ? 'Delete my data' : 'Correct my data';
+  String get kindLabel =>
+      kind == 'delete' ? 'Delete my data' : 'Correct my data';
 
   factory EssDataRequest.fromJson(Map<String, dynamic> j) => EssDataRequest(
         id: _str(j['id']) ?? '',
@@ -402,7 +447,9 @@ class EssDataRequest extends Equatable {
         resolvedAt: _date(j['resolved_at']),
         resolutionNote: _str(j['resolution_note']),
         resolvedByName: _str(j['resolved_by_name']),
-        employee: _map(j['employee']) == null ? null : EmployeeCard.fromJson(_map(j['employee'])!),
+        employee: _map(j['employee']) == null
+            ? null
+            : EmployeeCard.fromJson(_map(j['employee'])!),
       );
 
   @override
@@ -411,7 +458,11 @@ class EssDataRequest extends Equatable {
 
 /// `SignInResolution` — one-field sign-in resolver answer (A5).
 class SignInResolution extends Equatable {
-  const SignInResolution({required this.kind, this.loginWith, this.locationNames = const [], this.methods = const []});
+  const SignInResolution(
+      {required this.kind,
+      this.loginWith,
+      this.locationNames = const [],
+      this.methods = const []});
   final String kind; // portal | attendance | unknown
   final String? loginWith; // as_typed | username_or_phone
   final List<String> locationNames;
@@ -477,15 +528,16 @@ class StoredDay extends Equatable {
       );
 
   @override
-  List<Object?> get props => [status, firstIn, lastOut, workedMinutes, lateMinutes];
+  List<Object?> get props =>
+      [status, firstIn, lastOut, workedMinutes, lateMinutes];
 }
 
 class DayRemark extends Equatable {
   const DayRemark({required this.remarks, this.updatedAt});
   final String remarks;
   final DateTime? updatedAt;
-  factory DayRemark.fromJson(Map<String, dynamic> j) =>
-      DayRemark(remarks: _str(j['remarks']) ?? '', updatedAt: _date(j['updated_at']));
+  factory DayRemark.fromJson(Map<String, dynamic> j) => DayRemark(
+      remarks: _str(j['remarks']) ?? '', updatedAt: _date(j['updated_at']));
   @override
   List<Object?> get props => [remarks, updatedAt];
 }
@@ -525,9 +577,12 @@ class AttendanceDay extends Equatable {
   factory AttendanceDay.fromJson(Map<String, dynamic> j) => AttendanceDay(
         serverNow: _date(j['server_now']),
         date: _str(j['date']) ?? '',
-        day: _map(j['day']) == null ? null : StoredDay.fromJson(_map(j['day'])!),
+        day:
+            _map(j['day']) == null ? null : StoredDay.fromJson(_map(j['day'])!),
         note: _str(j['note']),
-        hrRemark: _map(j['hr_remark']) == null ? null : DayRemark.fromJson(_map(j['hr_remark'])!),
+        hrRemark: _map(j['hr_remark']) == null
+            ? null
+            : DayRemark.fromJson(_map(j['hr_remark'])!),
         myRemarks: j['my_remarks'] is List
             ? (j['my_remarks'] as List)
                 .whereType<Map>()
@@ -568,7 +623,8 @@ class MockLocationReport extends Equatable {
   final EmployeeCard? employee;
   final BranchRef? branch;
 
-  factory MockLocationReport.fromJson(Map<String, dynamic> j) => MockLocationReport(
+  factory MockLocationReport.fromJson(Map<String, dynamic> j) =>
+      MockLocationReport(
         id: _str(j['id']) ?? '',
         reportedAt: _date(j['reported_at']),
         kind: _str(j['kind']),
@@ -578,8 +634,12 @@ class MockLocationReport extends Equatable {
         provider: _str(j['provider']),
         appVersion: _str(j['app_version']),
         installId: _str(j['install_id']),
-        employee: _map(j['employee']) == null ? null : EmployeeCard.fromJson(_map(j['employee'])!),
-        branch: _map(j['branch']) == null ? null : BranchRef.fromJson(_map(j['branch'])!),
+        employee: _map(j['employee']) == null
+            ? null
+            : EmployeeCard.fromJson(_map(j['employee'])!),
+        branch: _map(j['branch']) == null
+            ? null
+            : BranchRef.fromJson(_map(j['branch'])!),
       );
 
   @override
@@ -620,8 +680,12 @@ class RegisteredPhone extends Equatable {
         revokedAt: _date(j['revoked_at']),
         revokedByName: _str(j['revoked_by_name']),
         revokeReason: _str(j['revoke_reason']),
-        employee: _map(j['employee']) == null ? null : EmployeeCard.fromJson(_map(j['employee'])!),
-        branch: _map(j['branch']) == null ? null : BranchRef.fromJson(_map(j['branch'])!),
+        employee: _map(j['employee']) == null
+            ? null
+            : EmployeeCard.fromJson(_map(j['employee'])!),
+        branch: _map(j['branch']) == null
+            ? null
+            : BranchRef.fromJson(_map(j['branch'])!),
       );
 
   @override
@@ -656,7 +720,8 @@ class TeamSession extends Equatable {
       );
 
   @override
-  List<Object?> get props => [id, deviceLabel, createdAt, lastUsedAt, expiresAt, current];
+  List<Object?> get props =>
+      [id, deviceLabel, createdAt, lastUsedAt, expiresAt, current];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -664,7 +729,10 @@ class TeamSession extends Equatable {
 // ═══════════════════════════════════════════════════════════════════════════
 
 List<Map<String, dynamic>> _maps(dynamic v) => v is List
-    ? v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList(growable: false)
+    ? v
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList(growable: false)
     : const [];
 
 /// A colleague card shared by the org, directory and team views (E2/E6/E8).
@@ -698,8 +766,12 @@ class OrgCard extends Equatable {
         fullName: _str(j['full_name']) ?? '',
         employeeCode: _str(j['employee_code']),
         designation: _str(j['designation']),
-        department: _map(j['department']) == null ? null : BranchRef.fromJson(_map(j['department'])!),
-        branch: _map(j['branch']) == null ? null : BranchRef.fromJson(_map(j['branch'])!),
+        department: _map(j['department']) == null
+            ? null
+            : BranchRef.fromJson(_map(j['department'])!),
+        branch: _map(j['branch']) == null
+            ? null
+            : BranchRef.fromJson(_map(j['branch'])!),
         email: _str(j['email']),
         phone: _str(j['phone']),
         employmentStatus: _str(j['employment_status']),
@@ -707,8 +779,16 @@ class OrgCard extends Equatable {
       );
 
   @override
-  List<Object?> get props =>
-      [id, fullName, designation, department, branch, email, phone, noticePeriod];
+  List<Object?> get props => [
+        id,
+        fullName,
+        designation,
+        department,
+        branch,
+        email,
+        phone,
+        noticePeriod
+      ];
 }
 
 /// `GET /me/org`.
@@ -735,19 +815,25 @@ class OrgView extends Equatable {
     final dept = _map(j['department']);
     final reports = _map(j['direct_reports']) ?? const {};
     return OrgView(
-      managerChain: _maps(j['manager_chain']).map(OrgCard.fromJson).toList(growable: false),
+      managerChain: _maps(j['manager_chain'])
+          .map(OrgCard.fromJson)
+          .toList(growable: false),
       reportsToCeoNotRecorded: _bool(j['reports_to_ceo_not_recorded']),
       peers: _maps(j['peers']).map(OrgCard.fromJson).toList(growable: false),
       directReportCount: _int(reports['count']) ?? 0,
-      directReports: _maps(reports['people']).map(OrgCard.fromJson).toList(growable: false),
+      directReports: _maps(reports['people'])
+          .map(OrgCard.fromJson)
+          .toList(growable: false),
       department: dept == null ? null : BranchRef.fromJson(dept),
-      departmentPeople:
-          dept == null ? const [] : _maps(dept['people']).map(OrgCard.fromJson).toList(growable: false),
+      departmentPeople: dept == null
+          ? const []
+          : _maps(dept['people']).map(OrgCard.fromJson).toList(growable: false),
     );
   }
 
   @override
-  List<Object?> get props => [managerChain, peers, directReportCount, department];
+  List<Object?> get props =>
+      [managerChain, peers, directReportCount, department];
 }
 
 /// `GET /directory`.
@@ -756,7 +842,8 @@ class DirectoryPage extends Equatable {
   final List<OrgCard> people;
   final bool truncated;
   factory DirectoryPage.fromJson(Map<String, dynamic> j) => DirectoryPage(
-        people: _maps(j['people']).map(OrgCard.fromJson).toList(growable: false),
+        people:
+            _maps(j['people']).map(OrgCard.fromJson).toList(growable: false),
         truncated: _bool(j['truncated']),
       );
   @override
@@ -765,7 +852,13 @@ class DirectoryPage extends Equatable {
 
 /// One row of `GET /team/today`: an [OrgCard] plus the day's state (E6/H4).
 class TeamPerson extends Equatable {
-  const TeamPerson({required this.card, required this.state, required this.late, this.lateMinutes, this.firstIn, this.lastOut});
+  const TeamPerson(
+      {required this.card,
+      required this.state,
+      required this.late,
+      this.lateMinutes,
+      this.firstIn,
+      this.lastOut});
   final OrgCard card;
   final String state; // in | done | not_in | on_leave | week_off | holiday
   final bool late;
@@ -820,12 +913,14 @@ class TeamTodayView extends Equatable {
       notIn: _int(c['not_in']) ?? 0,
       late: _int(c['late']) ?? 0,
       onLeave: _int(c['on_leave']) ?? 0,
-      people: _maps(j['people']).map(TeamPerson.fromJson).toList(growable: false),
+      people:
+          _maps(j['people']).map(TeamPerson.fromJson).toList(growable: false),
     );
   }
 
   @override
-  List<Object?> get props => [scope, date, filter, all, notIn, late, onLeave, people];
+  List<Object?> get props =>
+      [scope, date, filter, all, notIn, late, onLeave, people];
 }
 
 class OffWeekPerson extends Equatable {
@@ -840,7 +935,8 @@ class OffWeekPerson extends Equatable {
 
 /// `GET /team/off-this-week`.
 class TeamOffWeek extends Equatable {
-  const TeamOffWeek({required this.from, required this.to, this.scope, required this.people});
+  const TeamOffWeek(
+      {required this.from, required this.to, this.scope, required this.people});
   final String from;
   final String to;
   final String? scope; // reports | peers | null
@@ -852,7 +948,9 @@ class TeamOffWeek extends Equatable {
       from: _str(week['from']) ?? '',
       to: _str(week['to']) ?? '',
       scope: _str(j['scope']),
-      people: _maps(j['people']).map(OffWeekPerson.fromJson).toList(growable: false),
+      people: _maps(j['people'])
+          .map(OffWeekPerson.fromJson)
+          .toList(growable: false),
     );
   }
 
@@ -892,14 +990,21 @@ class MyProfileEmployee extends Equatable {
   final String? phone;
   final String? photoUrl;
 
-  factory MyProfileEmployee.fromJson(Map<String, dynamic> j) => MyProfileEmployee(
+  factory MyProfileEmployee.fromJson(Map<String, dynamic> j) =>
+      MyProfileEmployee(
         id: _str(j['id']) ?? '',
         fullName: _str(j['full_name']) ?? '',
         employeeCode: _str(j['employee_code']),
         designation: _str(j['designation']),
-        department: _map(j['department']) == null ? null : BranchRef.fromJson(_map(j['department'])!),
-        branch: _map(j['branch']) == null ? null : BranchRef.fromJson(_map(j['branch'])!),
-        manager: _map(j['manager']) == null ? null : EssManagerRef.fromJson(_map(j['manager'])!),
+        department: _map(j['department']) == null
+            ? null
+            : BranchRef.fromJson(_map(j['department'])!),
+        branch: _map(j['branch']) == null
+            ? null
+            : BranchRef.fromJson(_map(j['branch'])!),
+        manager: _map(j['manager']) == null
+            ? null
+            : EssManagerRef.fromJson(_map(j['manager'])!),
         dateOfJoining: _str(j['date_of_joining']),
         employmentStatus: _str(j['employment_status']),
         noticePeriod: _bool(j['notice_period']),
@@ -909,7 +1014,16 @@ class MyProfileEmployee extends Equatable {
       );
 
   @override
-  List<Object?> get props => [id, fullName, designation, department, branch, dateOfJoining, noticePeriod, photoUrl];
+  List<Object?> get props => [
+        id,
+        fullName,
+        designation,
+        department,
+        branch,
+        dateOfJoining,
+        noticePeriod,
+        photoUrl
+      ];
 }
 
 class TimelineEvent extends Equatable {
@@ -935,14 +1049,17 @@ class TimelineEvent extends Equatable {
 }
 
 class MyProfile extends Equatable {
-  const MyProfile({required this.employee, required this.personal, required this.timeline});
+  const MyProfile(
+      {required this.employee, required this.personal, required this.timeline});
   final MyProfileEmployee employee;
   final PersonalDetails personal;
   final List<TimelineEvent> timeline;
   factory MyProfile.fromJson(Map<String, dynamic> j) => MyProfile(
         employee: MyProfileEmployee.fromJson(_map(j['employee']) ?? const {}),
         personal: PersonalDetails.fromJson(_map(j['personal']) ?? const {}),
-        timeline: _maps(j['timeline']).map(TimelineEvent.fromJson).toList(growable: false),
+        timeline: _maps(j['timeline'])
+            .map(TimelineEvent.fromJson)
+            .toList(growable: false),
       );
   @override
   List<Object?> get props => [employee, personal, timeline];
@@ -953,7 +1070,8 @@ class MyProfile extends Equatable {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class RequestEmployee extends Equatable {
-  const RequestEmployee({required this.id, required this.fullName, this.employeeCode});
+  const RequestEmployee(
+      {required this.id, required this.fullName, this.employeeCode});
   final String id;
   final String fullName;
   final String? employeeCode;
@@ -967,7 +1085,11 @@ class RequestEmployee extends Equatable {
 }
 
 class LateMark extends Equatable {
-  const LateMark({this.lateMinutes, this.lateCount, required this.lateHalfDay, required this.lateExcused});
+  const LateMark(
+      {this.lateMinutes,
+      this.lateCount,
+      required this.lateHalfDay,
+      required this.lateExcused});
   final int? lateMinutes;
   final int? lateCount;
   final bool lateHalfDay;
@@ -985,7 +1107,12 @@ class LateMark extends Equatable {
 /// The context an approvals row carries (D1): how many of this kind this month, the day's late
 /// mark, and who else is off that day.
 class ApprovalContext extends Equatable {
-  const ApprovalContext({this.typeThisMonth = 0, this.monthLimit, this.late, this.othersOffCount = 0, this.othersOffNames = const []});
+  const ApprovalContext(
+      {this.typeThisMonth = 0,
+      this.monthLimit,
+      this.late,
+      this.othersOffCount = 0,
+      this.othersOffNames = const []});
   final int typeThisMonth;
   final int? monthLimit;
   final LateMark? late;
@@ -996,13 +1123,15 @@ class ApprovalContext extends Equatable {
     return ApprovalContext(
       typeThisMonth: _int(j['type_this_month']) ?? 0,
       monthLimit: _int(j['month_limit']),
-      late: _map(j['late']) == null ? null : LateMark.fromJson(_map(j['late'])!),
+      late:
+          _map(j['late']) == null ? null : LateMark.fromJson(_map(j['late'])!),
       othersOffCount: _int(off['count']) ?? 0,
       othersOffNames: _strings(off['names']),
     );
   }
   @override
-  List<Object?> get props => [typeThisMonth, monthLimit, late, othersOffCount, othersOffNames];
+  List<Object?> get props =>
+      [typeThisMonth, monthLimit, late, othersOffCount, othersOffNames];
 }
 
 /// One request (attendance or leave) as the app reads it (C1–C4, D1).
@@ -1041,11 +1170,13 @@ class EssRequest extends Equatable {
   final String type; // on_duty | fix_a_day | excuse_late | cl | lwp
   final String status; // pending | approved | rejected | withdrawn | cancelled
   final String day;
+
   /// Leave only: the last day, and the half-day choice. Equal/single for attendance.
   final String? endDay;
   final String portion; // full | first_half | second_half
   final num dayCount;
   final List<String> workingDays;
+
   /// A faculty member's leave takes a manager round and then HR/CEO/super-admin final approval.
   final bool requiresFinalApproval;
   final String stage; // manager | final
@@ -1083,7 +1214,8 @@ class EssRequest extends Equatable {
         _ => 'Full day',
       };
 
-  String get daysLabel => '${_daysLabel(dayCount)} ${dayCount == 1 ? 'day' : 'days'}';
+  String get daysLabel =>
+      '${_daysLabel(dayCount)} ${dayCount == 1 ? 'day' : 'days'}';
 
   /// 'Waiting for manager' / 'Waiting for HR final approval' on a pending faculty request.
   String? get stageLabel {
@@ -1112,7 +1244,9 @@ class EssRequest extends Equatable {
         portion: _str(j['portion']) ?? 'full',
         dayCount: _num(j['day_count']) ?? 1,
         workingDays: (j['working_days'] is List)
-            ? (j['working_days'] as List).map((e) => e.toString()).toList(growable: false)
+            ? (j['working_days'] as List)
+                .map((e) => e.toString())
+                .toList(growable: false)
             : const [],
         requiresFinalApproval: _bool(j['requires_final_approval']),
         stage: _str(j['stage']) ?? 'manager',
@@ -1129,17 +1263,39 @@ class EssRequest extends Equatable {
         place: _str(j['place']),
         fixIn: _str(j['fix_in']),
         fixOut: _str(j['fix_out']),
-        employee: _map(j['employee']) == null ? null : RequestEmployee.fromJson(_map(j['employee'])!),
-        context: _map(j['context']) == null ? null : ApprovalContext.fromJson(_map(j['context'])!),
+        employee: _map(j['employee']) == null
+            ? null
+            : RequestEmployee.fromJson(_map(j['employee'])!),
+        context: _map(j['context']) == null
+            ? null
+            : ApprovalContext.fromJson(_map(j['context'])!),
       );
 
   @override
-  List<Object?> get props => [id, family, type, status, day, endDay, portion, dayCount, stage, reason, decidedByName, decisionNote];
+  List<Object?> get props => [
+        id,
+        family,
+        type,
+        status,
+        day,
+        endDay,
+        portion,
+        dayCount,
+        stage,
+        reason,
+        decidedByName,
+        decisionNote
+      ];
 }
 
 /// `GET /approvals`.
 class ApprovalInbox extends Equatable {
-  const ApprovalInbox({this.attendance = 0, this.leave = 0, this.total = 0, required this.requests, required this.truncated});
+  const ApprovalInbox(
+      {this.attendance = 0,
+      this.leave = 0,
+      this.total = 0,
+      required this.requests,
+      required this.truncated});
   final int attendance;
   final int leave;
   final int total;
@@ -1151,7 +1307,8 @@ class ApprovalInbox extends Equatable {
       attendance: _int(c['attendance']) ?? 0,
       leave: _int(c['leave']) ?? 0,
       total: _int(c['total']) ?? 0,
-      requests: _maps(j['requests']).map(EssRequest.fromJson).toList(growable: false),
+      requests:
+          _maps(j['requests']).map(EssRequest.fromJson).toList(growable: false),
       truncated: _bool(j['truncated']),
     );
   }
@@ -1209,10 +1366,66 @@ class LeaveBalances extends Equatable {
   const LeaveBalances({required this.month, required this.types});
   final String month;
   final List<LeaveBalanceType> types;
-  factory LeaveBalances.fromJson(Map<String, dynamic> j) =>
-      LeaveBalances(month: _str(j['month']) ?? '', types: _maps(j['types']).map(LeaveBalanceType.fromJson).toList(growable: false));
+  factory LeaveBalances.fromJson(Map<String, dynamic> j) => LeaveBalances(
+      month: _str(j['month']) ?? '',
+      types: _maps(j['types'])
+          .map(LeaveBalanceType.fromJson)
+          .toList(growable: false));
   @override
   List<Object?> get props => [month, types];
+}
+
+/// One row of HR's WFH allowance list (`GET /hr/wfh-allowances`, KP 22 Oct).
+class HrWfhAllowance extends Equatable {
+  const HrWfhAllowance({
+    required this.employeeId,
+    required this.employee,
+    required this.enabled,
+    required this.monthlyLimitDays,
+    this.note,
+    this.setByName,
+    this.updatedAt,
+  });
+
+  final String employeeId;
+  final OrgCard employee;
+  final bool enabled;
+  final int monthlyLimitDays;
+  final String? note;
+  final String? setByName;
+  final DateTime? updatedAt;
+
+  factory HrWfhAllowance.fromJson(Map<String, dynamic> j) => HrWfhAllowance(
+        employeeId: _str(j['employee_id']) ?? '',
+        employee: OrgCard.fromJson(_map(j['employee']) ?? const {}),
+        enabled: _bool(j['enabled']),
+        monthlyLimitDays: _int(j['monthly_limit_days']) ?? 1,
+        note: _str(j['note']),
+        setByName: _str(j['set_by_name']),
+        updatedAt: _date(j['updated_at']),
+      );
+
+  @override
+  List<Object?> get props =>
+      [employeeId, enabled, monthlyLimitDays, note, updatedAt];
+}
+
+/// `GET /hr/wfh-allowances` — the rows plus whether the list was cut at 200.
+class HrWfhAllowancePage extends Equatable {
+  const HrWfhAllowancePage({required this.rows, required this.truncated});
+  final List<HrWfhAllowance> rows;
+  final bool truncated;
+
+  factory HrWfhAllowancePage.fromJson(Map<String, dynamic> j) =>
+      HrWfhAllowancePage(
+        rows: _maps(j['allowances'])
+            .map(HrWfhAllowance.fromJson)
+            .toList(growable: false),
+        truncated: _bool(j['truncated']),
+      );
+
+  @override
+  List<Object?> get props => [rows, truncated];
 }
 
 /// HR's per-employee work-from-home allowance (KP, 22 Oct): the month, whether the
@@ -1243,7 +1456,8 @@ class WfhAllowance extends Equatable {
       );
 
   @override
-  List<Object?> get props => [month, enabled, monthlyLimitDays, used, pending, remaining];
+  List<Object?> get props =>
+      [month, enabled, monthlyLimitDays, used, pending, remaining];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1285,12 +1499,17 @@ class AppNotification extends Equatable {
 }
 
 class NotificationPage extends Equatable {
-  const NotificationPage({required this.notifications, required this.unread, required this.truncated});
+  const NotificationPage(
+      {required this.notifications,
+      required this.unread,
+      required this.truncated});
   final List<AppNotification> notifications;
   final int unread;
   final bool truncated;
   factory NotificationPage.fromJson(Map<String, dynamic> j) => NotificationPage(
-        notifications: _maps(j['notifications']).map(AppNotification.fromJson).toList(growable: false),
+        notifications: _maps(j['notifications'])
+            .map(AppNotification.fromJson)
+            .toList(growable: false),
         unread: _int(j['unread']) ?? 0,
         truncated: _bool(j['truncated']),
       );
@@ -1299,7 +1518,8 @@ class NotificationPage extends Equatable {
 }
 
 class NotificationCategorySetting extends Equatable {
-  const NotificationCategorySetting({required this.category, required this.enabled});
+  const NotificationCategorySetting(
+      {required this.category, required this.enabled});
   final String category;
   final bool enabled;
   String get label => switch (category) {
@@ -1316,23 +1536,28 @@ class NotificationCategorySetting extends Equatable {
         _ => category,
       };
   factory NotificationCategorySetting.fromJson(Map<String, dynamic> j) =>
-      NotificationCategorySetting(category: _str(j['category']) ?? '', enabled: _bool(j['enabled']));
+      NotificationCategorySetting(
+          category: _str(j['category']) ?? '', enabled: _bool(j['enabled']));
   @override
   List<Object?> get props => [category, enabled];
 }
 
 class NotificationSettings extends Equatable {
-  const NotificationSettings({required this.categories, this.quietFrom, this.quietTo});
+  const NotificationSettings(
+      {required this.categories, this.quietFrom, this.quietTo});
   final List<NotificationCategorySetting> categories;
   final String? quietFrom;
   final String? quietTo;
 
-  Set<String> get disabled => categories.where((c) => !c.enabled).map((c) => c.category).toSet();
+  Set<String> get disabled =>
+      categories.where((c) => !c.enabled).map((c) => c.category).toSet();
 
   factory NotificationSettings.fromJson(Map<String, dynamic> j) {
     final quiet = _map(j['quiet_hours']) ?? const {};
     return NotificationSettings(
-      categories: _maps(j['categories']).map(NotificationCategorySetting.fromJson).toList(growable: false),
+      categories: _maps(j['categories'])
+          .map(NotificationCategorySetting.fromJson)
+          .toList(growable: false),
       quietFrom: _str(quiet['from']),
       quietTo: _str(quiet['to']),
     );
@@ -1350,14 +1575,20 @@ class WallAttachment extends Equatable {
   final String? name;
   final String? contentType;
   final String? url;
-  factory WallAttachment.fromJson(Map<String, dynamic> j) =>
-      WallAttachment(name: _str(j['name']), contentType: _str(j['content_type']), url: _str(j['url']));
+  factory WallAttachment.fromJson(Map<String, dynamic> j) => WallAttachment(
+      name: _str(j['name']),
+      contentType: _str(j['content_type']),
+      url: _str(j['url']));
   @override
   List<Object?> get props => [name, contentType, url];
 }
 
 class WallPerson extends Equatable {
-  const WallPerson({required this.id, required this.fullName, this.employeeCode, this.designation});
+  const WallPerson(
+      {required this.id,
+      required this.fullName,
+      this.employeeCode,
+      this.designation});
   final String id;
   final String fullName;
   final String? employeeCode;
@@ -1376,7 +1607,8 @@ class WallReactionCounts extends Equatable {
   const WallReactionCounts({required this.counts, required this.total});
   final Map<String, int> counts;
   final int total;
-  factory WallReactionCounts.fromJson(Map<String, dynamic> j) => WallReactionCounts(
+  factory WallReactionCounts.fromJson(Map<String, dynamic> j) =>
+      WallReactionCounts(
         counts: j.map((k, v) => MapEntry(k, _int(v) ?? 0)),
         total: (j.values.fold<int>(0, (n, v) => n + (_int(v) ?? 0))),
       );
@@ -1385,7 +1617,11 @@ class WallReactionCounts extends Equatable {
 }
 
 class WallPollOption extends Equatable {
-  const WallPollOption({required this.id, required this.label, this.position = 0, this.votes = 0});
+  const WallPollOption(
+      {required this.id,
+      required this.label,
+      this.position = 0,
+      this.votes = 0});
   final String id;
   final String label;
   final int position;
@@ -1431,10 +1667,13 @@ class WallPoll extends Equatable {
         optionsLocked: _bool(j['options_locked']),
         totalVotes: _int(j['total_votes']) ?? 0,
         myOptionIds: _strings(j['my_option_ids']),
-        options: _maps(j['options']).map(WallPollOption.fromJson).toList(growable: false),
+        options: _maps(j['options'])
+            .map(WallPollOption.fromJson)
+            .toList(growable: false),
       );
   @override
-  List<Object?> get props => [multiple, closed, totalVotes, myOptionIds, options];
+  List<Object?> get props =>
+      [multiple, closed, totalVotes, myOptionIds, options];
 }
 
 /// One feed row (post | praise | wish | poll). A deleted row keeps only its place.
@@ -1498,12 +1737,19 @@ class WallPost extends Equatable {
       kind: _str(j['kind']) ?? 'post',
       scope: _str(j['scope']) ?? 'org',
       branchId: _str(j['branch_id']),
-      author: _map(j['author']) == null ? null : WallPerson.fromJson(_map(j['author'])!),
+      author: _map(j['author']) == null
+          ? null
+          : WallPerson.fromJson(_map(j['author'])!),
       mine: _bool(j['mine']),
       body: _str(j['body']),
-      attachments: _maps(j['attachments']).map(WallAttachment.fromJson).toList(growable: false),
-      mentions: _maps(j['mentions']).map(WallPerson.fromJson).toList(growable: false),
-      about: _map(j['about']) == null ? null : WallPerson.fromJson(_map(j['about'])!),
+      attachments: _maps(j['attachments'])
+          .map(WallAttachment.fromJson)
+          .toList(growable: false),
+      mentions:
+          _maps(j['mentions']).map(WallPerson.fromJson).toList(growable: false),
+      about: _map(j['about']) == null
+          ? null
+          : WallPerson.fromJson(_map(j['about'])!),
       edited: _bool(j['edited']),
       editedAt: _date(j['edited_at']),
       createdAt: _date(j['created_at']),
@@ -1513,27 +1759,46 @@ class WallPost extends Equatable {
       badgeId: badge == null ? null : _str(badge['id']),
       badgeLabel: badge == null ? null : _str(badge['label']),
       occasion: _str(j['occasion']),
-      reactions: _map(j['reactions']) == null ? null : WallReactionCounts.fromJson(_map(j['reactions'])!),
+      reactions: _map(j['reactions']) == null
+          ? null
+          : WallReactionCounts.fromJson(_map(j['reactions'])!),
       commentCount: _int(j['comment_count']) ?? 0,
-      poll: _map(j['poll']) == null ? null : WallPoll.fromJson(_map(j['poll'])!),
+      poll:
+          _map(j['poll']) == null ? null : WallPoll.fromJson(_map(j['poll'])!),
       myReaction: _str(j['my_reaction']),
     );
   }
 
   @override
-  List<Object?> get props => [id, kind, mine, body, edited, hidden, deleted, badgeId, reactions, commentCount, poll, myReaction];
+  List<Object?> get props => [
+        id,
+        kind,
+        mine,
+        body,
+        edited,
+        hidden,
+        deleted,
+        badgeId,
+        reactions,
+        commentCount,
+        poll,
+        myReaction
+      ];
 }
 
 /// "Who reacted": one group per emoji, with the people behind it (F2).
 class WallReactionGroup extends Equatable {
-  const WallReactionGroup({required this.reaction, required this.count, required this.people});
+  const WallReactionGroup(
+      {required this.reaction, required this.count, required this.people});
   final String reaction;
   final int count;
   final List<WallPerson> people;
-  factory WallReactionGroup.fromJson(Map<String, dynamic> j) => WallReactionGroup(
+  factory WallReactionGroup.fromJson(Map<String, dynamic> j) =>
+      WallReactionGroup(
         reaction: _str(j['reaction']) ?? '',
         count: _int(j['count']) ?? 0,
-        people: _maps(j['people']).map(WallPerson.fromJson).toList(growable: false),
+        people:
+            _maps(j['people']).map(WallPerson.fromJson).toList(growable: false),
       );
   @override
   List<Object?> get props => [reaction, count, people];
@@ -1544,8 +1809,10 @@ class PraiseBadge extends Equatable {
   final String id;
   final String label;
   final String? forGroup;
-  factory PraiseBadge.fromJson(Map<String, dynamic> j) =>
-      PraiseBadge(id: _str(j['id']) ?? '', label: _str(j['label']) ?? '', forGroup: _str(j['for']));
+  factory PraiseBadge.fromJson(Map<String, dynamic> j) => PraiseBadge(
+      id: _str(j['id']) ?? '',
+      label: _str(j['label']) ?? '',
+      forGroup: _str(j['for']));
   @override
   List<Object?> get props => [id, label, forGroup];
 }
@@ -1555,8 +1822,11 @@ class PraisePage extends Equatable {
   final List<WallPost> praise;
   final List<PraiseBadge> badges;
   factory PraisePage.fromJson(Map<String, dynamic> j) => PraisePage(
-        praise: _maps(j['praise']).map(WallPost.fromJson).toList(growable: false),
-        badges: _maps(j['badges']).map(PraiseBadge.fromJson).toList(growable: false),
+        praise:
+            _maps(j['praise']).map(WallPost.fromJson).toList(growable: false),
+        badges: _maps(j['badges'])
+            .map(PraiseBadge.fromJson)
+            .toList(growable: false),
       );
   @override
   List<Object?> get props => [praise, badges];
@@ -1601,30 +1871,51 @@ class WallComment extends Equatable {
         id: _str(j['id']) ?? '',
         postId: _str(j['post_id']),
         parentId: _str(j['parent_id']),
-        author: _map(j['author']) == null ? null : WallPerson.fromJson(_map(j['author'])!),
+        author: _map(j['author']) == null
+            ? null
+            : WallPerson.fromJson(_map(j['author'])!),
         mine: _bool(j['mine']),
         body: _str(j['body']),
-        mentions: _maps(j['mentions']).map(WallPerson.fromJson).toList(growable: false),
-        reactions: _map(j['reactions']) == null ? null : WallReactionCounts.fromJson(_map(j['reactions'])!),
+        mentions: _maps(j['mentions'])
+            .map(WallPerson.fromJson)
+            .toList(growable: false),
+        reactions: _map(j['reactions']) == null
+            ? null
+            : WallReactionCounts.fromJson(_map(j['reactions'])!),
         replyCount: _int(j['reply_count']) ?? 0,
         createdAt: _date(j['created_at']),
         edited: _bool(j['edited']),
         hidden: _bool(j['hidden']),
         deleted: _bool(j['deleted']),
-        replies: _maps(j['replies']).map(WallComment.fromJson).toList(growable: false),
+        replies: _maps(j['replies'])
+            .map(WallComment.fromJson)
+            .toList(growable: false),
         myReaction: _str(j['my_reaction']),
       );
 
   @override
-  List<Object?> get props => [id, postId, parentId, mine, body, edited, hidden, deleted, replyCount, replies, myReaction];
+  List<Object?> get props => [
+        id,
+        postId,
+        parentId,
+        mine,
+        body,
+        edited,
+        hidden,
+        deleted,
+        replyCount,
+        replies,
+        myReaction
+      ];
 }
 
 class WallFeed extends Equatable {
   const WallFeed({required this.posts, required this.truncated});
   final List<WallPost> posts;
   final bool truncated;
-  factory WallFeed.fromJson(Map<String, dynamic> j) =>
-      WallFeed(posts: _maps(j['posts']).map(WallPost.fromJson).toList(growable: false), truncated: _bool(j['truncated']));
+  factory WallFeed.fromJson(Map<String, dynamic> j) => WallFeed(
+      posts: _maps(j['posts']).map(WallPost.fromJson).toList(growable: false),
+      truncated: _bool(j['truncated']));
   @override
   List<Object?> get props => [posts, truncated];
 }
@@ -1658,7 +1949,9 @@ class WallSettings extends Equatable {
     return WallSettings(
       scopes: _strings(post['scopes']),
       reactions: _strings(j['reactions']),
-      badges: _maps(praise['badges']).map(PraiseBadge.fromJson).toList(growable: false),
+      badges: _maps(praise['badges'])
+          .map(PraiseBadge.fromJson)
+          .toList(growable: false),
       maxAttachments: _int(post['max_attachments']) ?? 5,
       maxPinned: _int(announcement['max_pinned']) ?? 3,
       maxBody: _int(post['max_body']) ?? 2000,
@@ -1668,7 +1961,15 @@ class WallSettings extends Equatable {
   }
 
   @override
-  List<Object?> get props => [scopes, reactions, badges, maxAttachments, maxPinned, maxBody, maxComment];
+  List<Object?> get props => [
+        scopes,
+        reactions,
+        badges,
+        maxAttachments,
+        maxPinned,
+        maxBody,
+        maxComment
+      ];
 }
 
 class WallAnnouncement extends Equatable {
@@ -1710,8 +2011,12 @@ class WallAnnouncement extends Equatable {
         id: _str(j['id']) ?? '',
         title: _str(j['title']) ?? '',
         body: _str(j['body']) ?? '',
-        attachments: _maps(j['attachments']).map(WallAttachment.fromJson).toList(growable: false),
-        author: _map(j['author']) == null ? null : WallPerson.fromJson(_map(j['author'])!),
+        attachments: _maps(j['attachments'])
+            .map(WallAttachment.fromJson)
+            .toList(growable: false),
+        author: _map(j['author']) == null
+            ? null
+            : WallPerson.fromJson(_map(j['author'])!),
         mine: _bool(j['mine']),
         audienceLabel: _str(j['audience_label']),
         needsAck: _bool(j['needs_ack']),
@@ -1728,7 +2033,11 @@ class WallAnnouncement extends Equatable {
 
 /// One birthday / anniversary / new-joiner card (F6). The server sends the person as `employee`.
 class CelebrationCard extends Equatable {
-  const CelebrationCard({required this.employee, this.on, this.wishedByMe = false, this.wishCount = 0});
+  const CelebrationCard(
+      {required this.employee,
+      this.on,
+      this.wishedByMe = false,
+      this.wishCount = 0});
   final WallPerson employee;
   final String? on;
   final bool wishedByMe;
@@ -1770,19 +2079,29 @@ class WallCelebrations extends Equatable {
   factory WallCelebrations.fromJson(Map<String, dynamic> j) => WallCelebrations(
         today: _str(j['today']) ?? '',
         windowDays: _int(j['window_days']) ?? 7,
-        birthdays: _maps(j['birthdays']).map(CelebrationCard.fromJson).toList(growable: false),
-        anniversaries: _maps(j['anniversaries']).map(CelebrationCard.fromJson).toList(growable: false),
-        newJoiners: _maps(j['new_joiners']).map(CelebrationCard.fromJson).toList(growable: false),
-        promotions: _maps(j['promotions']).map(CelebrationCard.fromJson).toList(growable: false),
+        birthdays: _maps(j['birthdays'])
+            .map(CelebrationCard.fromJson)
+            .toList(growable: false),
+        anniversaries: _maps(j['anniversaries'])
+            .map(CelebrationCard.fromJson)
+            .toList(growable: false),
+        newJoiners: _maps(j['new_joiners'])
+            .map(CelebrationCard.fromJson)
+            .toList(growable: false),
+        promotions: _maps(j['promotions'])
+            .map(CelebrationCard.fromJson)
+            .toList(growable: false),
         hiddenCount: _int(j['birthdays_hidden']) ?? 0,
       );
   @override
-  List<Object?> get props => [today, birthdays, anniversaries, newJoiners, promotions, hiddenCount];
+  List<Object?> get props =>
+      [today, birthdays, anniversaries, newJoiners, promotions, hiddenCount];
 }
 
 /// One post with its comments (`GET /wall/posts/:id`).
 class WallPostDetail extends Equatable {
-  const WallPostDetail({required this.post, required this.comments, required this.truncated});
+  const WallPostDetail(
+      {required this.post, required this.comments, required this.truncated});
   final WallPost post;
   final List<WallComment> comments;
   final bool truncated;
@@ -1790,7 +2109,9 @@ class WallPostDetail extends Equatable {
     final post = _map(j['post']) ?? const {};
     return WallPostDetail(
       post: WallPost.fromJson(post),
-      comments: _maps(post['comments']).map(WallComment.fromJson).toList(growable: false),
+      comments: _maps(post['comments'])
+          .map(WallComment.fromJson)
+          .toList(growable: false),
       truncated: _bool(j['truncated']) || _bool(post['truncated']),
     );
   }
@@ -1838,17 +2159,44 @@ class HelpdeskCategory extends Equatable {
         resolutionHours: _int(j['resolution_hours']),
       );
   @override
-  List<Object?> get props => [id, name, isTicket, flow, confidential, allowsHold, priority];
+  List<Object?> get props =>
+      [id, name, isTicket, flow, confidential, allowsHold, priority];
 }
 
 class HelpdeskSettings extends Equatable {
   const HelpdeskSettings({required this.categories, required this.reopenDays});
   final List<HelpdeskCategory> categories;
   final int reopenDays;
-  factory HelpdeskSettings.fromJson(Map<String, dynamic> j) =>
-      HelpdeskSettings(categories: _maps(j['categories']).map(HelpdeskCategory.fromJson).toList(growable: false), reopenDays: _int(j['reopen_days']) ?? 7);
+  factory HelpdeskSettings.fromJson(Map<String, dynamic> j) => HelpdeskSettings(
+      categories: _maps(j['categories'])
+          .map(HelpdeskCategory.fromJson)
+          .toList(growable: false),
+      reopenDays: _int(j['reopen_days']) ?? 7);
   @override
   List<Object?> get props => [categories, reopenDays];
+}
+
+/// G6: the Admin Manager's infra register row mirroring a lab/facility ticket.
+class HelpdeskInfraLink extends Equatable {
+  const HelpdeskInfraLink({
+    this.ticketNo,
+    required this.status,
+    this.closedOn,
+  });
+
+  final int? ticketNo;
+  final String status; // open | closed
+  final DateTime? closedOn;
+
+  factory HelpdeskInfraLink.fromJson(Map<String, dynamic> j) =>
+      HelpdeskInfraLink(
+        ticketNo: _int(j['ticket_no']),
+        status: _str(j['status']) ?? 'open',
+        closedOn: _date(j['closed_on']),
+      );
+
+  @override
+  List<Object?> get props => [ticketNo, status, closedOn];
 }
 
 class HelpdeskTicket extends Equatable {
@@ -1873,6 +2221,7 @@ class HelpdeskTicket extends Equatable {
     this.rating,
     this.escalationLevel = 0,
     this.overdueMinutes,
+    this.infra,
     this.createdAt,
     this.updatedAt,
     required this.mine,
@@ -1898,6 +2247,7 @@ class HelpdeskTicket extends Equatable {
   final int? rating;
   final int escalationLevel;
   final int? overdueMinutes;
+  final HelpdeskInfraLink? infra;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final bool mine;
@@ -1914,9 +2264,15 @@ class HelpdeskTicket extends Equatable {
         body: _str(j['body']),
         status: _str(j['status']) ?? 'open',
         anonymous: _bool(j['anonymous']),
-        raisedBy: _map(j['raised_by']) == null ? null : WallPerson.fromJson(_map(j['raised_by'])!),
-        assignee: _map(j['assignee']) == null ? null : WallPerson.fromJson(_map(j['assignee'])!),
-        attachments: _maps(j['attachments']).map(WallAttachment.fromJson).toList(growable: false),
+        raisedBy: _map(j['raised_by']) == null
+            ? null
+            : WallPerson.fromJson(_map(j['raised_by'])!),
+        assignee: _map(j['assignee']) == null
+            ? null
+            : WallPerson.fromJson(_map(j['assignee'])!),
+        attachments: _maps(j['attachments'])
+            .map(WallAttachment.fromJson)
+            .toList(growable: false),
         firstResponseAt: _date(j['first_response_at']),
         firstResponseDueAt: _date(j['first_response_due_at']),
         resolutionDueAt: _date(j['resolution_due_at']),
@@ -1926,17 +2282,38 @@ class HelpdeskTicket extends Equatable {
         rating: _int(j['rating']),
         escalationLevel: _int(j['escalation_level']) ?? 0,
         overdueMinutes: _int(j['overdue_minutes']),
+        infra: _map(j['infra']) == null
+            ? null
+            : HelpdeskInfraLink.fromJson(_map(j['infra'])!),
         createdAt: _date(j['created_at']),
         updatedAt: _date(j['updated_at']),
         mine: _bool(j['mine']),
       );
 
   @override
-  List<Object?> get props => [id, ref, status, subject, priority, assignee, overdueMinutes, escalationLevel];
+  List<Object?> get props => [
+        id,
+        ref,
+        status,
+        subject,
+        priority,
+        assignee,
+        overdueMinutes,
+        escalationLevel,
+        infra
+      ];
 }
 
 class HelpdeskMessage extends Equatable {
-  const HelpdeskMessage({required this.id, this.ticketId, required this.kind, this.body, this.event, this.details = const {}, this.author, this.createdAt});
+  const HelpdeskMessage(
+      {required this.id,
+      this.ticketId,
+      required this.kind,
+      this.body,
+      this.event,
+      this.details = const {},
+      this.author,
+      this.createdAt});
   final String id;
   final String? ticketId;
   final String kind; // comment | event
@@ -1952,7 +2329,9 @@ class HelpdeskMessage extends Equatable {
         body: _str(j['body']),
         event: _str(j['event']),
         details: _map(j['details']) ?? const {},
-        author: _map(j['author']) == null ? null : WallPerson.fromJson(_map(j['author'])!),
+        author: _map(j['author']) == null
+            ? null
+            : WallPerson.fromJson(_map(j['author'])!),
         createdAt: _date(j['created_at']),
       );
   @override
@@ -1963,9 +2342,12 @@ class HelpdeskTicketDetail extends Equatable {
   const HelpdeskTicketDetail({required this.ticket, required this.messages});
   final HelpdeskTicket ticket;
   final List<HelpdeskMessage> messages;
-  factory HelpdeskTicketDetail.fromJson(Map<String, dynamic> j) => HelpdeskTicketDetail(
+  factory HelpdeskTicketDetail.fromJson(Map<String, dynamic> j) =>
+      HelpdeskTicketDetail(
         ticket: HelpdeskTicket.fromJson(_map(j['ticket']) ?? const {}),
-        messages: _maps(j['messages']).map(HelpdeskMessage.fromJson).toList(growable: false),
+        messages: _maps(j['messages'])
+            .map(HelpdeskMessage.fromJson)
+            .toList(growable: false),
       );
   @override
   List<Object?> get props => [ticket, messages];
@@ -1976,8 +2358,12 @@ class HelpdeskQueue extends Equatable {
   final List<HelpdeskTicket> tickets;
   final List<HelpdeskCategory> categories;
   factory HelpdeskQueue.fromJson(Map<String, dynamic> j) => HelpdeskQueue(
-        tickets: _maps(j['tickets']).map(HelpdeskTicket.fromJson).toList(growable: false),
-        categories: _maps(j['categories']).map(HelpdeskCategory.fromJson).toList(growable: false),
+        tickets: _maps(j['tickets'])
+            .map(HelpdeskTicket.fromJson)
+            .toList(growable: false),
+        categories: _maps(j['categories'])
+            .map(HelpdeskCategory.fromJson)
+            .toList(growable: false),
       );
   @override
   List<Object?> get props => [tickets, categories];
@@ -1989,7 +2375,12 @@ class HelpdeskQueue extends Equatable {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class DocumentType extends Equatable {
-  const DocumentType({required this.slug, required this.name, required this.isMandatory, required this.essOnly, this.sort = 0});
+  const DocumentType(
+      {required this.slug,
+      required this.name,
+      required this.isMandatory,
+      required this.essOnly,
+      this.sort = 0});
   final String slug;
   final String name;
   final bool isMandatory;
@@ -2052,7 +2443,8 @@ class EssDocument extends Equatable {
         updatedAt: _date(j['updated_at']),
       );
   @override
-  List<Object?> get props => [id, docType, fileName, status, rejectionReason, createdAt];
+  List<Object?> get props =>
+      [id, docType, fileName, status, rejectionReason, createdAt];
 }
 
 class DocumentPage extends Equatable {
@@ -2060,8 +2452,12 @@ class DocumentPage extends Equatable {
   final List<DocumentType> types;
   final List<EssDocument> documents;
   factory DocumentPage.fromJson(Map<String, dynamic> j) => DocumentPage(
-        types: _maps(j['types']).map(DocumentType.fromJson).toList(growable: false),
-        documents: _maps(j['documents']).map(EssDocument.fromJson).toList(growable: false),
+        types: _maps(j['types'])
+            .map(DocumentType.fromJson)
+            .toList(growable: false),
+        documents: _maps(j['documents'])
+            .map(EssDocument.fromJson)
+            .toList(growable: false),
       );
   @override
   List<Object?> get props => [types, documents];
@@ -2151,7 +2547,8 @@ class BankDetails extends Equatable {
         updatedAt: _date(j['updated_at']),
       );
   @override
-  List<Object?> get props => [bankName, accountNumber, ifscCode, upiId, consentGivenAt];
+  List<Object?> get props =>
+      [bankName, accountNumber, ifscCode, upiId, consentGivenAt];
 }
 
 class IdCard extends Equatable {
@@ -2181,7 +2578,14 @@ class IdCard extends Equatable {
         verifyUrl: _str(j['verify_url']),
       );
   @override
-  List<Object?> get props => [fullName, employeeCode, designation, departmentName, branchName, photoUrl];
+  List<Object?> get props => [
+        fullName,
+        employeeCode,
+        designation,
+        departmentName,
+        branchName,
+        photoUrl
+      ];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2235,7 +2639,15 @@ class LeadersOverview extends Equatable {
     );
   }
   @override
-  List<Object?> get props => [headcount, inCount, notIn, onLeave, offThisWeek, pendingTotal, oldestDays];
+  List<Object?> get props => [
+        headcount,
+        inCount,
+        notIn,
+        onLeave,
+        offThisWeek,
+        pendingTotal,
+        oldestDays
+      ];
 }
 
 class FacultySession extends Equatable {
@@ -2268,7 +2680,8 @@ class FacultySession extends Equatable {
         marked: _bool(j['marked']),
       );
   @override
-  List<Object?> get props => [id, name, startTime, endTime, covered, students, marked];
+  List<Object?> get props =>
+      [id, name, startTime, endTime, covered, students, marked];
 }
 
 class FacultyDay extends Equatable {
@@ -2303,7 +2716,9 @@ class FacultyDay extends Equatable {
     final i = _map(j['indicators']) ?? const {};
     return FacultyDay(
       date: _str(j['date']) ?? '',
-      sessions: _maps(j['sessions']).map(FacultySession.fromJson).toList(growable: false),
+      sessions: _maps(j['sessions'])
+          .map(FacultySession.fromJson)
+          .toList(growable: false),
       pendingRemarks: _int(j['pending_remarks']) ?? 0,
       sessionsToday: _int(i['sessions_today']) ?? 0,
       markedToday: _int(i['marked_today']) ?? 0,
@@ -2317,15 +2732,100 @@ class FacultyDay extends Equatable {
     );
   }
   @override
-  List<Object?> get props => [date, sessions, pendingRemarks, sessionsToday, markedToday, monthPercentage];
+  List<Object?> get props => [
+        date,
+        sessions,
+        pendingRemarks,
+        sessionsToday,
+        markedToday,
+        monthPercentage
+      ];
+}
+
+/// One student on the ESS class roster (`GET /me/batches/{id}/roster`).
+class ClassRosterStudent extends Equatable {
+  const ClassRosterStudent({
+    required this.id,
+    this.fullName,
+    this.admissionNumber,
+    this.marked,
+    this.absentReason,
+    this.followUpComment,
+  });
+
+  final String id;
+  final String? fullName;
+  final String? admissionNumber;
+
+  /// `present`, `absent`, or null when the day has no row for this student.
+  final String? marked;
+  final String? absentReason;
+  final String? followUpComment;
+
+  bool get isPresent => marked == 'present';
+  bool get isAbsent => marked == 'absent';
+  bool get isMarked => marked != null;
+
+  factory ClassRosterStudent.fromJson(Map<String, dynamic> j) =>
+      ClassRosterStudent(
+        id: _str(j['id']) ?? '',
+        fullName: _str(j['full_name']),
+        admissionNumber: _str(j['admission_number']),
+        marked: _str(j['marked']),
+        absentReason: _str(j['absent_reason']),
+        followUpComment: _str(j['follow_up_comment']),
+      );
+
+  @override
+  List<Object?> get props =>
+      [id, fullName, admissionNumber, marked, absentReason, followUpComment];
+}
+
+/// `GET /me/batches/{id}/roster?date=` — the day and its lock state.
+class ClassRoster extends Equatable {
+  const ClassRoster({
+    required this.batchId,
+    required this.batchName,
+    required this.date,
+    required this.alreadyMarked,
+    required this.canEdit,
+    required this.students,
+  });
+
+  final String batchId;
+  final String batchName;
+  final String date;
+  final bool alreadyMarked;
+  final bool canEdit;
+  final List<ClassRosterStudent> students;
+
+  factory ClassRoster.fromJson(Map<String, dynamic> j) {
+    final batch = _map(j['batch']) ?? const {};
+    return ClassRoster(
+      batchId: _str(batch['id']) ?? '',
+      batchName: _str(batch['name']) ?? '',
+      date: _str(j['date']) ?? '',
+      alreadyMarked: _bool(j['already_marked']),
+      canEdit: _bool(j['can_edit']),
+      students: _maps(j['students'])
+          .map(ClassRosterStudent.fromJson)
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  List<Object?> get props =>
+      [batchId, batchName, date, alreadyMarked, canEdit, students];
 }
 
 class ApprovalChainEntry extends Equatable {
-  const ApprovalChainEntry({required this.employee, required this.mayDecide, required this.skipped});
+  const ApprovalChainEntry(
+      {required this.employee, required this.mayDecide, required this.skipped});
   final WallPerson employee;
   final bool mayDecide;
   final String? skipped;
-  factory ApprovalChainEntry.fromJson(Map<String, dynamic> j) => ApprovalChainEntry(
+  factory ApprovalChainEntry.fromJson(Map<String, dynamic> j) =>
+      ApprovalChainEntry(
         employee: WallPerson.fromJson(_map(j['employee']) ?? const {}),
         mayDecide: _bool(j['may_decide']),
         skipped: _str(j['skipped']),
@@ -2335,13 +2835,16 @@ class ApprovalChainEntry extends Equatable {
 }
 
 class ApprovalChain extends Equatable {
-  const ApprovalChain({required this.request, required this.chain, required this.hrFallback});
+  const ApprovalChain(
+      {required this.request, required this.chain, required this.hrFallback});
   final EssRequest request;
   final List<ApprovalChainEntry> chain;
   final bool hrFallback;
   factory ApprovalChain.fromJson(Map<String, dynamic> j) => ApprovalChain(
         request: EssRequest.fromJson(_map(j['request']) ?? const {}),
-        chain: _maps(j['chain']).map(ApprovalChainEntry.fromJson).toList(growable: false),
+        chain: _maps(j['chain'])
+            .map(ApprovalChainEntry.fromJson)
+            .toList(growable: false),
         hrFallback: _bool(j['hr_fallback']),
       );
   @override
@@ -2353,7 +2856,12 @@ class ApprovalChain extends Equatable {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class RequestLimit extends Equatable {
-  const RequestLimit({required this.type, this.limitCount, this.limitMinutes, this.updatedByName, this.updatedAt});
+  const RequestLimit(
+      {required this.type,
+      this.limitCount,
+      this.limitMinutes,
+      this.updatedByName,
+      this.updatedAt});
   final String type;
   final int? limitCount;
   final int? limitMinutes;
@@ -2421,7 +2929,9 @@ class WallReport extends Equatable {
         targetPreview: _str(j['target_preview']),
         targetDeleted: _bool(j['target_deleted']),
         targetHidden: _bool(j['target_hidden']),
-        reporter: _map(j['reporter']) == null ? null : WallPerson.fromJson(_map(j['reporter'])!),
+        reporter: _map(j['reporter']) == null
+            ? null
+            : WallPerson.fromJson(_map(j['reporter'])!),
         reason: _str(j['reason']) ?? '',
         detail: _str(j['detail']),
         status: _str(j['status']) ?? 'open',
@@ -2434,7 +2944,12 @@ class WallReport extends Equatable {
 }
 
 class ModerationEntry extends Equatable {
-  const ModerationEntry({required this.id, this.at, this.actorName, required this.action, this.details = const {}});
+  const ModerationEntry(
+      {required this.id,
+      this.at,
+      this.actorName,
+      required this.action,
+      this.details = const {}});
   final String id;
   final DateTime? at;
   final String? actorName;

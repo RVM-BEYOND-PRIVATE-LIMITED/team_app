@@ -6,11 +6,13 @@ import 'package:equatable/equatable.dart';
 // Parsed defensively from JSON so a backend tweak cannot crash a screen.
 // ─────────────────────────────────────────────────────────────────────────────
 
-int? _int(dynamic v) => v == null ? null : (v is int ? v : int.tryParse(v.toString()));
+int? _int(dynamic v) =>
+    v == null ? null : (v is int ? v : int.tryParse(v.toString()));
 String? _str(dynamic v) => v?.toString();
 bool _bool(dynamic v, {bool fallback = false}) =>
     v == null ? fallback : (v is bool ? v : v.toString() == 'true');
-DateTime? _date(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
+DateTime? _date(dynamic v) =>
+    v == null ? null : DateTime.tryParse(v.toString());
 
 /// Password accepted on a 2FA account: a code was emailed; a token comes after
 /// `POST /api/users/login/verify`.
@@ -27,7 +29,8 @@ class TeamTwoFactorChallenge extends Equatable {
   final DateTime? expiresAt;
   final String? locationName;
 
-  factory TeamTwoFactorChallenge.fromJson(Map<String, dynamic> json) => TeamTwoFactorChallenge(
+  factory TeamTwoFactorChallenge.fromJson(Map<String, dynamic> json) =>
+      TeamTwoFactorChallenge(
         challengeId: _str(json['challenge_id']) ?? '',
         sentTo: _str(json['sent_to']),
         expiresAt: _date(json['expires_at']),
@@ -94,13 +97,24 @@ class TeamProfile extends Equatable {
       );
 
   @override
-  List<Object?> get props =>
-      [id, username, role, locationId, phoneNumber, email, emailVerified, twoFactorEnabled, passwordChangedAt, photoUrl];
+  List<Object?> get props => [
+        id,
+        username,
+        role,
+        locationId,
+        phoneNumber,
+        email,
+        emailVerified,
+        twoFactorEnabled,
+        passwordChangedAt,
+        photoUrl
+      ];
 }
 
 /// One row of `GET /api/me/security-events`.
 class SecurityEvent extends Equatable {
-  const SecurityEvent({required this.id, required this.event, this.ip, this.createdAt});
+  const SecurityEvent(
+      {required this.id, required this.event, this.ip, this.createdAt});
 
   final String id;
   final String event;
@@ -175,8 +189,20 @@ class PriorityTask extends Equatable {
       );
 
   @override
-  List<Object?> get props =>
-      [id, title, notes, priority, status, taskDate, dueDate, locationName, assignedByName, read, isToday, overdue];
+  List<Object?> get props => [
+        id,
+        title,
+        notes,
+        priority,
+        status,
+        taskDate,
+        dueDate,
+        locationName,
+        assignedByName,
+        read,
+        isToday,
+        overdue
+      ];
 }
 
 /// The whole inbox reply, with its counters.
@@ -288,67 +314,21 @@ class TeamBatch extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, name, startDate, endDate, startTime, endTime, daysOfWeek, schedule, scheduleDays, facultyName, skillName, students, status];
-}
-
-/// One row of the marking roster (`GET /api/attendance/batch/:id/daily`).
-class AttendanceStudent extends Equatable {
-  const AttendanceStudent({
-    required this.studentId,
-    required this.name,
-    this.attendanceId,
-    this.rollCode,
-    this.isPresent = false,
-    this.isEligible = true,
-    this.isOnHold = false,
-    this.notYetJoined = false,
-    this.absentReason,
-  });
-
-  final String studentId;
-  final String name;
-
-  /// The `student_attendance` row id, when the day already has a record. Needed to
-  /// write an absent remark (PATCH /api/attendance/remarks).
-  final String? attendanceId;
-  final String? rollCode;
-  final bool isPresent;
-  final bool isEligible;
-  final bool isOnHold;
-  final bool notYetJoined;
-  final String? absentReason;
-
-  factory AttendanceStudent.fromJson(Map<String, dynamic> json) {
-    final student = json['student'];
-    final s = student is Map ? student.cast<String, dynamic>() : const <String, dynamic>{};
-    return AttendanceStudent(
-      studentId: _str(json['student_id']) ?? _str(s['id']) ?? '',
-      name: _str(s['name']) ?? 'Student',
-      attendanceId: _str(json['id']),
-      rollCode: _str(s['roll_code']) ?? _str(s['student_code']),
-      isPresent: _bool(json['is_present']),
-      isEligible: _bool(json['is_eligible'], fallback: true),
-      isOnHold: _bool(json['is_on_hold']),
-      notYetJoined: _bool(json['not_yet_joined']),
-      absentReason: _str(json['absent_reason']),
-    );
-  }
-
-  AttendanceStudent copyWith({bool? isPresent, String? attendanceId, String? absentReason}) => AttendanceStudent(
-        studentId: studentId,
-        name: name,
-        attendanceId: attendanceId ?? this.attendanceId,
-        rollCode: rollCode,
-        isPresent: isPresent ?? this.isPresent,
-        isEligible: isEligible,
-        isOnHold: isOnHold,
-        notYetJoined: notYetJoined,
-        absentReason: absentReason ?? this.absentReason,
-      );
-
-  @override
-  List<Object?> get props =>
-      [studentId, name, attendanceId, rollCode, isPresent, isEligible, isOnHold, notYetJoined, absentReason];
+  List<Object?> get props => [
+        id,
+        name,
+        startDate,
+        endDate,
+        startTime,
+        endTime,
+        daysOfWeek,
+        schedule,
+        scheduleDays,
+        facultyName,
+        skillName,
+        students,
+        status
+      ];
 }
 
 /// A branch announcement (`GET /api/announcements`).
@@ -419,7 +399,8 @@ class InterviewRound extends Equatable {
       );
 
   @override
-  List<Object?> get props => [id, roundName, scheduledAt, mode, status, candidateName, position];
+  List<Object?> get props =>
+      [id, roundName, scheduledAt, mode, status, candidateName, position];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -530,7 +511,15 @@ class HodInterview extends Equatable {
       );
 
   @override
-  List<Object?> get props => [id, candidateName, position, interviewDate, verdict, feedback, slaBreached];
+  List<Object?> get props => [
+        id,
+        candidateName,
+        position,
+        interviewDate,
+        verdict,
+        feedback,
+        slaBreached
+      ];
 }
 
 /// A per-batch row of the faculty indicators report.
@@ -559,7 +548,9 @@ class FacultyBatchReport extends Equatable {
 
   factory FacultyBatchReport.fromJson(Map<String, dynamic> json) {
     final compliance = json['compliance'];
-    final c = compliance is Map ? compliance.cast<String, dynamic>() : const <String, dynamic>{};
+    final c = compliance is Map
+        ? compliance.cast<String, dynamic>()
+        : const <String, dynamic>{};
     final missing = c['missing_attendance_dates'];
     return FacultyBatchReport(
       batchId: _str(json['batch_id']) ?? '',
@@ -577,7 +568,15 @@ class FacultyBatchReport extends Equatable {
   }
 
   @override
-  List<Object?> get props => [batchId, batchName, status, studentCount, expectedSessions, markedSessions, attendancePercentage];
+  List<Object?> get props => [
+        batchId,
+        batchName,
+        status,
+        studentCount,
+        expectedSessions,
+        markedSessions,
+        attendancePercentage
+      ];
 }
 
 /// `GET /api/attendance/reports/faculty/:id` — the faculty indicators card.
@@ -633,13 +632,15 @@ class AttendanceLoginResult {
   /// True while the password is still the one HR gave (must be changed before punching).
   final bool temporary;
 
-  factory AttendanceLoginResult.fromJson(Map<String, dynamic> json) => AttendanceLoginResult(
+  factory AttendanceLoginResult.fromJson(Map<String, dynamic> json) =>
+      AttendanceLoginResult(
         token: _str(json['token']) ?? '',
         expiresInDays: (json['expires_in_days'] is num)
             ? (json['expires_in_days'] as num).toInt()
             : 30,
-        employeeName:
-            json['employee'] is Map ? _str((json['employee'] as Map)['full_name']) : null,
+        employeeName: json['employee'] is Map
+            ? _str((json['employee'] as Map)['full_name'])
+            : null,
         passwordSet: json['password_set'] == true,
         temporary: json['temporary'] == true,
       );
@@ -663,12 +664,17 @@ class AttendanceCodeSent {
   final int ttlMinutes;
   final bool sandbox;
 
-  factory AttendanceCodeSent.fromJson(Map<String, dynamic> json) => AttendanceCodeSent(
+  factory AttendanceCodeSent.fromJson(Map<String, dynamic> json) =>
+      AttendanceCodeSent(
         challengeId: _str(json['challenge_id']) ?? '',
         channel: _str(json['channel']),
         sentTo: _str(json['sent_to']),
-        expiresAt: json['expires_at'] == null ? null : DateTime.tryParse('${json['expires_at']}'),
-        ttlMinutes: (json['ttl_minutes'] is num) ? (json['ttl_minutes'] as num).toInt() : 10,
+        expiresAt: json['expires_at'] == null
+            ? null
+            : DateTime.tryParse('${json['expires_at']}'),
+        ttlMinutes: (json['ttl_minutes'] is num)
+            ? (json['ttl_minutes'] as num).toInt()
+            : 10,
         sandbox: json['sandbox'] == true,
       );
 }

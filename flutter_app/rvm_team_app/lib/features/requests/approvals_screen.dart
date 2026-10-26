@@ -23,9 +23,9 @@ class ApprovalsScreen extends StatelessWidget {
       create: (_) =>
           getIt<ApprovalsBloc>()..add(const ApprovalsLoadRequested()),
       child: BlocProvider(
-        // Needed to know whether this caller may ask the server for decided
-        // requests. A manager's Inbox is pending-only on the live API, so the
-        // status pills are hidden rather than opening a 403.
+        // Issue #11: every approver may ask for any status now; the ESS fences
+        // a manager's query to their own reports. The capability still says
+        // whether this caller may decide any request (the faculty final round).
         create: (_) => getIt<CapabilitiesBloc>()..add(const LoadRequested()),
         child: const _ApprovalsView(),
       ),
@@ -125,7 +125,9 @@ class _ApprovalsView extends StatelessWidget {
         _FilterRow(
           selected: state.filter,
           inbox: inbox,
-          showAllStatuses: hrWide,
+          // Issue #11: the ESS now fences a manager's status query to their
+          // own reports, so every approver may see approved/rejected/all.
+          showAllStatuses: true,
           onSelected: (f) =>
               context.read<ApprovalsBloc>().add(ApprovalsFiltered(f)),
         ),
@@ -232,8 +234,9 @@ class _FilterRow extends StatelessWidget {
   final ApprovalInbox? inbox;
   final ValueChanged<String> onSelected;
 
-  /// HR-wide callers may ask for any status; a manager's live Inbox is
-  /// pending-only, so showing the other pills would only produce a 403.
+  /// Issue #11: every approver may ask for any status; the server limits the
+  /// query to the caller's own reports. Kept as a flag so the row stays easy
+  /// to reuse on a screen that must remain pending-only.
   final bool showAllStatuses;
 
   @override
@@ -723,9 +726,8 @@ class _ApprovalCard extends StatelessWidget {
     final note = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(_advanceOnly
-            ? 'Approve and send to HR'
-            : 'Approve this leave'),
+        title: Text(
+            _advanceOnly ? 'Approve and send to HR' : 'Approve this leave'),
         content: TextField(
             controller: controller,
             minLines: 2,

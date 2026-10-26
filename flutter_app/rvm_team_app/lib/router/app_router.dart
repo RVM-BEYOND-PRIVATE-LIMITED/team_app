@@ -17,6 +17,7 @@ import '../features/helpdesk/ticket_screen.dart';
 import '../features/hod/hod_screen.dart';
 import '../features/hr/employee_personal_screen.dart';
 import '../features/hr/hr_tools_screen.dart';
+import '../features/hr/hr_wfh_allowances_screen.dart';
 import '../features/me/account_security_screen.dart';
 import '../features/me/attendance_day_screen.dart';
 import '../features/me/bank_details_screen.dart';
@@ -158,6 +159,9 @@ GoRouter createRouter(TeamAuthBloc authBloc,
           builder: (_, state) =>
               TicketScreen(ticketId: state.pathParameters['id']!)),
       GoRoute(path: '/hr/tools', builder: (_, __) => const HrToolsScreen()),
+      GoRoute(
+          path: '/hr/wfh-allowances',
+          builder: (_, __) => const HrWfhAllowancesScreen()),
       // ── Team RVM ESS (2D) ────────────────────────────────────────────────
       GoRoute(path: '/leaders', builder: (_, __) => const LeadersScreen()),
       GoRoute(

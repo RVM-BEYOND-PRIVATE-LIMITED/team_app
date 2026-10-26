@@ -1,4 +1,4 @@
-package com.example.rvm_team_app
+package com.rvm.rvmteam
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -31,6 +31,7 @@ import 'features/attendance/bloc/punch_bloc.dart';
 import 'features/hod/bloc/hod_write_bloc.dart';
 import 'features/hr/bloc/employee_personal_bloc.dart';
 import 'features/hr/bloc/hr_tools_bloc.dart';
+import 'features/hr/bloc/wfh_allowances_bloc.dart';
 import 'features/inbox/bloc/task_action_bloc.dart';
 import 'features/me/bloc/account_action_bloc.dart';
 import 'features/me/bloc/attendance_day_bloc.dart';
@@ -224,6 +225,7 @@ void configureDependencies(AuthSession session) {
     ..registerFactory<AttendanceDayBloc>(() => AttendanceDayBloc(getIt()))
     ..registerFactory<SessionsBloc>(() => SessionsBloc(getIt()))
     ..registerFactory<HrToolsBloc>(() => HrToolsBloc(getIt()))
+    ..registerFactory<WfhAllowancesBloc>(() => WfhAllowancesBloc(getIt()))
     ..registerFactory<PunchBloc>(
         () => PunchBloc(getIt(), getIt(), getIt<AuthSession>()))
     ..registerFactoryParam<EmployeePersonalBloc, String, void>(

@@ -271,6 +271,26 @@ class EssRepository with ConnectivityGuard {
     return _remote.teamOffThisWeek();
   }
 
+  Future<HrWfhAllowancePage> wfhAllowances({String? query}) async {
+    await ensureOnline();
+    return _remote.wfhAllowances(query: query);
+  }
+
+  Future<HrWfhAllowance> setWfhAllowance({
+    required String employeeId,
+    required bool enabled,
+    required int monthlyLimitDays,
+    String? note,
+  }) async {
+    await ensureOnline();
+    return _remote.setWfhAllowance(
+      employeeId: employeeId,
+      enabled: enabled,
+      monthlyLimitDays: monthlyLimitDays,
+      note: note,
+    );
+  }
+
   Future<PraisePage> myPraise({String? employeeId}) async {
     await ensureOnline();
     return _remote.myPraise(employeeId: employeeId);
@@ -846,6 +866,50 @@ class EssRepository with ConnectivityGuard {
   Future<ApprovalChain> approvalChain(String family, String id) async {
     await ensureOnline();
     return _remote.approvalChain(family, id);
+  }
+
+  // ── H1: faculty class marking (decision 8) ───────────────────────────────
+
+  Future<ClassRoster> classRoster({
+    required String batchId,
+    required String date,
+  }) async {
+    await ensureOnline();
+    return _remote.classRoster(batchId: batchId, date: date);
+  }
+
+  Future<void> saveClassAttendance({
+    required String batchId,
+    required String date,
+    required Map<String, bool> present,
+    Map<String, String?> absentReasons = const {},
+    Map<String, String?> followUps = const {},
+  }) async {
+    await ensureOnline();
+    return _remote.saveClassAttendance(
+      batchId: batchId,
+      date: date,
+      present: present,
+      absentReasons: absentReasons,
+      followUps: followUps,
+    );
+  }
+
+  Future<ClassRosterStudent> updateClassRemark({
+    required String batchId,
+    required String date,
+    required String studentId,
+    required String absentReason,
+    String? followUpComment,
+  }) async {
+    await ensureOnline();
+    return _remote.updateClassRemark(
+      batchId: batchId,
+      date: date,
+      studentId: studentId,
+      absentReason: absentReason,
+      followUpComment: followUpComment,
+    );
   }
 
   // ── HR desk ──────────────────────────────────────────────────────────────
