@@ -173,22 +173,27 @@ class _ProfileBody extends StatelessWidget {
   }
 }
 
-/// The Timeline shows milestones, not every HR save. The backend maps every
-/// trivial employee update to the single line "Details updated"
-/// (`policy/me.js` `timelineTitle`), so that exact line is dropped here, and
-/// repeats of the same line on the same day collapse into one entry.
-/// The permanent fix is a stable `kind` on the timeline items (raised to KP);
-/// this keeps the exact server wording out of any other matching.
+/// The Timeline shows milestones, not every HR save.
+///
+/// The backend now sends a stable `kind` on every item (issue #15, contract
+/// 0.13.0), and a trivial HR save is `TRIVIAL_UPDATE`. Filtering on that means a
+/// wording change or a new trivial key can never leak into the Timeline. The
+/// old title check is kept only for a row that carries no `kind`.
+/// Repeats of the same kind on the same day collapse into one entry.
 List<TimelineEvent> _importantTimeline(List<TimelineEvent> events) {
-  const trivial = 'Details updated';
+  const trivialKind = 'TRIVIAL_UPDATE';
+  const trivialTitle = 'Details updated';
   final out = <TimelineEvent>[];
   final seen = <String>{};
   for (final e in events) {
-    if (e.title == trivial) continue;
+    final trivial = e.kind != null
+        ? e.kind == trivialKind
+        : e.title == trivialTitle;
+    if (trivial) continue;
     final at = e.at?.toLocal();
     final day =
         at == null ? '' : '${at.year}-${at.month.toString().padLeft(2, '0')}-${at.day.toString().padLeft(2, '0')}';
-    if (!seen.add('${e.title}::$day')) continue;
+    if (!seen.add('${e.kind ?? e.title}::$day')) continue;
     out.add(e);
   }
   return out;

@@ -488,7 +488,11 @@ class CelebrationsCard extends StatelessWidget {
               _CelebrationRow(
                 card: c,
                 kind: _CelebrationKind.promotion,
-                onWish: null,
+                onWish: () => context.read<WallBloc>().add(WallWished(
+                      employeeId: c.employee.id,
+                      occasion: 'promotion',
+                      body: 'Congratulations on your promotion!',
+                    )),
               ),
           ],
         ),
@@ -497,10 +501,9 @@ class CelebrationsCard extends StatelessWidget {
   }
 }
 
-/// One celebration kind, one look: KP asked that birthdays, work
-/// anniversaries, promotions and new joiners each carry their own color and
-/// icon. Promotions have no celebration feed on the backend yet (raised to KP);
-/// the app already renders them when the server sends `promotions`.
+/// One celebration kind, one look: birthdays, work anniversaries, promotions
+/// and new joiners each carry their own color and icon. Backend `9310fb7`
+/// (contract 0.13.0) sends recent promotions and accepts a `promotion` wish.
 enum _CelebrationKind { birthday, anniversary, newJoiner, promotion }
 
 extension on _CelebrationKind {

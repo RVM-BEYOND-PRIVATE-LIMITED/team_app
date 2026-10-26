@@ -14,17 +14,40 @@ MyProfile _profileWithNoise() => MyProfile(
       personal: const PersonalDetails(),
       timeline: [
         TimelineEvent(
-            id: 't1', title: 'Details updated', at: DateTime(2026, 9, 28)),
+            id: 't1',
+            kind: 'TRIVIAL_UPDATE',
+            title: 'Details updated',
+            at: DateTime(2026, 9, 28)),
         TimelineEvent(
-            id: 't2', title: 'Details updated', at: DateTime(2026, 8, 26)),
+            id: 't2',
+            kind: 'TRIVIAL_UPDATE',
+            title: 'Details updated',
+            at: DateTime(2026, 8, 26)),
         TimelineEvent(
-            id: 't3', title: 'Details updated', at: DateTime(2026, 8, 26)),
+            id: 't3',
+            kind: 'TRIVIAL_UPDATE',
+            title: 'Details updated',
+            at: DateTime(2026, 8, 26)),
+        // A trivial save whose wording changed: the kind, not the title, is
+        // what the app filters on (issue #15, contract 0.13.0).
         TimelineEvent(
-            id: 't4', title: 'Branch changed', at: DateTime(2026, 8, 26)),
+            id: 't7',
+            kind: 'TRIVIAL_UPDATE',
+            title: 'Record saved quietly',
+            at: DateTime(2026, 8, 20)),
         TimelineEvent(
-            id: 't5', title: 'Branch changed', at: DateTime(2026, 8, 26)),
+            id: 't4',
+            kind: 'BRANCH_CHANGED',
+            title: 'Branch changed',
+            at: DateTime(2026, 8, 26)),
+        TimelineEvent(
+            id: 't5',
+            kind: 'BRANCH_CHANGED',
+            title: 'Branch changed',
+            at: DateTime(2026, 8, 26)),
         TimelineEvent(
             id: 't6',
+            kind: 'REPORTING_LINE_CHANGED',
             title: 'Reporting line changed',
             at: DateTime(2026, 8, 26)),
       ],
@@ -45,8 +68,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    // Trivial saves never reach the screen, however many the server sends.
+    // Trivial saves never reach the screen, however many the server sends —
+    // and whatever the server calls them now.
     expect(find.text('Details updated'), findsNothing);
+    expect(find.text('Record saved quietly'), findsNothing);
     // Important lines stay, once each per day.
     expect(find.text('Branch changed'), findsOneWidget);
     expect(find.text('Reporting line changed'), findsOneWidget);
