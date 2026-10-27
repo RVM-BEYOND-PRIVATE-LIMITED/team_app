@@ -83,6 +83,19 @@ jobs:
           column hr_ess_leave_requests stage
           column hr_ess_leave_requests requires_final_approval
 
+          # The routing function is the heart of the 20261114000004 flow: a broken body
+          # would otherwise only surface when somebody files leave. Read-only.
+          employee=$(curl -s "$base/hr_employees?select=id&is_archived=eq.false&limit=1" "${auth[@]}" | jq -r '.[0].id // empty')
+          if [ -n "$employee" ]; then
+            routed=$(curl -s -X POST "$base/rpc/hr_ess_leave_route" "${auth[@]}" \
+              -H 'Content-Type: application/json' -d "{\"p_employee_id\":\"$employee\"}")
+            if echo "$routed" | jq -e 'type == "array" and length == 1 and (.[0].stage == "manager" or .[0].stage == "final")' > /dev/null; then
+              echo "OK      function hr_ess_leave_route"
+            else
+              echo "MISSING function hr_ess_leave_route ($routed)"; missing=$((missing + 1))
+            fi
+          fi
+
           count_at_least hr_ess_document_types slug 9
           count_at_least hr_ess_request_limits type 6
           count_at_least hr_ess_helpdesk_categories slug 10
