@@ -1,0 +1,26 @@
+name: Lookup leave approvers (temporary)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read employees and roles
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          base="${SUPABASE_URL%/}/rest/v1"
+          auth=(-H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY")
+          curl -fsS "$base/hr_employees?select=id,full_name,employee_code,branch_id,user_id,is_archived&is_archived=eq.false&or=(full_name.ilike.*Vishal*,full_name.ilike.*Bhupender*)" "${auth[@]}" > employees.json
+          curl -fsS "$base/users?select=id,username,role" "${auth[@]}" > users.json
+          curl -fsS "$base/hr_branches?select=id,name" "${auth[@]}" > branches.json
+          jq -r --slurpfile u users.json --slurpfile b branches.json '
+            .[] as $e
+            | ($u[0][] | select(.id == $e.user_id)) as $user
+            | ($b[0][] | select(.id == $e.branch_id)) as $branch
+            | [$e.id, $e.full_name, ($e.employee_code // ""), ($branch.name // ""), ($user.role // ""), ($user.username // "")] | @tsv
+          ' employees.json
