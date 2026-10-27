@@ -18,7 +18,8 @@ WITH expected_tables(name) AS (VALUES
   ('hr_ess_announcement_reads'), ('hr_ess_helpdesk_categories'), ('hr_ess_helpdesk_tickets'),
   ('hr_ess_helpdesk_messages'), ('hr_ess_document_types'), ('hr_ess_documents'),
   ('hr_ess_change_requests'), ('hr_ess_bank_details'), ('hr_ess_helpdesk_assignments'),
-  ('hr_ess_approval_escalations'), ('hr_ess_infra_links'), ('hr_ess_wfh_allowances')
+  ('hr_ess_approval_escalations'), ('hr_ess_infra_links'), ('hr_ess_wfh_allowances'),
+  ('hr_ess_work_experience'), ('hr_ess_profile_details')
 ),
 expected_functions(name) AS (VALUES
   ('hr_ess_session_rotate'), ('hr_ess_session_revoke'), ('hr_ess_session_password_current'),
@@ -27,7 +28,8 @@ expected_functions(name) AS (VALUES
   ('hr_ess_withdraw_attendance_request'), ('hr_ess_withdraw_leave_request'),
   ('hr_ess_cancel_attendance_request'), ('hr_ess_cancel_leave_request'), ('hr_ess_on_duty_apply'),
   ('hr_ess_data_requests_open_limit'), ('hr_ess_attendance_requests_filed'),
-  ('hr_ess_leave_requests_filed')
+  ('hr_ess_leave_requests_filed'), ('hr_ess_leave_working_days'), ('hr_ess_leave_cl_units'),
+  ('hr_ess_leave_cl_limit'), ('hr_ess_replace_work_experience')
 ),
 checks AS (
   SELECT 'table public.' || name AS check,
@@ -53,6 +55,36 @@ checks AS (
          EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_schema = 'public' AND table_name = 'hr_ess_wall_posts'
                     AND column_name = 'poll_closed_at')
+  UNION ALL
+  SELECT 'column hr_ess_leave_requests.end_day (migration 31)',
+         EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'hr_ess_leave_requests'
+                    AND column_name = 'end_day')
+  UNION ALL
+  SELECT 'column hr_ess_leave_requests.portion (migration 31)',
+         EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'hr_ess_leave_requests'
+                    AND column_name = 'portion')
+  UNION ALL
+  SELECT 'column hr_ess_leave_requests.working_days (migration 31)',
+         EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'hr_ess_leave_requests'
+                    AND column_name = 'working_days')
+  UNION ALL
+  SELECT 'column hr_ess_leave_requests.stage (migration 33)',
+         EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'hr_ess_leave_requests'
+                    AND column_name = 'stage')
+  UNION ALL
+  SELECT 'column hr_ess_leave_requests.requires_final_approval (migration 33)',
+         EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'hr_ess_leave_requests'
+                    AND column_name = 'requires_final_approval')
+  UNION ALL
+  SELECT 'the WFH per-employee guard is in the leave decide function (migration 32)',
+         EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public' AND p.proname = 'hr_ess_decide_leave_request'
+                    AND pg_get_functiondef(p.oid) LIKE '%wfh_not_allowed%')
   UNION ALL
   SELECT 'wall post occasions include promotion (migration 30)',
          EXISTS (SELECT 1 FROM pg_constraint

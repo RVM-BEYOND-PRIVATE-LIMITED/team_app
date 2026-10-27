@@ -51,7 +51,8 @@ jobs:
             hr_ess_announcement_reads hr_ess_helpdesk_categories hr_ess_helpdesk_tickets \
             hr_ess_helpdesk_messages hr_ess_document_types hr_ess_documents \
             hr_ess_change_requests hr_ess_bank_details hr_ess_helpdesk_assignments \
-            hr_ess_approval_escalations hr_ess_infra_links hr_ess_wfh_allowances; do
+            hr_ess_approval_escalations hr_ess_infra_links hr_ess_wfh_allowances \
+            hr_ess_work_experience hr_ess_profile_details; do
             table "$t"
           done
 
@@ -70,6 +71,11 @@ jobs:
           column hr_ess_helpdesk_tickets assigned_at
           column hr_ess_documents remark
           column hr_ess_wall_posts poll_closed_at
+          column hr_ess_leave_requests end_day
+          column hr_ess_leave_requests portion
+          column hr_ess_leave_requests working_days
+          column hr_ess_leave_requests stage
+          column hr_ess_leave_requests requires_final_approval
 
           count_at_least hr_ess_document_types slug 9
           count_at_least hr_ess_request_limits type 6
