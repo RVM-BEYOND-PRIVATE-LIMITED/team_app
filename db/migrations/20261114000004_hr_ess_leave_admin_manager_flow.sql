@@ -63,7 +63,7 @@ END $$;
 -- act. A branch with none uses HR as the first-stage bypass; only where there is no HR either
 -- does it go straight to the super admin.
 INSERT INTO public.hr_ess_leave_approvers (branch_id, employee_id, configured_by_name)
-SELECT e.branch_id, min(e.id), 'Automatic — sole Admin Manager'
+SELECT e.branch_id, (array_agg(e.id ORDER BY e.id))[1], 'Automatic — sole Admin Manager'
   FROM public.hr_employees e
   JOIN public.users u ON u.id = e.user_id AND u.role = 'admin_manager'
  WHERE e.branch_id IS NOT NULL
@@ -128,7 +128,7 @@ BEGIN
 
   -- No usable choice. One other Admin Manager in the branch is the natural default; several
   -- means any of them may act until the super admin picks one.
-  SELECT count(*), min(e.id)
+  SELECT count(*), (array_agg(e.id ORDER BY e.id))[1]
     INTO v_count, v_manager
     FROM public.hr_employees e
     JOIN public.users u ON u.id = e.user_id AND u.role = 'admin_manager'
