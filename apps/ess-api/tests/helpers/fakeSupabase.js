@@ -111,12 +111,14 @@ const SCHEMA = {
   // 20261114000001 (end_day, portion, day_count, working_days, days_before).
   hr_ess_leave_requests: ['id', 'employee_id', 'type', 'status', 'day', 'end_day', 'portion', 'day_count',
     'working_days', 'days_before', 'requires_final_approval', 'stage', 'admin_manager_employee_id',
-    'admin_manager_name', 'is_teaching', 'substitute_faculty_id', 'substitute_faculty_name', 'class_timing',
+    'admin_manager_name', 'is_teaching', 'final_approver_employee_id', 'final_approver_name',
+    'substitute_faculty_id', 'substitute_faculty_name', 'class_timing',
     'manager_approved_by_employee_id', 'manager_approved_by_name', 'manager_remark', 'manager_approved_at',
     'reason', 'day_before', 'day_written_at', 'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name',
     'decided_at', 'decision_note', 'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason',
     'created_at', 'updated_at'],
   hr_ess_leave_approvers: ['branch_id', 'employee_id', 'configured_by_user_id', 'configured_by_name', 'updated_at'],
+  hr_ess_leave_final_approvers: ['branch_id', 'employee_id', 'configured_by_user_id', 'configured_by_name', 'updated_at'],
   hr_ess_leave_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
     'action', 'note', 'details'],
   // 20261113000001_hr_ess_wfh_allowances.sql (KP, 22 Oct): HR's per-employee WFH allowance.
@@ -464,6 +466,7 @@ const DEFAULTS = {
   hr_ess_approval_escalations: (at) => ({ escalated_at: at }),
   hr_ess_leave_requests: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
   hr_ess_leave_approvers: (at) => ({ updated_at: at }),
+  hr_ess_leave_final_approvers: (at) => ({ updated_at: at }),
   // WFH's allowance (20261113000001): enabled unless HR says otherwise.
   hr_ess_wfh_allowances: (at) => ({ is_enabled: true, note: null, created_at: at, updated_at: at }),
   hr_ess_attendance_request_history: (at) => ({ at, details: {} }),

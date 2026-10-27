@@ -129,6 +129,7 @@ const COLUMNS = Object.freeze({
     + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
   leaveRequest: 'id, employee_id, type, status, day, end_day, portion, day_count, working_days, '
     + 'requires_final_approval, stage, admin_manager_employee_id, admin_manager_name, is_teaching, '
+    + 'final_approver_employee_id, final_approver_name, '
     + 'substitute_faculty_id, substitute_faculty_name, class_timing, '
     + 'manager_approved_by_employee_id, manager_approved_by_name, '
     + 'manager_remark, manager_approved_at, reason, '

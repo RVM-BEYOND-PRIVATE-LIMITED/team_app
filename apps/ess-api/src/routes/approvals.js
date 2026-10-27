@@ -47,34 +47,44 @@ async function chainFor({ store, requester, day, today }) {
   return chainEntries(byId, requester, today, offOnDay);
 }
 
-/** The leave requests an Admin Manager, a super admin or HR's fallback may see now. */
+/** The leave requests an Admin Manager, a super admin, HR's fallback or a reporting manager may see. */
 async function leaveQueue(store, auth) {
   const pending = await store.listPendingLeaveRequests();
   if (!pending.length) return [];
-  if (auth.role === 'super_admin') return pending.filter((r) => r.stage === 'final');
+  const chosen = new Set(
+    pending.filter((r) => r.stage === 'final'
+      && r.final_approver_employee_id === auth.employee.id).map((r) => r.id),
+  );
 
-  const requesterIds = [...new Set(pending.map((r) => r.employee_id))];
-  const cards = new Map((await Promise.all(requesterIds.map((id) => store.getEmployeeById(id))))
-    .filter(Boolean).map((e) => [e.id, e]));
-
-  if (auth.role === 'admin_manager') {
-    const branch = auth.employee?.branch_id;
-    return pending.filter((r) => r.stage === 'manager'
-      && r.employee_id !== auth.employee.id
-      && (r.admin_manager_employee_id
-        ? r.admin_manager_employee_id === auth.employee.id
-        : Boolean(branch && cards.get(r.employee_id)?.branch_id === branch)));
+  if (auth.role === 'super_admin') {
+    for (const r of pending) {
+      if (r.stage === 'final' && !r.final_approver_employee_id) chosen.add(r.id);
+    }
   }
 
-  if (auth.role === 'hr') {
-    const managers = await store.listLeaveAdminManagers();
-    const withAdmin = new Set((managers || []).map((e) => e.branch_id));
-    return pending.filter((r) => r.stage === 'manager'
-      && r.employee_id !== auth.employee.id
-      && !withAdmin.has(cards.get(r.employee_id)?.branch_id));
+  if (auth.role === 'admin_manager' || auth.role === 'hr') {
+    const requesterIds = [...new Set(pending.map((r) => r.employee_id))];
+    const cards = new Map((await Promise.all(requesterIds.map((id) => store.getEmployeeById(id))))
+      .filter(Boolean).map((e) => [e.id, e]));
+    if (auth.role === 'admin_manager') {
+      const branch = auth.employee?.branch_id;
+      for (const r of pending) {
+        if (r.stage !== 'manager' || r.employee_id === auth.employee.id) continue;
+        if (r.admin_manager_employee_id
+          ? r.admin_manager_employee_id === auth.employee.id
+          : Boolean(branch && cards.get(r.employee_id)?.branch_id === branch)) chosen.add(r.id);
+      }
+    } else {
+      const managers = await store.listLeaveAdminManagers();
+      const withAdmin = new Set((managers || []).map((e) => e.branch_id));
+      for (const r of pending) {
+        if (r.stage !== 'manager' || r.employee_id === auth.employee.id) continue;
+        if (!withAdmin.has(cards.get(r.employee_id)?.branch_id)) chosen.add(r.id);
+      }
+    }
   }
 
-  return [];
+  return pending.filter((r) => chosen.has(r.id) && r.employee_id !== auth.employee.id);
 }
 
 /** GET /api/ess/approvals?status=... */
@@ -290,17 +300,30 @@ function decideRequest({ store, now }) {
           data: { request_id: id, request_family: 'leave' },
         });
         if (body.decision === 'approve') {
-          const userIds = (await store.listFinalDeciderUserIds()).map((u) => u.id);
-          const deciders = await store.listEmployeesByUserIds(userIds);
-          for (const person of deciders) {
-            if (person.id === req.auth.employee.id) continue;
-            await store.createNotification({
-              employee_id: person.id,
-              category: 'approvals',
-              title: 'Leave needs super-admin approval',
-              body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for final approval.`,
-              data: { request_id: id, request_family: 'leave' },
-            });
+          if (request.final_approver_employee_id) {
+            const person = await store.getEmployeeById(request.final_approver_employee_id);
+            if (person && person.id !== req.auth.employee.id) {
+              await store.createNotification({
+                employee_id: person.id,
+                category: 'approvals',
+                title: 'Leave needs final approval',
+                body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for final approval.`,
+                data: { request_id: id, request_family: 'leave' },
+              });
+            }
+          } else {
+            const userIds = (await store.listFinalDeciderUserIds()).map((u) => u.id);
+            const deciders = await store.listEmployeesByUserIds(userIds);
+            for (const person of deciders) {
+              if (person.id === req.auth.employee.id) continue;
+              await store.createNotification({
+                employee_id: person.id,
+                category: 'approvals',
+                title: 'Leave needs super-admin approval',
+                body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for final approval.`,
+                data: { request_id: id, request_family: 'leave' },
+              });
+            }
           }
         }
       } catch { /* best effort */ }
@@ -421,7 +444,8 @@ function requestChain({ store, now }) {
         ? await store.getEmployeeById(request.admin_manager_employee_id) : null;
       const viewerOnBranch = req.auth.role === 'admin_manager'
         && (assigned ? assigned.id === viewerId : inBranch.some((e) => e.id === viewerId));
-      const involved = requester.id === viewerId || viewerOnBranch
+      const viewerIsFinal = request.final_approver_employee_id === viewerId;
+      const involved = requester.id === viewerId || viewerOnBranch || viewerIsFinal
         || ['super_admin', 'hr', 'ceo'].includes(req.auth.role);
       if (!involved) throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
 
@@ -432,11 +456,16 @@ function requestChain({ store, now }) {
           employee: employeeCardView(e), may_decide: i === 0, skipped: null,
         }));
       } else if (request.stage === 'final') {
-        const users = await store.listFinalDeciderUserIds();
-        const people = await store.listEmployeesByUserIds((users || []).map((u) => u.id));
-        chain = people.map((e, i) => ({
-          employee: employeeCardView(e), may_decide: i === 0, skipped: null,
-        }));
+        if (request.final_approver_employee_id) {
+          const person = await store.getEmployeeById(request.final_approver_employee_id);
+          chain = person ? [{ employee: employeeCardView(person), may_decide: true, skipped: null }] : [];
+        } else {
+          const users = await store.listFinalDeciderUserIds();
+          const people = await store.listEmployeesByUserIds((users || []).map((u) => u.id));
+          chain = people.map((e, i) => ({
+            employee: employeeCardView(e), may_decide: i === 0, skipped: null,
+          }));
+        }
       }
       return res.json({
         request: requestView(request, family, { employee: requester }),
