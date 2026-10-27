@@ -12225,7 +12225,7 @@ components:
     LeaveRequest:
       type: object
       description: One leave request as the employee and the approver read it. `employee` is present in an approver's reply, never in the person's own list.
-      required: [id, family, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage, admin_manager_employee_id, admin_manager_name, is_teaching, substitute_faculty_id, substitute_faculty_name, class_timing, manager_approved_by_name, manager_approved_at, manager_remark, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
+      required: [id, family, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage, manager_approved_by_name, manager_approved_at, manager_remark, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
       properties:
         id:
           type: string
