@@ -177,14 +177,14 @@ describe('the events that write notifications', () => {
     expect(db.tables.hr_ess_notifications[1].body).toBe('Your request for on duty on 15 Oct was approved by Test CAD HOD.');
   });
 
-  it('a request with no manager reaches HR, as the fallback approver', async () => {
+  it('a leave with no reporting manager reaches the branch Admin Manager, not the HOD', async () => {
     const { app, db, people } = buildApp({ setup: (w) => { w.people.faculty.employee.manager_id = null; } });
     const filed = await request(app).post('/api/ess/leave-requests').set(bearer(tokens.portal(people.faculty)))
       .send({ type: 'cl', day: '2026-10-20', reason: 'Family function at home.' });
     expect(filed.status).toBe(201);
     const rows = db.tables.hr_ess_notifications;
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ employee_id: people.hr.employee.id, category: 'approvals', title: 'New leave request' });
+    expect(rows[0]).toMatchObject({ employee_id: people.admin_manager.employee.id, category: 'approvals', title: 'New leave request' });
     expect(rows[0].body).toBe('Test CAD Faculty asked for casual leave on 20 Oct.');
   });
 

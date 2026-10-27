@@ -1,7 +1,6 @@
 const { chainOf } = require('./me');
 const { isActive } = require('./employment');
 const { canDecideAny } = require('./requests');
-const { TEACHING_ROLES } = require('./roles');
 
 /**
  * Phase 2D (task D4): the request's approval chain, the levels it skips, and the escalation the
@@ -71,19 +70,30 @@ function mayDecide({ auth, entries }) {
 }
 
 /**
- * RVM, 26 Oct 2026: a faculty member's leave takes one more round. Their manager may advance it
- * from `manager` to `final`, but only HR, the CEO or a super admin may approve it at `final`.
- * Those three (canDecideAny) may also decide at either stage, and every request that is not a
- * faculty member's keeps the ordinary rule.
+ * RVM, 27 Oct 2026: leave no longer follows the reporting line. The branch Admin Manager
+ * decides the first round (with class coverage), then a super admin gives the final approval.
+ * HR is the bypass only where the branch has no active Admin Manager. A manager/HOD never
+ * decides leave now.
  */
-function mayDecideLeave({ auth, entries, request }) {
-  if (canDecideAny(auth.kind, auth.role)) return true;
-  if (request && request.requires_final_approval && request.stage === 'final') return false;
-  return mayDecide({ auth, entries });
+function mayDecideLeave({ auth, request, requesterBranchId, branchHasAdminManager = false }) {
+  if (!request) return false;
+  if (request.stage === 'final') {
+    return auth.kind === 'portal' && auth.role === 'super_admin';
+  }
+  if (request.stage !== 'manager' || !auth.employee) return false;
+  if (auth.employee.id === request.employee_id) return false;
+  if (request.admin_manager_employee_id) {
+    return auth.role === 'admin_manager' && auth.employee.id === request.admin_manager_employee_id;
+  }
+  if (auth.role === 'admin_manager') {
+    return Boolean(requesterBranchId && auth.employee.branch_id === requesterBranchId);
+  }
+  if (auth.role === 'hr') return !branchHasAdminManager;
+  return false;
 }
 
-/** Whether this person's linked portal role makes them faculty for the final-round rule. */
-const needsFinalApproval = (role) => TEACHING_ROLES.has(role);
+/** Every leave request now has the two-stage flow. Kept for callers that still ask. */
+const needsFinalApproval = () => true;
 
 /**
  * The escalation target: the first unskipped level that no escalation has been recorded for yet,

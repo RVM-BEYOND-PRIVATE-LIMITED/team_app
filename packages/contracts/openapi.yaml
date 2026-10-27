@@ -2828,10 +2828,12 @@ paths:
       x-owner: ess
       summary: Decide a request — approve or reject (D1, H6)
       description: |
-        The manager on the HR record, or HR, the CEO or a super admin (task D1). An attendance session may decide as a manager; the HR-wide decision needs the portal role. With multi-level approvals (D4), the FIRST unskipped level of the reporting line may decide -- a level above an active manager may not.
+        An Admin Manager decides the first stage of a leave request; a super admin gives the final approval. Attendance keeps its reporting-line rule: the manager on the HR record, or HR, the CEO or a super admin. An attendance session may decide as a manager; the HR-wide decision needs the portal role. With multi-level approvals (D4), the FIRST unskipped level of the reporting line may decide.
 
         - `decision`: `approve` or `reject`. `note`: up to 1,000 characters; a rejection needs one (at least 3), because the employee is owed the reason.
-        - An approval writes the official day through the Scheduler's override function, in one transaction with the request's status and history; a second decision on the same request is 409 `ALREADY_DECIDED` whatever two approvers do at the same moment.
+        - A teaching leave approval at the Admin Manager stage needs `substitute_faculty_id` and `class_timing`; without them it is 400 `COVERAGE_REQUIRED`. The Admin Manager's approval advances the request to `final` and writes no day.
+        - Only a super admin may decide a leave request at `final`; HR or the CEO there is 403 `FINAL_APPROVAL_ONLY`. HR may decide the Admin Manager stage only where the branch has no active Admin Manager.
+        - An attendance approval writes the official day through the Scheduler's override function, in one transaction with the request's status and history; a second decision on the same request is 409 `ALREADY_DECIDED` whatever two approvers do at the same moment. A leave approval at `final` writes the days the same way and closes the request as `approved`.
         - What a decision can refuse: `NOT_LATE` (excusing a day that is not a late), `TIMES_INCOMPLETE` (the fix would leave the day without an in or out), `DAY_LOCKED` (a fix on a day recorded as leave, a week off or a holiday), `CL_LIMIT` (a second CL in the month), `WFH_NOT_ALLOWED` (HR has switched the person's allowance off, or there is no row), `WFH_LIMIT` (the month's other approved WFH days already use the allowance), `REQUEST_CLOSED`/`REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or excuse for a day that has not happened). A refused decision changes nothing.
         - A WFH approval writes the day as present, with `Work from home: <reason>` as its note and the times the day already records kept — the same sanctioned path leave uses. The allowance is re-read at decision time under a lock, so HR switching it off or another approval filling the month cannot be raced.
         - An approved on_duty day for a FUTURE date is not written yet: the morning job writes it on the day itself, so the day is never locked before it happens.
@@ -2863,6 +2865,14 @@ paths:
                 note:
                   type: [string, 'null']
                   maxLength: 1000
+                substitute_faculty_id:
+                  type: [string, 'null']
+                  format: uuid
+                  description: For a teaching leave at the Admin Manager stage; required with `class_timing` on approval.
+                class_timing:
+                  type: [string, 'null']
+                  maxLength: 200
+                  description: For a teaching leave at the Admin Manager stage; required with `substitute_faculty_id` on approval.
             examples:
               approve:
                 value: { decision: approve, note: Checked with the branch. }
@@ -2878,7 +2888,9 @@ paths:
                 required: [request]
                 properties:
                   request:
-                    $ref: '#/components/schemas/AttendanceRequest'
+                    oneOf:
+                      - $ref: '#/components/schemas/AttendanceRequest'
+                      - $ref: '#/components/schemas/LeaveRequest'
               examples:
                 approved:
                   value:
@@ -3081,6 +3093,142 @@ paths:
           $ref: '#/components/responses/EssRateLimited'
         '503':
           $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/leave-approvers:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listLeaveApprovers
+      tags: [ESS]
+      x-owner: ess
+      summary: The branch → Admin Manager leave routing (super admin only)
+      description: |
+        A super admin chooses one Admin Manager per branch. A branch with one active Admin
+        Manager is selected automatically (the migration backfills it); a branch with several
+        stays unassigned until the super admin chooses. HR is the first-stage bypass only where
+        a branch has no active Admin Manager. Any other role is 403 `NOT_AN_APPROVER`.
+      responses:
+        '200':
+          description: Every active branch and its Admin Managers, with the current choice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveApproverList'
+              examples:
+                branches:
+                  value:
+                    branches:
+                      - id: b0000000-0000-4000-8000-000000000001
+                        name: Faridabad
+                        selected_employee_id: e0000000-0000-4000-8000-000000000006
+                        selected_name: Test Admin Manager
+                        admin_managers:
+                          - { id: e0000000-0000-4000-8000-000000000006, full_name: Test Admin Manager, employee_code: RVM-006 }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssApproverForbidden'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/leave-approvers/{branchId}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    put:
+      operationId: setLeaveApprover
+      tags: [ESS]
+      x-owner: ess
+      summary: Choose the Admin Manager who decides a branch's leave (super admin only)
+      description: |
+        The chosen employee must be an active, linked Admin Manager at the branch. Pending
+        requests already at the Admin Manager stage are moved to the chosen approver. Any other
+        role is 403 `NOT_AN_APPROVER`.
+      parameters:
+        - name: branchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employee_id]
+              properties:
+                employee_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: The saved choice and every branch, as `GET /leave-approvers` shows them.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveApproverList'
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssApproverForbidden'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/leave-faculty:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listLeaveFaculty
+      tags: [ESS]
+      x-owner: ess
+      summary: The substitute faculty choices for a teaching leave
+      description: |
+        An Admin Manager (or HR, when it is the branch's fallback) reads the active faculty for
+        the branch. `request_id` scopes the list to that request's branch; without it the
+        caller's own branch is used. A super admin sees every active faculty member.
+      parameters:
+        - name: request_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The active faculty the caller may choose as a substitute.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveFacultyList'
+              examples:
+                faculty:
+                  value:
+                    faculty:
+                      - { id: f0000000-0000-4000-8000-000000000001, name: Test Substitute Faculty }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssApproverForbidden'
         default:
           $ref: '#/components/responses/EssUnexpected'
 
@@ -12077,7 +12225,7 @@ components:
     LeaveRequest:
       type: object
       description: One leave request as the employee and the approver read it. `employee` is present in an approver's reply, never in the person's own list.
-      required: [id, family, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage, manager_approved_by_name, manager_approved_at, manager_remark, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
+      required: [id, family, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage, admin_manager_employee_id, admin_manager_name, is_teaching, substitute_faculty_id, substitute_faculty_name, class_timing, manager_approved_by_name, manager_approved_at, manager_remark, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
       properties:
         id:
           type: string
@@ -12114,11 +12262,32 @@ components:
           description: The days the approval writes. Weekly offs and holidays are not in it.
         requires_final_approval:
           type: boolean
-          description: True for a faculty member's leave, which needs HR/CEO/super-admin final approval after the manager round.
+          description: Always true now; every leave request has an Admin Manager round and a super-admin final round.
         stage:
           type: string
           enum: [manager, final]
-          description: The round waiting now. A final-stage request is still `pending`; only HR, the CEO or a super admin may approve it.
+          description: The round waiting now. `manager` is the branch Admin Manager stage; `final` is the super-admin stage. A final-stage request is still `pending`.
+        admin_manager_employee_id:
+          type: [string, 'null']
+          format: uuid
+          description: The Admin Manager the request is assigned to; null until one is chosen or while every branch Admin Manager may act.
+        admin_manager_name:
+          type: [string, 'null']
+          description: The assigned Admin Manager's name, if one is chosen.
+        is_teaching:
+          type: boolean
+          description: True when the requester is faculty or an HOD, so approval needs a substitute and class timing.
+        substitute_faculty_id:
+          type: [string, 'null']
+          format: uuid
+          description: The faculty who covers the class, once the Admin Manager approves a teaching leave.
+        substitute_faculty_name:
+          type: [string, 'null']
+          description: The substitute faculty member's name, as recorded at approval time.
+        class_timing:
+          type: [string, 'null']
+          maxLength: 200
+          description: The class timing the Admin Manager records for the substitute.
         manager_approved_by_name:
           type: [string, 'null']
           description: The manager's name once the first round is approved.
@@ -12275,6 +12444,49 @@ components:
         day:
           type: string
           format: date
+        end_day:
+          type: string
+          format: date
+          description: The last day; equal to `day` for a single day.
+        portion:
+          type: string
+          enum: [full, first_half, second_half]
+        day_count:
+          type: number
+          minimum: 0.5
+        working_days:
+          type: array
+          items:
+            type: string
+            format: date
+        requires_final_approval:
+          type: boolean
+        stage:
+          type: string
+          enum: [manager, final]
+          description: '`manager` is the Admin Manager stage; `final` is the super-admin stage.'
+        admin_manager_employee_id:
+          type: [string, 'null']
+          format: uuid
+        admin_manager_name:
+          type: [string, 'null']
+        is_teaching:
+          type: boolean
+        substitute_faculty_id:
+          type: [string, 'null']
+          format: uuid
+        substitute_faculty_name:
+          type: [string, 'null']
+        class_timing:
+          type: [string, 'null']
+          maxLength: 200
+        manager_approved_by_name:
+          type: [string, 'null']
+        manager_approved_at:
+          type: [string, 'null']
+          format: date-time
+        manager_remark:
+          type: [string, 'null']
         reason:
           type: string
           minLength: 5
@@ -12300,6 +12512,65 @@ components:
           $ref: '#/components/schemas/EmployeeCard'
         context:
           $ref: '#/components/schemas/ApprovalContext'
+
+    LeaveApproverChoice:
+      type: object
+      required: [id, full_name, employee_code]
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        employee_code:
+          type: [string, 'null']
+
+    LeaveApproverBranch:
+      type: object
+      required: [id, name, selected_employee_id, selected_name, admin_managers]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        selected_employee_id:
+          type: [string, 'null']
+          format: uuid
+        selected_name:
+          type: [string, 'null']
+        admin_managers:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeaveApproverChoice'
+
+    LeaveApproverList:
+      type: object
+      required: [branches]
+      properties:
+        branches:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeaveApproverBranch'
+
+    LeaveFacultyOption:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    LeaveFacultyList:
+      type: object
+      required: [faculty]
+      properties:
+        faculty:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeaveFacultyOption'
 
     ApprovalCounts:
       type: object
@@ -17489,6 +17760,7 @@ components:
       description: |
         Not a reason to sign out.
         - `NOT_AN_APPROVER`: this request is not this caller's to decide, clear or view the chain of.
+        - `FINAL_APPROVAL_ONLY`: only a super admin gives final approval to leave.
         - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
       content:
         application/json:
