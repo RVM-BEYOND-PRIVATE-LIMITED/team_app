@@ -785,7 +785,13 @@ const contractDayRow = (employeeId, day, change = {}) => ({
 /** One pending on-duty request from the attendance employee, one pending CL from the faculty member. */
 const withRequests = (w) => {
   w.tables.hr_ess_attendance_requests = [requestRow('attendance', w.people.attendance.employee.id, AID(1), { place: 'Pune centre' })];
-  w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.faculty.employee.id, LID(2))];
+  w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.faculty.employee.id, LID(2), {
+    stage: 'manager',
+    requires_final_approval: true,
+    admin_manager_employee_id: w.people.admin_manager.employee.id,
+    admin_manager_name: w.people.admin_manager.employee.full_name,
+    is_teaching: false,
+  })];
 };
 
 /** A decided attendance request, for the cancel and archive scenarios. */
@@ -946,8 +952,11 @@ const WAVE_3 = {
       await post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'approve' })(w.app, tokens.portal(w.people.admin_manager));
       return post(`${INBOX}/attendance/${AID(1)}/decide`, { decision: 'reject', note: 'Changed my mind.' })(w.app, tokens.portal(w.people.admin_manager));
     }],
-    ['409 CL_LIMIT', call('hr', post(`${INBOX}/leave/${LID(2)}/decide`, { decision: 'approve' }), {
-      setup: withRequests,
+    ['409 CL_LIMIT', call('super_admin', post(`${INBOX}/leave/${LID(2)}/decide`, { decision: 'approve' }), {
+      setup: (w) => {
+        withRequests(w);
+        w.tables.hr_ess_leave_requests[0].stage = 'final';
+      },
       prepare: (w) => { w.db.tables.hr_staff_attendance.push(contractDayRow(w.people.faculty.employee.id, '2026-10-10', { status: 'leave', leave_type: 'cl', source: 'override' })); },
     })],
     ['409 NOT_LATE', call('admin_manager', post(`${INBOX}/attendance/${AID(4)}/decide`, { decision: 'approve' }), {
@@ -963,8 +972,12 @@ const WAVE_3 = {
       },
     })],
     ['409 REQUEST_CLOSED', async () => {
-      const w = buildApp({ now: AT_SIX(), setup: (x) => { x.tables.hr_ess_leave_requests = [requestRow('leave', x.people.faculty.employee.id, LID(7), { type: 'lwp', day: '2026-09-30' })]; } });
-      return post(`${INBOX}/leave/${LID(7)}/decide`, { decision: 'approve' })(w.app, tokens.portal(w.people.hr));
+      const w = buildApp({ now: AT_SIX(), setup: (x) => {
+        x.tables.hr_ess_leave_requests = [requestRow('leave', x.people.faculty.employee.id, LID(7), {
+          type: 'lwp', day: '2026-09-30', stage: 'final', requires_final_approval: true, is_teaching: false,
+        })];
+      } });
+      return post(`${INBOX}/leave/${LID(7)}/decide`, { decision: 'approve' })(w.app, tokens.portal(w.people.super_admin));
     }],
     ['429 RATE_LIMITED', async () => {
       const { app, people } = buildApp({ setup: withRequests, limits: { perEmployee: { windowMs: 60 * 1000, limit: 1 } } });
@@ -1277,14 +1290,39 @@ const WAVE_5 = {
   ],
 };
 
+const WAVE_14 = {
+  'GET /api/ess/leave-approvers': [
+    ['200, the super admin', call('super_admin', get('/api/ess/leave-approvers'))],
+    ['401, no token', call('super_admin', (app) => request(app).get('/api/ess/leave-approvers'))],
+    ['403 NOT_AN_APPROVER', call('hr', get('/api/ess/leave-approvers'))],
+  ],
+  'PUT /api/ess/leave-approvers/{branchId}': [
+    ['200, the super admin chooses', call('super_admin', put(`/api/ess/leave-approvers/${BRANCH_ID}`, {
+      employee_id: 'e0000000-0000-4000-8000-000000000006',
+    }))],
+    ['400 VALIDATION_FAILED', call('super_admin', put(`/api/ess/leave-approvers/${BRANCH_ID}`, { employee_id: 'nope' }))],
+    ['401, no token', call('super_admin', (app) => request(app).put(`/api/ess/leave-approvers/${BRANCH_ID}`).send({
+      employee_id: 'e0000000-0000-4000-8000-000000000006',
+    }))],
+    ['403 NOT_AN_APPROVER', call('hr', put(`/api/ess/leave-approvers/${BRANCH_ID}`, {
+      employee_id: 'e0000000-0000-4000-8000-000000000006',
+    }))],
+  ],
+  'GET /api/ess/leave-faculty': [
+    ['200, the Admin Manager', call('admin_manager', get('/api/ess/leave-faculty'))],
+    ['401, no token', call('admin_manager', (app) => request(app).get('/api/ess/leave-faculty'))],
+    ['403 NOT_AN_APPROVER', call('faculty', get('/api/ess/leave-faculty'))],
+  ],
+};
+
 describe('the scenario tables', () => {
-  it('cover every route Wave 2 to Wave 13 added', () => {
+  it('cover every route Wave 2 to Wave 14 added', () => {
     const wave1 = ['GET /api/ess/health', 'GET /api/ess/me', 'GET /api/ess/me/capabilities'];
     const served = C.essRoutes(buildApp().app).filter((route) => !wave1.includes(route));
-    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4), ...Object.keys(WAVE_5), ...Object.keys(WAVE_6), ...Object.keys(WAVE_7), ...Object.keys(WAVE_8), ...Object.keys(WAVE_9), ...Object.keys(WAVE_10), ...Object.keys(WAVE_11), ...Object.keys(WAVE_12), ...Object.keys(WAVE_13)].sort()).toEqual(served);
+    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4), ...Object.keys(WAVE_5), ...Object.keys(WAVE_6), ...Object.keys(WAVE_7), ...Object.keys(WAVE_8), ...Object.keys(WAVE_9), ...Object.keys(WAVE_10), ...Object.keys(WAVE_11), ...Object.keys(WAVE_12), ...Object.keys(WAVE_13), ...Object.keys(WAVE_14)].sort()).toEqual(served);
   });
 
-  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13)])('provoke every status %s documents', (route, scenarios) => {
+  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13), ...Object.entries(WAVE_14)])('provoke every status %s documents', (route, scenarios) => {
     const [method, path] = route.split(' ');
     const documented = Object.keys(C.operation(method, path).operation.responses).filter((s) => s !== 'default');
     const provoked = new Set(scenarios.map(([label]) => label.slice(0, 3)));
@@ -1292,7 +1330,7 @@ describe('the scenario tables', () => {
   });
 });
 
-describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13)])('%s', (route, scenarios) => {
+describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13), ...Object.entries(WAVE_14)])('%s', (route, scenarios) => {
   const [method, path] = route.split(' ');
   it.each(scenarios)('%s', async (label, provoke) => {
     quietErrors();

@@ -128,9 +128,14 @@ const COLUMNS = Object.freeze({
   attendanceRequest: 'id, employee_id, type, status, day, reason, place, fix_in, fix_out, minutes, '
     + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
   leaveRequest: 'id, employee_id, type, status, day, end_day, portion, day_count, working_days, '
-    + 'requires_final_approval, stage, manager_approved_by_employee_id, manager_approved_by_name, '
+    + 'requires_final_approval, stage, admin_manager_employee_id, admin_manager_name, is_teaching, '
+    + 'substitute_faculty_id, substitute_faculty_name, class_timing, '
+    + 'manager_approved_by_employee_id, manager_approved_by_name, '
     + 'manager_remark, manager_approved_at, reason, '
     + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
+  leaveAdminManager: 'id, full_name, employee_code, branch_id, user_id, is_archived',
+  leaveApprover: 'branch_id, employee_id, configured_by_name, updated_at',
+  facultyOption: 'id, name, location_id, is_active',
   // The counters and duplicate checks read these. The leave table has no `minutes` column, so the
   // attendance family names its own facts (short leave counts by minutes, C3).
   requestFacts: 'id, employee_id, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage',
@@ -883,6 +888,29 @@ function createSupabaseStore(config, { client } = {}) {
     createLeaveRequest: (row) =>
       write('hr_ess_leave_requests', (q) => q.insert([row]).select(COLUMNS.leaveRequest).single()),
     getLeaveRequest: (id) => one('hr_ess_leave_requests', COLUMNS.leaveRequest, 'id', id),
+    /** The branch's chosen Admin Manager, if the super admin has set one. */
+    getLeaveApprover: (branchId) => one('hr_ess_leave_approvers', COLUMNS.leaveApprover, 'branch_id', branchId),
+    setLeaveApprover: (row) =>
+      write('hr_ess_leave_approvers', (q) => q.upsert([row], { onConflict: 'branch_id' }).select(COLUMNS.leaveApprover).single()),
+    /** Active linked Admin Managers, for the super admin's branch picker. */
+    listLeaveAdminManagers: async () => {
+      const managers = await list('users', (q) => q.select('id').eq('role', 'admin_manager'));
+      const ids = (managers || []).map((u) => u.id);
+      if (!ids.length) return [];
+      return readIn('hr_employees', COLUMNS.leaveAdminManager, 'user_id', ids,
+        (q) => q.eq('is_archived', false)) || [];
+    },
+    /** Every pending leave request; routes filter by the Admin Manager / final stage. */
+    listPendingLeaveRequests: async () =>
+      (await read('hr_ess_leave_requests', (q) => q.select(COLUMNS.leaveRequest)
+        .eq('status', 'pending').order('created_at', { ascending: true }).limit(500))) || [],
+    assignLeaveRequestApprover: ({ id, employeeId, name, at }) =>
+      write('hr_ess_leave_requests', (q) => q.update({
+        admin_manager_employee_id: employeeId, admin_manager_name: name, updated_at: at,
+      }).eq('id', id).eq('status', 'pending').eq('stage', 'manager').select('id')),
+    listActiveFaculty: async () =>
+      (await read('faculty', (q) => q.select(COLUMNS.facultyOption).eq('is_active', true).order('name').limit(500))) || [],
+    decideLeaveAdmin: (args) => call('hr_ess_leave_admin_decide', args, { table: 'hr_ess_leave_requests' }),
     /** The working days of a leave range: week offs and holidays left out (SQL function). */
     leaveWorkingDays: (employeeId, from, to) =>
       call('hr_ess_leave_working_days', { p_employee_id: employeeId, p_from: from, p_to: to },
@@ -1122,7 +1150,7 @@ function createSupabaseStore(config, { client } = {}) {
     listEmployeesByUserIds: async (userIds) => readIn('hr_employees', COLUMNS.employeeForUser, 'user_id', userIds),
     listHrUserIds: () => list('users', (q) => q.select('id').eq('role', 'hr')),
     /** Who may give a faculty request its final approval: HR, the CEO and super admins. */
-    listFinalDeciderUserIds: () => list('users', (q) => q.select('id').in('role', ['hr', 'ceo', 'super_admin'])),
+    listFinalDeciderUserIds: () => list('users', (q) => q.select('id').in('role', ['super_admin'])),
 
     /* ── E1, E2, E12: the profile, the org and the timeline ── */
 
