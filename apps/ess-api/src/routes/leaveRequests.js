@@ -3,6 +3,7 @@ const { bodyWith, requiredText, idParam, oneQueryValue, invalid } = require('../
 const { istDay, isCalendarDay, monthBounds } = require('../lib/time');
 const { REQUEST_TYPES, effectiveLimit } = require('../policy/requestLimits');
 const { LEAVE_TYPES, windowProblem, monthProblem, countForMonth, minutesForMonth, balanceOf, requestView } = require('../policy/requests');
+const { needsFinalApproval } = require('../policy/approvals');
 const { notifyApprovers } = require('../lib/notify');
 
 /**
@@ -102,8 +103,18 @@ function createMyLeaveRequest({ store, now }) {
       }
     }
 
-    // Every leave request takes the branch Admin Manager round, then the super admin.
-    const finalRound = true;
+    // A faculty member's request takes a final round after the manager (RVM, 26 Oct 2026).
+    const approvalInfo = await store.getEmployeeApproval(employee.id);
+    const account = approvalInfo && approvalInfo.user_id ? await store.getUser(approvalInfo.user_id) : null;
+    let legacyFaculty = false;
+    if (!account && approvalInfo && approvalInfo.email) {
+      try {
+        legacyFaculty = Boolean(await store.getFacultyByEmail(approvalInfo.email));
+      } catch {
+        legacyFaculty = false; // the legacy faculty table is not part of every install
+      }
+    }
+    const finalRound = needsFinalApproval(account && account.role) || legacyFaculty;
 
     const created = await store.createLeaveRequest({
       employee_id: employee.id,

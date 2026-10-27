@@ -83,47 +83,21 @@ function withTwoRequests(w) {
     requestRow('attendance', w.people.attendance.employee.id, 1, { place: 'Pune centre' }),
   ];
   w.tables.hr_ess_leave_requests = [
-    requestRow('leave', w.people.faculty.employee.id, 2, {
-      day: '2026-10-15',
-      stage: 'manager',
-      requires_final_approval: true,
-      admin_manager_employee_id: w.people.admin_manager.employee.id,
-      admin_manager_name: w.people.admin_manager.employee.full_name,
-      is_teaching: false,
-    }),
+    requestRow('leave', w.people.faculty.employee.id, 2, { day: '2026-10-15' }),
   ];
 }
 
-/** A leave request already advanced to the super admin's final stage. */
-const finalLeave = (w, n, change = {}) => requestRow('leave', w.people.faculty.employee.id, n, {
-  stage: 'final',
-  requires_final_approval: true,
-  admin_manager_employee_id: w.people.admin_manager.employee.id,
-  admin_manager_name: w.people.admin_manager.employee.full_name,
-  is_teaching: false,
-  ...change,
-});
-
-const SUBSTITUTE_ID = '7f000000-0000-4000-8000-000000000001';
-
-/** A substitute faculty row, for the teaching-coverage rule. */
-function withSubstitute(w) {
-  w.tables.faculty.push({
-    id: SUBSTITUTE_ID, email: null, name: 'Test Substitute Faculty', location_id: 1, is_active: true,
-  });
-}
-
 describe('GET /api/ess/approvals', () => {
-  it('an Admin Manager sees their branch\'s pending requests, with the context the brief asks for', async () => {
+  it('a manager sees their own reports\' pending requests, with the context the brief asks for', async () => {
     const { app, people, db } = buildApp({ setup: withTwoRequests });
     // The attendance employee's own day is a late one (fixture, 2026-10-15): context.late reads it.
     db.tables.hr_staff_attendance.find((d) => d.day === '2026-10-15' && d.employee_id === people.attendance.employee.id).late_minutes = 20;
     const res = await inbox(app, tokens.portal(people.admin_manager));
     expect(res.status).toBe(200);
-    expect(res.body.counts).toEqual({ attendance: 1, leave: 1, total: 2 });
+    expect(res.body.counts).toEqual({ attendance: 1, leave: 0, total: 1 });
     expect(res.body.truncated).toBe(false);
-    expect(res.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(2)]);
-    const one = res.body.requests.find((r) => r.id === REQ(1));
+    expect(res.body.requests).toHaveLength(1);
+    const [one] = res.body.requests;
     expect(one).toMatchObject({
       id: REQ(1), family: 'attendance', type: 'on_duty', status: 'pending', employee: { id: people.attendance.employee.id },
     });
@@ -134,14 +108,14 @@ describe('GET /api/ess/approvals', () => {
     expect(one.context.others_off).toEqual({ count: 1, names: ['Test CAD Faculty'] });
   });
 
-  it('an HOD no longer sees leave: it waits on the branch Admin Manager', async () => {
+  it('a manager of another team sees their own only, and nobody else\'s', async () => {
     const { app, people } = buildApp({ setup: withTwoRequests });
     const res = await inbox(app, tokens.portal(people.hod));
-    expect(res.body.requests).toEqual([]);
-    expect(res.body.counts).toEqual({ attendance: 0, leave: 0, total: 0 });
+    expect(res.body.requests.map((r) => r.id)).toEqual([REQ(2)]);
+    expect(res.body.counts).toEqual({ attendance: 0, leave: 1, total: 1 });
   });
 
-  it('an Admin Manager may filter their own attendance by any status; leave history is not their Inbox', async () => {
+  it('a manager may filter their own reports by any status, and cannot see another team', async () => {
     const { app, people } = buildApp({ setup: (w) => {
       withTwoRequests(w);
       w.tables.hr_ess_attendance_requests.push(requestRow('attendance', w.people.attendance.employee.id, 3, {
@@ -156,10 +130,10 @@ describe('GET /api/ess/approvals', () => {
     expect(approved.body.requests.map((r) => r.id)).toEqual([REQ(3)]);
     const all = await inbox(app, tokens.portal(people.admin_manager), '?status=all');
     expect(all.status).toBe(200);
-    expect(all.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(3), REQ(2)]);
+    expect(all.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(3)]);
   });
 
-  it('HR sees attendance everywhere, but not leave where an Admin Manager exists', async () => {
+  it('an HR decider sees everybody, with counts, and may filter by any status', async () => {
     const { app, people } = buildApp({ setup: (w) => {
       withTwoRequests(w);
       w.tables.hr_ess_attendance_requests.push(requestRow('attendance', w.people.faculty.employee.id, 3, {
@@ -167,11 +141,11 @@ describe('GET /api/ess/approvals', () => {
       }));
     } });
     const all = await inbox(app, tokens.portal(people.hr));
-    expect(all.body.requests.map((r) => r.id)).toEqual([REQ(1)]);
-    expect(all.body.counts).toEqual({ attendance: 1, leave: 0, total: 1 });
+    expect(all.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(2)]);
+    expect(all.body.counts).toEqual({ attendance: 1, leave: 1, total: 2 });
     const rejected = await inbox(app, tokens.portal(people.super_admin), '?status=rejected');
     expect(rejected.body.requests.map((r) => r.id)).toEqual([REQ(3)]);
-    expect(rejected.body.counts.total).toBe(1); // the counts are of what still waits, not of the filter
+    expect(rejected.body.counts.total).toBe(2); // the counts are of what still waits, not of the filter
     // Any other status word is refused.
     expectInvalid(await inbox(app, tokens.portal(people.hr), '?status=lost'), MESSAGES.APPROVAL_STATUS);
   });
@@ -186,13 +160,13 @@ describe('GET /api/ess/approvals', () => {
     expect(filtered.body.requests).toEqual([]);
   });
 
-  it('an attendance session that manages somebody no longer sees leave; the Admin Manager does', async () => {
+  it('an attendance session that manages somebody gets their requests, as the brief says', async () => {
     const { app, people } = buildApp({ setup: (w) => {
       withTwoRequests(w);
       w.people.faculty.employee.manager_id = w.people.attendance.employee.id;
     } });
     const res = await inbox(app, tokens.attendance(people.attendance));
-    expect(res.body.requests).toEqual([]);
+    expect(res.body.requests.map((r) => r.id)).toEqual([REQ(2)]);
   });
 
   it('archiving clears a request for one approver only', async () => {
@@ -200,10 +174,8 @@ describe('GET /api/ess/approvals', () => {
     expect((await archive(app, tokens.portal(people.hr), 'attendance', REQ(1))).status).toBe(204);
     // Again is the same as once.
     expect((await archive(app, tokens.portal(people.hr), 'attendance', REQ(1))).status).toBe(204);
-    expect((await inbox(app, tokens.portal(people.hr))).body.requests).toEqual([]);
-    // The Admin Manager's Inbox still holds the branch's attendance and leave requests.
-    expect((await inbox(app, tokens.portal(people.admin_manager))).body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(2)]);
-    expect((await inbox(app, tokens.portal(people.super_admin))).body.requests.map((r) => r.id)).toEqual([REQ(1)]);
+    expect((await inbox(app, tokens.portal(people.hr))).body.requests.map((r) => r.id)).toEqual([REQ(2)]);
+    expect((await inbox(app, tokens.portal(people.super_admin))).body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(2)]);
     expectRefusal(await archive(app, tokens.portal(people.faculty), 'attendance', REQ(1)), 403, 'NOT_AN_APPROVER');
     expectRefusal(await archive(app, tokens.portal(people.hr), 'wall', REQ(1)), 404, 'NOT_FOUND');
     expectRefusal(await archive(app, tokens.portal(people.hr), 'attendance', REQ(9)), 404, 'NOT_FOUND');
@@ -247,82 +219,14 @@ describe('POST /api/ess/approvals/{family}/{id}/decide', () => {
     expect(db.tables.hr_staff_attendance).toHaveLength(before);
   });
 
-  it('the Admin Manager advances leave; only a super admin gives final approval and writes the day', async () => {
+  it('HR decides anybody\'s request, recorded as HR\'s; a bystander cannot decide it', async () => {
     const { app, people, db } = buildApp({ setup: withTwoRequests });
     expectRefusal(await decide(app, tokens.attendance(people.attendance), 'leave', REQ(2), { decision: 'approve' }), 403, 'NOT_AN_APPROVER');
-    // HR is not the fallback here: the branch has an active Admin Manager.
-    expectRefusal(await decide(app, tokens.portal(people.hr), 'leave', REQ(2), { decision: 'approve' }), 403, 'NOT_AN_APPROVER');
-    const advanced = await decide(app, tokens.portal(people.admin_manager), 'leave', REQ(2), { decision: 'approve', note: 'Covered.' });
-    expect(advanced.status).toBe(200);
-    expect(advanced.body.request).toMatchObject({
-      status: 'pending', stage: 'final', manager_approved_by_name: 'Test Admin Manager', manager_remark: 'Covered.',
-    });
-    // The Admin Manager does not write the leave day; the super admin's final approval does.
-    expect(db.tables.hr_staff_attendance.find((d) => d.employee_id === people.faculty.employee.id && d.day === '2026-10-15'))
-      .toMatchObject({ status: 'present' });
-    expect(db.tables.hr_ess_leave_request_history.map((h) => h.action)).toEqual(['manager_approved']);
-
-    expectRefusal(await decide(app, tokens.portal(people.hr), 'leave', REQ(2), { decision: 'approve' }), 403, 'FINAL_APPROVAL_ONLY');
-    expectRefusal(await decide(app, tokens.portal(people.ceo), 'leave', REQ(2), { decision: 'approve' }), 403, 'FINAL_APPROVAL_ONLY');
-    const final = await decide(app, tokens.portal(people.super_admin), 'leave', REQ(2), { decision: 'approve', note: 'Final.' });
-    expect(final.status).toBe(200);
-    expect(final.body.request).toMatchObject({ status: 'approved', decided_by_name: 'Test Super Admin', decision_note: 'Final.' });
+    const res = await decide(app, tokens.portal(people.hr), 'leave', REQ(2), { decision: 'approve', note: 'Approved.' });
+    expect(res.status).toBe(200);
+    expect(res.body.request).toMatchObject({ status: 'approved', decided_by_name: 'Test HR Manager', decision_note: 'Approved.' });
     const day = db.tables.hr_staff_attendance.find((d) => d.employee_id === people.faculty.employee.id && d.day === '2026-10-15');
     expect(day).toMatchObject({ status: 'leave', leave_type: 'cl', source: 'override' });
-  });
-
-  it('teaching leave needs the substitute faculty and class timing before the Admin Manager may advance it', async () => {
-    const { app, people, db } = buildApp({ setup: (w) => {
-      withTwoRequests(w);
-      withSubstitute(w);
-      w.tables.hr_ess_leave_requests[0].is_teaching = true;
-    } });
-    expectRefusal(
-      await decide(app, tokens.portal(people.admin_manager), 'leave', REQ(2), { decision: 'approve' }),
-      400, 'COVERAGE_REQUIRED',
-    );
-    expectRefusal(
-      await decide(app, tokens.portal(people.admin_manager), 'leave', REQ(2), {
-        decision: 'approve', substitute_faculty_id: '7f000000-0000-4000-8000-000000000099', class_timing: '10:00 to 11:00',
-      }),
-      400, 'BAD_SUBSTITUTE',
-    );
-    const ok = await decide(app, tokens.portal(people.admin_manager), 'leave', REQ(2), {
-      decision: 'approve', substitute_faculty_id: SUBSTITUTE_ID, class_timing: '10:00 to 11:00',
-    });
-    expect(ok.status).toBe(200);
-    expect(ok.body.request).toMatchObject({
-      stage: 'final',
-      substitute_faculty_id: SUBSTITUTE_ID,
-      substitute_faculty_name: 'Test Substitute Faculty',
-      class_timing: '10:00 to 11:00',
-    });
-    expect(db.tables.hr_ess_leave_request_history.find((h) => h.action === 'manager_approved').details)
-      .toMatchObject({ substitute_faculty_id: SUBSTITUTE_ID, class_timing: '10:00 to 11:00' });
-  });
-
-  it('HR is the first-stage bypass only for a branch with no Admin Manager; the super admin still closes it', async () => {
-    const { app, people, db } = buildApp({ setup: (w) => {
-      withTwoRequests(w);
-      w.tables.hr_ess_leave_requests.push(requestRow('leave', w.people.pune.employee.id, 10, {
-        day: '2026-10-15',
-        stage: 'manager',
-        requires_final_approval: true,
-        admin_manager_employee_id: null,
-        admin_manager_name: null,
-        is_teaching: false,
-      }));
-    } });
-    const hrInbox = await inbox(app, tokens.portal(people.hr));
-    expect(hrInbox.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(10)]);
-    const advanced = await decide(app, tokens.portal(people.hr), 'leave', REQ(10), { decision: 'approve' });
-    expect(advanced.status).toBe(200);
-    expect(advanced.body.request).toMatchObject({ stage: 'final', manager_approved_by_name: 'Test HR Manager' });
-    const final = await decide(app, tokens.portal(people.super_admin), 'leave', REQ(10), { decision: 'approve' });
-    expect(final.status).toBe(200);
-    expect(final.body.request.status).toBe('approved');
-    expect(db.tables.hr_staff_attendance.find((d) => d.employee_id === people.pune.employee.id && d.day === '2026-10-15'))
-      .toMatchObject({ status: 'leave', leave_type: 'cl' });
   });
 
   it('a fix a day keeps the other side of the day and writes the corrected times', async () => {
@@ -360,28 +264,27 @@ describe('POST /api/ess/approvals/{family}/{id}/decide', () => {
     expect(db.tables.hr_ess_attendance_requests.find((r) => r.id === REQ(6)).status).toBe('pending');
   });
 
-  it('a second CL in the month is refused with CL_LIMIT at final approval, and the request stays pending', async () => {
+  it('a second CL in the month is refused with CL_LIMIT, and the request stays pending', async () => {
     const { app, people, db } = buildApp({ setup: (w) => {
       withTwoRequests(w);
-      w.tables.hr_ess_leave_requests = [finalLeave(w, 2)];
       w.tables.hr_staff_attendance.push(dayRow(w.people.faculty.employee.id, '2026-10-10', { status: 'leave', leave_type: 'cl', source: 'override', first_in: null, last_out: null, worked_minutes: null }));
     } });
-    expectRefusal(await decide(app, tokens.portal(people.super_admin), 'leave', REQ(2), { decision: 'approve' }), 409, 'CL_LIMIT');
+    expectRefusal(await decide(app, tokens.portal(people.hr), 'leave', REQ(2), { decision: 'approve' }), 409, 'CL_LIMIT');
     expect(db.tables.hr_ess_leave_requests.find((r) => r.id === REQ(2)).status).toBe('pending');
   });
 
   it('last month closes after the 5th but not on it, and a day before last month is out of the window', async () => {
     const seed = (w) => {
       w.tables.hr_ess_leave_requests = [
-        finalLeave(w, 7, { day: '2026-09-30', type: 'lwp' }),
-        finalLeave(w, 8, { day: '2026-08-31', type: 'lwp' }),
+        requestRow('leave', w.people.faculty.employee.id, 7, { day: '2026-09-30', type: 'lwp' }),
+        requestRow('leave', w.people.faculty.employee.id, 8, { day: '2026-08-31', type: 'lwp' }),
       ];
     };
     const closed = buildApp({ now: new Date('2026-10-06T06:30:00.000Z'), setup: seed });
-    expectRefusal(await decide(closed.app, tokens.portal(closed.people.super_admin), 'leave', REQ(7), { decision: 'approve' }), 409, 'REQUEST_CLOSED');
-    expectRefusal(await decide(closed.app, tokens.portal(closed.people.super_admin), 'leave', REQ(8), { decision: 'approve' }), 409, 'REQUEST_WINDOW');
+    expectRefusal(await decide(closed.app, tokens.portal(closed.people.hr), 'leave', REQ(7), { decision: 'approve' }), 409, 'REQUEST_CLOSED');
+    expectRefusal(await decide(closed.app, tokens.portal(closed.people.hr), 'leave', REQ(8), { decision: 'approve' }), 409, 'REQUEST_WINDOW');
     const open = buildApp({ now: new Date('2026-10-05T06:30:00.000Z'), setup: seed });
-    expect((await decide(open.app, tokens.portal(open.people.super_admin), 'leave', REQ(7), { decision: 'approve' })).status).toBe(200);
+    expect((await decide(open.app, tokens.portal(open.people.hr), 'leave', REQ(7), { decision: 'approve' })).status).toBe(200);
   });
 
   it('answers 404 and 400 for the wrong addresses and bodies', async () => {

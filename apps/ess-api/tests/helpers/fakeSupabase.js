@@ -51,7 +51,7 @@ const SCHEMA = {
     'actor_role', 'before', 'after', 'changed_keys', 'metadata', 'note', 'occurred_at'],
   hr_branches: ['id', 'name', 'is_active', 'latitude', 'longitude', 'geofence_radius_m', 'office_ips', 'created_at', 'updated_at'],
   // The legacy teaching record, read only to identify an attendance-only faculty member.
-  faculty: ['id', 'email', 'name', 'location_id', 'is_active'],
+  faculty: ['id', 'email'],
   hr_departments: ['id', 'name', 'is_active', 'source', 'created_at', 'updated_at'],
   hr_shifts: ['id', 'name', 'start_time', 'end_time', 'grace_minutes', 'is_active'],
   hr_holidays: ['id', 'day', 'name', 'branch_id'],
@@ -110,13 +110,10 @@ const SCHEMA = {
   // 20261106000002_hr_ess_leave_requests.sql, plus the range/half-day columns of
   // 20261114000001 (end_day, portion, day_count, working_days, days_before).
   hr_ess_leave_requests: ['id', 'employee_id', 'type', 'status', 'day', 'end_day', 'portion', 'day_count',
-    'working_days', 'days_before', 'requires_final_approval', 'stage', 'admin_manager_employee_id',
-    'admin_manager_name', 'is_teaching', 'substitute_faculty_id', 'substitute_faculty_name', 'class_timing',
-    'manager_approved_by_employee_id', 'manager_approved_by_name', 'manager_remark', 'manager_approved_at',
-    'reason', 'day_before', 'day_written_at', 'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name',
-    'decided_at', 'decision_note', 'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason',
-    'created_at', 'updated_at'],
-  hr_ess_leave_approvers: ['branch_id', 'employee_id', 'configured_by_user_id', 'configured_by_name', 'updated_at'],
+    'working_days', 'days_before', 'requires_final_approval', 'stage', 'manager_approved_by_employee_id',
+    'manager_approved_by_name', 'manager_remark', 'manager_approved_at', 'reason', 'day_before', 'day_written_at',
+    'decided_by_employee_id', 'decided_by_user_id', 'decided_by_name', 'decided_at', 'decision_note',
+    'cancelled_by_user_id', 'cancelled_by_name', 'cancelled_at', 'cancel_reason', 'created_at', 'updated_at'],
   hr_ess_leave_request_history: ['id', 'request_id', 'at', 'actor_employee_id', 'actor_user_id', 'actor_name',
     'action', 'note', 'details'],
   // 20261113000001_hr_ess_wfh_allowances.sql (KP, 22 Oct): HR's per-employee WFH allowance.
@@ -463,7 +460,6 @@ const DEFAULTS = {
   // D4: the escalation timestamp (20261111000002).
   hr_ess_approval_escalations: (at) => ({ escalated_at: at }),
   hr_ess_leave_requests: (at) => ({ status: 'pending', created_at: at, updated_at: at }),
-  hr_ess_leave_approvers: (at) => ({ updated_at: at }),
   // WFH's allowance (20261113000001): enabled unless HR says otherwise.
   hr_ess_wfh_allowances: (at) => ({ is_enabled: true, note: null, created_at: at, updated_at: at }),
   hr_ess_attendance_request_history: (at) => ({ at, details: {} }),
@@ -1126,84 +1122,6 @@ const FUNCTIONS = {
         details: { type: r.type, day: r.day, day_written: written },
       });
       return { data: { outcome: 'approved', request: clone(r), day_written: written }, error: null };
-    },
-  },
-
-  hr_ess_leave_admin_decide: {
-    table: 'hr_ess_leave_requests',
-    run(fake, args) {
-      const {
-        p_request_id, p_decider_employee_id, p_decider_user_id, p_decider_name, p_approve, p_note,
-        p_substitute_faculty_id, p_substitute_faculty_name, p_class_timing, p_now,
-      } = args;
-      const r = fake.rows('hr_ess_leave_requests').find((x) => x.id === p_request_id);
-      if (!r) return { data: { outcome: 'not_found' }, error: null };
-      if (r.status !== 'pending' || r.stage !== 'manager') {
-        return { data: { outcome: 'not_pending' }, error: null };
-      }
-      const requester = fake.rows('hr_employees').find((e) => e.id === r.employee_id);
-      const branch = requester ? requester.branch_id : null;
-      let allowed = false;
-      if (r.admin_manager_employee_id) {
-        allowed = r.admin_manager_employee_id === p_decider_employee_id;
-      } else {
-        const decider = fake.rows('hr_employees').find((e) => e.id === p_decider_employee_id && !e.is_archived);
-        const account = decider && fake.rows('users').find((u) => u.id === decider.user_id);
-        const hasAdmin = fake.rows('hr_employees').some((e) => {
-          if (e.branch_id !== branch || e.is_archived || e.id === r.employee_id) return false;
-          const u = fake.rows('users').find((x) => x.id === e.user_id);
-          return u && u.role === 'admin_manager';
-        });
-        if (account && account.role === 'admin_manager' && decider.branch_id === branch) allowed = true;
-        if (account && account.role === 'hr' && !hasAdmin) allowed = true;
-      }
-      if (!allowed) return { data: { outcome: 'not_authorized' }, error: null };
-
-      const note = (p_note || '').trim();
-      if (!p_approve) {
-        if (note.length < 3) return { data: { outcome: 'note_required' }, error: null };
-        Object.assign(r, {
-          status: 'rejected', decided_by_employee_id: p_decider_employee_id,
-          decided_by_user_id: p_decider_user_id ?? null, decided_by_name: p_decider_name,
-          decided_at: p_now, decision_note: note,
-          manager_approved_by_employee_id: p_decider_employee_id,
-          manager_approved_by_name: p_decider_name, manager_remark: note,
-          manager_approved_at: p_now, updated_at: p_now,
-        });
-        pushHistory(fake, 'hr_ess_leave_request_history', {
-          requestId: r.id, at: p_now, action: 'rejected', note,
-          employeeId: p_decider_employee_id, userId: p_decider_user_id ?? null, name: p_decider_name,
-          details: { type: r.type, day: r.day, stage: 'admin_manager' },
-        });
-        return { data: { outcome: 'rejected', request: clone(r) }, error: null };
-      }
-
-      const timing = (p_class_timing || '').trim();
-      if (r.is_teaching && (!p_substitute_faculty_id || !timing)) {
-        return { data: { outcome: 'coverage_required' }, error: null };
-      }
-
-      Object.assign(r, {
-        stage: 'final',
-        manager_approved_by_employee_id: p_decider_employee_id,
-        manager_approved_by_name: p_decider_name,
-        manager_remark: note || null,
-        manager_approved_at: p_now,
-        substitute_faculty_id: p_substitute_faculty_id ?? null,
-        substitute_faculty_name: (p_substitute_faculty_name || '').trim() || null,
-        class_timing: timing || null,
-        updated_at: p_now,
-      });
-      pushHistory(fake, 'hr_ess_leave_request_history', {
-        requestId: r.id, at: p_now, action: 'manager_approved', note: note || null,
-        employeeId: p_decider_employee_id, userId: p_decider_user_id ?? null, name: p_decider_name,
-        details: {
-          type: r.type, day: r.day, end_day: r.end_day, portion: r.portion, day_count: r.day_count,
-          stage: 'final', substitute_faculty_id: r.substitute_faculty_id,
-          substitute_faculty_name: r.substitute_faculty_name, class_timing: r.class_timing,
-        },
-      });
-      return { data: { outcome: 'advanced', request: clone(r), stage: 'final' }, error: null };
     },
   },
 

@@ -160,12 +160,6 @@ function requestView(r, family, { employee = null } = {}) {
     view.working_days = Array.isArray(r.working_days) ? r.working_days : [r.day];
     view.requires_final_approval = Boolean(r.requires_final_approval);
     view.stage = r.stage ?? 'manager';
-    view.admin_manager_employee_id = r.admin_manager_employee_id ?? null;
-    view.admin_manager_name = r.admin_manager_name ?? null;
-    view.is_teaching = Boolean(r.is_teaching);
-    view.substitute_faculty_id = r.substitute_faculty_id ?? null;
-    view.substitute_faculty_name = r.substitute_faculty_name ?? null;
-    view.class_timing = r.class_timing ?? null;
     view.manager_approved_by_name = r.manager_approved_by_name ?? null;
     view.manager_approved_at = r.manager_approved_at ?? null;
     view.manager_remark = r.manager_remark ?? null;

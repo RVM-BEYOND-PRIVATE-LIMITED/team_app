@@ -47,37 +47,7 @@ async function chainFor({ store, requester, day, today }) {
   return chainEntries(byId, requester, today, offOnDay);
 }
 
-/** The leave requests an Admin Manager, a super admin or HR's fallback may see now. */
-async function leaveQueue(store, auth) {
-  const pending = await store.listPendingLeaveRequests();
-  if (!pending.length) return [];
-  if (auth.role === 'super_admin') return pending.filter((r) => r.stage === 'final');
-
-  const requesterIds = [...new Set(pending.map((r) => r.employee_id))];
-  const cards = new Map((await Promise.all(requesterIds.map((id) => store.getEmployeeById(id))))
-    .filter(Boolean).map((e) => [e.id, e]));
-
-  if (auth.role === 'admin_manager') {
-    const branch = auth.employee?.branch_id;
-    return pending.filter((r) => r.stage === 'manager'
-      && r.employee_id !== auth.employee.id
-      && (r.admin_manager_employee_id
-        ? r.admin_manager_employee_id === auth.employee.id
-        : Boolean(branch && cards.get(r.employee_id)?.branch_id === branch)));
-  }
-
-  if (auth.role === 'hr') {
-    const managers = await store.listLeaveAdminManagers();
-    const withAdmin = new Set((managers || []).map((e) => e.branch_id));
-    return pending.filter((r) => r.stage === 'manager'
-      && r.employee_id !== auth.employee.id
-      && !withAdmin.has(cards.get(r.employee_id)?.branch_id));
-  }
-
-  return [];
-}
-
-/** GET /api/ess/approvals?status=... */
+/** GET /api/ess/approvals?status=pending|approved|rejected|withdrawn|cancelled|all */
 function listApprovals({ store, now }) {
   return asyncRoute(async (req, res) => {
     const { kind, role, employee } = req.auth;
@@ -97,17 +67,23 @@ function listApprovals({ store, now }) {
     if (!hrWide) {
       const reports = (await store.listDirectReports(employee.id)).filter((r) => isActive(r, today));
       reportIds = reports.map((r) => r.id);
+      if (!reportIds.length) {
+        return res.json({ counts: { attendance: 0, leave: 0, total: 0 }, requests: [], truncated: false });
+      }
     }
 
     const filter = status === 'all' ? null : status;
     const fetch = (family, wanted) => store.listRequestsForApprover({ family, employeeIds: reportIds, status: wanted });
-    const leaveAll = await leaveQueue(store, req.auth);
-    const shownLeave = status === 'pending' || status === 'all' ? leaveAll : [];
-    const shownAttendance = await fetch('attendance', filter);
-    const pendingAttendance = filter === 'pending'
-      ? shownAttendance
-      : await fetch('attendance', 'pending');
-    const pendingLeave = leaveAll;
+    // A faculty member's request at the final stage is HR's/CEO's/super admin's queue, not the
+    // manager's any longer. It stays pending, so hide it from a manager's inbox by name.
+    const visibleLeave = (rows) => (hrWide ? rows
+      : rows.filter((r) => !(r.requires_final_approval && r.stage === 'final')));
+    const [shownAttendance, leaveRows] = await Promise.all([fetch('attendance', filter), fetch('leave', filter)]);
+    const shownLeave = visibleLeave(leaveRows);
+    const [pendingAttendance, pendingLeaveRows] = filter === 'pending'
+      ? [shownAttendance, leaveRows]
+      : await Promise.all([fetch('attendance', 'pending'), fetch('leave', 'pending')]);
+    const pendingLeave = visibleLeave(pendingLeaveRows);
 
     // Archived requests stay out of the caller's Inbox (archiving is per approver, task D1).
     const archives = await store.listMyArchives(employee.id);
@@ -216,7 +192,7 @@ function decideRequest({ store, now }) {
     const family = familyOf(req.params.family);
     if (!family) throw new HttpError(404, 'NOT_FOUND', MESSAGES.NOT_FOUND);
     const id = idParam(req.params.id);
-    const body = bodyWith(req, ['decision', 'note', 'substitute_faculty_id', 'class_timing']);
+    const body = bodyWith(req, ['decision', 'note']);
     if (body.decision !== 'approve' && body.decision !== 'reject') throw invalid(MESSAGES.DECIDE_DECISION);
     const note = optionalText(body.note);
     if (note === undefined || (note && chars(note) > 1000)) throw invalid(MESSAGES.DECIDE_NOTE);
@@ -227,86 +203,72 @@ function decideRequest({ store, now }) {
     const requester = await store.getEmployeeById(request.employee_id);
     const today = istDay(now());
     const entries = requester ? await chainFor({ store, requester, day: request.day, today }) : [];
-    let allowed;
-    if (family === 'leave') {
-      const managers = requester ? await store.listLeaveAdminManagers() : [];
-      const hasAdmin = Boolean(requester && (managers || []).some((e) => e.branch_id === requester.branch_id && e.id !== requester.id));
-      allowed = mayDecideLeave({
-        auth: req.auth, request, requesterBranchId: requester?.branch_id, branchHasAdminManager: hasAdmin,
-      });
-    } else {
-      allowed = mayDecide({ auth: req.auth, entries });
-    }
+    const allowed = family === 'leave'
+      ? mayDecideLeave({ auth: req.auth, entries, request })
+      : mayDecide({ auth: req.auth, entries });
     if (!requester || !allowed) {
-      const finalBlocked = family === 'leave' && request.stage === 'final';
-      throw new HttpError(403, finalBlocked ? 'FINAL_APPROVAL_ONLY' : 'NOT_AN_APPROVER',
+      // A manager who somehow opens a faculty request at the final stage gets
+      // the reason in words, not the generic "not an approver" line.
+      const finalBlocked = family === 'leave' && request.requires_final_approval
+        && request.stage === 'final';
+      throw new HttpError(403, 'NOT_AN_APPROVER',
         finalBlocked ? MESSAGES.FINAL_APPROVAL_ONLY : MESSAGES.NOT_AN_APPROVER);
     }
 
-    if (family === 'leave' && request.stage === 'manager') {
-      let substituteId = optionalText(body.substitute_faculty_id) || null;
-      let substituteName = null;
-      const classTiming = optionalText(body.class_timing);
-      if (body.decision === 'approve' && request.is_teaching) {
-        if (!substituteId || !classTiming) {
-          throw new HttpError(400, 'COVERAGE_REQUIRED',
-            'Choose the substitute faculty and give the class timing before approving this teaching leave.');
-        }
-        const faculty = await store.listActiveFaculty();
-        const match = (faculty || []).find((f) => f.id === substituteId);
-        if (!match) throw new HttpError(400, 'BAD_SUBSTITUTE', 'That substitute faculty is not active.');
-        substituteName = match.name;
-      }
-      const out = await store.decideLeaveAdmin({
-        p_request_id: id,
-        p_decider_employee_id: req.auth.employee.id,
-        p_decider_user_id: req.auth.userId ?? null,
-        p_decider_name: req.auth.employee.full_name,
-        p_approve: body.decision === 'approve',
-        p_note: note || null,
-        p_substitute_faculty_id: body.decision === 'approve' && request.is_teaching ? substituteId : null,
-        p_substitute_faculty_name: body.decision === 'approve' && request.is_teaching ? substituteName : null,
-        p_class_timing: body.decision === 'approve' && request.is_teaching ? classTiming : null,
-        p_now: now().toISOString(),
+    // A faculty member's manager advances the request; they do not finish it. HR, the CEO and a
+    // super admin skip this branch and approve at once (mayDecideLeave let them in).
+    const managerStage = family === 'leave'
+      && request.requires_final_approval
+      && request.stage === 'manager'
+      && body.decision === 'approve'
+      && !canDecideAny(req.auth.kind, req.auth.role);
+    if (managerStage) {
+      const at = now().toISOString();
+      const advanced = await store.markLeaveManagerApproved({
+        id,
+        employeeId: req.auth.employee.id,
+        name: req.auth.employee.full_name,
+        note,
+        now: at,
       });
-      const outcome = out && out.outcome;
-      if (outcome === 'not_found') throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
-      if (outcome === 'not_pending') throw new HttpError(409, 'ALREADY_DECIDED', MESSAGES.ALREADY_DECIDED);
-      if (outcome === 'not_authorized') throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
-      if (outcome === 'coverage_required') {
-        throw new HttpError(400, 'COVERAGE_REQUIRED',
-          'Choose the substitute faculty and give the class timing before approving this teaching leave.');
-      }
-      if (outcome === 'note_required') throw invalid(MESSAGES.DECIDE_REJECT_NOTE);
-
+      if (!advanced) throw new HttpError(409, 'ALREADY_DECIDED', MESSAGES.ALREADY_DECIDED);
+      await store.createLeaveHistory({
+        request_id: id,
+        at,
+        actor_employee_id: req.auth.employee.id,
+        actor_user_id: req.auth.userId ?? null,
+        actor_name: req.auth.employee.full_name,
+        action: 'manager_approved',
+        note: note || null,
+        details: {
+          type: request.type, day: request.day, end_day: request.end_day,
+          portion: request.portion, day_count: request.day_count, stage: 'final',
+        },
+      });
       try {
         await store.createNotification({
           employee_id: request.employee_id,
           category: 'decisions',
-          title: body.decision === 'approve' ? 'Admin Manager approved your leave' : 'Leave rejected',
-          body: body.decision === 'approve'
-            ? `The Admin Manager approved the leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''}. It now waits for super-admin final approval.`
-            : `Your leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} was rejected by ${req.auth.employee.full_name}.`,
+          title: 'Manager approved your leave',
+          body: `Your manager approved the leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''}. It now waits for HR/CEO final approval.`,
           data: { request_id: id, request_family: 'leave' },
         });
-        if (body.decision === 'approve') {
-          const userIds = (await store.listFinalDeciderUserIds()).map((u) => u.id);
-          const deciders = await store.listEmployeesByUserIds(userIds);
-          for (const person of deciders) {
-            if (person.id === req.auth.employee.id) continue;
-            await store.createNotification({
-              employee_id: person.id,
-              category: 'approvals',
-              title: 'Leave needs super-admin approval',
-              body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for final approval.`,
-              data: { request_id: id, request_family: 'leave' },
-            });
-          }
+        // The final approvers' queue gets a line too, so nobody has to poll for it.
+        const userIds = (await store.listFinalDeciderUserIds()).map((u) => u.id);
+        const deciders = await store.listEmployeesByUserIds(userIds);
+        for (const person of deciders) {
+          if (person.id === req.auth.employee.id) continue;
+          await store.createNotification({
+            employee_id: person.id,
+            category: 'approvals',
+            title: 'Faculty leave needs final approval',
+            body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} was approved by their manager and waits for final approval.`,
+            data: { request_id: id, request_family: 'leave' },
+          });
         }
       } catch { /* best effort */ }
-
       const fresh = await store.getLeaveRequest(id);
-      return res.json({ request: requestView(fresh, family, { employee: requester }), stage: body.decision === 'approve' ? 'final' : 'manager' });
+      return res.json({ request: requestView(fresh, family, { employee: requester }), stage: 'final' });
     }
 
     const common = {
@@ -378,16 +340,9 @@ function archiveRequest({ store, now }) {
     if (!request) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
     const requester = await store.getEmployeeById(request.employee_id);
     const entries = requester ? await chainFor({ store, requester, day: request.day, today: istDay(now()) }) : [];
-    let allowed;
-    if (family === 'leave') {
-      const managers = requester ? await store.listLeaveAdminManagers() : [];
-      const hasAdmin = Boolean(requester && (managers || []).some((e) => e.branch_id === requester.branch_id && e.id !== requester.id));
-      allowed = mayDecideLeave({
-        auth: req.auth, request, requesterBranchId: requester?.branch_id, branchHasAdminManager: hasAdmin,
-      });
-    } else {
-      allowed = mayDecide({ auth: req.auth, entries });
-    }
+    const allowed = family === 'leave'
+      ? mayDecideLeave({ auth: req.auth, entries, request })
+      : mayDecide({ auth: req.auth, entries });
     if (!requester || !allowed) {
       throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
     }
@@ -413,144 +368,24 @@ function requestChain({ store, now }) {
     const requester = await store.getEmployeeById(request.employee_id);
     if (!requester) throw new HttpError(404, 'NOT_FOUND', MESSAGES.REQUEST_NOT_FOUND);
     const viewerId = req.auth.employee.id;
-
-    if (family === 'leave') {
-      const managers = await store.listLeaveAdminManagers();
-      const inBranch = (managers || []).filter((e) => e.branch_id === requester.branch_id && e.id !== requester.id);
-      const assigned = request.admin_manager_employee_id
-        ? await store.getEmployeeById(request.admin_manager_employee_id) : null;
-      const viewerOnBranch = req.auth.role === 'admin_manager'
-        && (assigned ? assigned.id === viewerId : inBranch.some((e) => e.id === viewerId));
-      const involved = requester.id === viewerId || viewerOnBranch
-        || ['super_admin', 'hr', 'ceo'].includes(req.auth.role);
-      if (!involved) throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
-
-      let chain = [];
-      if (request.stage === 'manager') {
-        const people = assigned ? [assigned] : inBranch;
-        chain = people.filter(Boolean).map((e, i) => ({
-          employee: employeeCardView(e), may_decide: i === 0, skipped: null,
-        }));
-      } else if (request.stage === 'final') {
-        const users = await store.listFinalDeciderUserIds();
-        const people = await store.listEmployeesByUserIds((users || []).map((u) => u.id));
-        chain = people.map((e, i) => ({
-          employee: employeeCardView(e), may_decide: i === 0, skipped: null,
-        }));
-      }
-      return res.json({
-        request: requestView(request, family, { employee: requester }),
-        stage: request.stage ?? 'manager',
-        chain,
-        hr_fallback: request.stage === 'manager' && inBranch.length === 0,
-      });
-    }
-
     const entries = await chainFor({ store, requester, day: request.day, today: istDay(now()) });
     const involved = requester.id === viewerId
       || entries.some((e) => e.employee.id === viewerId)
       || canDecideAny(req.auth.kind, req.auth.role);
     if (!involved) throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
     const first = firstUnskipped(entries);
+    const finalOnly = family === 'leave' && request.requires_final_approval && request.stage === 'final';
     res.json({
       request: requestView(request, family, { employee: requester }),
       stage: request.stage ?? 'manager',
       chain: entries.map((e) => ({
         employee: employeeCardView(e.employee),
-        may_decide: Boolean(first && first.employee.id === e.employee.id),
+        may_decide: !finalOnly && Boolean(first && first.employee.id === e.employee.id),
         skipped: e.skipped,
       })),
-      hr_fallback: !first,
+      hr_fallback: !first || finalOnly,
     });
   });
 }
 
-/** GET /api/ess/leave-approvers — super admin chooses one Admin Manager per branch. */
-function listLeaveApprovers({ store }) {
-  return asyncRoute(async (req, res) => {
-    if (req.auth.role !== 'super_admin') {
-      throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
-    }
-    const [branches, managers] = await Promise.all([store.listAllBranches(), store.listLeaveAdminManagers()]);
-    const settings = await Promise.all((branches || []).map((b) => store.getLeaveApprover(b.id)));
-    const choice = new Map((settings || []).filter(Boolean).map((s) => [s.branch_id, s.employee_id]));
-    res.json({
-      branches: (branches || []).map((branch) => {
-        const people = (managers || []).filter((e) => e.branch_id === branch.id);
-        const chosen = people.find((e) => e.id === choice.get(branch.id)) || null;
-        return {
-          id: branch.id, name: branch.name,
-          selected_employee_id: chosen?.id || null,
-          selected_name: chosen?.full_name || null,
-          admin_managers: people.map((e) => ({ id: e.id, full_name: e.full_name, employee_code: e.employee_code ?? null })),
-        };
-      }),
-    });
-  });
-}
-
-/** PUT /api/ess/leave-approvers/:branchId { employee_id } */
-function setLeaveApprover({ store, now }) {
-  return asyncRoute(async (req, res) => {
-    if (req.auth.role !== 'super_admin') {
-      throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
-    }
-    const branchId = idParam(req.params.branchId);
-    const body = bodyWith(req, ['employee_id']);
-    const employeeId = idParam(body.employee_id);
-    const managers = await store.listLeaveAdminManagers();
-    const chosen = (managers || []).find((e) => e.id === employeeId && e.branch_id === branchId);
-    if (!chosen) throw new HttpError(400, 'BAD_APPROVER', 'Choose an active Admin Manager at this branch.');
-    await store.setLeaveApprover({
-      branch_id: branchId,
-      employee_id: employeeId,
-      configured_by_user_id: req.auth.userId ?? null,
-      configured_by_name: req.auth.employee?.full_name || null,
-      updated_at: now().toISOString(),
-    });
-    const pending = await store.listPendingLeaveRequests();
-    for (const row of pending.filter((r) => r.stage === 'manager')) {
-      const requester = await store.getEmployeeById(row.employee_id);
-      if (requester?.branch_id !== branchId) continue;
-      await store.assignLeaveRequestApprover({ id: row.id, employeeId, name: chosen.full_name, at: now().toISOString() });
-    }
-    const out = await listLeaveApprovers({ store })(req, res);
-    return out;
-  });
-}
-
-/** GET /api/ess/leave-faculty?request_id= — substitute choices for the Admin Manager. */
-function listLeaveFaculty({ store }) {
-  return asyncRoute(async (req, res) => {
-    if (!['super_admin', 'admin_manager', 'hr'].includes(req.auth.role)) {
-      throw new HttpError(403, 'NOT_AN_APPROVER', MESSAGES.NOT_AN_APPROVER);
-    }
-    let branchId = req.auth.employee?.branch_id || null;
-    const requestId = oneQueryValue(req.query.request_id);
-    if (requestId) {
-      const request = await store.getLeaveRequest(idParam(requestId));
-      if (request) {
-        const requester = await store.getEmployeeById(request.employee_id);
-        branchId = requester?.branch_id || null;
-        if (req.auth.role !== 'super_admin' && req.auth.role !== 'hr' && branchId !== req.auth.employee?.branch_id) {
-          throw new HttpError(403, 'OTHER_BRANCH', MESSAGES.NOT_AN_APPROVER);
-        }
-      }
-    }
-    const [faculty, locations, branches] = await Promise.all([
-      store.listActiveFaculty(), store.listLocations(), store.listAllBranches(),
-    ]);
-    const branch = (branches || []).find((b) => b.id === branchId);
-    const location = branch ? (locations || []).find((l) => l.name === branch.name) : null;
-    res.json({
-      faculty: (faculty || [])
-        .filter((f) => !location || f.location_id === location.id)
-        .map((f) => ({ id: f.id, name: f.name })),
-    });
-  });
-}
-
-module.exports = {
-  listApprovals, decideRequest, archiveRequest, requestChain,
-  listLeaveApprovers, setLeaveApprover, listLeaveFaculty,
-};
+module.exports = { listApprovals, decideRequest, archiveRequest, requestChain };

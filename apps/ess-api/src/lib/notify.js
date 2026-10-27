@@ -21,25 +21,6 @@ async function approverEmployeeIds(store, requester) {
   return employees.map((e) => e.id);
 }
 
-/**
- * Leave is no longer the reporting line's: the branch Admin Manager hears about it, or HR when
- * the branch has no active Admin Manager (the same fallback the approval route uses).
- */
-async function leaveApproverEmployeeIds(store, requester) {
-  const managers = (await store.listLeaveAdminManagers()) || [];
-  const inBranch = managers.filter((e) => e.branch_id === requester.branch_id && e.id !== requester.id);
-  if (inBranch.length) {
-    const chosen = await store.getLeaveApprover(requester.branch_id);
-    const one = chosen && inBranch.find((e) => e.id === chosen.employee_id);
-    return one ? [one.id] : inBranch.map((e) => e.id);
-  }
-  if (!requester.branch_id) return [];
-  const userIds = (await store.listHrUserIds()) || [];
-  if (!userIds.length) return [];
-  const employees = await store.listEmployeesByUserIds(userIds.map((u) => u.id));
-  return employees.map((e) => e.id).filter((id) => id !== requester.id);
-}
-
 /** '5 Nov' for one day, '5 Nov to 9 Nov' for a range, plus the half-day choice. */
 const leaveWhen = (request) => {
   const end = request.end_day && request.end_day !== request.day ? ` to ${dmy(request.end_day)}` : '';
@@ -51,9 +32,7 @@ const leaveWhen = (request) => {
 /** 'New attendance request' to the approver. Never throws. */
 async function notifyApprovers({ store, requester, request, family }) {
   try {
-    const ids = family === 'leave'
-      ? await leaveApproverEmployeeIds(store, requester)
-      : await approverEmployeeIds(store, requester);
+    const ids = await approverEmployeeIds(store, requester);
     const title = family === 'leave' ? 'New leave request' : 'New attendance request';
     const when = family === 'leave' ? leaveWhen(request) : dmy(request.day);
     const body = `${requester.full_name} asked for ${REQUEST_TYPE_LABELS[request.type] || request.type} on ${when}.`;

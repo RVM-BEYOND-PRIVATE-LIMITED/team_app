@@ -51,14 +51,6 @@ const wfhRow = (employeeId, n, change = {}) => ({
   day_count: 1,
   working_days: ['2026-10-20'],
   days_before: null,
-  requires_final_approval: true,
-  stage: 'final',
-  admin_manager_employee_id: null,
-  admin_manager_name: null,
-  is_teaching: false,
-  substitute_faculty_id: null,
-  substitute_faculty_name: null,
-  class_timing: null,
   reason: 'The centre is being painted, so I am working from home.',
   day_before: null,
   day_written_at: null,
@@ -274,7 +266,7 @@ describe('deciding and cancelling a WFH day', () => {
   it('re-checks a disabled allowance at approval time', async () => {
     const { app, db, people } = buildApp({ setup: withAllowance({ is_enabled: false }) });
     db.tables.hr_ess_leave_requests = [wfhRow(people.faculty.employee.id, 1)];
-    expectRefusal(await decide(app, tokens.portal(people.super_admin), REQ(1), { decision: 'approve' }),
+    expectRefusal(await decide(app, tokens.portal(people.hr), REQ(1), { decision: 'approve' }),
       409, 'WFH_NOT_ALLOWED');
     expect(db.tables.hr_ess_leave_requests[0].status).toBe('pending');
   });
@@ -286,7 +278,7 @@ describe('deciding and cancelling a WFH day', () => {
       wfhRow(faculty, 1, { status: 'approved', day: '2026-10-05', decided_at: '2026-10-04T05:00:00+00:00', decided_by_name: 'Test HR Manager' }),
       wfhRow(faculty, 2, { day: '2026-10-20' }),
     ];
-    expectRefusal(await decide(app, tokens.portal(people.super_admin), REQ(2), { decision: 'approve' }),
+    expectRefusal(await decide(app, tokens.portal(people.hr), REQ(2), { decision: 'approve' }),
       409, 'WFH_LIMIT');
     expect(db.tables.hr_ess_leave_requests.find((r) => r.id === REQ(2)).status).toBe('pending');
   });
@@ -296,7 +288,7 @@ describe('deciding and cancelling a WFH day', () => {
     const faculty = people.faculty.employee.id;
     const before = { ...facultyDay(db, faculty) };
     db.tables.hr_ess_leave_requests = [wfhRow(faculty, 1, { day: '2026-10-15' })];
-    const res = await decide(app, tokens.portal(people.super_admin), REQ(1), { decision: 'approve' });
+    const res = await decide(app, tokens.portal(people.hr), REQ(1), { decision: 'approve' });
     expect(res.status).toBe(200);
     expect(res.body.request.status).toBe('approved');
     const day = facultyDay(db, faculty);
@@ -314,7 +306,7 @@ describe('deciding and cancelling a WFH day', () => {
     const faculty = people.faculty.employee.id;
     const before = { ...facultyDay(db, faculty) };
     db.tables.hr_ess_leave_requests = [wfhRow(faculty, 1, { day: '2026-10-15' })];
-    expect((await decide(app, tokens.portal(people.super_admin), REQ(1), { decision: 'approve' })).status).toBe(200);
+    expect((await decide(app, tokens.portal(people.hr), REQ(1), { decision: 'approve' })).status).toBe(200);
 
     const out = await cancelLeave(app, tokens.portal(people.hr), REQ(1), { reason: 'The centre stayed open.' });
     expect(out.status).toBe(200);
@@ -332,7 +324,7 @@ describe('deciding and cancelling a WFH day', () => {
     const { app, db, people } = buildApp({ setup: withAllowance() });
     const faculty = people.faculty.employee.id;
     db.tables.hr_ess_leave_requests = [wfhRow(faculty, 1, { day: '2026-10-21' })];
-    expect((await decide(app, tokens.portal(people.super_admin), REQ(1), { decision: 'approve' })).status).toBe(200);
+    expect((await decide(app, tokens.portal(people.hr), REQ(1), { decision: 'approve' })).status).toBe(200);
     expect(db.tables.hr_staff_attendance.some((d) => d.employee_id === faculty && d.day === '2026-10-21')).toBe(true);
     expect((await cancelLeave(app, tokens.portal(people.hr), REQ(1), { reason: 'Not needed.' })).status).toBe(200);
     expect(db.tables.hr_staff_attendance.some((d) => d.employee_id === faculty && d.day === '2026-10-21')).toBe(false);
