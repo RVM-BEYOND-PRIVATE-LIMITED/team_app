@@ -178,6 +178,11 @@ const SCHEMA = {
   // 20261110000003_hr_ess_bank_details.sql (Phase 2C, KP 3)
   hr_ess_bank_details: ['employee_id', 'bank_name', 'branch_name', 'account_number', 'ifsc_code', 'upi_id',
     'consent_given_at', 'consent_name', 'updated_by_user_id', 'updated_by_name', 'created_at', 'updated_at'],
+  // 20261115000001_hr_ess_profile_and_experience.sql (issue #31)
+  hr_ess_work_experience: ['id', 'employee_id', 'company', 'role_title', 'from_date', 'to_date', 'is_current',
+    'location', 'description', 'is_visible', 'created_at', 'updated_at'],
+  hr_ess_profile_details: ['employee_id', 'about', 'likes', 'dislikes', 'anniversary_date', 'updated_at',
+    'updated_by_user_id'],
   // The Scheduler's priority tasks, read for push only (20260814000001:30-53)
   priority_tasks: ['id', 'location_id', 'task_date', 'title', 'notes', 'priority', 'due_date', 'assigned_to', 'assigned_by',
     'assigned_by_name', 'assigned_by_role', 'status', 'progress_note', 'completed_by', 'completed_at', 'cancelled_by',
@@ -336,6 +341,11 @@ const CHECKS = {
     hr_ess_bank_details_account_chk: (r) => /^[0-9]{8,18}$/.test(r.account_number ?? ''),
     hr_ess_bank_details_ifsc_chk: (r) => /^[A-Z]{4}0[A-Z0-9]{6}$/.test(r.ifsc_code ?? ''),
   },
+  // Issue #31's own shapes (20261115000001).
+  hr_ess_work_experience: {
+    hr_ess_work_experience_dates_chk: (r) => (r.to_date ?? null) === null || r.to_date >= r.from_date,
+    hr_ess_work_experience_current_chk: (r) => r.is_current !== true || (r.to_date ?? null) === null,
+  },
   // D4: the two families an escalation may sit on (20261111000002).
   hr_ess_approval_escalations: {
     hr_ess_approval_escalations_family_chk: (r) => ['attendance', 'leave'].includes(r.family),
@@ -435,6 +445,8 @@ const KEYS = {
   hr_ess_celebration_optouts: ['employee_id'],
   // WFH's allowance is keyed by the employee (20261113000001).
   hr_ess_wfh_allowances: ['employee_id'],
+  // Issue #31's social fields: one row per employee (20261115000001).
+  hr_ess_profile_details: ['employee_id'],
 };
 
 /** What the database fills in on insert: the hr_ess_* DEFAULTs in db/migrations. */
@@ -489,6 +501,9 @@ const DEFAULTS = {
   // G6 (20261112000001) and the Scheduler's register.
   hr_ess_infra_links: (at) => ({ created_at: at }),
   infra_tickets: (at) => ({ status: 'open', escalated: false, created_at: at }),
+  // Issue #31 (20261115000001): a past, visible role unless the caller says otherwise.
+  hr_ess_work_experience: (at) => ({ is_current: false, is_visible: true, created_at: at, updated_at: at }),
+  hr_ess_profile_details: (at) => ({ updated_at: at }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
@@ -1330,6 +1345,37 @@ const FUNCTIONS = {
     },
   },
 
+  // Issue #31: PUT /me/work-experience replaces the list in one transaction
+  // (20261115000001). The stand-in does the delete and the inserts together, as the SQL function
+  // does, and answers the rows in the order they were sent.
+  hr_ess_replace_work_experience: {
+    table: 'hr_ess_work_experience',
+    run(fake, { p_employee_id, p_entries }) {
+      const rows = fake.rows('hr_ess_work_experience');
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        if (rows[i].employee_id === p_employee_id) rows.splice(i, 1);
+      }
+      const at = fake.now().toISOString();
+      const out = [];
+      for (const entry of p_entries || []) {
+        const row = {
+          id: crypto.randomUUID(),
+          employee_id: p_employee_id,
+          is_current: false,
+          is_visible: true,
+          created_at: at,
+          updated_at: at,
+          ...entry,
+        };
+        const checked = brokenCheck('hr_ess_work_experience', row);
+        if (checked) return { data: null, error: checked };
+        rows.push(row);
+        out.push(clone(row));
+      }
+      return { data: out, error: null };
+    },
+  },
+
   // The Scheduler's own hr_attendance_recompute (20261022000000:197-286), which the decide
   // route and the job call after a decision that wrote a day. The stand-in does not re-count late
   // marks: the SQL test runs the real functions, and no endpoint test asserts the recomputed
@@ -1390,6 +1436,13 @@ function createFakeSupabase(tables = {}, { now = () => new Date() } = {}) {
             data: { signedUrl: `https://storage.test/${bucket}/${path}?token=test-signed&expires=${expiresIn}` },
             error: null,
           }),
+          // The bytes an inline photo needs. The fixtures' paths have no real file; a JPEG header
+          // and footer are enough for the tests to prove the shape and the content type.
+          download: async (path) => {
+            fake.storageCalls.push({ op: 'download', bucket, path });
+            if (!path || String(path).includes('missing')) return { data: null, error: { message: 'not found' } };
+            return { data: new Blob([Buffer.from([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }), error: null };
+          },
           upload: async (path, buffer, options) => {
             fake.storageCalls.push({ op: 'upload', bucket, path, size: buffer.length, options });
             return { data: { path }, error: null };

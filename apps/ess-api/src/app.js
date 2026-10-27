@@ -27,6 +27,9 @@ const pushDevices = require('./routes/pushDevices');
 const notifications = require('./routes/notifications');
 const meProfile = require('./routes/meProfile');
 const meOrg = require('./routes/meOrg');
+const workExperience = require('./routes/workExperience');
+const profileDetails = require('./routes/profileDetails');
+const colleagueProfile = require('./routes/colleagueProfile');
 const facultyDay = require('./routes/facultyDay');
 const classMarking = require('./routes/classMarking');
 const team = require('./routes/team');
@@ -72,6 +75,8 @@ const LARGE_JSON_BODIES = Object.freeze({
   // KP 1 (Phase 2C): one document of up to 5 MB decoded arrives as base64 — about 7 MB on the
   // wire, the same ceiling the five Wall files take.
   '/me/documents': '7mb',
+  // Issue #31: up to 20 work-experience entries, each with a 1,000-character description.
+  '/me/work-experience': '64kb',
 });
 
 /**
@@ -245,6 +250,11 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   // E1-E12: Me and My Team.
   api.get('/me/profile', asEmployee, meProfile.myProfile({ store }));
   api.put('/me/photo', asEmployee, meProfile.putMyPhoto({ store, now }));
+  // Issue #31: the owner's About you card and work history.
+  api.get('/me/profile-details', asEmployee, profileDetails.getMyProfileDetails({ store }));
+  api.put('/me/profile-details', asEmployee, profileDetails.putMyProfileDetails({ store, now }));
+  api.get('/me/work-experience', asEmployee, workExperience.getMyWorkExperience({ store }));
+  api.put('/me/work-experience', asEmployee, workExperience.putMyWorkExperience({ store }));
   api.get('/me/org', asEmployee, meOrg.myOrg({ store }));
   // H7: the faculty "my day" and the indicators card (Phase 2D).
   api.get('/me/faculty-day', asEmployee, facultyDay.facultyDayRoute({ store, now }));
@@ -253,6 +263,8 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.post('/me/batches/:id/attendance', asEmployee, classMarking.saveClassAttendance({ store, now }));
   api.patch('/me/batches/:id/attendance/:date/remarks', asEmployee, classMarking.updateClassRemark({ store, now }));
   api.get('/directory', asEmployee, meOrg.directory({ store }));
+  // Issue #31: one colleague's live profile, with the contact rule applied.
+  api.get('/directory/:id', asEmployee, colleagueProfile.colleagueProfile({ store }));
   api.get('/team/today', asEmployee, team.teamToday({ store, now }));
   api.get('/team/off-this-week', asEmployee, team.teamOffThisWeek({ store, now }));
 

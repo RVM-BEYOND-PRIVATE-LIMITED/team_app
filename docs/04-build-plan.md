@@ -371,22 +371,40 @@ carry the two database changes.
   absent student's remark after the first save; the remark route changes no mark, and an admin
   role may correct the marks too.
 
-**Tests:** the suite is 2,605 in 57 files, the contract at 0.13.0 with 1,260 contract checks
-(Waves 9 to 11 included, and the issue #15 follow-up). Phase 2D's own files are `leaders`,
+**Tests:** the suite is 2,710 in 61 files, the contract at 0.14.0 with 1,307 contract checks
+(Waves 9 to 13 included, and the issue #15 follow-up). Phase 2D's own files are `leaders`,
 `approvalsChain`, `facultyDay`, `classMarking` and `approvals` (the policy and the job); WFH's is
 `wfh`; `tests/classMarking.test.js` covers the roster for an owner, a covering substitute and an
 admin, the role, branch, ownership, window, roster and lock refusals, the alert resolution, the
-remark rules and the no-leak reply. `npm run test:migrations` applies all thirty migrations and
+remark rules and the no-leak reply. `npm run test:migrations` applies all thirty-four migrations and
 their rollbacks twice.
 
-**You after:** nothing — migrations 27 to 30 are applied (27 to 29 confirmed read-only on
-23 Oct 2026; 30 applied by KP on 25 Oct 2026), so the register mirror, the Wall, WFH and
-promotion wishes are live.
+**You after:** apply migrations 31 to 34 (27 to 30 are applied: 30 was applied by KP on
+25 Oct 2026). Until then the leave-range, WFH-fix, faculty-final-round and issue #31 endpoints
+answer 503 or fall back as their own sections say.
 
 **Done when:** the CEO sees the organisation in numbers with no name in the reply; a faculty
 member sees today's batches -- including the one they cover -- with what is marked and what is
 not; a request older than two days climbs one level and the person told can see the chain; a
 short leave is counted in minutes and excuses the late it covers.
+
+### Issue #31: profile and org parity — built 27 Oct 2026
+
+The Flutter app's colleague profile, About you card, work experience and organisation tree, built
+against contract **0.14.0**. Everything is in `apps/ess-api`; migration **34**
+(`20261115000001_hr_ess_profile_and_experience.sql`) carries the two tables and the atomic replace
+function.
+
+| Work | How, with no Scheduler change | Issue |
+| --- | --- | --- |
+| Work experience | `GET/PUT /api/ess/me/work-experience`: self only, up to 20 entries, replaced as a whole (delete + insert in one transaction), newest first, hidden entries included for the owner. A past role may omit `to_date`; a current role has none. Deleting is permanent | #30 |
+| Colleague profile | `GET /api/ess/directory/{id}`: any signed-in employee, live, 404 for missing/archived/exited. Photo as an inline data URI; DOB, DOJ, status, department, branch, about/likes/dislikes, personal anniversary, blood group read-only, earned praise badges aggregated, visible experience only | #29, #32 |
+| About you | `GET/PUT /api/ess/me/profile-details`: about (1,000), likes and dislikes (500 each), a personal `anniversary_date`; null clears; blood group stays in `/me/personal` | #32 |
+| Org tree | `GET /me/org` gains `tree`: the full tree for anyone with a direct report plus ceo, super_admin, hoo, hr, hr_executive, admin_manager, admin, accounts_admin, hod and hod_placement; everyone else gets the top-root path with their peers as leaves. Phone always null, cycles guarded, depth capped at 20 | #32 |
+
+**Tests:** `tests/workExperience.test.js`, `profileDetails.test.js`, `colleagueProfile.test.js` and
+`orgTree.test.js` (52 tests), plus the contract's Wave 13 scenarios. The full suite is 2,710 tests in
+61 files; `npm run test:migrations` applies all thirty-four migrations and their rollbacks twice.
 
 ## Out of scope: each needs a Scheduler change
 
@@ -426,7 +444,7 @@ Decided on 16 Oct and recorded in [03-decisions.md](03-decisions.md): the phone 
 
 ## Migrations, in run order
 
-Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each is safe to run twice. The migrations that create tables turn row-level security on with no policy, so only the service role (the ESS) reaches their rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **All 30 are applied** — 30 was applied by KP on 25 Oct 2026. The read-only check on 23 Oct 2026 (run 39939895079) found 28's Wall poll-close column and 29's WFH allowance in production, with every other `hr_ess_*` table, column and seed.
+Every migration is listed here with its rollback script ([ADR-0021](adr/0021-migrations-new-tables-only.md)). Each is safe to run twice. The migrations that create tables turn row-level security on with no policy, so only the service role (the ESS) reaches their rows. None alters a Scheduler table. KP applies each one by hand, in this order, in the Supabase SQL editor, and an agent checks it read-only afterwards ([05-deploy.md](05-deploy.md#migrations-to-apply)). **Migrations 1 to 30 are applied** — 30 was applied by KP on 25 Oct 2026; **31 to 34 wait**. The read-only check on 23 Oct 2026 (run 39939895079) found 28's Wall poll-close column and 29's WFH allowance in production, with every other `hr_ess_*` table, column and seed.
 
 | # | Migration (`db/migrations`) | Rollback (`db/rollbacks`) | Creates | Until it is applied |
 | --- | --- | --- | --- | --- |
@@ -460,13 +478,17 @@ Every migration is listed here with its rollback script ([ADR-0021](adr/0021-mig
 | 28 | [`20261112000000_hr_ess_wall_poll_closed_repair.sql`](../db/migrations/20261112000000_hr_ess_wall_poll_closed_repair.sql) | [`20261112000000_hr_ess_wall_poll_closed_repair.sql`](../db/rollbacks/20261112000000_hr_ess_wall_poll_closed_repair.sql): drops the column (guarded, only while the Wall table exists) | A repair for migration 13: the live `hr_ess_wall_posts` was created from an earlier revision and has no `poll_closed_at`, which every Wall read names. Adds the one column, guarded by `to_regclass` so it is safe after a full rollback; nothing else changes | Every Wall endpoint (feed, praise, post) answers 503 `MODULE_NOT_INSTALLED` until it is applied |
 | 29 | [`20261113000001_hr_ess_wfh_allowances.sql`](../db/migrations/20261113000001_hr_ess_wfh_allowances.sql) | [`20261113000001_hr_ess_wfh_allowances.sql`](../db/rollbacks/20261113000001_hr_ess_wfh_allowances.sql): restores the leave decide function to migration 10's version, removes WFH requests, puts the cl/lwp CHECK back and drops the allowance table (guarded) | `hr_ess_wfh_allowances` (KP, 22 Oct): one row per selected employee, `is_enabled`, a monthly limit of 1 to 31 days, HR's note of up to 300 characters, who set it; the leave type CHECK admits `wfh`; the generic `wfh` limit row of migration 6 is removed; and `hr_ess_decide_leave_request` gains the WFH branch (re-reads the allowance under a row lock, counts the month's other approved WFH days, writes the day PRESENT with `Work from home: <reason>` through the Scheduler's override) | WFH is 503 for the allowance routes and the request is refused; every other leave type works. `GET /api/ess/me/capabilities` falls back to WFH off |
 | 30 | [`20261114000000_hr_ess_wall_promotion_occasions.sql`](../db/migrations/20261114000000_hr_ess_wall_promotion_occasions.sql) | [`20261114000000_hr_ess_wall_promotion_occasions.sql`](../db/rollbacks/20261114000000_hr_ess_wall_promotion_occasions.sql): deletes promotion wishes and posts, then restores both occasion CHECKs to birthday and anniversary (guarded, safe after the Wall tables are dropped) | Two CHECKs only, nothing else: `hr_ess_wall_posts.occasion` and `hr_ess_wall_wishes.occasion` admit `promotion`, so a promotion can be wished like a birthday or anniversary. The single-column checks are found by their shape, so a live constraint from an earlier revision of migration 13 is handled too | Promotion wishes answer 503 `MODULE_NOT_INSTALLED` until it is applied; the celebrations feed itself works without it |
+| 31 | [`20261114000001_hr_ess_leave_ranges.sql`](../db/migrations/20261114000001_hr_ess_leave_ranges.sql) | [`20261114000001_hr_ess_leave_ranges.sql`](../db/rollbacks/20261114000001_hr_ess_leave_ranges.sql): removes the range columns and puts the single-day functions back (guarded, safe after the leave tables are dropped) | Leave ranges and half days: `end_day`, `portion`, `day_count`, `working_days` and `days_before`, with the working-day helper, the CL unit helpers, and the decide/cancel/history functions re-created | Multi-day and half-day leave requests are refused; single-day leave works |
+| 32 | [`20261114000002_hr_ess_leave_wfh_fix.sql`](../db/migrations/20261114000002_hr_ess_leave_wfh_fix.sql) | [`20261114000002_hr_ess_leave_wfh_fix.sql`](../db/rollbacks/20261114000002_hr_ess_leave_wfh_fix.sql): restores the range-aware decide function | The WFH fixes after the range rules: one day again, written present even on a weekly off, its days restored on cancel, and the per-employee allowance re-checked under a lock (the branch had dropped that check) | WFH falls back to the migration 31 behaviour until it is applied |
+| 33 | [`20261114000003_hr_ess_leave_final_approval.sql`](../db/migrations/20261114000003_hr_ess_leave_final_approval.sql) | [`20261114000003_hr_ess_leave_final_approval.sql`](../db/rollbacks/20261114000003_hr_ess_leave_final_approval.sql): drops the final-round columns and restores the history action list (guarded) | A faculty member's leave gets a final HR/CEO/super-admin round: `requires_final_approval`, `stage`, the manager's approval name, remark and time, and the `manager_approved` history action | Faculty leave is approved by the manager alone until it is applied |
+| 34 | [`20261115000001_hr_ess_profile_and_experience.sql`](../db/migrations/20261115000001_hr_ess_profile_and_experience.sql) | [`20261115000001_hr_ess_profile_and_experience.sql`](../db/rollbacks/20261115000001_hr_ess_profile_and_experience.sql): drops the replace function, then both tables | Issue #31: `hr_ess_work_experience` (company and role title 1 to 200, dates with the current-role rule, visibility, up to 1,000 of description) with the atomic replace function, and `hr_ess_profile_details` (about, likes, dislikes, personal anniversary date, who saved it). RLS on, service role only | The two work-experience routes, the two profile-details routes and the colleague profile answer 503; the org tree works without them |
 
 None depends on another, but apply them in this order all the same: it is the order they were tested in. Rolling one back deletes its rows; roll back in reverse order. After rolling back 1, the tokens the ESS minted answer 503, not 401, so the app does not sign out by itself: staff sign out and sign in again (the rollback file says so).
 
 B1 (`GET /api/ess/attendance/day`) and B8 (the phone list and reset) need no migration of their own: they read the Scheduler's tables from `20261015000004` to `20261023000000`, which are still to be confirmed in production, and answer 503 `MODULE_NOT_INSTALLED` while a table or column is missing.
 
 Tested on a throwaway `postgres:17-alpine` in Docker, never on a real database:
-- `npm run test:migrations` (`db/test/run-migrations.js`) applies all thirty twice over a stub of the Scheduler tables they point at, checks row-level security, no policies, the constraints and the cascades, rolls them back twice in reverse, and checks that no Scheduler table changed.
+- `npm run test:migrations` (`db/test/run-migrations.js`) applies all thirty-four twice over a stub of the Scheduler tables they point at, checks row-level security, no policies, the constraints and the cascades, rolls them back twice in reverse, and checks that no Scheduler table changed.
 - `ESS_MIGRATION_TEST=docker npx vitest --run tests/migration.test.js` (in `apps/ess-api`) checks number 1 in more depth: Supabase-like roles and grants, both functions as the service role, and a failed rotate leaving the old row live.
 - CI runs neither yet.
 

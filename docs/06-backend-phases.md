@@ -12,7 +12,7 @@ Phases 1 and 2 are split into parts small enough to build, review and ship one a
 
 **How each phase runs.** KP says "start phase …". It is built in team_app with tests for every endpoint (including the role-denied and wrong-owner cases), attacked by reviewers, fixed, and pushed to `main`, which deploys it. New tables come as migrations that KP applies by hand ([ADR-0021](adr/0021-migrations-new-tables-only.md)); until then their endpoints answer 503 `MODULE_NOT_INSTALLED`. Nothing in the Scheduler changes ([ADR-0018](adr/0018-team-app-changes-nothing-in-the-scheduler.md)).
 
-**Where it stands (25 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct.** **Migrations 1 to 30 are applied** — 30 was applied by KP on 25 Oct 2026. The read-only check on 23 Oct 2026 (`.github/workflows/verify-migrations.yml`, run 39939895079) had found every table, column and seed through 29, including 28's Wall poll repair and 29's WFH allowance. The pilot gate is next.
+**Where it stands (27 Oct 2026).** Phase 1A is live at `https://team-api.rvmcad.org`. **Phase 1B, 1C, 1D and 1E are live** (1E needed no migrations). **Phase 2A (the Wall), 2B (the Helpdesk) and 2C (documents, profile changes, bank details and the ID card) are built and deployed on 19 Oct.** **Phase 2D (leader and faculty views, approval chains, short leave) is built on 19 Oct**, and its last task, **H1 faculty class marking (decision 8), is built on 22 Oct**; its migrations 25-26 are applied and H1 needs no migration. **G6, the infra-register mirror (decision 9), is built on 22 Oct.** **Issue #31's colleague profile, About you card, work experience and org tree are built on 27 Oct** (migration 34). **Migrations 1 to 30 are applied** — 30 was applied by KP on 25 Oct 2026; 31 to 34 wait. The read-only check on 23 Oct 2026 (`.github/workflows/verify-migrations.yml`, run 39939895079) had found every table, column and seed through 29, including 28's Wall poll repair and 29's WFH allowance. The pilot gate is next.
 
 | Phase | What it delivers | State |
 | --- | --- | --- |
@@ -211,7 +211,7 @@ uploads) and [09-data-inventory.md](09-data-inventory.md) (the Play Data safety 
 - **Backend:**
   - the Flutter handover note (base URLs, the sign-in flow, endpoints per screen, error codes) —
     **written**;
-  - the contract complete for Phase 1 - **0.13.0**;
+  - the contract complete for Phase 1 - **0.14.0**;
   - every Phase 1 migration applied — **yes**;
   - the pilot branch's phones reset — **RVM to do** with `POST /hr/devices/reset`;
   - a data inventory for Play's Data safety form — **written**;
@@ -399,6 +399,38 @@ The brief's Phase 2.
 | Short leave, by excusing the late it covers | C3 (Phase 2 type) |
 
 - **You first:** decision 3 (do planned early-leaving minutes protect a day from the 4-hour half-day rule?). Decision 8 is answered: H1 is built.
+
+## Profile and org parity (issue #31)
+
+**Built 27 Oct 2026; contract 0.14.0; migration 34 to apply.** The Flutter app's colleague profile,
+About you card, work experience and organisation tree, built to KP's answers in
+[03-decisions.md](03-decisions.md).
+
+- **Work experience:** `GET /api/ess/me/work-experience` is the owner's whole list, newest first,
+  hidden entries included. `PUT` replaces it as a whole (up to 20 entries; an empty list clears),
+  in one transaction through `hr_ess_replace_work_experience`; a past role may omit `to_date`, a
+  current role must have none, and a delete is permanent. `is_visible` defaults on. The change is
+  audited as `work_experience.changed` with the count only.
+- **Colleague profile:** `GET /api/ess/directory/{id}` for any signed-in employee; missing,
+  archived and exited people are 404. It reads live: DOB, DOJ, status, department, branch, about,
+  likes, dislikes, the personal anniversary date, the blood group read-only, earned badges
+  aggregated from the fixed praise catalogue, and the visible work experience only. `photo_url`
+  is an inline data URI. The phone follows rule A: self, HR's roles, and the manager chain above
+  the person; a report looking at their manager gets null. DOB is the full date (flagged for KP).
+- **About you:** `GET/PUT /api/ess/me/profile-details` for about (1,000), likes and dislikes
+  (500 each) and a personal `anniversary_date`; null or an empty string clears a field. The work
+  anniversary stays derived from `date_of_joining`. Blood group stays editable in `/me/personal`
+  and is read-only on the profile. The audit records the field names only.
+- **Org tree:** `GET /me/org` gains an additive `tree`. Anyone with at least one direct report,
+  plus ceo, super_admin, hoo, hr, hr_executive, admin_manager, admin, accounts_admin, hod and
+  hod_placement, gets the full tree from every active root; everybody else gets the path from the
+  top root down to themselves with their peers as leaves. Every node's phone is null, a visited
+  set stops cycles, and the depth is capped at 20. All existing keys are unchanged.
+- **Tables (migration 34):** `hr_ess_work_experience` and `hr_ess_profile_details`, both
+  `hr_ess_*` only, RLS on with no policy, service role only, safe to run twice, with the replace
+  function. The routes answer 503 `MODULE_NOT_INSTALLED` until it is applied.
+- **Tests:** `tests/workExperience.test.js`, `profileDetails.test.js`,
+  `colleagueProfile.test.js`, `orgTree.test.js` (52 tests), and Wave 13 in the contract suite.
 
 ## Phase 3: Extras (not in this round)
 

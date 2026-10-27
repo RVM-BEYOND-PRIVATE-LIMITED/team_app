@@ -1,7 +1,7 @@
 const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
 const { oneQueryValue, chars, isUuid, invalid } = require('../lib/validate');
 const { istDay } = require('../lib/time');
-const { chainOf } = require('../policy/me');
+const { chainOf, canSeeFullOrgTree, orgTree } = require('../policy/me');
 const { contactContext } = require('../lib/contactCards');
 
 /**
@@ -51,6 +51,16 @@ function myOrg({ store }) {
         people: reports.sort(ctx.byName).map(ctx.card),
       },
       department: department ? { ...ref(department), people: departmentPeople.sort(ctx.byName).map(ctx.card) } : null,
+      // Issue #31's additive tree: the whole organisation for managers and the roles KP named,
+      // otherwise only the path from the top root down to the viewer, with their peers beside them.
+      tree: orgTree({
+        people: ctx.people,
+        onStrength: ctx.onStrength,
+        deptById: ctx.deptById,
+        branchById: ctx.branchById,
+        viewerId: employee.id,
+        full: canSeeFullOrgTree({ role, employee, people: ctx.people, onStrength: ctx.onStrength }),
+      }),
     });
   });
 }

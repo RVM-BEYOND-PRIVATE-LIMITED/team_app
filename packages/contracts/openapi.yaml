@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.13.0
+  version: 0.14.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -3813,6 +3813,203 @@ paths:
         default:
           $ref: '#/components/responses/EssUnexpected'
 
+  /ess/me/profile-details:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyProfileDetails
+      tags: [ESS]
+      x-owner: ess
+      summary: My About you card (issue #31)
+      description: |
+        Either token kind, self only. `about` (up to 1,000 characters), `likes` and `dislikes`
+        (up to 500 each) are free text visible to every colleague and editable only by the owner.
+        `anniversary_date` is a personal date, separate from the work anniversary the app derives
+        from `date_of_joining`. `blood_group` is read from `hr_ess_personal_details` and stays
+        editable through `PUT /me/personal`.
+      responses:
+        '200':
+          description: My social fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileDetails'
+              examples:
+                filled:
+                  value:
+                    profile:
+                      about: I draw, teach AutoCAD and collect old maps.
+                      likes: Sketching, music, long walks
+                      dislikes: Late meetings
+                      anniversary_date: '2018-02-14'
+                      blood_group: B+
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    put:
+      operationId: putMyProfileDetails
+      tags: [ESS]
+      x-owner: ess
+      summary: Edit my About you card (issue #31)
+      description: |
+        Either token kind, self only. Send any of `about`, `likes`, `dislikes` and
+        `anniversary_date`; a null or an empty string clears that field. `anniversary_date` must
+        be a real `YYYY-MM-DD` day. Only the fields sent are written. The change is recorded as
+        `profile_details.changed` with the field names only, never their values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileDetailsUpdate'
+            examples:
+              about:
+                value:
+                  about: I draw, teach AutoCAD and collect old maps.
+              clear:
+                value:
+                  dislikes: null
+                  anniversary_date: null
+      responses:
+        '200':
+          description: The saved card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileDetails'
+              examples:
+                saved:
+                  value:
+                    profile:
+                      about: I draw, teach AutoCAD and collect old maps.
+                      likes: Sketching, music, long walks
+                      dislikes: null
+                      anniversary_date: '2018-02-14'
+                      blood_group: B+
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/me/work-experience:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: getMyWorkExperience
+      tags: [ESS]
+      x-owner: ess
+      summary: My work experience (issue #31)
+      description: |
+        Either token kind, self only. Every entry, including the ones hidden from colleagues with
+        `is_visible: false`, newest first by `from_date` and then by `created_at`. A past role may
+        have no `to_date`; a current role never has one.
+      responses:
+        '200':
+          description: My whole work history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkExperienceList'
+              examples:
+                twoRoles:
+                  value:
+                    entries:
+                      - { id: 1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d, company: RVM CAD, role_title: CAD Faculty, from_date: '2023-04-01', to_date: null, is_current: true, location: Faridabad, description: AutoCAD and 3D modelling., is_visible: true }
+                      - { id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e, company: ACME Ltd, role_title: Designer, from_date: '2020-06-01', to_date: '2023-03-31', is_current: false, location: Pune, description: Product drawings., is_visible: false }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+    put:
+      operationId: putMyWorkExperience
+      tags: [ESS]
+      x-owner: ess
+      summary: Replace my work experience (issue #31)
+      description: |
+        Either token kind, self only. `entries` is the whole list, at most 20; an empty list
+        clears it. The delete and the insert happen in one database transaction, so a failure
+        cannot leave half a history. Each entry needs a company and role title (1 to 200
+        characters), a real `from_date`, and may omit `to_date` for a past role; a current role
+        must have no end date. `is_visible` defaults to true. The reply is the saved list in the
+        order sent. The change is recorded as `work_experience.changed` with the count only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              additionalProperties: false
+              properties:
+                entries:
+                  type: array
+                  maxItems: 20
+                  items:
+                    $ref: '#/components/schemas/WorkExperienceInput'
+            examples:
+              twoRoles:
+                value:
+                  entries:
+                    - { company: RVM CAD, role_title: CAD Faculty, from_date: '2023-04-01', is_current: true, location: Faridabad, description: AutoCAD and 3D modelling., is_visible: true }
+                    - { company: ACME Ltd, role_title: Designer, from_date: '2020-06-01', to_date: '2023-03-31', location: Pune, description: Product drawings., is_visible: false }
+              clear:
+                value: { entries: [] }
+      responses:
+        '200':
+          description: The saved list, in the order sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkExperienceList'
+              examples:
+                saved:
+                  value:
+                    entries:
+                      - { id: 1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d, company: RVM CAD, role_title: CAD Faculty, from_date: '2023-04-01', to_date: null, is_current: true, location: Faridabad, description: AutoCAD and 3D modelling., is_visible: true }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
   /ess/me/photo:
     servers:
       - url: 'https://{essHost}/api'
@@ -3895,7 +4092,7 @@ paths:
       x-owner: ess
       summary: My chain, peers, reports and department (E2, E11)
       description: |
-        Either token kind. The manager chain upward (empty when nobody is recorded), peers under the same manager, direct reports and the department's people. Where the top of the chain has no manager recorded and is not the CEO, `reports_to_ceo_not_recorded` is true, as the brief words it. People serving notice stay on every list with `notice_period: true` (E11). Phones follow the contact rule (E8): HR's roles see every phone; otherwise only a manager above the person — so a chain view shows no phones by default (decision 5). Email is on every card.
+        Either token kind. The manager chain upward (empty when nobody is recorded), peers under the same manager, direct reports and the department's people. Where the top of the chain has no manager recorded and is not the CEO, `reports_to_ceo_not_recorded` is true, as the brief words it. People serving notice stay on every list with `notice_period: true` (E11). Phones follow the contact rule (E8): HR's roles see every phone; otherwise only a manager above the person — so a chain view shows no phones by default (decision 5, confirmed as rule A on 27 Oct 2026). Email is on every card. The additive `tree` (issue #31) nests the same active staff by `manager_id`: the whole organisation for anyone with a direct report and the listed roles, otherwise the top-root path down to the caller with their peers as leaves; its nodes carry no phone, cycles are stopped, and the depth is capped at 20.
       responses:
         '200':
           description: The org around me.
@@ -3918,6 +4115,7 @@ paths:
                       id: 1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d
                       name: Technical Training
                       people: []
+                    tree: []
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
@@ -4220,6 +4418,84 @@ paths:
                     truncated: false
                     people:
                       - { id: 4d5e6f7a-8b9c-4d0e-9f1a-2b3c4d5e6f7a, full_name: Anita Sharma, employee_code: RVM-0211, designation: CAD Faculty, department: null, branch: null, email: anita@example.test, phone: null, employment_status: active, notice_period: false }
+        '400':
+          $ref: '#/components/responses/EssRequestBad'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '404':
+          $ref: '#/components/responses/EssNoSuchRequest'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/directory/{id}:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The employee's HR record id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: colleagueProfile
+      tags: [ESS]
+      x-owner: ess
+      summary: One colleague's live profile (issue #31)
+      description: |
+        Either token kind, any signed-in employee. Every field is read live. Missing, archived and
+        exited people are 404. Email is visible to everybody. The phone follows KP's rule A: the
+        person themselves, HR's roles, and the manager chain above the person; a report looking at
+        their manager gets `null`. The photo is an inline data URI, not a signed link, so the
+        profile does not depend on the storage host. `earned_badges` aggregates only the fixed
+        praise catalogue, with a count and the latest stamp; `work_experience` carries only the
+        entries the owner marked visible. `anniversary_date` is the owner's personal date, separate
+        from the work anniversary the app derives from `date_of_joining`.
+      responses:
+        '200':
+          description: The colleague's profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColleagueProfile'
+              examples:
+                profile:
+                  value:
+                    employee:
+                      id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                      full_name: Suresh Yadav
+                      employee_code: RVM-0217
+                      designation: Office Assistant
+                      department: { id: 1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d, name: Technical Training }
+                      branch: { id: 9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a, name: Faridabad }
+                      email: suresh@example.test
+                      phone: '9710000050'
+                      employment_status: active
+                      notice_period: false
+                      date_of_joining: '2025-06-01'
+                      date_of_birth: '1994-05-21'
+                      photo_url: 'data:image/jpeg;base64,/9j/4AAQSkZJRg…'
+                    about: I draw, teach AutoCAD and collect old maps.
+                    likes: Sketching, music, long walks
+                    dislikes: null
+                    anniversary_date: '2018-02-14'
+                    blood_group: B+
+                    earned_badges:
+                      - { id: mentor, label: Mentor, for: people, count: 2, last_earned_at: '2026-10-12T05:00:00+00:00' }
+                    work_experience:
+                      - { id: 1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d, company: RVM CAD, role_title: CAD Faculty, from_date: '2023-04-01', to_date: null, is_current: true, location: Faridabad, description: AutoCAD and 3D modelling., is_visible: true }
         '400':
           $ref: '#/components/responses/EssRequestBad'
         '401':
@@ -12502,6 +12778,144 @@ components:
         emergency_relation: { type: [string, 'null'] }
         emergency_phone: { type: [string, 'null'] }
 
+    WorkExperienceEntry:
+      type: object
+      required: [id, company, role_title, from_date, to_date, is_current, location, description, is_visible]
+      properties:
+        id: { type: string, format: uuid }
+        company: { type: string, minLength: 1, maxLength: 200 }
+        role_title: { type: string, minLength: 1, maxLength: 200 }
+        from_date: { type: string, format: date }
+        to_date:
+          type: [string, 'null']
+          format: date
+        is_current: { type: boolean }
+        location: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        is_visible: { type: boolean }
+
+    WorkExperienceInput:
+      type: object
+      required: [company, role_title, from_date]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Ignored on a replace; the saved rows get fresh ids.
+        company: { type: string, minLength: 1, maxLength: 200 }
+        role_title: { type: string, minLength: 1, maxLength: 200 }
+        from_date: { type: string, format: date }
+        to_date:
+          type: [string, 'null']
+          format: date
+          description: May be omitted for a past role; must be null for a current one.
+        is_current: { type: boolean, default: false }
+        location: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        is_visible: { type: boolean, default: true }
+
+    WorkExperienceList:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkExperienceEntry'
+
+    ProfileDetails:
+      type: object
+      required: [profile]
+      properties:
+        profile:
+          type: object
+          required: [about, likes, dislikes, anniversary_date, blood_group]
+          properties:
+            about: { type: [string, 'null'], maxLength: 1000 }
+            likes: { type: [string, 'null'], maxLength: 500 }
+            dislikes: { type: [string, 'null'], maxLength: 500 }
+            anniversary_date:
+              type: [string, 'null']
+              format: date
+            blood_group:
+              type: [string, 'null']
+              enum: [A+, A-, B+, B-, AB+, AB-, O+, O-, null]
+
+    ProfileDetailsUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        about: { type: [string, 'null'], maxLength: 1000 }
+        likes: { type: [string, 'null'], maxLength: 500 }
+        dislikes: { type: [string, 'null'], maxLength: 500 }
+        anniversary_date:
+          type: [string, 'null']
+          format: date
+
+    ColleagueProfile:
+      type: object
+      required: [employee, about, likes, dislikes, anniversary_date, blood_group, earned_badges, work_experience]
+      properties:
+        employee:
+          $ref: '#/components/schemas/ColleagueProfileEmployee'
+        about: { type: [string, 'null'], maxLength: 1000 }
+        likes: { type: [string, 'null'], maxLength: 500 }
+        dislikes: { type: [string, 'null'], maxLength: 500 }
+        anniversary_date:
+          type: [string, 'null']
+          format: date
+        blood_group:
+          type: [string, 'null']
+          enum: [A+, A-, B+, B-, AB+, AB-, O+, O-, null]
+        earned_badges:
+          type: array
+          items:
+            $ref: '#/components/schemas/EarnedBadge'
+        work_experience:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkExperienceEntry'
+
+    ColleagueProfileEmployee:
+      type: object
+      required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period, date_of_joining, date_of_birth, photo_url]
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+        employee_code: { type: [string, 'null'] }
+        designation: { type: [string, 'null'] }
+        department:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        email: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        employment_status: { type: [string, 'null'] }
+        notice_period: { type: boolean }
+        date_of_joining: { type: [string, 'null'], format: date }
+        date_of_birth: { type: [string, 'null'], format: date }
+        photo_url: { type: [string, 'null'] }
+
+    EarnedBadge:
+      type: object
+      required: [id, label, for, count, last_earned_at]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        for:
+          type: string
+          enum: [people]
+        count: { type: integer, minimum: 1 }
+        last_earned_at:
+          type: [string, 'null']
+          format: date-time
+
     TimelineEntry:
       type: object
       required: [id, kind, title, at]
@@ -12751,7 +13165,7 @@ components:
 
     OrgView:
       type: object
-      required: [manager_chain, reports_to_ceo_not_recorded, peers, direct_reports, department]
+      required: [manager_chain, reports_to_ceo_not_recorded, peers, direct_reports, department, tree]
       properties:
         manager_chain:
           type: array
@@ -12784,6 +13198,44 @@ components:
                   items:
                     $ref: '#/components/schemas/PersonCard'
             - type: 'null'
+        tree:
+          type: array
+          description: |
+            The organisation tree (issue #31). Anyone with at least one direct report, and the
+            roles ceo, super_admin, hoo, hr, hr_executive, admin_manager, admin, accounts_admin,
+            hod and hod_placement, gets the whole tree from every active root. Everybody else gets
+            only the path from the top root down to themselves, with their peers as leaves at
+            their level. A cycle is stopped by a visited set, and no branch is deeper than 20.
+          items:
+            $ref: '#/components/schemas/OrgTreeNode'
+
+    OrgTreeNode:
+      type: object
+      required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period, is_me, children]
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+        employee_code: { type: [string, 'null'] }
+        designation: { type: [string, 'null'] }
+        department:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/BranchRef'
+            - type: 'null'
+        email: { type: [string, 'null'] }
+        phone:
+          type: 'null'
+          description: Always null in the tree; the profile page applies the phone rule.
+        employment_status: { type: [string, 'null'] }
+        notice_period: { type: boolean }
+        is_me: { type: boolean }
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrgTreeNode'
 
     Directory:
       type: object
@@ -15934,6 +16386,36 @@ components:
         error: 'Choose enabled, and a monthly limit of 1 to 31 days; the note can be up to 300 characters.'
         code: VALIDATION_FAILED
 
+    EssWorkExperience:
+      value:
+        error: Send up to 20 work-experience entries, each with a company and a role title of 1 to 200 characters and a start date.
+        code: VALIDATION_FAILED
+
+    EssWorkExperienceDate:
+      value:
+        error: Work-experience dates must be real days written YYYY-MM-DD; the end date cannot be before the start date.
+        code: VALIDATION_FAILED
+
+    EssWorkExperienceCurrent:
+      value:
+        error: A current role cannot have an end date.
+        code: VALIDATION_FAILED
+
+    EssWorkExperienceText:
+      value:
+        error: A work-experience location can be up to 200 characters and its description up to 1,000.
+        code: VALIDATION_FAILED
+
+    EssProfileDetails:
+      value:
+        error: About can be up to 1,000 characters, and likes and dislikes up to 500 each.
+        code: VALIDATION_FAILED
+
+    EssAnniversaryDate:
+      value:
+        error: The anniversary must be a real date written YYYY-MM-DD.
+        code: VALIDATION_FAILED
+
     EssEmployeeNotFound:
       value:
         error: That employee was not found.
@@ -16929,6 +17411,18 @@ components:
               $ref: '#/components/examples/EssWfhQuery'
             wfhAllowance:
               $ref: '#/components/examples/EssWfhAllowance'
+            workExperience:
+              $ref: '#/components/examples/EssWorkExperience'
+            workExperienceDate:
+              $ref: '#/components/examples/EssWorkExperienceDate'
+            workExperienceCurrent:
+              $ref: '#/components/examples/EssWorkExperienceCurrent'
+            workExperienceText:
+              $ref: '#/components/examples/EssWorkExperienceText'
+            profileDetails:
+              $ref: '#/components/examples/EssProfileDetails'
+            anniversaryDate:
+              $ref: '#/components/examples/EssAnniversaryDate'
             invalidId:
               $ref: '#/components/examples/EssInvalidId'
             invalidJson:

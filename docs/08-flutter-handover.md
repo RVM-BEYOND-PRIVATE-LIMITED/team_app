@@ -1,6 +1,6 @@
 # Team RVM app: backend handover to the Flutter developer
 
-25 Oct 2026 · Contract `packages/contracts/openapi.yaml` **0.13.0** · ESS live at
+27 Oct 2026 · Contract `packages/contracts/openapi.yaml` **0.14.0** · ESS live at
 `https://team-api.rvmcad.org`
 
 This note is the single handover: the two hosts, the sign-in flow, every endpoint by screen, the
@@ -88,16 +88,32 @@ attendance login uses. The Scheduler is not widened to accept the punch token (A
 | Screen | Calls |
 | --- | --- |
 | Home / punch | `GET /attendance/day?date=`, `POST /attendance/mock-location` (mock report), Scheduler challenge/punch/ping |
-| My profile | `GET /me/profile`; `GET /me/personal`, `PUT /me/personal`; `PUT /me/photo` |
-| My org | `GET /me/org` |
-| Directory | `GET /directory?q=&branch_id=&department_id=` |
-| My team | `GET /team/today?filter=`, `GET /team/off-this-week` |
+| My profile | `GET /me/profile`; `GET /me/personal`, `PUT /me/personal`; `PUT /me/photo`; `GET /me/profile-details`, `PUT /me/profile-details`; `GET /me/work-experience`, `PUT /me/work-experience` |
+| My org | `GET /me/org` (its additive `tree` is the nested hierarchy; `manager_chain`, peers, reports and department are unchanged) |
+| Directory | `GET /directory?q=&branch_id=&department_id=`; `GET /directory/{id}` for one colleague's profile |
+| My team | `GET /me/org` (its `tree` is the hierarchy), `GET /team/today?filter=`, `GET /team/off-this-week` |
+| Colleague profile sheet | `GET /directory/{id}`; `GET /me/praise?employee_id=` for the recent praise strip |
 | Praise on my profile | `GET /me/praise?employee_id=` |
 | ID card | `GET /me/id-card`; the QR opens `GET /id-card/verify/{token}` (no sign-in) |
 | Data requests | `POST /me/data-requests`, `GET /me/data-requests` |
 | Documents | `GET /me/documents`, `POST /me/documents`, `DELETE /me/documents/{id}`, `GET /me/documents/{id}/file` |
 | Personal change requests | `POST /me/change-requests`, `GET /me/change-requests` |
 | Bank details | `GET /me/bank-details`, `PUT /me/bank-details` |
+
+**Colleague profile, About you and work experience (issue #31).**
+- `GET /directory/{id}` answers the profile sheet: employee card, full DOB and DOJ, department,
+  branch, email, phone only under rule A (self, HR, managers above the person), an inline data
+  URI photo, about/likes/dislikes, the personal `anniversary_date`, blood group read-only, earned
+  badges (fixed catalogue, count and latest stamp) and the visible work experience. It is read
+  live on every open; missing, archived and exited people are 404.
+- `GET/PUT /me/profile-details` is the owner's About you card. Null or an empty string clears a
+  field. Blood group is still edited through `/me/personal`.
+- `GET/PUT /me/work-experience` is the owner's whole list. `PUT` replaces it (at most 20; an empty
+  list clears it) and returns the saved order; a past role may omit `to_date`, a current role has
+  none; `is_visible` defaults true. The colleague profile shows only visible entries.
+- `GET /me/org`'s `tree` is fully nested. A manager or one of the listed roles gets the whole
+  tree; everybody else gets the top-root path to themselves with their peers as leaves. Every
+  node's `phone` is null; use the profile endpoint for a phone.
 
 **Timeline kinds (issue #15).** Every item from `GET /me/profile` now carries a stable `kind`
 (`JOINING_RECORDED`, `PROMOTED`, `DESIGNATION_CHANGED`, `BRANCH_CHANGED`,

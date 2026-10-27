@@ -229,6 +229,13 @@ const COLUMNS = Object.freeze({
   // owner (routes/bankDetails.js), so the whole row only ever exists inside the server.
   bankDetails: 'employee_id, bank_name, branch_name, account_number, ifsc_code, upi_id, consent_given_at, '
     + 'consent_name, updated_by_name, created_at, updated_at',
+  // Issue #31: the colleague profile's own fields and the owner's history. updated_by_user_id
+  // stays server-side; the profile read never sends it.
+  profileDetails: 'employee_id, about, likes, dislikes, anniversary_date, updated_at',
+  workExperience: 'id, employee_id, company, role_title, from_date, to_date, is_current, '
+    + 'location, description, is_visible, created_at, updated_at',
+  workExperienceEntry: 'id, company, role_title, from_date, to_date, is_current, location, description, is_visible',
+  praiseBadge: 'badge, created_at',
   // What an assignment's role check needs to know about the person it points at.
   employeeLink: 'id, user_id, is_archived',
   // What the ID card shows, from the HR record: the card's own fields and the photo pointer.
@@ -1139,6 +1146,34 @@ function createSupabaseStore(config, { client } = {}) {
     /** The portal roles behind these user ids: the "Reports to the CEO (not recorded)" test. */
     listUserRolesFor: async (userIds) => readIn('users', COLUMNS.userRole, 'id', userIds),
 
+    /* ── Issue #31: the colleague profile, the owner's social fields and work experience ── */
+
+    getProfileDetails: (employeeId) => one('hr_ess_profile_details', COLUMNS.profileDetails, 'employee_id', employeeId),
+    /** Upsert one person's row: only the columns sent are written, so two fields cannot undo a third. */
+    saveProfileDetails: (row) =>
+      write('hr_ess_profile_details', (q) => q.upsert([row], { onConflict: 'employee_id' })
+        .select(COLUMNS.profileDetails).single()),
+    /** The owner's whole history, newest first, hidden entries included. */
+    listWorkExperience: (employeeId) => list('hr_ess_work_experience', (q) => q.select(COLUMNS.workExperienceEntry)
+      .eq('employee_id', employeeId).order('from_date', { ascending: false }).order('created_at', { ascending: false })),
+    /** What a colleague sees: visible entries only, newest first. */
+    listVisibleWorkExperience: (employeeId) => list('hr_ess_work_experience', (q) => q.select(COLUMNS.workExperienceEntry)
+      .eq('employee_id', employeeId).eq('is_visible', true)
+      .order('from_date', { ascending: false }).order('created_at', { ascending: false })),
+    /**
+     * Replace the whole list in one transaction (the SQL function), so a failure cannot leave half
+     * a history. `entries` are already validated by the route; [] clears the list.
+     */
+    replaceWorkExperience: (employeeId, entries) => call('hr_ess_replace_work_experience',
+      { p_employee_id: employeeId, p_entries: entries }, { table: 'hr_ess_work_experience' }),
+    /** The owner's own delete, kept for callers that remove one entry without a full replace. */
+    deleteWorkExperience: (employeeId, id) => write('hr_ess_work_experience', (q) => q.delete()
+      .eq('employee_id', employeeId).eq('id', id).select('id').maybeSingle()),
+    /** The fixed badges this person has received: count and latest stamp, worked out by the route. */
+    listPraiseBadges: (employeeId) => list('hr_ess_wall_posts', (q) => q.select(COLUMNS.praiseBadge)
+      .eq('kind', 'praise').eq('about_employee_id', employeeId)
+      .is('deleted_at', null).is('hidden_at', null).not('badge', 'is', null)),
+
     /* ── E10: photos through the Scheduler's private bucket, as its own code uses it ── */
 
     /** A 300-second signed link, exactly as the Scheduler signs its HR files; null on any failure. */
@@ -1147,6 +1182,25 @@ function createSupabaseStore(config, { client } = {}) {
       try {
         const { data } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(path, expiresIn);
         return (data && data.signedUrl) || null;
+      } catch {
+        return null;
+      }
+    },
+    /**
+     * The photo's own bytes as an inline data URI, for the colleague profile (issue #31): the
+     * app's image cache cannot be relied on to reach the storage host, and a profile sheet must
+     * not show a dead link. Null when there is no photo or the bucket cannot be read; a photo is
+     * never a reason to fail the profile.
+     */
+    photoDataUrl: async (path) => {
+      if (!path) return null;
+      try {
+        const { data, error } = await db.storage.from(PHOTO_BUCKET).download(path);
+        if (error || !data) return null;
+        const buffer = Buffer.from(await data.arrayBuffer());
+        if (!buffer.length) return null;
+        const type = data.type || 'image/jpeg';
+        return `data:${type};base64,${buffer.toString('base64')}`;
       } catch {
         return null;
       }

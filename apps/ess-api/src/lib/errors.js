@@ -199,6 +199,14 @@ const MESSAGES = Object.freeze({
   DEPARTMENT_NOT_FOUND: 'That department was not found.',
   TEAM_FILTER: 'filter must be all, not_in, late or on_leave.',
 
+  // Issue #31: work experience and the colleague profile's social fields.
+  WORK_EXPERIENCE: 'Send up to 20 work-experience entries, each with a company and a role title of 1 to 200 characters and a start date.',
+  WORK_EXPERIENCE_DATE: 'Work-experience dates must be real days written YYYY-MM-DD; the end date cannot be before the start date.',
+  WORK_EXPERIENCE_CURRENT: 'A current role cannot have an end date.',
+  WORK_EXPERIENCE_TEXT: 'A work-experience location can be up to 200 characters and its description up to 1,000.',
+  PROFILE_DETAILS: 'About can be up to 1,000 characters, and likes and dislikes up to 500 each.',
+  ANNIVERSARY_DATE: 'The anniversary must be a real date written YYYY-MM-DD.',
+
   // F1-F9: the Wall.
   WALL_POST_BODY: 'Say something in 1 to 2,000 characters.',
   WALL_POST_KIND: 'Choose a post, praise, a wish or a poll.',

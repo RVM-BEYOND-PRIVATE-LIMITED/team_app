@@ -1,4 +1,5 @@
 const { HR_RECORD_ROLES } = require('./hrAccess');
+const { ROLES } = require('./roles');
 
 /**
  * Phase 1E's rules (tasks E1-E12): the timeline, the contact rule, the org chain, the week and
@@ -67,6 +68,128 @@ function personCard({ employee, department, branch, phone }) {
     employment_status: employee.employment_status ?? null,
     notice_period: isNotice(employee),
   };
+}
+
+/**
+ * Issue #31: who may see the whole organisation tree on `GET /me/org`. Anyone with at least one
+ * direct report, plus the roles KP named. Everybody else gets only the path from the top root
+ * down to themselves, with their own peers as leaves at their level.
+ */
+const ORG_TREE_ROLES = new Set([
+  ROLES.CEO,
+  ROLES.SUPER_ADMIN,
+  ROLES.HOO,
+  ROLES.HR,
+  ROLES.HR_EXECUTIVE,
+  ROLES.ADMIN_MANAGER,
+  ROLES.ADMIN,
+  ROLES.ACCOUNTS_ADMIN,
+  ROLES.HOD,
+  ROLES.HOD_PLACEMENT,
+]);
+
+const ORG_TREE_MAX_DEPTH = 20;
+
+/** Whether this caller gets the full tree rather than the path to themselves. */
+function canSeeFullOrgTree({ role, employee, people, onStrength }) {
+  if (ORG_TREE_ROLES.has(role)) return true;
+  return people.some((e) => e.id !== employee.id && onStrength(e) && e.manager_id === employee.id);
+}
+
+/** One node of the organisation tree. The tree never carries a phone (KP, issue #31). */
+function orgNode({ employee, department, branch, isMe }) {
+  return {
+    id: employee.id,
+    full_name: employee.full_name,
+    employee_code: employee.employee_code ?? null,
+    designation: employee.designation ?? null,
+    department: department ? { id: department.id, name: department.name } : null,
+    branch: branch ? { id: branch.id, name: branch.name } : null,
+    email: employee.email ?? null,
+    phone: null,
+    employment_status: employee.employment_status ?? null,
+    notice_period: isNotice(employee),
+    is_me: Boolean(isMe),
+    children: [],
+  };
+}
+
+/**
+ * The `tree` array for `GET /me/org` (issue #31). The full tree starts at the active people with
+ * no active manager and nests by `manager_id`; the path view walks from the top root down to the
+ * viewer and adds the viewer's peers as leaves. A visited set stops a hand-edited cycle, and the
+ * depth is capped at 20 so no reply can be made enormous.
+ */
+function orgTree({ people, onStrength, deptById, branchById, viewerId, full }) {
+  const active = people.filter(onStrength);
+  const byId = new Map(active.map((e) => [e.id, e]));
+  const make = (employee, isMe = false) => orgNode({
+    employee,
+    department: deptById.get(employee.department_id) || null,
+    branch: branchById.get(employee.branch_id) || null,
+    isMe,
+  });
+
+  if (!full) {
+    const viewer = byId.get(viewerId);
+    if (!viewer) return [];
+    const path = [viewer];
+    const seen = new Set([viewer.id]);
+    let at = viewer;
+    while (at.manager_id && byId.has(at.manager_id) && !seen.has(at.manager_id)
+      && path.length < ORG_TREE_MAX_DEPTH) {
+      at = byId.get(at.manager_id);
+      path.unshift(at);
+      seen.add(at.id);
+    }
+    const nodes = path.map((e) => make(e, e.id === viewerId));
+    for (let i = 0; i < nodes.length - 1; i += 1) nodes[i].children = [nodes[i + 1]];
+    // The viewer's own layer: peers under the same manager are leaves beside them. A person with
+    // no recorded manager is the root of their own path and gets no "peers" from every other root.
+    if (viewer.manager_id && nodes.length >= 2) {
+      const peers = active
+        .filter((e) => e.id !== viewer.id && e.manager_id === viewer.manager_id)
+        .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+      nodes[nodes.length - 2].children = [nodes[nodes.length - 1], ...peers.map((e) => make(e))];
+    }
+    return [nodes[0]];
+  }
+
+  const childrenOf = new Map();
+  for (const employee of active) {
+    const managerId = employee.manager_id;
+    if (!managerId || managerId === employee.id || !byId.has(managerId)) continue;
+    if (!childrenOf.has(managerId)) childrenOf.set(managerId, []);
+    childrenOf.get(managerId).push(employee);
+  }
+  for (const list of childrenOf.values()) {
+    list.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+  }
+  const roots = active
+    .filter((e) => !e.manager_id || e.manager_id === e.id || !byId.has(e.manager_id))
+    .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')));
+  const visited = new Set();
+  const build = (employee, depth) => {
+    if (visited.has(employee.id) || depth > ORG_TREE_MAX_DEPTH) return null;
+    visited.add(employee.id);
+    const node = make(employee, employee.id === viewerId);
+    if (depth < ORG_TREE_MAX_DEPTH) {
+      node.children = (childrenOf.get(employee.id) || [])
+        .map((child) => build(child, depth + 1))
+        .filter(Boolean);
+    }
+    return node;
+  };
+  const tree = roots.map((root) => build(root, 1)).filter(Boolean);
+  // A cycle with no root would otherwise hide everybody in it. Start each unvisited person as a
+  // root only when there is no root at all; the visited set still stops the walk.
+  if (!tree.length) {
+    for (const employee of active) {
+      const node = build(employee, 1);
+      if (node) tree.push(node);
+    }
+  }
+  return tree;
 }
 
 /** The IST week around a day: Monday to Sunday (the week-off is Sunday; Monday opens the week). */
@@ -141,6 +264,10 @@ module.exports = {
   isAncestor,
   canSeePhone,
   personCard,
+  ORG_TREE_ROLES,
+  ORG_TREE_MAX_DEPTH,
+  canSeeFullOrgTree,
+  orgTree,
   weekBounds,
   TIMELINE_EVENTS,
   TIMELINE_TITLES,

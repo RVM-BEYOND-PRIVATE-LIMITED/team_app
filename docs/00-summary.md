@@ -1,6 +1,6 @@
 # Team RVM: project summary
 
-Updated 22 Oct 2026.
+Updated 27 Oct 2026.
 
 ## What it is
 
@@ -11,7 +11,7 @@ Team RVM is RVM CAD's Android app for every employee, modelled on the Keka emplo
 - faculty class marking, with the Scheduler's own checks enforced server-side;
 - a Wall: posts, reactions, praise, polls and announcements;
 - a Helpdesk;
-- Me and My Team.
+- Me and My Team, with the colleague profile, About you card, work experience and a nested organisation tree (issue #31).
 
 The Scheduler (`scheduler.rvmcad.org`) stays the system of record. The app adds an employee self-service API, the ESS, for everything new.
 

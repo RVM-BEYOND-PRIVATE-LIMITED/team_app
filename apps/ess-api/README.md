@@ -18,7 +18,7 @@ Run from the repository root (`npm run lint`, `npm test`) or from this folder:
 
 `npm run test:migrations`, from the repository root, runs `db/migrations` against a throwaway Postgres in Docker (`db/test/run-migrations.js`).
 
-`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.13.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
+`tests/contract.test.js` holds the ESS against `packages/contracts/openapi.yaml` (version **0.14.0**): the routes it serves must be exactly the contract's ESS operations, and every reply the tests provoke, success or refusal, must have a documented status, body, error code and headers. A field the contract does not name fails it too, so an endpoint change and its contract change go in the same PR ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)).
 
 Set `SCHEDULER_BACKEND_DIR` to a Scheduler_Backend checkout to also run the drift checks. They compare `src/policy/roles.js` and `src/policy/hrPolicy.js` with the Scheduler's `config/roles.js` and `config/hrPolicy.js`, and the verbatim Scheduler code in `tests/helpers` with its source:
 
@@ -28,9 +28,9 @@ SCHEDULER_BACKEND_DIR=../Scheduler_Backend npm test
 
 Without it those checks are skipped, and that includes CI, which cannot read the private Scheduler repository. Run them by hand whenever the Scheduler changes.
 
-Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all thirty migrations more broadly. CI runs neither yet.
+Set `ESS_MIGRATION_TEST=docker`, with Docker running, to also run `tests/migration.test.js`: it applies `db/migrations/20261101000000_hr_ess_sessions.sql` (twice) and its rollback to a throwaway `postgres:17-alpine` container, checks the constraints, the privileges and both functions as the service role, and removes the container. No port is opened and no real database is reached. `npm run test:migrations` at the root covers all thirty-four migrations more broadly. CI runs neither yet.
 
-**The suite (25 Oct 2026, with the issue #15 follow-up):** 2,605 tests in 57 files, the contract included - 1,260 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, plus `helpdeskAssign` for the Phase 2C delta; Phase 2C's are `documents`, `changeRequests`, `bankDetails`, `idCard` and `documentsJob`; Phase 2D's are `leaders`, `approvalsChain`, `facultyDay` and `classMarking`, and WFH's is `wfh`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all thirty migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's, the Helpdesk's, Phase 2C's, Phase 2D's and WFH's row rules themselves. H1 needs no migration; WFH needs 29; promotion wishes need 30.
+**The suite (27 Oct 2026, with issue #31):** 2,710 tests in 61 files, the contract included - 1,307 of those are contract checks, every route's every documented status provoked. The Wall's own tests are `wallPosts`, `wallComments`, `wallPraise`, `wallPolls`, `wallAnnouncements`, `wallCelebrations`, `wallModeration` and `wallJob`; the Helpdesk's are `helpdeskTickets`, `helpdeskQueue` and `helpdeskJob`, plus `helpdeskAssign` for the Phase 2C delta; Phase 2C's are `documents`, `changeRequests`, `bankDetails`, `idCard` and `documentsJob`; Phase 2D's are `leaders`, `approvalsChain`, `facultyDay` and `classMarking`, and WFH's is `wfh`, each covering its happy path, its validation, the role-denied and wrong-owner cases, and the 503s; `npm run test:migrations` applies all thirty-four migrations and their rollbacks twice against a throwaway Postgres and runs the Wall's, the Helpdesk's, Phase 2C's, Phase 2D's, WFH's and issue #31's row rules themselves. H1 needs no migration; WFH needs 29; promotion wishes need 30; issue #31 needs 34.
 
 ## Settings
 
@@ -135,6 +135,15 @@ Phase 2D adds the leaders', faculty's and escalations' own numbers:
 
 H1 adds no setting: the six class-marking rules are policy constants in `src/policy/classMarking.js`.
 
+Issue #31 adds no setting either:
+
+| What | Value | Where |
+| --- | --- | --- |
+| Work-experience entries | at most 20, replaced as a whole; company and role title 1 to 200, location 200, description 1,000 | `src/routes/workExperience.js`, migration 34 |
+| The About you fields | about 1,000, likes and dislikes 500 each | `src/routes/profileDetails.js` |
+| The org tree | full for a direct-report manager or the listed roles; path otherwise; phone null; depth capped at 20 | `src/policy/me.js` `ORG_TREE_ROLES`, `ORG_TREE_MAX_DEPTH` |
+| The colleague profile's photo | an inline data URI, never a signed link | `src/lib/store.js` `photoDataUrl` |
+
 ## Endpoints
 
 Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Control: no-store`.
@@ -177,13 +186,16 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `POST /api/ess/notifications/{id}/read`, `POST /api/ess/notifications/read-all` | either | Mark one (idempotent) or all read |
 | `GET /api/ess/notifications/settings`, `PUT /api/ess/notifications/settings` | either | The categories (`approvals`, `decisions`, `priority_tasks`, then the Wall's six, `helpdesk` and `documents`) and the quiet hours (D8) |
 | `GET /api/ess/me/profile` | either | My Summary, Job, Personal and the safe Timeline, with a 300-second signed photo link (E1, E12, E10) |
+| `GET, PUT /api/ess/me/profile-details` | either | My About you card (issue #31): about (up to 1,000), likes and dislikes (up to 500 each), a personal `anniversary_date`, and the blood group read-only from `/me/personal`. Null or an empty string clears a field; the audit records the field names only |
+| `GET, PUT /api/ess/me/work-experience` | either | My work history (issue #31): the owner sees every entry, hidden included; `PUT { entries }` replaces the whole list (at most 20, an empty list clears) in one transaction, a past role may omit `to_date`, and a current role has none. Colleagues see the visible entries only |
+| `GET /api/ess/directory/{id}` | either | One colleague's live profile (issue #31): the employee card, full DOB and DOJ, department, branch, email, phone under rule A (self, HR, managers above the person), an inline data-URI photo, about/likes/dislikes, the personal anniversary, blood group, earned praise badges and visible work experience. Missing, archived and exited people are 404 |
 | `GET /api/ess/me/faculty-day?date=` | portal, with a faculty record | The faculty "my day" (H7): today's sessions owned or covered, each marked or not, the remarks due, and the indicators card; counts only |
 | `GET /api/ess/me/batches/{id}/roster?date=` | teaching roles, or the admin roles, for their batch or branch | The day's eligible students (H1): `id`, `full_name`, `admission_number`, `marked`, absent reason and follow-up, plus `already_marked` and `can_edit`; never a phone, password, fee or personal detail |
 | `POST /api/ess/me/batches/{id}/attendance` | the same | Save the day (H1): `{ date, attendance: [{ student_id, present, absent_reason?, follow_up_comment? }] }`, answered with `counts`; a teaching role's day locks after the first save, admins may correct |
 | `PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks` | the same | Fill or change an absent student's reason (H1): `{ student_id, absent_reason, follow_up_comment? }`; present or unmarked is 409 `CLASS_NOT_ABSENT` |
 | `GET /api/ess/leaders/overview` | ceo, super_admin | The organisation in counts (H5): headcount, today's states, off this week, the approval queue; never a name |
 | `PUT /api/ess/me/photo` | either | Change my photo (base64, ≤1 MB, JPEG/PNG/WebP): the private bucket plus the record's pointer, audited (E10) |
-| `GET /api/ess/me/org` | either | My chain to the CEO ("Reports to the CEO (not recorded)"), peers, direct reports and department, with the notice chip (E2, E11) |
+| `GET /api/ess/me/org` | either | My chain to the CEO ("Reports to the CEO (not recorded)"), peers, direct reports and department, with the notice chip (E2, E11), plus issue #31's additive `tree`: the whole organisation for a manager or the listed roles, otherwise the top-root path with my peers as leaves. Phone is null in the tree |
 | `GET /api/ess/directory` | either | Colleague search by name or code, filtered by branch or department; email to everyone, phone per the contact rule (E2, E8) |
 | `GET /api/ess/team/today` | either | Team today for managers, the branch for a HoO (E6, H4) |
 | `GET /api/ess/wall/settings` | either | The Wall's rules: who may post what, the fixed badge catalogue, the poll's shape, the audience scopes, the moderation roles, and `email.enabled: false` |
@@ -244,7 +256,7 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 
 The HR roles are in `src/policy/hrAccess.js`. An attendance session on an HR route is 403 `PORTAL_LOGIN_REQUIRED`; a portal login with another role is 403 `HR_ACCESS_DENIED` or `ATTENDANCE_OVERRIDE_DENIED`, the Scheduler's codes.
 
-The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use; WFH's limit is the employee's own allowance in `hr_ess_wfh_allowances` (KP, 22 Oct), so its capability row is `offered: true` with that limit only for an enabled employee. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.13.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
+The capability rules are KP's decisions of 16 Oct 2026 ([docs/03-decisions.md](../../docs/03-decisions.md)), in `src/policy/capabilities.js`. The request types and limits are in `src/policy/requestLimits.js`, the one table the request endpoints will also use; WFH's limit is the employee's own allowance in `hr_ess_wfh_allowances` (KP, 22 Oct), so its capability row is `offered: true` with that limit only for an enabled employee. The contract is `packages/contracts/openapi.yaml` ([ADR-0010](../../docs/adr/0010-openapi-contract-first.md)), version 0.14.0: every route here is documented in it, and `tests/contract.test.js` provokes every status each route documents and holds the reply to it.
 
 ### Staying signed in (task A3)
 
@@ -365,7 +377,7 @@ Every refusal is `{ "error": "<message for staff>", "code": "UPPER_SNAKE" }`. **
 | 404 | `BATCH_NOT_FOUND` | Class marking (H1): no batch has that id |
 | 400 | `INVALID_JSON` | A request body that is not valid JSON |
 | 400 | `BAD_INSTALL_ID`, `BAD_DEVICE_LABEL`, `BAD_IDENTIFIER` | A missing or malformed install id, phone name or sign-in identifier |
-| 400 | `VALIDATION_FAILED`, `DAY_OUT_OF_RANGE` | A field, query or id the endpoint refuses; the message says which |
+| 400 | `VALIDATION_FAILED`, `DAY_OUT_OF_RANGE` | A field, query or id the endpoint refuses; the message says which. Issue #31's work-experience, anniversary and About-you rules (over 20 entries, a bad date, a current role with an end, over-length text, nothing to change) use `VALIDATION_FAILED` with their own message |
 | 413 | `PAYLOAD_TOO_LARGE` | A JSON body over 16 kB (32 kB for the phone reset's id list, 2 MB for a photo, 7 MB for a Wall post, praise or announcement, or a Helpdesk raise) |
 | 429 | `RATE_LIMITED` | Over 600 requests a minute from one address (before sign-in), or 120 a minute from one employee (after it). Tighter on the session and sign-in endpoints: 120 refreshes and sign-outs by refresh token in 15 minutes per address, 10 kept sign-ins in 15 minutes per employee, and 40 resolves in 15 minutes per address and 10 per identifier; 30 mocked-location reports a day per employee, 60 Wall posts and 200 comments a day, 60 reactions a minute, 20 raised tickets a day, 30 document uploads a day, and 30 ID-card verifications a minute per address (`src/middleware/rateLimit.js`). Sent with `Retry-After` |
 | 503 | `UNAVAILABLE` | The database could not be reached. Never a 401 |

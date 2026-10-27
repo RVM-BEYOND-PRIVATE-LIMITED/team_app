@@ -9,6 +9,13 @@ DROP FUNCTION IF EXISTS public.hr_ess_leave_cl_units(uuid, date);
 DROP FUNCTION IF EXISTS public.hr_ess_leave_cl_limit();
 
 /* ── the single-day decision again ── */
+DO $restore$
+BEGIN
+  IF to_regclass('public.hr_ess_leave_requests') IS NULL THEN
+    RETURN;
+  END IF;
+
+  EXECUTE $fn1$
 CREATE OR REPLACE FUNCTION public.hr_ess_decide_leave_request(
   p_request_id           uuid,
   p_decider_employee_id  uuid,
@@ -100,6 +107,9 @@ BEGIN
 END $$;
 
 /* ── the single-day cancel again ── */
+$fn1$;
+
+EXECUTE $fn2$
 CREATE OR REPLACE FUNCTION public.hr_ess_cancel_leave_request(
   p_request_id  uuid,
   p_by_employee_id uuid,
@@ -153,6 +163,9 @@ BEGIN
 END $$;
 
 /* ── the history trigger without the new fields ── */
+$fn2$;
+
+EXECUTE $fn3$
 CREATE OR REPLACE FUNCTION public.hr_ess_leave_requests_filed()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -168,6 +181,8 @@ BEGIN
   RETURN NEW;
 END $$;
 
+$fn3$;
+
 ALTER TABLE public.hr_ess_leave_requests
   DROP CONSTRAINT IF EXISTS hr_ess_leave_requests_range_chk,
   DROP CONSTRAINT IF EXISTS hr_ess_leave_requests_portion_chk,
@@ -180,5 +195,8 @@ ALTER TABLE public.hr_ess_leave_requests
   DROP COLUMN IF EXISTS day_count,
   DROP COLUMN IF EXISTS working_days,
   DROP COLUMN IF EXISTS days_before;
+
+END
+$restore$;
 
 NOTIFY pgrst, 'reload schema';

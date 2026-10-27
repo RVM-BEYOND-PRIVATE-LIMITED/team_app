@@ -29,7 +29,7 @@ Team RVM is its own app. **Nothing in Scheduler_Backend or Scheduler_frontend ch
 | 6 | Mocked location | The app refuses the punch on the phone and reports the attempt to the ESS for HR (the Scheduler's punch API can't take a mock flag without a change). Not yet confirmed: what happens to a mocked ping (the proposal is to report it to HR the same way). | Decided (punch); Open (pings) | KP, 16 Oct | B14 |
 | 7 | Offline punching | Not allowed in the first version ("Punching needs a connection") | Default | Brief | B15 |
 | 8 | Posting on the Wall | Everyone can post, comment, react, praise and run polls. Only HR, the CEO and super admins post announcements. HR can hide anything, with a reason. | Decided | KP, 16 Oct | F1â€“F8 |
-| 9 | Colleague contact details | Work email is visible to everyone. A phone number is visible only to HR and to the managers above that person on the HR record, so a manager sees their reports' phones. KP to confirm whether an employee also sees their own managers' phones. | Decided (KP to confirm one point) | KP, 16 Oct | E2, E8 |
+| 9 | Colleague contact details | Work email is visible to everyone. A phone number is visible only to HR, the person themselves, and the managers above that person on the HR record, so a manager sees their reports' phones but a report does not see their manager's. **Confirmed as rule A on 27 Oct 2026** (issue #31). | Decided | KP, 16 Oct; confirmed 27 Oct | E2, E8 |
 | 10 | Pay in the app | Nothing for now | Default | Brief | E1 (never return pay) |
 | 11 | Moving phones from the browser to the app | HR resets the registered phones in bulk, branch by branch, at go-live. Only a one-at-a-time reset exists today, so the ESS adds an HR action that writes the same device rows the Scheduler's own reset writes (KP to confirm). A reset browser can't punch while it keeps its old cookie. | Decided | KP, 16 Oct | B8 |
 | 12 | Build stack | Flutter, in team_app (not flutterapps) | Decided | KP, 16 Oct | â€” |
@@ -213,3 +213,38 @@ handler runs. The fix is split by what each side owns:
 The ESS half is live in `apps/ess-api` (`src/routes/account.js`, contract 0.13.0). The Flutter
 hiding of the Scheduler-only tiles is the remaining app change; the endpoint table is in
 [08-flutter-handover.md](08-flutter-handover.md).
+
+## 27 Oct 2026 - Profile and org parity (issue #31)
+
+KP answered the Flutter team's open questions. The backend is built to these defaults; contract
+0.14.0, migration 34 (`20261115000001_hr_ess_profile_and_experience.sql`). The issue asked for
+"migration 30" and contract 0.12.0, but both were already taken in this repository: migration 30
+is the Wall promotion occasion and contract 0.13.0 is Account & Security, so this work uses the
+next free numbers.
+
+- **Phone visibility stays rule A.** `policy/me.js canSeePhone` is unchanged: the person
+  themselves, HR's roles (`hr`, `hr_executive`, `ceo`, `super_admin`), and the manager chain above
+  the person. A report does **not** see their manager's phone. The colleague profile, the
+  directory and the org views all use the same rule.
+- **Anniversary: both.** The work anniversary is derived by the app from
+  `hr_employees.date_of_joining`. The new editable `anniversary_date` is a separate personal date
+  in `hr_ess_profile_details`; the colleague profile returns both.
+- **Org tree audience: exactly the issue's proposal.** Anyone with at least one direct report,
+  plus `ceo`, `super_admin`, `hoo`, `hr`, `hr_executive`, `admin_manager`, `admin`, `accounts_admin`,
+  `hod` and `hod_placement`. Everybody else gets only the manager path from the top root down to
+  themselves, nested, with their own peers as leaves at their level. The tree carries no phone,
+  guards cycles with a visited set, and caps depth at 20.
+- **DOB on a colleague's profile: the full date**, as the issue's contract says. **Privacy point
+  for KP:** every signed-in employee can see every colleague's full date of birth. If RVM prefers
+  day and month only, or a role restriction, the contract and the route must change together.
+- **About, likes and dislikes: free text**, visible to every colleague and editable only by the
+  owner. About is up to 1,000 characters; likes and dislikes up to 500 each. Blood group stays in
+  `/me/personal` and is shown read-only on the profile. Null or an empty string clears a field.
+- **Work experience:** the owner sees every entry (hidden ones included); colleagues see only
+  `is_visible` entries. `PUT` replaces the whole list, at most 20, in one transaction; an empty
+  list clears it. "Show on my profile" defaults ON. A past role may omit `to_date`; a current role
+  must have none. Removing an entry deletes it permanently. The audit is
+  `work_experience.changed` with the count only.
+- **Photo:** the colleague profile's `photo_url` is an inline data URI, never a signed storage
+  link, so the sheet does not depend on the storage host (issue #13's DNS failure). `/me/profile`
+  keeps its existing signed link for now; the app's SafePhoto fallback covers a dead link there.

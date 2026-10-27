@@ -31,6 +31,7 @@ DECLARE
   v_units      numeric;
   v_taken      numeric;
   v_limit      numeric;
+  v_allowance  hr_ess_wfh_allowances;
   v_day        hr_staff_attendance;
   v_had        boolean;
   v_one        date;
@@ -74,7 +75,23 @@ BEGIN
     RETURN jsonb_build_object('outcome', 'rejected', 'request', to_jsonb(r));
   END IF;
 
+  -- WFH is the per-employee allowance HR sets (migration 29): re-read it under a lock, count the
+  -- month's OTHER approved or pending WFH days, and refuse before writing anything.
   IF r.type = 'wfh' THEN
+    SELECT * INTO v_allowance FROM hr_ess_wfh_allowances
+     WHERE employee_id = r.employee_id
+     FOR UPDATE;
+    IF NOT FOUND OR NOT v_allowance.is_enabled THEN
+      RETURN jsonb_build_object('outcome', 'wfh_not_allowed');
+    END IF;
+    SELECT count(*) INTO v_taken FROM hr_ess_leave_requests
+     WHERE employee_id = r.employee_id AND type = 'wfh' AND status IN ('approved', 'pending')
+       AND id <> r.id
+       AND day BETWEEN date_trunc('month', r.day::timestamp)::date
+                   AND (date_trunc('month', r.day::timestamp) + interval '1 month')::date - 1;
+    IF v_taken >= v_allowance.monthly_limit_days THEN
+      RETURN jsonb_build_object('outcome', 'wfh_limit');
+    END IF;
     v_days := ARRAY[r.day];
   ELSE
     v_days := hr_ess_leave_working_days(r.employee_id, r.day, r.end_day);

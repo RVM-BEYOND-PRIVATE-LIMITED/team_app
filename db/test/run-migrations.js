@@ -169,7 +169,7 @@ const REFUSALS = [
   refusal('a request reason of four characters', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place) VALUES (e, 'on_duty', DATE '2026-10-16', 'fix!', 'Site')"),
   refusal('a pending request that says it was decided', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, decided_at, decided_by_name) VALUES (e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site', now(), 'HR')"),
   refusal('a cancelled request with no cancel time', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, place, decided_at, decided_by_name, status) VALUES (e, 'on_duty', DATE '2026-10-16', 'Client visit, please.', 'Site', now(), 'HR', 'cancelled')"),
-  refusal('a leave request of a type it does not take', "INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason) VALUES (e, 'sick', DATE '2026-10-16', 'I am not well.')"),
+  refusal('a leave request of a type it does not take', "INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason) VALUES (e, 'sick', DATE '2026-10-16', DATE '2026-10-16', 'I am not well.')"),
   // WFH (KP, 22 Oct): HR's allowance is 1 to 31 days, with a note of up to 300 characters.
   refusal('a WFH allowance of no days', "INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days) VALUES (e, 0)"),
   refusal('a WFH allowance of more than a month', "INSERT INTO public.hr_ess_wfh_allowances (employee_id, monthly_limit_days) VALUES (e, 32)"),
@@ -276,6 +276,18 @@ const REFUSALS = [
   refusal('an excuse carrying minutes', "INSERT INTO public.hr_ess_attendance_requests (employee_id, type, day, reason, minutes) VALUES (e, 'excuse_late', DATE '2026-10-16', 'The bus broke down.', 60)"),
   refusal('an escalation of an unknown family', "INSERT INTO public.hr_ess_approval_escalations (family, request_id, to_employee_id, reason) VALUES ('wall', gen_random_uuid(), o, 'Nobody decided it.')"),
   refusal('a second escalation for the same request and person', "INSERT INTO public.hr_ess_approval_escalations (family, request_id, to_employee_id, reason) VALUES ('attendance', '7d000000-0000-4000-8000-000000000001', o, 'Nobody decided it.'), ('attendance', '7d000000-0000-4000-8000-000000000001', o, 'Nobody decided it.')", 'unique_violation'),
+  // Issue #31: the colleague profile's work experience and social fields
+  // (db/migrations/20261115000001_hr_ess_profile_and_experience.sql).
+  refusal('a work experience ending before it starts', "INSERT INTO public.hr_ess_work_experience (employee_id, company, role_title, from_date, to_date) VALUES (e, 'ACME Ltd', 'Designer', DATE '2020-06-01', DATE '2020-05-31')"),
+  refusal('a current role with an end date', "INSERT INTO public.hr_ess_work_experience (employee_id, company, role_title, from_date, to_date, is_current) VALUES (e, 'ACME Ltd', 'Designer', DATE '2020-06-01', DATE '2021-06-01', true)"),
+  refusal('a work experience company of 201 characters', "INSERT INTO public.hr_ess_work_experience (employee_id, company, role_title, from_date) VALUES (e, repeat('x', 201), 'Designer', DATE '2020-06-01')"),
+  refusal('a work experience with a blank role title', "INSERT INTO public.hr_ess_work_experience (employee_id, company, role_title, from_date) VALUES (e, 'ACME Ltd', '   ', DATE '2020-06-01')"),
+  refusal('a work experience location over 200 characters', "INSERT INTO public.hr_ess_work_experience (employee_id, company, role_title, from_date, location) VALUES (e, 'ACME Ltd', 'Designer', DATE '2020-06-01', repeat('x', 201))"),
+  refusal('a work experience description over 1000 characters', "INSERT INTO public.hr_ess_work_experience (employee_id, company, role_title, from_date, description) VALUES (e, 'ACME Ltd', 'Designer', DATE '2020-06-01', repeat('x', 1001))"),
+  refusal('a profile about over 1000 characters', "INSERT INTO public.hr_ess_profile_details (employee_id, about) VALUES (e, repeat('x', 1001))"),
+  refusal('profile likes over 500 characters', "INSERT INTO public.hr_ess_profile_details (employee_id, likes) VALUES (e, repeat('x', 501))"),
+  refusal('a second profile-details row for one employee', "INSERT INTO public.hr_ess_profile_details (employee_id) VALUES (e), (e)", 'unique_violation'),
+  refusal('profile details for nobody', 'INSERT INTO public.hr_ess_profile_details (employee_id) VALUES (gen_random_uuid())', 'foreign_key_violation'),
 ];
 
 /** Rows the ESS writes must go in, take their defaults, and follow an employee's deletion. */
@@ -311,11 +323,36 @@ BEGIN
     RAISE EXCEPTION 'audit details default';
   END IF;
 
+  -- Issue #31: a work-experience entry takes its defaults; a profile-details row is one per person.
+  INSERT INTO public.hr_ess_work_experience (employee_id, company, role_title, from_date, to_date, location, description)
+    VALUES (e, 'ACME Ltd', 'Designer', DATE '2020-06-01', DATE '2021-06-01', 'Faridabad', 'AutoCAD drawings.');
+  SELECT is_current, is_visible, created_at, updated_at INTO r FROM public.hr_ess_work_experience WHERE employee_id = e;
+  IF r.is_current OR NOT r.is_visible OR r.created_at IS NULL OR r.updated_at IS NULL THEN
+    RAISE EXCEPTION 'work experience defaults';
+  END IF;
+  INSERT INTO public.hr_ess_profile_details (employee_id, about, likes, dislikes, anniversary_date, updated_by_user_id)
+    VALUES (e, 'I like drawing.', 'Sketching, music', 'Late meetings', DATE '2018-02-14', u);
+  IF (SELECT count(*) FROM public.hr_ess_profile_details WHERE employee_id = e) <> 1 THEN
+    RAISE EXCEPTION 'profile details row';
+  END IF;
+  -- The replace function deletes and inserts in one transaction, in the order sent.
+  PERFORM public.hr_ess_replace_work_experience(e,
+    '[{"company": "Second Ltd", "role_title": "Lead", "from_date": "2024-01-01"}, {"company": "First Ltd", "role_title": "Designer", "from_date": "2020-01-01", "to_date": "2023-12-31", "is_visible": false}]'::jsonb);
+  IF (SELECT count(*) FROM public.hr_ess_work_experience WHERE employee_id = e) <> 2 THEN
+    RAISE EXCEPTION 'the replaced work experience';
+  END IF;
+  IF (SELECT company FROM public.hr_ess_work_experience WHERE employee_id = e
+       ORDER BY from_date DESC LIMIT 1) <> 'Second Ltd' THEN
+    RAISE EXCEPTION 'the replaced order';
+  END IF;
+
   -- The employee's own rows go with the employee; the audit keeps whose record it was.
   DELETE FROM public.hr_employees WHERE id = e;
   IF EXISTS (SELECT 1 FROM public.hr_ess_personal_details WHERE employee_id = e) THEN RAISE EXCEPTION 'personal details kept'; END IF;
   IF EXISTS (SELECT 1 FROM public.hr_ess_data_requests WHERE employee_id = e) THEN RAISE EXCEPTION 'data requests kept'; END IF;
   IF EXISTS (SELECT 1 FROM public.hr_ess_mock_location_reports WHERE employee_id = e) THEN RAISE EXCEPTION 'reports kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_work_experience WHERE employee_id = e) THEN RAISE EXCEPTION 'work experience kept'; END IF;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_profile_details WHERE employee_id = e) THEN RAISE EXCEPTION 'profile details kept'; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.hr_ess_audit WHERE target_employee_id = e) THEN RAISE EXCEPTION 'audit lost the target'; END IF;
 
   -- A report keeps its place in the list when its branch goes: the branch goes null.
@@ -473,12 +510,12 @@ BEGIN
 
   -- One CL a month: the first is approved, a second in the same month is refused, and cancelling
   -- the first makes room again. Leave may be recorded ahead.
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
-    VALUES (e, 'cl', v_month + 1, 'Family function.') RETURNING id INTO r_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason)
+    VALUES (e, 'cl', v_month + 1, v_month + 1, 'Family function.') RETURNING id INTO r_id;
   v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
   IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the CL approval: %', v_out; END IF;
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
-    VALUES (e, 'cl', v_month + 2, 'One more.') RETURNING id INTO second_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason)
+    VALUES (e, 'cl', v_month + 2, v_month + 2, 'One more.') RETURNING id INTO second_id;
   v_out := public.hr_ess_decide_leave_request(second_id, m, u, 'Test Manager', true, NULL, now());
   IF v_out ->> 'outcome' <> 'cl_limit' THEN RAISE EXCEPTION 'a second CL: %', v_out; END IF;
   v_out := public.hr_ess_cancel_leave_request(r_id, m, u, 'Test Manager', 'Moved it.', now());
@@ -490,12 +527,12 @@ BEGIN
   IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the CL after the cancel: %', v_out; END IF;
 
   -- The window: before last month is outside it; last month is open on the 5th and closed on the 6th.
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
-    VALUES (e, 'lwp', (v_month - interval '1 month')::date - 1, 'Long ago.') RETURNING id INTO r_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason)
+    VALUES (e, 'lwp', (v_month - interval '1 month')::date - 1, (v_month - interval '1 month')::date - 1, 'Long ago.') RETURNING id INTO r_id;
   v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
   IF v_out ->> 'outcome' <> 'too_old' THEN RAISE EXCEPTION 'a day before last month: %', v_out; END IF;
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
-    VALUES (e, 'lwp', (v_month - interval '1 month')::date + 3, 'Last month, unpaid.') RETURNING id INTO r_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason)
+    VALUES (e, 'lwp', (v_month - interval '1 month')::date + 3, (v_month - interval '1 month')::date + 3, 'Last month, unpaid.') RETURNING id INTO r_id;
   v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL,
     ((v_month + interval '5 days' + interval '6 hours') AT TIME ZONE 'Asia/Kolkata'));
   IF v_out ->> 'outcome' <> 'cutoff' THEN RAISE EXCEPTION 'last month after the 5th: %', v_out; END IF;
@@ -513,8 +550,8 @@ BEGIN
     VALUES (e, b, v_wfh_day, 'present', 'self_punch', 'Punched at the centre.',
             (v_wfh_day + TIME '09:00') AT TIME ZONE 'Asia/Kolkata',
             (v_wfh_day + TIME '18:00') AT TIME ZONE 'Asia/Kolkata', 540);
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
-    VALUES (e, 'wfh', v_wfh_day, 'Working from home while the centre is painted.') RETURNING id INTO r_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason)
+    VALUES (e, 'wfh', v_wfh_day, v_wfh_day, 'Working from home while the centre is painted.') RETURNING id INTO r_id;
   v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
   IF v_out ->> 'outcome' <> 'approved' THEN RAISE EXCEPTION 'the WFH approval: %', v_out; END IF;
   SELECT status, leave_type, note, source, first_in, last_out, worked_minutes INTO v_row
@@ -527,13 +564,13 @@ BEGIN
     RAISE EXCEPTION 'the WFH day: %, %, %, %, %, %, %', v_row.status, v_row.leave_type, v_row.note, v_row.source,
       v_row.first_in, v_row.last_out, v_row.worked_minutes;
   END IF;
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
-    VALUES (e, 'wfh', v_wfh_day + 1, 'One more day at home.') RETURNING id INTO second_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason)
+    VALUES (e, 'wfh', v_wfh_day + 1, v_wfh_day + 1, 'One more day at home.') RETURNING id INTO second_id;
   v_out := public.hr_ess_decide_leave_request(second_id, m, u, 'Test Manager', true, NULL, now());
   IF v_out ->> 'outcome' <> 'wfh_limit' THEN RAISE EXCEPTION 'a second WFH day: %', v_out; END IF;
   UPDATE public.hr_ess_wfh_allowances SET is_enabled = false WHERE employee_id = e;
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason)
-    VALUES (e, 'wfh', v_wfh_day + 2, 'And another.') RETURNING id INTO r_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason)
+    VALUES (e, 'wfh', v_wfh_day + 2, v_wfh_day + 2, 'And another.') RETURNING id INTO r_id;
   v_out := public.hr_ess_decide_leave_request(r_id, m, u, 'Test Manager', true, NULL, now());
   IF v_out ->> 'outcome' <> 'wfh_not_allowed' THEN RAISE EXCEPTION 'a WFH day with the allowance off: %', v_out; END IF;
   UPDATE public.hr_ess_wfh_allowances SET is_enabled = true WHERE employee_id = e;
@@ -562,7 +599,7 @@ BEGIN
   IF (v_out ->> 'applied')::integer <> 0 THEN RAISE EXCEPTION 'a second run applied %', v_out ->> 'applied'; END IF;
 
   -- The employee's deletion takes the requests, their history and the archives with it.
-  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, reason) VALUES (e, 'lwp', v_today, 'Unpaid.') RETURNING id INTO r_id;
+  INSERT INTO public.hr_ess_leave_requests (employee_id, type, day, end_day, reason) VALUES (e, 'lwp', v_today, v_today, 'Unpaid.') RETURNING id INTO r_id;
   INSERT INTO public.hr_ess_request_archives (family, request_id, employee_id) VALUES ('leave', r_id, m);
   DELETE FROM public.hr_employees WHERE id = e;
   IF EXISTS (SELECT 1 FROM public.hr_ess_attendance_requests WHERE employee_id = e) THEN RAISE EXCEPTION 'requests kept'; END IF;

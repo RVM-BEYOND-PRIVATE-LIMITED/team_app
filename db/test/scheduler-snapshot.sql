@@ -37,6 +37,12 @@ CREATE TABLE public.hr_employees (
   email text
 );
 
+-- hr_branches: supabase/migrations/20260826000001_hrms_tables.sql:39-48. Referenced by
+-- hr_ess_mock_location_reports.branch_id and hr_holidays.branch_id.
+CREATE TABLE public.hr_branches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+);
+
 -- hr_holidays: 20261022000000_hr_attendance_shifts.sql:91-100. A leave range skips them.
 CREATE TABLE public.hr_holidays (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -46,12 +52,6 @@ CREATE TABLE public.hr_holidays (
   created_by uuid,
   created_by_name text,
   created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- hr_branches: supabase/migrations/20260826000001_hrms_tables.sql:39-48. Referenced by
--- hr_ess_mock_location_reports.branch_id.
-CREATE TABLE public.hr_branches (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid()
 );
 
 -- hr_staff_attendance: 20261015000004_hr_staff_attendance.sql:13-28, plus the punch columns of
