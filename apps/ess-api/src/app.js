@@ -225,6 +225,11 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
   api.post('/approvals/:family/:id/archive', asEmployee, approvals.archiveRequest({ store, now }));
   api.get('/approvals/:family/:id/chain', asEmployee, approvals.requestChain({ store, now }));
 
+  // The super admin's branch → Admin Manager routing, and the Admin Manager's substitute list.
+  api.get('/leave-approvers', asEmployee, approvals.listLeaveApprovers({ store }));
+  api.put('/leave-approvers/:branchId', asEmployee, approvals.setLeaveApprover({ store, now }));
+  api.get('/leave-faculty', asEmployee, approvals.listLeaveFaculty({ store }));
+
   // H5: the leaders' overview. A portal screen (ceo, super_admin), so an attendance session is
   // refused with PORTAL_LOGIN_REQUIRED before the role check answers HR_ACCESS_DENIED.
   const asLeader = [...asEmployee, requireRoles(LEADER_ROLES, 'HR_ACCESS_DENIED')];

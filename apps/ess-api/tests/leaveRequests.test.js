@@ -91,8 +91,14 @@ describe('POST /api/ess/leave-requests', () => {
         portion: 'full',
         day_count: 1,
         working_days: [day],
-        requires_final_approval: false,
+        requires_final_approval: true,
         stage: 'manager',
+        admin_manager_employee_id: null,
+        admin_manager_name: null,
+        is_teaching: false,
+        substitute_faculty_id: null,
+        substitute_faculty_name: null,
+        class_timing: null,
         manager_approved_by_name: null,
         manager_approved_at: null,
         manager_remark: null,
@@ -257,8 +263,13 @@ describe('half days, single days and ranges', () => {
       type: 'lwp', day: '2026-10-23', end_day: '2026-10-26', reason: 'Family function out of town.',
     });
     const id = filed.body.request.id;
+    const advanced = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
+      .set(bearer(tokens.portal(people.admin_manager)))
+      .send({ decision: 'approve', note: 'Approved; cover arranged.' });
+    expect(advanced.status).toBe(200);
+    expect(advanced.body.request).toMatchObject({ status: 'pending', stage: 'final' });
     const decided = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
-      .set(bearer(tokens.portal(people.hr)))
+      .set(bearer(tokens.portal(people.super_admin)))
       .send({ decision: 'approve', note: 'Approved; cover arranged.' });
     expect(decided.status).toBe(200);
     expect(decided.body.request).toMatchObject({ status: 'approved', decision_note: 'Approved; cover arranged.' });
@@ -275,7 +286,7 @@ describe('half days, single days and ranges', () => {
     expect(written()).toHaveLength(0);
   });
 
-  it('takes a faculty request through the manager and then HR final approval', async () => {
+  it('takes a faculty request through the Admin Manager and then super-admin final approval', async () => {
     const { app, db, people } = buildApp();
     const filed = await file(app, tokens.portal(people.faculty), {
       type: 'cl', day: '2026-10-20', reason: 'Family function at home.',
@@ -285,29 +296,29 @@ describe('half days, single days and ranges', () => {
     const id = filed.body.request.id;
 
     const manager = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
-      .set(bearer(tokens.portal(people.hod)))
-      .send({ decision: 'approve', note: 'Approved by the HOD; please finalise.' });
+      .set(bearer(tokens.portal(people.admin_manager)))
+      .send({ decision: 'approve', note: 'Approved by the Admin Manager; please finalise.' });
     expect(manager.status).toBe(200);
     expect(manager.body.request).toMatchObject({
-      status: 'pending', stage: 'final', manager_approved_by_name: 'Test CAD HOD',
-      manager_remark: 'Approved by the HOD; please finalise.',
+      status: 'pending', stage: 'final', manager_approved_by_name: 'Test Admin Manager',
+      manager_remark: 'Approved by the Admin Manager; please finalise.',
     });
-    // The manager's round writes no day and does not consume the CL.
+    // The Admin Manager's round writes no day and does not consume the CL.
     expect(db.tables.hr_staff_attendance.filter((d) => d.employee_id === people.faculty.employee.id
       && d.day === '2026-10-20')).toHaveLength(0);
 
-    // The manager cannot take the final round, and the refusal says why.
+    // An HOD cannot take the final round, and the refusal says why.
     const lockedOut = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
       .set(bearer(tokens.portal(people.hod)))
       .send({ decision: 'approve' });
-    expectRefusal(lockedOut, 403, 'NOT_AN_APPROVER');
+    expectRefusal(lockedOut, 403, 'FINAL_APPROVAL_ONLY');
     expect(lockedOut.body.error).toBe(MESSAGES.FINAL_APPROVAL_ONLY);
 
     const final = await request(app).post(`/api/ess/approvals/leave/${id}/decide`)
-      .set(bearer(tokens.portal(people.hr)))
-      .send({ decision: 'approve', note: 'Final approval by HR.' });
+      .set(bearer(tokens.portal(people.super_admin)))
+      .send({ decision: 'approve', note: 'Final approval by the super admin.' });
     expect(final.status).toBe(200);
-    expect(final.body.request).toMatchObject({ status: 'approved', decision_note: 'Final approval by HR.' });
+    expect(final.body.request).toMatchObject({ status: 'approved', decision_note: 'Final approval by the super admin.' });
     expect(db.tables.hr_staff_attendance.find((d) => d.employee_id === people.faculty.employee.id
       && d.day === '2026-10-20')).toMatchObject({ status: 'leave', leave_type: 'cl' });
   });
