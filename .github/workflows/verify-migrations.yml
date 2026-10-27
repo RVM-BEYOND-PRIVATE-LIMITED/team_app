@@ -52,7 +52,7 @@ jobs:
             hr_ess_helpdesk_messages hr_ess_document_types hr_ess_documents \
             hr_ess_change_requests hr_ess_bank_details hr_ess_helpdesk_assignments \
             hr_ess_approval_escalations hr_ess_infra_links hr_ess_wfh_allowances \
-            hr_ess_work_experience hr_ess_profile_details; do
+            hr_ess_work_experience hr_ess_profile_details hr_ess_leave_approvers; do
             table "$t"
           done
 
@@ -67,6 +67,12 @@ jobs:
           column hr_ess_leave_requests manager_approved_by_name
           column hr_ess_leave_requests manager_approved_at
           column hr_ess_leave_requests manager_remark
+          column hr_ess_leave_requests admin_manager_employee_id
+          column hr_ess_leave_requests admin_manager_name
+          column hr_ess_leave_requests is_teaching
+          column hr_ess_leave_requests substitute_faculty_id
+          column hr_ess_leave_requests substitute_faculty_name
+          column hr_ess_leave_requests class_timing
           column hr_ess_attendance_requests minutes
           column hr_ess_helpdesk_tickets assigned_at
           column hr_ess_documents remark
