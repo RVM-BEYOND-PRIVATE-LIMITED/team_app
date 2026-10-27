@@ -25,7 +25,14 @@ async function approverEmployeeIds(store, requester) {
  * Leave is no longer the reporting line's: the branch Admin Manager hears about it, or HR when
  * the branch has no active Admin Manager (the same fallback the approval route uses).
  */
-async function leaveApproverEmployeeIds(store, requester) {
+async function leaveApproverEmployeeIds(store, requester, request) {
+  if (request && request.stage === 'final') {
+    if (request.final_approver_employee_id) return [request.final_approver_employee_id];
+    const userIds = (await store.listFinalDeciderUserIds()) || [];
+    if (!userIds.length) return [];
+    const employees = await store.listEmployeesByUserIds(userIds.map((u) => u.id));
+    return employees.map((e) => e.id).filter((id) => id !== requester.id);
+  }
   const managers = (await store.listLeaveAdminManagers()) || [];
   const inBranch = managers.filter((e) => e.branch_id === requester.branch_id && e.id !== requester.id);
   if (inBranch.length) {
@@ -52,7 +59,7 @@ const leaveWhen = (request) => {
 async function notifyApprovers({ store, requester, request, family }) {
   try {
     const ids = family === 'leave'
-      ? await leaveApproverEmployeeIds(store, requester)
+      ? await leaveApproverEmployeeIds(store, requester, request)
       : await approverEmployeeIds(store, requester);
     const title = family === 'leave' ? 'New leave request' : 'New attendance request';
     const when = family === 'leave' ? leaveWhen(request) : dmy(request.day);

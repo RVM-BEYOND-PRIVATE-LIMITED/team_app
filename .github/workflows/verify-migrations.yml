@@ -52,7 +52,8 @@ jobs:
             hr_ess_helpdesk_messages hr_ess_document_types hr_ess_documents \
             hr_ess_change_requests hr_ess_bank_details hr_ess_helpdesk_assignments \
             hr_ess_approval_escalations hr_ess_infra_links hr_ess_wfh_allowances \
-            hr_ess_work_experience hr_ess_profile_details hr_ess_leave_approvers; do
+            hr_ess_work_experience hr_ess_profile_details hr_ess_leave_approvers \
+            hr_ess_leave_final_approvers; do
             table "$t"
           done
 
@@ -70,6 +71,8 @@ jobs:
           column hr_ess_leave_requests admin_manager_employee_id
           column hr_ess_leave_requests admin_manager_name
           column hr_ess_leave_requests is_teaching
+          column hr_ess_leave_requests final_approver_employee_id
+          column hr_ess_leave_requests final_approver_name
           column hr_ess_leave_requests substitute_faculty_id
           column hr_ess_leave_requests substitute_faculty_name
           column hr_ess_leave_requests class_timing
@@ -89,7 +92,7 @@ jobs:
           if [ -n "$employee" ]; then
             routed=$(curl -s -X POST "$base/rpc/hr_ess_leave_route" "${auth[@]}" \
               -H 'Content-Type: application/json' -d "{\"p_employee_id\":\"$employee\"}")
-            if echo "$routed" | jq -e 'type == "array" and length == 1 and (.[0].stage == "manager" or .[0].stage == "final")' > /dev/null; then
+            if echo "$routed" | jq -e 'type == "array" and length == 1 and (.[0].stage == "manager" or .[0].stage == "final") and (.[0] | has("final_approver_employee_id"))' > /dev/null; then
               echo "OK      function hr_ess_leave_route"
             else
               echo "MISSING function hr_ess_leave_route ($routed)"; missing=$((missing + 1))

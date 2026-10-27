@@ -271,6 +271,44 @@ describe('POST /api/ess/approvals/{family}/{id}/decide', () => {
     expect(day).toMatchObject({ status: 'leave', leave_type: 'cl', source: 'override' });
   });
 
+  it('a non-faculty leave is one approval by the reporting manager', async () => {
+    const { app, people, db } = buildApp({ setup: (w) => {
+      w.tables.hr_ess_leave_requests = [requestRow('leave', w.people.attendance.employee.id, 12, {
+        stage: 'final',
+        requires_final_approval: true,
+        final_approver_employee_id: w.people.admin_manager.employee.id,
+        final_approver_name: 'Test Admin Manager',
+        is_teaching: false,
+      })];
+    } });
+    const manager = tokens.portal(people.admin_manager);
+    expect((await inbox(app, manager)).body.requests.map((r) => r.id)).toContain(REQ(12));
+    expectRefusal(await decide(app, tokens.portal(people.super_admin), 'leave', REQ(12), { decision: 'approve' }),
+      403, 'FINAL_APPROVAL_ONLY');
+    const res = await decide(app, manager, 'leave', REQ(12), { decision: 'approve' });
+    expect(res.status).toBe(200);
+    expect(res.body.request.status).toBe('approved');
+    expect(db.tables.hr_staff_attendance.find((d) => d.employee_id === people.attendance.employee.id
+      && d.day === '2026-10-15')).toMatchObject({ status: 'leave', leave_type: 'cl' });
+  });
+
+  it('only the named final approver may close the faculty request', async () => {
+    const { app, people, db } = buildApp({ setup: (w) => {
+      withTwoRequests(w);
+      w.tables.hr_ess_leave_requests[0].final_approver_employee_id = w.people.hoo.employee.id;
+      w.tables.hr_ess_leave_requests[0].final_approver_name = w.people.hoo.employee.full_name;
+    } });
+    expect((await decide(app, tokens.portal(people.admin_manager), 'leave', REQ(2), { decision: 'approve' })).status).toBe(200);
+    expect((await inbox(app, tokens.portal(people.hoo))).body.requests.map((r) => r.id)).toContain(REQ(2));
+    expectRefusal(await decide(app, tokens.portal(people.super_admin), 'leave', REQ(2), { decision: 'approve' }),
+      403, 'FINAL_APPROVAL_ONLY');
+    const final = await decide(app, tokens.portal(people.hoo), 'leave', REQ(2), { decision: 'approve' });
+    expect(final.status).toBe(200);
+    expect(final.body.request.status).toBe('approved');
+    expect(db.tables.hr_staff_attendance.find((d) => d.employee_id === people.faculty.employee.id
+      && d.day === '2026-10-15')).toMatchObject({ status: 'leave', leave_type: 'cl' });
+  });
+
   it('teaching leave needs the substitute faculty and class timing before the Admin Manager may advance it', async () => {
     const { app, people, db } = buildApp({ setup: (w) => {
       withTwoRequests(w);

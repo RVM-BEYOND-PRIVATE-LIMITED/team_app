@@ -96,6 +96,8 @@ describe('POST /api/ess/leave-requests', () => {
         admin_manager_employee_id: null,
         admin_manager_name: null,
         is_teaching: false,
+        final_approver_employee_id: null,
+        final_approver_name: null,
         substitute_faculty_id: null,
         substitute_faculty_name: null,
         class_timing: null,

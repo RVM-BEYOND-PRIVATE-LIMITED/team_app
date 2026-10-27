@@ -78,6 +78,9 @@ function mayDecide({ auth, entries }) {
 function mayDecideLeave({ auth, request, requesterBranchId, branchHasAdminManager = false }) {
   if (!request) return false;
   if (request.stage === 'final') {
+    if (request.final_approver_employee_id) {
+      return Boolean(auth.employee && auth.employee.id === request.final_approver_employee_id);
+    }
     return auth.kind === 'portal' && auth.role === 'super_admin';
   }
   if (request.stage !== 'manager' || !auth.employee) return false;

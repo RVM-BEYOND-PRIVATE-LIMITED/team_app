@@ -2832,7 +2832,7 @@ paths:
 
         - `decision`: `approve` or `reject`. `note`: up to 1,000 characters; a rejection needs one (at least 3), because the employee is owed the reason.
         - A teaching leave approval at the Admin Manager stage needs `substitute_faculty_id` and `class_timing`; without them it is 400 `COVERAGE_REQUIRED`. The Admin Manager's approval advances the request to `final` and writes no day.
-        - Only a super admin may decide a leave request at `final`; HR or the CEO there is 403 `FINAL_APPROVAL_ONLY`. HR may decide the Admin Manager stage only where the branch has no active Admin Manager.
+        - A leave request at `final` may be decided only by its `final_approver_employee_id` (the centre Level 2 approver for faculty, or the reporting manager for everyone else). Where that field is null, only a super admin may decide it. Any other caller is 403 `FINAL_APPROVAL_ONLY`.
         - An attendance approval writes the official day through the Scheduler's override function, in one transaction with the request's status and history; a second decision on the same request is 409 `ALREADY_DECIDED` whatever two approvers do at the same moment. A leave approval at `final` writes the days the same way and closes the request as `approved`.
         - What a decision can refuse: `NOT_LATE` (excusing a day that is not a late), `TIMES_INCOMPLETE` (the fix would leave the day without an in or out), `DAY_LOCKED` (a fix on a day recorded as leave, a week off or a holiday), `CL_LIMIT` (a second CL in the month), `WFH_NOT_ALLOWED` (HR has switched the person's allowance off, or there is no row), `WFH_LIMIT` (the month's other approved WFH days already use the allowance), `REQUEST_CLOSED`/`REQUEST_WINDOW` (last month past the cut-off), `REQUEST_FUTURE` (a fix or excuse for a day that has not happened). A refused decision changes nothing.
         - A WFH approval writes the day as present, with `Work from home: <reason>` as its note and the times the day already records kept — the same sanctioned path leave uses. The allowance is re-read at decision time under a lock, so HR switching it off or another approval filling the month cannot be raced.
@@ -12262,11 +12262,11 @@ components:
           description: The days the approval writes. Weekly offs and holidays are not in it.
         requires_final_approval:
           type: boolean
-          description: Always true now; every leave request has an Admin Manager round and a super-admin final round.
+          description: Always true. Faculty leave has an Admin Manager round then a centre Level 2 approver; everyone else is final from creation and waits on their reporting manager.
         stage:
           type: string
           enum: [manager, final]
-          description: The round waiting now. `manager` is the branch Admin Manager stage; `final` is the super-admin stage. A final-stage request is still `pending`.
+          description: "`manager` is the branch Admin Manager round; `final` is the assigned final approver (or a super admin when none is set)."
         admin_manager_employee_id:
           type: [string, 'null']
           format: uuid
@@ -12277,6 +12277,13 @@ components:
         is_teaching:
           type: boolean
           description: True when the requester is faculty or an HOD, so approval needs a substitute and class timing.
+        final_approver_employee_id:
+          type: [string, 'null']
+          format: uuid
+          description: The centre Level 2 approver for faculty leave, or the reporting manager for everyone else. Null means a superadmin gives the final approval.
+        final_approver_name:
+          type: [string, 'null']
+          description: The assigned final approver's name.
         substitute_faculty_id:
           type: [string, 'null']
           format: uuid
@@ -12464,7 +12471,7 @@ components:
         stage:
           type: string
           enum: [manager, final]
-          description: '`manager` is the Admin Manager stage; `final` is the super-admin stage.'
+          description: '`manager` is the Admin Manager round; `final` is the assigned final approver.'
         admin_manager_employee_id:
           type: [string, 'null']
           format: uuid
@@ -12472,6 +12479,11 @@ components:
           type: [string, 'null']
         is_teaching:
           type: boolean
+        final_approver_employee_id:
+          type: [string, 'null']
+          format: uuid
+        final_approver_name:
+          type: [string, 'null']
         substitute_faculty_id:
           type: [string, 'null']
           format: uuid
@@ -12630,14 +12642,14 @@ components:
         stage:
           type: string
           enum: [manager, final]
-          description: The round waiting now. A final-stage faculty request may be approved only by HR, the CEO or a super admin.
+          description: The round waiting now. Faculty leave waits on its Admin Manager first; a final-stage request waits on its assigned final approver, or a super admin when none is set.
         chain:
           type: array
           items:
             $ref: '#/components/schemas/ApprovalChainLevel'
         hr_fallback:
           type: boolean
-          description: True when every level is skipped, or there is no line at all -- only HR, the CEO and super admins may decide the request then.
+          description: True when there is no reporting line (attendance) or a faculty branch has no Admin Manager and uses HR as the first-stage bypass.
 
     LeadersOverview:
       type: object

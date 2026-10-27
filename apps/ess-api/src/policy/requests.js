@@ -163,6 +163,8 @@ function requestView(r, family, { employee = null } = {}) {
     view.admin_manager_employee_id = r.admin_manager_employee_id ?? null;
     view.admin_manager_name = r.admin_manager_name ?? null;
     view.is_teaching = Boolean(r.is_teaching);
+    view.final_approver_employee_id = r.final_approver_employee_id ?? null;
+    view.final_approver_name = r.final_approver_name ?? null;
     view.substitute_faculty_id = r.substitute_faculty_id ?? null;
     view.substitute_faculty_name = r.substitute_faculty_name ?? null;
     view.class_timing = r.class_timing ?? null;
