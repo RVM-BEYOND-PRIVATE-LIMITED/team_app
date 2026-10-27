@@ -428,16 +428,40 @@ class EssRepository with ConnectivityGuard {
       {required String family,
       required String id,
       required String decision,
-      String? note}) async {
+      String? note,
+      String? substituteFacultyId,
+      String? classTiming}) async {
     await ensureOnline();
     return _remote.decideRequest(
-        family: family, id: id, decision: decision, note: note);
+        family: family,
+        id: id,
+        decision: decision,
+        note: note,
+        substituteFacultyId: substituteFacultyId,
+        classTiming: classTiming);
   }
 
   Future<void> archiveRequest(
       {required String family, required String id}) async {
     await ensureOnline();
     return _remote.archiveRequest(family: family, id: id);
+  }
+
+  Future<LeaveApproverList> leaveApprovers() async {
+    await ensureOnline();
+    return _remote.leaveApprovers();
+  }
+
+  Future<LeaveApproverList> setLeaveApprover(
+      {required String branchId, required String employeeId}) async {
+    await ensureOnline();
+    return _remote.setLeaveApprover(
+        branchId: branchId, employeeId: employeeId);
+  }
+
+  Future<List<LeaveFacultyOption>> leaveFaculty({String? requestId}) async {
+    await ensureOnline();
+    return _remote.leaveFaculty(requestId: requestId);
   }
 
   // ── 1D: notifications ────────────────────────────────────────────────────

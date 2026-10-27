@@ -25,11 +25,22 @@ class ApprovalsFiltered extends ApprovalsEvent {
 }
 
 class ApprovalDecided extends ApprovalsEvent {
-  const ApprovalDecided({required this.family, required this.id, required this.decision, this.note});
+  const ApprovalDecided({
+    required this.family,
+    required this.id,
+    required this.decision,
+    this.note,
+    this.substituteFacultyId,
+    this.classTiming,
+  });
   final String family;
   final String id;
   final String decision; // approve | reject
   final String? note;
+
+  /// Teaching leave at the Admin Manager stage: who covers the class and when.
+  final String? substituteFacultyId;
+  final String? classTiming;
 }
 
 class ApprovalArchived extends ApprovalsEvent {
@@ -90,7 +101,13 @@ class ApprovalsBloc extends Bloc<ApprovalsEvent, ApprovalsState> {
   Future<void> _onDecide(ApprovalDecided e, Emitter<ApprovalsState> emit) async {
     emit(ApprovalsState(status: state.status, filter: state.filter, inbox: state.inbox, submitting: true, decidedNonce: state.decidedNonce));
     try {
-      await _repo.decideRequest(family: e.family, id: e.id, decision: e.decision, note: e.note);
+      await _repo.decideRequest(
+          family: e.family,
+          id: e.id,
+          decision: e.decision,
+          note: e.note,
+          substituteFacultyId: e.substituteFacultyId,
+          classTiming: e.classTiming);
       final inbox = await _repo.approvals(status: state.filter);
       emit(ApprovalsState(
         status: inbox.requests.isEmpty ? LoadStatus.empty : LoadStatus.success,

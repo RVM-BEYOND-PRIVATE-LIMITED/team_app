@@ -545,11 +545,23 @@ class _RequestCard extends StatelessWidget {
               request.managerRemark!.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'Manager’s remark: ${request.managerRemark!.trim()}',
+              'Admin Manager’s remark: ${request.managerRemark!.trim()}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 10.5,
                     height: 1.45,
                     color: RvmColors.teamSeed,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ],
+          if (!compact && request.coverageLabel != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Coverage: ${request.coverageLabel}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 10.5,
+                    height: 1.45,
+                    color: RvmColors.muted,
                     fontWeight: FontWeight.w600,
                   ),
             ),
