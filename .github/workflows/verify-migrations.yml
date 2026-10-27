@@ -94,6 +94,16 @@ jobs:
             else
               echo "MISSING function hr_ess_leave_route ($routed)"; missing=$((missing + 1))
             fi
+
+            # The Admin Manager's decision RPC. A random request id must answer not_found
+            # without writing anything, so this is a read-only check of the signature.
+            decided=$(curl -s -X POST "$base/rpc/hr_ess_leave_admin_decide" "${auth[@]}" \
+              -H 'Content-Type: application/json' -d "{\"p_request_id\":\"00000000-0000-4000-8000-000000000000\",\"p_decider_employee_id\":\"$employee\",\"p_decider_user_id\":null,\"p_decider_name\":\"Migration probe\",\"p_approve\":true,\"p_note\":null,\"p_substitute_faculty_id\":null,\"p_substitute_faculty_name\":null,\"p_class_timing\":null,\"p_now\":\"2026-10-27T00:00:00Z\"}")
+            if echo "$decided" | jq -e '.outcome == "not_found"' > /dev/null; then
+              echo "OK      function hr_ess_leave_admin_decide"
+            else
+              echo "MISSING function hr_ess_leave_admin_decide ($decided)"; missing=$((missing + 1))
+            fi
           fi
 
           count_at_least hr_ess_document_types slug 9
