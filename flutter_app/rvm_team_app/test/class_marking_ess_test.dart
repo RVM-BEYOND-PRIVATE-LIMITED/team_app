@@ -183,11 +183,13 @@ void main() {
         (batchId, date) =>
             MarkAttendanceBloc(repo, batchId: batchId, date: date));
 
-    await tester.pumpWidget(
-        const MaterialApp(home: MarkAttendanceScreen(batchId: 'b1')));
+    await tester.pumpWidget(const MaterialApp(
+        home: MarkAttendanceScreen(
+            batchId: 'b1', batchName: 'CAD_Morning_Batch')));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+    expect(find.text('CAD Morning Batch'), findsOneWidget);
     expect(find.textContaining('The marks are locked'), findsOneWidget);
     expect(find.text('Aarav Sharma'), findsOneWidget);
     expect(find.text('Diya Patel'), findsOneWidget);

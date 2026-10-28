@@ -130,12 +130,16 @@ class FacultyAttendanceInbox extends StatelessWidget {
             const SizedBox(height: RvmSpacing.md),
             TeamSectionHeader(
               title: "Today's batches",
+              titleStyle: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
               trailing: TextButton(
                 onPressed: () => context.push('/work/batches'),
                 style: TextButton.styleFrom(
                     minimumSize: const Size(0, 28), padding: EdgeInsets.zero),
                 child:
-                    const Text('All batches', style: TextStyle(fontSize: 11.5)),
+                    const Text('All batches', style: TextStyle(fontSize: 11)),
               ),
             ),
             const SizedBox(height: 8),
@@ -179,37 +183,27 @@ class _SessionCard extends StatelessWidget {
       onTap: () => _open(context),
       child: Row(
         children: [
-          TeamIconBadge(
-            icon: session.marked
-                ? Icons.check_circle_outline_rounded
-                : Icons.playlist_add_check_rounded,
-            color: session.marked ? RvmColors.success : RvmColors.clay,
-            background:
-                session.marked ? RvmColors.successSoft : RvmColors.claySoft,
-            size: 36,
-            iconSize: 17,
-            radius: 11,
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(session.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontSize: 12.5)),
+                Text(
+                  session.name.replaceAll('_', ' '),
+                  softWrap: true,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontSize: 12),
+                ),
                 const SizedBox(height: 2),
-                Text(time,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(fontSize: 10.5)),
+                Text(
+                  time,
+                  softWrap: true,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontSize: 10),
+                ),
               ],
             ),
           ),

@@ -10,6 +10,12 @@ import '../../widgets/states.dart';
 import 'bloc/absent_remark_bloc.dart';
 import 'bloc/mark_attendance_bloc.dart';
 
+String _batchTitle(String? name) {
+  final trimmed = name?.trim() ?? '';
+  if (trimmed.isEmpty) return 'Mark attendance';
+  return trimmed.replaceAll('_', ' ');
+}
+
 /// Mark one batch's student attendance for today through the ESS
 /// (`GET /me/batches/{id}/roster`, `POST /me/batches/{id}/attendance`, H1).
 class MarkAttendanceScreen extends StatelessWidget {
@@ -42,7 +48,7 @@ class MarkAttendanceScreen extends StatelessWidget {
         child: Builder(
           builder: (context) => Scaffold(
             appBar: AppBar(
-              title: Text(batchName ?? 'Mark attendance'),
+              title: Text(_batchTitle(batchName)),
               actions: [
                 BlocBuilder<MarkAttendanceBloc, MarkAttendanceState>(
                   buildWhen: (a, b) => a.canEdit != b.canEdit,

@@ -1,14 +1,11 @@
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app_feedback.dart';
-import '../../auth/team_permissions.dart';
-import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
@@ -93,7 +90,8 @@ class _WallView extends StatelessWidget {
                 actions: headerActions(),
                 expanded: TeamPageHeader(
                   title: 'Wall',
-                  subtitle: const Text('Company feed, praise and announcements'),
+                  subtitle:
+                      const Text('Company feed, praise and announcements'),
                   actions: [const TeamBrandMark(), ...headerActions()],
                 ),
               ),
@@ -147,10 +145,6 @@ class _WallView extends StatelessWidget {
     // A refresh (pull, a vote, a new praise) must NOT replace the scrolled
     // ListView with a spinner: doing that disposes the ScrollPosition during a
     // frame and Flutter reports "Build scheduled during frame" while scrolling.
-    final role = context.watch<TeamAuthBloc>().state.identity?.role ??
-        AppRole.unknown;
-    final badges =
-        awardablePraiseBadges(state.settings?.badges ?? const [], role);
     return RefreshIndicator(
       onRefresh: () async =>
           context.read<WallBloc>().add(const WallRefreshed()),
@@ -168,10 +162,6 @@ class _WallView extends StatelessWidget {
           ],
           if (state.celebrations != null && !state.celebrations!.isEmpty) ...[
             CelebrationsCard(celebrations: state.celebrations!),
-            const SizedBox(height: RvmSpacing.sm),
-          ],
-          if (badges.isNotEmpty) ...[
-            GivePraiseCard(badges: badges),
             const SizedBox(height: RvmSpacing.sm),
           ],
           for (final a in state.announcements.take(3)) ...[

@@ -131,13 +131,14 @@ class _SafePhotoState extends State<SafePhoto> {
   static Future<bool> _hasNetwork() async {
     final now = DateTime.now();
     final checked = _lastNetworkCheck;
-    if (checked != null && now.difference(checked) < const Duration(seconds: 5)) {
+    if (checked != null &&
+        now.difference(checked) < const Duration(seconds: 5)) {
       return _lastNetwork;
     }
     try {
       final result = await Connectivity().checkConnectivity();
-      _lastNetwork = result.isNotEmpty &&
-          result.any((r) => r != ConnectivityResult.none);
+      _lastNetwork =
+          result.isNotEmpty && result.any((r) => r != ConnectivityResult.none);
     } catch (_) {
       // The plugin is an optimisation; a failure means "try the request".
       _lastNetwork = true;
@@ -307,6 +308,7 @@ class TeamSectionHeader extends StatelessWidget {
     this.trailing,
     this.padding = EdgeInsets.zero,
     this.dotColor,
+    this.titleStyle,
   });
 
   final String title;
@@ -315,6 +317,10 @@ class TeamSectionHeader extends StatelessWidget {
   final Widget? trailing;
   final EdgeInsetsGeometry padding;
   final Color? dotColor;
+
+  /// Overrides the default 15px title style so narrow headers can keep the
+  /// whole title visible next to a trailing action.
+  final TextStyle? titleStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -336,8 +342,9 @@ class TeamSectionHeader extends StatelessWidget {
             child: Text(title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: text.titleMedium
-                    ?.copyWith(fontSize: 15, fontWeight: FontWeight.w700)),
+                style: titleStyle ??
+                    text.titleMedium
+                        ?.copyWith(fontSize: 15, fontWeight: FontWeight.w700)),
           ),
           if (count != null) ...[
             const SizedBox(width: RvmSpacing.sm),
