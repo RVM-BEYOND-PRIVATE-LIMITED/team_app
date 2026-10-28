@@ -22,13 +22,7 @@ class ApprovalsScreen extends StatelessWidget {
     return BlocProvider(
       create: (_) =>
           getIt<ApprovalsBloc>()..add(const ApprovalsLoadRequested()),
-      child: BlocProvider(
-        // Issue #11: every approver may ask for any status now; the ESS fences
-        // a manager's query to their own reports. The capability still says
-        // whether this caller may decide any request (the faculty final round).
-        create: (_) => getIt<CapabilitiesBloc>()..add(const LoadRequested()),
-        child: const _ApprovalsView(),
-      ),
+      child: const _ApprovalsView(),
     );
   }
 }
@@ -38,9 +32,6 @@ class _ApprovalsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hrWide =
-        context.watch<CapabilitiesBloc>().state.data?.approvalsAnyRequest ==
-            true;
     return Scaffold(
       backgroundColor: RvmColors.ivory,
       body: Column(
@@ -96,8 +87,7 @@ class _ApprovalsView extends StatelessWidget {
                         const SnackBar(content: Text('Decision saved.')));
                 }
               },
-              builder: (context, state) =>
-                  _body(context, state, hrWide: hrWide),
+              builder: (context, state) => _body(context, state),
             ),
           ),
         ],
@@ -105,8 +95,7 @@ class _ApprovalsView extends StatelessWidget {
     );
   }
 
-  Widget _body(BuildContext context, ApprovalsState state,
-      {required bool hrWide}) {
+  Widget _body(BuildContext context, ApprovalsState state) {
     if (state.status == LoadStatus.initial ||
         (state.status == LoadStatus.loading && state.inbox == null)) {
       return const AppLoading();
@@ -175,8 +164,8 @@ class _ApprovalsView extends StatelessWidget {
                         RvmSpacing.sm, RvmSpacing.md, RvmSpacing.lg),
                     itemCount: inbox.requests.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, i) => _ApprovalCard(
-                        request: inbox.requests[i], hrWide: hrWide),
+                    itemBuilder: (context, i) =>
+                        _ApprovalCard(request: inbox.requests[i]),
                   ),
                 ),
         ),
@@ -336,16 +325,19 @@ class _FilterPill extends StatelessWidget {
 }
 
 class _ApprovalCard extends StatelessWidget {
-  const _ApprovalCard({required this.request, required this.hrWide});
+  const _ApprovalCard({required this.request});
   final EssRequest request;
 
-  /// HR, the CEO and super admins may decide any request, so a faculty leave
-  /// they open is finalised in one step; only a manager sees "Send to HR".
-  final bool hrWide;
+  /// The Admin Manager round: approving moves the leave to the Super Admin.
+  bool get _managerStage =>
+      request.requiresFinalApproval && request.stage == 'manager';
 
-  /// True only for a manager's first round on a faculty member's leave.
-  bool get _advanceOnly =>
-      request.requiresFinalApproval && request.stage == 'manager' && !hrWide;
+  /// The Super Admin round. The ESS only puts these rows in a super admin's
+  /// Inbox, so HR and the CEO never get a final-approval button.
+  bool get _finalStage =>
+      request.requiresFinalApproval &&
+      request.stage == 'final' &&
+      request.status == 'pending';
 
   @override
   Widget build(BuildContext context) {
@@ -449,17 +441,39 @@ class _ApprovalCard extends StatelessWidget {
             const SizedBox(height: 6),
             TeamPill(
                 label: request.stage == 'final'
-                    ? 'Final round · HR / CEO / Superadmin'
-                    : 'First round · manager',
+                    ? 'Super Admin final approval'
+                    : request.adminManagerName == null
+                        ? 'Admin Manager stage'
+                        : 'Admin Manager · ${request.adminManagerName}',
                 tone: request.stage == 'final'
                     ? TeamPillTone.warning
                     : TeamPillTone.neutral,
                 dense: true),
           ],
+          if (request.coverageLabel != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.swap_horiz_rounded,
+                    size: 13, color: RvmColors.muted),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text('Coverage: ${request.coverageLabel}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 10.5,
+                            color: RvmColors.muted,
+                            fontWeight: FontWeight.w600,
+                          )),
+                ),
+              ],
+            ),
+          ],
           if (request.managerRemark != null &&
               request.managerRemark!.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('Manager’s remark: ${request.managerRemark!.trim()}',
+            Text('Admin Manager’s remark: ${request.managerRemark!.trim()}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 10.5,
                       color: RvmColors.teamSeed,
@@ -550,7 +564,12 @@ class _ApprovalCard extends StatelessWidget {
                     onPressed: () => _approve(context),
                     style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(40)),
-                    child: Text(_advanceOnly ? 'Send to HR' : 'Approve',
+                    child: Text(
+                        _managerStage
+                            ? 'Approve & send to Super Admin'
+                            : _finalStage
+                                ? 'Final approval'
+                                : 'Approve',
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
@@ -641,7 +660,7 @@ class _ApprovalCard extends StatelessWidget {
             width: 360,
             child: chain.chain.isEmpty
                 ? Text(chain.hrFallback
-                    ? 'HR decides this one.'
+                    ? 'No Admin Manager at this branch: HR gives the first-stage decision.'
                     : 'No chain recorded.')
                 : ListView(
                     shrinkWrap: true,
@@ -660,7 +679,9 @@ class _ApprovalCard extends StatelessWidget {
                               : Text('skipped: ${e.skipped}'),
                         ),
                       if (chain.hrFallback)
-                        const ListTile(dense: true, title: Text('HR fallback')),
+                        const ListTile(
+                            dense: true,
+                            title: Text('HR first-stage fallback')),
                     ],
                   ),
           ),
@@ -719,24 +740,44 @@ class _ApprovalCard extends StatelessWidget {
     }
   }
 
-  /// Approving opens a small remark box: the manager's word travels with the decision and
-  /// the employee reads it on the request card. A remark is optional to approve.
+  /// Approve at the current round. A teaching leave at the Admin Manager round
+  /// first collects the substitute and class timing the ESS requires; every
+  /// round may carry a remark the employee and the next approver read.
   Future<void> _approve(BuildContext context) async {
+    if (_managerStage && request.isTeaching) {
+      final coverage = await _askCoverage(context);
+      if (coverage == null || !context.mounted) return;
+      context.read<ApprovalsBloc>().add(ApprovalDecided(
+            family: request.family,
+            id: request.id,
+            decision: 'approve',
+            note: coverage.note.isEmpty ? null : coverage.note,
+            substituteFacultyId: coverage.facultyId,
+            classTiming: coverage.timing,
+          ));
+      return;
+    }
+
     final controller = TextEditingController();
     final note = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(
-            _advanceOnly ? 'Approve and send to HR' : 'Approve this leave'),
+        title: Text(_managerStage
+            ? 'Approve and send to Super Admin'
+            : _finalStage
+                ? 'Super Admin final approval'
+                : 'Approve this request'),
         content: TextField(
             controller: controller,
             minLines: 2,
             maxLines: 4,
             maxLength: 1000,
             decoration: InputDecoration(
-                labelText: _advanceOnly
-                    ? 'Manager’s remark (optional)'
-                    : 'Final approval remark (optional)',
+                labelText: _managerStage
+                    ? 'Admin Manager’s remark (optional)'
+                    : _finalStage
+                        ? 'Super Admin final remark (optional)'
+                        : 'Remark (optional)',
                 alignLabelWithHint: true,
                 hintText: 'Anything the employee should know')),
         actions: [
@@ -746,7 +787,11 @@ class _ApprovalCard extends StatelessWidget {
           FilledButton(
               onPressed: () =>
                   Navigator.pop(dialogContext, controller.text.trim()),
-              child: Text(_advanceOnly ? 'Send to HR' : 'Approve leave')),
+              child: Text(_managerStage
+                  ? 'Send to Super Admin'
+                  : _finalStage
+                      ? 'Approve leave'
+                      : 'Approve')),
         ],
       ),
     );
@@ -756,6 +801,108 @@ class _ApprovalCard extends StatelessWidget {
         id: request.id,
         decision: 'approve',
         note: note.isEmpty ? null : note));
+  }
+
+  /// The Admin Manager's coverage choice for a teaching leave. The substitute
+  /// list comes from the request's own branch (GET /leave-faculty).
+  Future<_CoverageChoice?> _askCoverage(BuildContext context) async {
+    List<LeaveFacultyOption> faculty;
+    try {
+      faculty = await getIt<EssRepository>().leaveFaculty(requestId: request.id);
+    } on Failure catch (f) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(f.message)));
+      }
+      return null;
+    }
+    if (!context.mounted) return null;
+    if (faculty.isEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('No active faculty can cover this branch.')));
+      return null;
+    }
+
+    final timing = TextEditingController();
+    final remark = TextEditingController();
+    String selectedId = faculty.first.id;
+    String? error;
+    return showDialog<_CoverageChoice>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: const Text('Coverage for teaching leave'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: selectedId,
+                  decoration:
+                      const InputDecoration(labelText: 'Substitute faculty'),
+                  items: [
+                    for (final f in faculty)
+                      DropdownMenuItem(value: f.id, child: Text(f.name)),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => selectedId = value ?? selectedId),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: timing,
+                  decoration: const InputDecoration(
+                      labelText: 'Class timing',
+                      hintText: 'For example, 10:00–11:30'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: remark,
+                  minLines: 2,
+                  maxLines: 3,
+                  maxLength: 1000,
+                  decoration: const InputDecoration(
+                      labelText: 'Admin Manager’s remark (optional)',
+                      alignLabelWithHint: true),
+                ),
+                if (error != null)
+                  Text(error!,
+                      style: const TextStyle(
+                          color: RvmColors.danger, fontSize: 12)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Back')),
+            FilledButton(
+              onPressed: () {
+                final value = timing.text.trim();
+                if (value.isEmpty) {
+                  setState(() => error = 'Give the class timing.');
+                  return;
+                }
+                if (value.length > 200) {
+                  setState(() => error = 'Keep the timing under 200 characters.');
+                  return;
+                }
+                Navigator.pop(
+                    dialogContext,
+                    _CoverageChoice(
+                        facultyId: selectedId,
+                        timing: value,
+                        note: remark.text.trim()));
+              },
+              child: const Text('Send to Super Admin'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _reject(BuildContext context) async {
@@ -794,4 +941,14 @@ class _ApprovalCard extends StatelessWidget {
         decision: 'reject',
         note: note));
   }
+}
+
+
+/// What the Admin Manager records when a teaching leave moves to final approval.
+class _CoverageChoice {
+  const _CoverageChoice(
+      {required this.facultyId, required this.timing, required this.note});
+  final String facultyId;
+  final String timing;
+  final String note;
 }

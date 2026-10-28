@@ -1148,7 +1148,14 @@ class EssRequest extends Equatable {
     this.workingDays = const [],
     this.requiresFinalApproval = false,
     this.stage = 'manager',
+    this.adminManagerEmployeeId,
+    this.adminManagerName,
+    this.isTeaching = false,
+    this.substituteFacultyId,
+    this.substituteFacultyName,
+    this.classTiming,
     this.managerApprovedByName,
+    this.managerApprovedAt,
     this.managerRemark,
     required this.reason,
     this.createdAt,
@@ -1177,10 +1184,17 @@ class EssRequest extends Equatable {
   final num dayCount;
   final List<String> workingDays;
 
-  /// A faculty member's leave takes a manager round and then HR/CEO/super-admin final approval.
+  /// Leave takes a branch Admin Manager round, then a Super Admin final round.
   final bool requiresFinalApproval;
   final String stage; // manager | final
+  final String? adminManagerEmployeeId;
+  final String? adminManagerName;
+  final bool isTeaching;
+  final String? substituteFacultyId;
+  final String? substituteFacultyName;
+  final String? classTiming;
   final String? managerApprovedByName;
+  final DateTime? managerApprovedAt;
   final String? managerRemark;
   final String reason;
   final DateTime? createdAt;
@@ -1217,12 +1231,30 @@ class EssRequest extends Equatable {
   String get daysLabel =>
       '${_daysLabel(dayCount)} ${dayCount == 1 ? 'day' : 'days'}';
 
-  /// 'Waiting for manager' / 'Waiting for HR final approval' on a pending faculty request.
+  /// The round a pending leave waits in, in the new flow's words.
   String? get stageLabel {
     if (!isPending || !requiresFinalApproval) return null;
-    return stage == 'final'
-        ? 'Manager approved — waiting for HR/CEO final approval'
-        : 'Waiting for manager approval';
+    if (stage == 'final') {
+      return 'Admin Manager approved — waiting for Super Admin final approval';
+    }
+    final manager = adminManagerName?.trim();
+    return manager == null || manager.isEmpty
+        ? 'Waiting for Admin Manager approval'
+        : 'Waiting for $manager (Admin Manager)';
+  }
+
+  /// 'Substitute · timing' once a teaching leave has coverage, or null.
+  String? get coverageLabel {
+    final substitute = substituteFacultyName?.trim();
+    final timing = classTiming?.trim();
+    if ((substitute == null || substitute.isEmpty) &&
+        (timing == null || timing.isEmpty)) {
+      return null;
+    }
+    return [
+      if (substitute != null && substitute.isNotEmpty) substitute,
+      if (timing != null && timing.isNotEmpty) timing,
+    ].join(' · ');
   }
 
   String get typeLabel => switch (type) {
@@ -1250,7 +1282,14 @@ class EssRequest extends Equatable {
             : const [],
         requiresFinalApproval: _bool(j['requires_final_approval']),
         stage: _str(j['stage']) ?? 'manager',
+        adminManagerEmployeeId: _str(j['admin_manager_employee_id']),
+        adminManagerName: _str(j['admin_manager_name']),
+        isTeaching: _bool(j['is_teaching']),
+        substituteFacultyId: _str(j['substitute_faculty_id']),
+        substituteFacultyName: _str(j['substitute_faculty_name']),
+        classTiming: _str(j['class_timing']),
         managerApprovedByName: _str(j['manager_approved_by_name']),
+        managerApprovedAt: _date(j['manager_approved_at']),
         managerRemark: _str(j['manager_remark']),
         reason: _str(j['reason']) ?? '',
         createdAt: _date(j['created_at']),
@@ -1282,6 +1321,10 @@ class EssRequest extends Equatable {
         portion,
         dayCount,
         stage,
+        adminManagerEmployeeId,
+        isTeaching,
+        substituteFacultyId,
+        classTiming,
         reason,
         decidedByName,
         decisionNote
@@ -1314,6 +1357,93 @@ class ApprovalInbox extends Equatable {
   }
   @override
   List<Object?> get props => [attendance, leave, total, requests];
+}
+
+/// An active Admin Manager a branch may route its leave to.
+class LeaveApproverChoice extends Equatable {
+  const LeaveApproverChoice(
+      {required this.id, required this.fullName, this.employeeCode});
+  final String id;
+  final String fullName;
+  final String? employeeCode;
+  factory LeaveApproverChoice.fromJson(Map<String, dynamic> j) =>
+      LeaveApproverChoice(
+        id: _str(j['id']) ?? '',
+        fullName: _str(j['full_name']) ?? '',
+        employeeCode: _str(j['employee_code']),
+      );
+  @override
+  List<Object?> get props => [id, fullName, employeeCode];
+}
+
+/// One branch and the Admin Manager chosen to decide its leave.
+class LeaveApproverBranch extends Equatable {
+  const LeaveApproverBranch({
+    required this.id,
+    required this.name,
+    this.selectedEmployeeId,
+    this.selectedName,
+    this.adminManagers = const [],
+  });
+  final String id;
+  final String name;
+  final String? selectedEmployeeId;
+  final String? selectedName;
+  final List<LeaveApproverChoice> adminManagers;
+
+  bool get hasNoAdminManager => adminManagers.isEmpty;
+  bool get hasOneAdminManager => adminManagers.length == 1;
+  bool get hasSeveralAdminManagers => adminManagers.length > 1;
+
+  /// The name shown for a branch: the saved choice, or the only manager.
+  String? get effectiveManagerName {
+    final chosen = selectedName?.trim();
+    if (chosen != null && chosen.isNotEmpty) return chosen;
+    return hasOneAdminManager ? adminManagers.first.fullName : null;
+  }
+
+  factory LeaveApproverBranch.fromJson(Map<String, dynamic> j) =>
+      LeaveApproverBranch(
+        id: _str(j['id']) ?? '',
+        name: _str(j['name']) ?? '',
+        selectedEmployeeId: _str(j['selected_employee_id']),
+        selectedName: _str(j['selected_name']),
+        adminManagers: _maps(j['admin_managers'])
+            .map(LeaveApproverChoice.fromJson)
+            .toList(growable: false),
+      );
+
+  @override
+  List<Object?> get props =>
+      [id, name, selectedEmployeeId, selectedName, adminManagers];
+}
+
+/// `GET /leave-approvers` and the PUT's reply.
+class LeaveApproverList extends Equatable {
+  const LeaveApproverList({required this.branches});
+  final List<LeaveApproverBranch> branches;
+  factory LeaveApproverList.fromJson(Map<String, dynamic> j) =>
+      LeaveApproverList(
+        branches: _maps(j['branches'])
+            .map(LeaveApproverBranch.fromJson)
+            .toList(growable: false),
+      );
+  @override
+  List<Object?> get props => [branches];
+}
+
+/// A substitute faculty choice from `GET /leave-faculty`.
+class LeaveFacultyOption extends Equatable {
+  const LeaveFacultyOption({required this.id, required this.name});
+  final String id;
+  final String name;
+  factory LeaveFacultyOption.fromJson(Map<String, dynamic> j) =>
+      LeaveFacultyOption(
+        id: _str(j['id']) ?? '',
+        name: _str(j['name']) ?? '',
+      );
+  @override
+  List<Object?> get props => [id, name];
 }
 
 /// One row of `GET /leave/balances`.

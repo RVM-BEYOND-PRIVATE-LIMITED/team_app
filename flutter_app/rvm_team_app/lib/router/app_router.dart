@@ -17,6 +17,7 @@ import '../features/helpdesk/ticket_screen.dart';
 import '../features/hod/hod_screen.dart';
 import '../features/hr/employee_personal_screen.dart';
 import '../features/hr/hr_tools_screen.dart';
+import '../features/hr/leave_approvers_screen.dart';
 import '../features/hr/hr_wfh_allowances_screen.dart';
 import '../features/me/account_security_screen.dart';
 import '../features/me/attendance_day_screen.dart';
@@ -170,6 +171,9 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       GoRoute(
           path: '/hr/request-limits',
           builder: (_, __) => const RequestLimitsScreen()),
+      GoRoute(
+          path: '/hr/leave-approvers',
+          builder: (_, __) => const LeaveApproversScreen()),
       GoRoute(
           path: '/hr/change-requests',
           builder: (_, __) => const HrChangeRequestsScreen()),

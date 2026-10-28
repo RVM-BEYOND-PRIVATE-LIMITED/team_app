@@ -522,15 +522,43 @@ class EssRemoteDataSource with DioExecutor {
     required String id,
     required String decision,
     String? note,
+    String? substituteFacultyId,
+    String? classTiming,
   }) =>
       guard(() async => EssRequest.fromJson(_obj(
               _body(await _dio.post('/approvals/$family/$id/decide', data: {
             'decision': decision,
             if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+            if (substituteFacultyId != null)
+              'substitute_faculty_id': substituteFacultyId,
+            if (classTiming != null && classTiming.trim().isNotEmpty)
+              'class_timing': classTiming.trim(),
           }))['request'])));
 
   Future<void> archiveRequest({required String family, required String id}) =>
       guard(() async => _dio.post('/approvals/$family/$id/archive'));
+
+  /// The branches and the Admin Manager each routes its leave to (super admin).
+  Future<LeaveApproverList> leaveApprovers() => guard(() async =>
+      LeaveApproverList.fromJson(_body(await _dio.get('/leave-approvers'))));
+
+  /// Save a branch's Admin Manager. The reply is the whole list again.
+  Future<LeaveApproverList> setLeaveApprover({
+    required String branchId,
+    required String employeeId,
+  }) =>
+      guard(() async => LeaveApproverList.fromJson(
+          _body(await _dio.put('/leave-approvers/$branchId',
+              data: {'employee_id': employeeId}))));
+
+  /// The active faculty who can cover a teaching leave in the request's branch.
+  Future<List<LeaveFacultyOption>> leaveFaculty({String? requestId}) =>
+      guard(() async => _list(
+          _body(await _dio.get('/leave-faculty',
+              queryParameters: {
+                if (requestId != null) 'request_id': requestId
+              }))['faculty'],
+          LeaveFacultyOption.fromJson));
 
   // ── 1D: notifications ────────────────────────────────────────────────────
 
