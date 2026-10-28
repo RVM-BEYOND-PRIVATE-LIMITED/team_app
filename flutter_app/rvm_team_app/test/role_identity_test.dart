@@ -53,5 +53,29 @@ void main() {
       expect(id!.isTeamMember, isTrue);
       expect(id.role, AppRole.unknown);
     });
+
+    test('a fresh faculty login carries faculty_id for the faculty screens', () {
+      final id = StaffIdentity.fromLoginUser({
+        'userId': 'u1',
+        'username': 'faculty.login',
+        'role': 'faculty',
+        'locationName': 'Faridabad',
+        'faculty_id': 'f-42',
+      });
+      expect(id.facultyId, 'f-42');
+    });
+
+    test('the login token itself carries faculty_id for a first install', () {
+      final id = StaffIdentity.fromToken(_jwt({
+        'userId': 'u1',
+        'username': 'faculty.login',
+        'role': 'faculty',
+        'locationId': 1,
+        'locationName': 'Faridabad',
+        'id': 'f-42',
+      }));
+      expect(id, isNotNull);
+      expect(id!.facultyId, 'f-42');
+    });
   });
 }

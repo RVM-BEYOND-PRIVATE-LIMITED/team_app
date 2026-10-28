@@ -30,8 +30,7 @@ const wallReactionLabels = <String, String>{
 
 /// Facebook-style reaction picker: long-press Like opens this sheet with big
 /// emojis. Returns the picked key, or null when dismissed.
-Future<String?> showFbReactionPicker(BuildContext context,
-    {String? current}) {
+Future<String?> showFbReactionPicker(BuildContext context, {String? current}) {
   return showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
@@ -43,8 +42,7 @@ Future<String?> showFbReactionPicker(BuildContext context,
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('React',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text('React', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 12),
               // Wrap instead of Row: on 320px phones six fixed chips
               // overflowed by ~3px. Wrap centers and flows to a second
@@ -162,9 +160,7 @@ class FbReactionSummary extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SizedBox(
-                    width: _top.isEmpty
-                        ? 0
-                        : 20.0 + (_top.length - 1) * 14.0,
+                    width: _top.isEmpty ? 0 : 20.0 + (_top.length - 1) * 14.0,
                     height: 22,
                     child: Stack(
                       children: [
@@ -183,10 +179,8 @@ class FbReactionSummary extends StatelessWidget {
                                         .withValues(alpha: 0.4)),
                               ),
                               alignment: Alignment.center,
-                              child: Text(
-                                  wallReactions[_top[i]] ?? '👍',
-                                  style:
-                                      const TextStyle(fontSize: 13)),
+                              child: Text(wallReactions[_top[i]] ?? '👍',
+                                  style: const TextStyle(fontSize: 13)),
                             ),
                           ),
                       ],
@@ -195,9 +189,8 @@ class FbReactionSummary extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text('$total',
                       style: text?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant)),
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant)),
                 ],
               ),
             ),
@@ -209,9 +202,7 @@ class FbReactionSummary extends StatelessWidget {
               child: Text(
                   '$commentCount comment${commentCount == 1 ? '' : 's'}',
                   style: text?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant)),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ),
         ],
       ),
@@ -235,11 +226,11 @@ class FbPostReactionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final liked = myReaction != null;
-    final label =
-        myReaction == null ? 'Like' : (wallReactionLabels[myReaction] ?? 'Like');
-    final icon = myReaction == null
-        ? '👍'
-        : (wallReactions[myReaction] ?? '👍');
+    final label = myReaction == null
+        ? 'Like'
+        : (wallReactionLabels[myReaction] ?? 'Like');
+    final icon =
+        myReaction == null ? '👍' : (wallReactions[myReaction] ?? '👍');
     return Column(
       children: [
         const Divider(height: 13),
@@ -248,8 +239,8 @@ class FbPostReactionBar extends StatelessWidget {
             Expanded(
               child: GestureDetector(
                 onLongPress: () async {
-                  final picked = await showFbReactionPicker(context,
-                      current: myReaction);
+                  final picked =
+                      await showFbReactionPicker(context, current: myReaction);
                   if (picked == null) return;
                   if (picked == myReaction) {
                     onReact(null);
@@ -265,13 +256,11 @@ class FbPostReactionBar extends StatelessWidget {
                       onReact('like');
                     }
                   },
-                  icon: Text(icon,
-                      style: const TextStyle(fontSize: 18)),
+                  icon: Text(icon, style: const TextStyle(fontSize: 18)),
                   label: Text(label,
                       style: TextStyle(
-                          color: liked
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
+                          color:
+                              liked ? scheme.primary : scheme.onSurfaceVariant,
                           fontWeight:
                               liked ? FontWeight.w700 : FontWeight.w500)),
                 ),
@@ -337,8 +326,10 @@ class FbCommentReactionBar extends StatelessWidget {
                 _StackedEmojis(counts: counts),
                 const SizedBox(width: 4),
                 Text('$total',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant)),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant)),
               ],
             ),
           ),
@@ -408,8 +399,7 @@ class _LikeLink extends StatelessWidget {
     final liked = myReaction != null;
     return GestureDetector(
       onLongPress: () async {
-        final picked =
-            await showFbReactionPicker(context, current: myReaction);
+        final picked = await showFbReactionPicker(context, current: myReaction);
         if (picked == null) return;
         if (picked == myReaction) {
           onReact(null);
@@ -430,14 +420,11 @@ class _LikeLink extends StatelessWidget {
           }
         },
         child: Text(
-            liked
-                ? (wallReactionLabels[myReaction] ?? 'Liked')
-                : 'Like',
+            liked ? (wallReactionLabels[myReaction] ?? 'Liked') : 'Like',
             style: TextStyle(
                 fontSize: 12,
                 color: liked ? scheme.primary : scheme.onSurfaceVariant,
-                fontWeight:
-                    liked ? FontWeight.w700 : FontWeight.w500)),
+                fontWeight: liked ? FontWeight.w700 : FontWeight.w500)),
       ),
     );
   }
@@ -449,50 +436,139 @@ class CelebrationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bloc = context.read<WallBloc>();
+    final items = <_CelebrationItem>[
+      for (final c in celebrations.birthdays)
+        _CelebrationItem(
+          card: c,
+          kind: _CelebrationKind.birthday,
+          onWish: () => bloc.add(WallWished(
+            employeeId: c.employee.id,
+            occasion: 'birthday',
+            body: 'Happy birthday!',
+          )),
+        ),
+      for (final c in celebrations.anniversaries)
+        _CelebrationItem(
+          card: c,
+          kind: _CelebrationKind.anniversary,
+          onWish: () => bloc.add(WallWished(
+            employeeId: c.employee.id,
+            occasion: 'anniversary',
+            body: 'Happy anniversary!',
+          )),
+        ),
+      for (final c in celebrations.newJoiners)
+        _CelebrationItem(
+            card: c, kind: _CelebrationKind.newJoiner, onWish: null),
+      for (final c in celebrations.promotions)
+        _CelebrationItem(
+          card: c,
+          kind: _CelebrationKind.promotion,
+          onWish: () => bloc.add(WallWished(
+            employeeId: c.employee.id,
+            occasion: 'promotion',
+            body: 'Congratulations on your promotion!',
+          )),
+        ),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(RvmSpacing.md),
+        padding: const EdgeInsets.fromLTRB(
+            RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Celebrations',
-                style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                const Icon(Icons.celebration_outlined,
+                    size: 18, color: RvmColors.teamSeed),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('Celebrations',
+                      style: Theme.of(context).textTheme.titleMedium),
+                ),
+                Text('${items.length}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: RvmColors.subtle)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 150,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, i) => _CelebrationIcon(
+                  item: items[i],
+                  onTap: () => _openCelebration(context, items[i]),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openCelebration(BuildContext context, _CelebrationItem item) {
+    final card = item.card;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+            RvmSpacing.lg, 0, RvmSpacing.lg, RvmSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 30,
+              backgroundColor: item.kind.soft,
+              child: Icon(item.kind.icon, color: item.kind.color, size: 28),
+            ),
             const SizedBox(height: RvmSpacing.sm),
-            for (final c in celebrations.birthdays)
-              _CelebrationRow(
-                card: c,
-                kind: _CelebrationKind.birthday,
-                onWish: () => context.read<WallBloc>().add(WallWished(
-                      employeeId: c.employee.id,
-                      occasion: 'birthday',
-                      body: 'Happy birthday!',
-                    )),
-              ),
-            for (final c in celebrations.anniversaries)
-              _CelebrationRow(
-                card: c,
-                kind: _CelebrationKind.anniversary,
-                onWish: () => context.read<WallBloc>().add(WallWished(
-                      employeeId: c.employee.id,
-                      occasion: 'anniversary',
-                      body: 'Happy anniversary!',
-                    )),
-              ),
-            for (final c in celebrations.newJoiners)
-              _CelebrationRow(
-                card: c,
-                kind: _CelebrationKind.newJoiner,
-                onWish: null,
-              ),
-            for (final c in celebrations.promotions)
-              _CelebrationRow(
-                card: c,
-                kind: _CelebrationKind.promotion,
-                onWish: () => context.read<WallBloc>().add(WallWished(
-                      employeeId: c.employee.id,
-                      occasion: 'promotion',
-                      body: 'Congratulations on your promotion!',
-                    )),
+            Text(card.employee.fullName,
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(
+              [
+                item.kind.label(card.on),
+                if (card.wishCount > 0) '${card.wishCount} wishes',
+              ].join(' · '),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: RvmSpacing.md),
+            if (item.onWish != null)
+              SizedBox(
+                width: double.infinity,
+                child: card.wishedByMe
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.check_circle,
+                              color: RvmColors.success, size: 18),
+                          SizedBox(width: 6),
+                          Text('Already wished'),
+                        ],
+                      )
+                    : FilledButton.icon(
+                        onPressed: () {
+                          item.onWish!();
+                          Navigator.of(sheetContext).pop();
+                        },
+                        icon: const Icon(Icons.celebration_outlined, size: 18),
+                        label: const Text('Send wishes'),
+                      ),
               ),
           ],
         ),
@@ -529,8 +605,7 @@ extension on _CelebrationKind {
       };
 
   String label(String? on) => switch (this) {
-        _CelebrationKind.birthday =>
-          on == null ? 'Birthday' : 'Birthday · $on',
+        _CelebrationKind.birthday => on == null ? 'Birthday' : 'Birthday · $on',
         _CelebrationKind.anniversary =>
           on == null ? 'Work anniversary' : 'Work anniversary · $on',
         _CelebrationKind.newJoiner =>
@@ -540,35 +615,116 @@ extension on _CelebrationKind {
       };
 }
 
-class _CelebrationRow extends StatelessWidget {
-  const _CelebrationRow({required this.card, required this.kind, this.onWish});
+class _CelebrationItem {
+  const _CelebrationItem({
+    required this.card,
+    required this.kind,
+    required this.onWish,
+  });
   final CelebrationCard card;
   final _CelebrationKind kind;
   final VoidCallback? onWish;
+}
+
+class _CelebrationIcon extends StatelessWidget {
+  const _CelebrationIcon({required this.item, required this.onTap});
+  final _CelebrationItem item;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      leading: CircleAvatar(
-        backgroundColor: kind.soft,
-        child: Icon(kind.icon, color: kind.color, size: 20),
+    final card = item.card;
+    final name = card.employee.fullName.trim();
+    final label = name.isEmpty ? 'Someone' : name;
+    final done = item.onWish == null || card.wishedByMe;
+    return SizedBox(
+      width: 82,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(RvmRadii.md),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: item.kind.soft,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: item.kind.color.withValues(alpha: 0.35)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(item.kind.icon, color: item.kind.color, size: 24),
+                ),
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: done ? RvmColors.success : RvmColors.teamSeed,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: RvmColors.white, width: 1.5),
+                    ),
+                    child: Icon(done ? Icons.check : Icons.auto_awesome,
+                        size: 10, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: RvmColors.ink, fontSize: 9.5)),
+            const SizedBox(height: 1),
+            Text(_shortKind(item.kind),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(fontSize: 8.5, color: item.kind.color)),
+            const Spacer(),
+            if (item.onWish != null && !card.wishedByMe)
+              SizedBox(
+                height: 24,
+                child: TextButton(
+                  onPressed: item.onWish,
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 24),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: RvmColors.teamSeed,
+                  ),
+                  child: const Text('Wish',
+                      style:
+                          TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+                ),
+              )
+            else
+              const SizedBox(height: 24),
+          ],
+        ),
       ),
-      title: Text(card.employee.fullName),
-      subtitle: Text(
-        [
-          kind.label(card.on),
-          if (card.wishCount > 0) '${card.wishCount} wishes',
-        ].join(' · '),
-      ),
-      trailing: onWish == null
-          ? Icon(Icons.check_circle, color: kind.color.withValues(alpha: 0.35))
-          : card.wishedByMe
-              ? const Icon(Icons.check_circle, color: RvmColors.success)
-              : TextButton(onPressed: onWish, child: const Text('Wish')),
     );
   }
+
+  static String _shortKind(_CelebrationKind kind) => switch (kind) {
+        _CelebrationKind.birthday => 'Birthday',
+        _CelebrationKind.anniversary => 'Anniversary',
+        _CelebrationKind.newJoiner => 'New joiner',
+        _CelebrationKind.promotion => 'Promotion',
+      };
 }
 
 /// RVM's twelve praise badges, grouped by what they are about
@@ -612,8 +768,7 @@ class GivePraiseCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Give praise',
-                          style:
-                              Theme.of(context).textTheme.titleMedium),
+                          style: Theme.of(context).textTheme.titleMedium),
                       Text('Award a badge to a colleague',
                           style: Theme.of(context).textTheme.bodySmall),
                     ],
@@ -635,8 +790,8 @@ class GivePraiseCard extends StatelessWidget {
                       size: 15,
                       color: RvmColors.teamSeed,
                     ),
-                    label: Text(b.label,
-                        style: const TextStyle(fontSize: 11.5)),
+                    label:
+                        Text(b.label, style: const TextStyle(fontSize: 11.5)),
                     onPressed: () =>
                         showPraiseSheet(context, initialBadge: b.id),
                   ),
@@ -795,18 +950,17 @@ class WallPostCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text('For ${post.about!.fullName}',
                   style: Theme.of(context).textTheme.bodySmall),
-            ]
-            else if (post.kind == 'wish' && post.about != null) ...[
+            ] else if (post.kind == 'wish' && post.about != null) ...[
               const SizedBox(height: 4),
               Text(
-                [
-                  'For ${post.about!.fullName}',
-                  if (post.occasion == 'birthday')
-                    'Birthday'
-                  else if (post.occasion == 'anniversary')
-                    'Work anniversary',
-                ].join(' · '),
-                style: Theme.of(context).textTheme.bodySmall),
+                  [
+                    'For ${post.about!.fullName}',
+                    if (post.occasion == 'birthday')
+                      'Birthday'
+                    else if (post.occasion == 'anniversary')
+                      'Work anniversary',
+                  ].join(' · '),
+                  style: Theme.of(context).textTheme.bodySmall),
             ],
             if (post.poll != null) ...[
               const SizedBox(height: 6),

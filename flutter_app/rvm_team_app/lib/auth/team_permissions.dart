@@ -1,5 +1,7 @@
 import 'package:domain/domain.dart';
 
+import '../domain/ess_models.dart';
+
 /// What a role may see and do in Team RVM, limited to what the Scheduler
 /// backend actually serves today. Encoded from `Scheduler_Backend`:
 ///
@@ -59,4 +61,17 @@ class TeamPermissions {
       canWriteHod: hodWrite,
     );
   }
+}
+
+/// The badges this sign-in may give. The server holds the same list and refuses
+/// a reserved badge from anybody else, so hiding it here is a courtesy, not the
+/// permission itself (KP, issue 24 follow-up).
+List<PraiseBadge> awardablePraiseBadges(
+    List<PraiseBadge> badges, AppRole role) {
+  final wire = appRoleWire(role);
+  return badges
+      .where((badge) =>
+          badge.awardedBy.isEmpty ||
+          (wire != null && badge.awardedBy.contains(wire)))
+      .toList(growable: false);
 }

@@ -77,6 +77,7 @@ typedef HodOverviewBloc = LoadBloc<HodOverview>;
 typedef HodInterviewsBloc = LoadBloc<List<HodInterview>>;
 typedef HodFacultyOptionsBloc = LoadBloc<List<FacultyOption>>;
 typedef FacultyReportBloc = LoadBloc<FacultyReport>;
+typedef WorkExperienceBloc = LoadBloc<List<WorkExperience>>;
 typedef CapabilitiesBloc = LoadBloc<EssCapabilities>;
 
 /// Wires the whole graph at startup. [session] is the hydrated auth session.
@@ -222,7 +223,8 @@ void configureDependencies(AuthSession session) {
         () => LoadBloc<EssAccount>(() => getIt<EssRepository>().myAccount()))
     ..registerFactory<PersonalBloc>(() => PersonalBloc(getIt()))
     ..registerFactory<DataRequestsBloc>(() => DataRequestsBloc(getIt()))
-    ..registerFactory<AttendanceDayBloc>(() => AttendanceDayBloc(getIt()))
+    ..registerFactory<AttendanceDayBloc>(
+        () => AttendanceDayBloc(getIt(), getIt<MyAttendanceRepository>()))
     ..registerFactory<SessionsBloc>(() => SessionsBloc(getIt()))
     ..registerFactory<HrToolsBloc>(() => HrToolsBloc(getIt()))
     ..registerFactory<WfhAllowancesBloc>(() => WfhAllowancesBloc(getIt()))
@@ -240,6 +242,11 @@ void configureDependencies(AuthSession session) {
         () => LoadBloc<MyProfile>(() => getIt<EssRepository>().myProfile()))
     ..registerFactory<LoadBloc<PraisePage>>(
         () => LoadBloc<PraisePage>(() => getIt<EssRepository>().myPraise()))
+    ..registerFactory<WorkExperienceBloc>(() => LoadBloc<List<WorkExperience>>(
+        () => getIt<EssRepository>().workExperience(),
+        isEmpty: (entries) => entries.isEmpty))
+    ..registerFactory<LoadBloc<FacultyDay>>(
+        () => LoadBloc<FacultyDay>(() => getIt<EssRepository>().facultyDay()))
     // ── Team RVM ESS (2D: leaders) ───────────────────────────────────────
     ..registerFactory<LoadBloc<LeadersOverview>>(() =>
         LoadBloc<LeadersOverview>(
@@ -267,7 +274,12 @@ Future<void> registerPushToken(String token) async {
     final installId = await getIt<AuthSession>().installId();
     await getIt<EssRepository>().registerPushDevice(
       token: token,
-      deviceLabel: 'Android',
+      deviceLabel: switch (defaultTargetPlatform) {
+        TargetPlatform.android => 'Android',
+        TargetPlatform.iOS => 'iPhone',
+        TargetPlatform.macOS => 'macOS',
+        _ => defaultTargetPlatform.name,
+      },
       installId: installId,
     );
   } catch (_) {

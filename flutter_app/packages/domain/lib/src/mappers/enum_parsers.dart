@@ -51,6 +51,31 @@ AppRole parseAppRole(String? raw) {
   }
 }
 
+/// domain AppRole -> a human name for the UI (never the raw role id).
+String appRoleLabel(AppRole role) => switch (role) {
+      AppRole.admin => 'Admin',
+      AppRole.faculty => 'Faculty',
+      AppRole.superAdmin => 'Super Admin',
+      AppRole.accountsAdmin => 'Accounts Admin',
+      AppRole.ceo => 'CEO',
+      AppRole.hoo => 'Head of Operations',
+      AppRole.hod => 'Head of Department',
+      AppRole.adminManager => 'Admin Manager',
+      AppRole.hr => 'HR',
+      AppRole.hrExecutive => 'HR Executive',
+      AppRole.hodPlacement => 'Head of Department (Placement)',
+      AppRole.adminExecutive => 'Admin Executive',
+      AppRole.placementHead => 'Placement Head',
+      AppRole.placementExecutive => 'Placement Executive',
+      AppRole.student => 'Student',
+      AppRole.candidate => 'Candidate',
+      AppRole.company => 'Company',
+      AppRole.unknown => 'Member',
+    };
+
+/// A wire role string (`super_admin`) as its human name (`Super Admin`).
+String appRoleLabelFromWire(String? role) => appRoleLabel(parseAppRole(role));
+
 /// domain AppRole -> the wire string the Scheduler backend uses.
 String? appRoleWire(AppRole role) => switch (role) {
       AppRole.admin => 'admin',

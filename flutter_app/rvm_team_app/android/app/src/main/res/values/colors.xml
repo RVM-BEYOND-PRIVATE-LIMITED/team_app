@@ -2,4 +2,6 @@
 <resources>
     <!-- The brand maroon behind the launcher logo (sampled from the artwork). -->
     <color name="ic_launcher_background">#35120C</color>
+    <!-- Accent used for the small notification icon background wash. -->
+    <color name="notification_color">#35120C</color>
 </resources>

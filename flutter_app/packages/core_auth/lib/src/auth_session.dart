@@ -6,6 +6,7 @@ import 'package:core_network/core_network.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'secure_cookie_storage.dart';
+import 'secure_store.dart';
 
 /// Plain multi-backend session store (no ChangeNotifier — reactivity lives in
 /// the Blocs now). Holds the Scheduler bearer JWT in secure storage, the
@@ -17,13 +18,13 @@ class AuthSession implements TokenStore, EssTokenStore {
     FlutterSecureStorage? storage,
     PersistCookieJar? cookieJar,
     PersistCookieJar? schedulerCookieJar,
-  })  : _storage = storage ?? const FlutterSecureStorage(),
+  })  : _store = SecureStore(storage),
         cookieJar = cookieJar ??
             PersistCookieJar(storage: SecureCookieStorage(storage)),
         schedulerCookieJar = schedulerCookieJar ??
             PersistCookieJar(storage: SecureCookieStorage(storage));
 
-  final FlutterSecureStorage _storage;
+  final SecureStore _store;
 
   /// Passed to `DioFactory.jobPortal(...)`.
   final PersistCookieJar cookieJar;
@@ -42,7 +43,8 @@ class AuthSession implements TokenStore, EssTokenStore {
   String? _schedulerRole;
   String? _essRefreshToken;
 
-  final StreamController<void> _expiredController = StreamController<void>.broadcast();
+  final StreamController<void> _expiredController =
+      StreamController<void>.broadcast();
 
   /// Fires when the network layer hits a 401 ([onUnauthorized]) — the session
   /// has been cleared and the app should route back to login. Blocs listen to
@@ -55,23 +57,24 @@ class AuthSession implements TokenStore, EssTokenStore {
 
   /// Hydrate from storage at app start.
   Future<void> load() async {
-    _schedulerToken = await _storage.read(key: _kSchedulerToken);
-    _schedulerRole = await _storage.read(key: _kSchedulerRole);
+    _schedulerToken = await _store.read(key: _kSchedulerToken);
+    _schedulerRole = await _store.read(key: _kSchedulerRole);
   }
 
   /// Persist the Scheduler login result.
-  Future<void> saveSchedulerSession({required String token, String? role}) async {
+  Future<void> saveSchedulerSession(
+      {required String token, String? role}) async {
     _schedulerToken = token;
     _schedulerRole = role;
-    await _storage.write(key: _kSchedulerToken, value: token);
-    if (role != null) await _storage.write(key: _kSchedulerRole, value: role);
+    await _store.write(key: _kSchedulerToken, value: token);
+    if (role != null) await _store.write(key: _kSchedulerRole, value: role);
   }
 
   // --- TokenStore ---------------------------------------------------------
 
   @override
   Future<String?> readSchedulerToken() async =>
-      _schedulerToken ??= await _storage.read(key: _kSchedulerToken);
+      _schedulerToken ??= await _store.read(key: _kSchedulerToken);
 
   @override
   Future<void> onUnauthorized() async {
@@ -83,14 +86,14 @@ class AuthSession implements TokenStore, EssTokenStore {
 
   @override
   Future<String?> readEssRefreshToken() async =>
-      _essRefreshToken ??= await _storage.read(key: _kEssRefreshToken);
+      _essRefreshToken ??= await _store.read(key: _kEssRefreshToken);
 
   @override
   Future<String> installId() async {
-    final existing = await _storage.read(key: _kEssInstallId);
+    final existing = await _store.read(key: _kEssInstallId);
     if (existing != null && existing.isNotEmpty) return existing;
     final id = _randomInstallId();
-    await _storage.write(key: _kEssInstallId, value: id);
+    await _store.write(key: _kEssInstallId, value: id);
     return id;
   }
 
@@ -107,21 +110,22 @@ class AuthSession implements TokenStore, EssTokenStore {
     DateTime? accessExpiresAt,
   }) async {
     _essRefreshToken = refreshToken;
-    await _storage.write(key: _kEssRefreshToken, value: refreshToken);
+    await _store.write(key: _kEssRefreshToken, value: refreshToken);
     if (accessExpiresAt != null) {
-      await _storage.write(key: _kEssAccessExpiresAt, value: accessExpiresAt.toIso8601String());
+      await _store.write(
+          key: _kEssAccessExpiresAt, value: accessExpiresAt.toIso8601String());
     }
     // The ESS access token is minted in the Scheduler's own format and is
     // accepted by both hosts, so it becomes the Scheduler token too.
     _schedulerToken = accessToken;
-    await _storage.write(key: _kSchedulerToken, value: accessToken);
+    await _store.write(key: _kSchedulerToken, value: accessToken);
   }
 
   @override
   Future<void> clearEssSession() async {
     _essRefreshToken = null;
-    await _storage.delete(key: _kEssRefreshToken);
-    await _storage.delete(key: _kEssAccessExpiresAt);
+    await _store.delete(key: _kEssRefreshToken);
+    await _store.delete(key: _kEssAccessExpiresAt);
   }
 
   // --- sign out -----------------------------------------------------------
@@ -129,8 +133,8 @@ class AuthSession implements TokenStore, EssTokenStore {
   Future<void> signOutScheduler() async {
     _schedulerToken = null;
     _schedulerRole = null;
-    await _storage.delete(key: _kSchedulerToken);
-    await _storage.delete(key: _kSchedulerRole);
+    await _store.delete(key: _kSchedulerToken);
+    await _store.delete(key: _kSchedulerRole);
   }
 
   Future<void> signOutJobPortal() => cookieJar.deleteAll();

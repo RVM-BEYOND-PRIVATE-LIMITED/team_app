@@ -26,45 +26,65 @@ class MeScreen extends StatelessWidget {
     }
     return BlocProvider(
       create: (_) => getIt<MeBloc>()..add(const LoadRequested()),
-      child: Scaffold(
-        backgroundColor: RvmColors.ivory,
-        body: Column(
-          children: [
-            TeamPageHeader(
-              title: 'Me',
-              eyebrow: 'My account',
-              subtitle: const Text('Your profile, work and account'),
-              actions: [
-                Builder(
-                  builder: (context) => TeamHeaderAction(
-                    icon: Icons.refresh_rounded,
-                    tooltip: 'Refresh',
-                    onPressed: () =>
-                        context.read<MeBloc>().add(const LoadRefreshed()),
+      child: BlocBuilder<MeBloc, LoadState<TeamProfile>>(
+        builder: (context, state) {
+          final name = state.data?.username.trim();
+          final title = (name != null && name.isNotEmpty)
+              ? name
+              : (auth.identity?.username?.trim().isNotEmpty == true
+                  ? auth.identity!.username!.trim()
+                  : 'Me');
+          return Scaffold(
+            backgroundColor: RvmColors.ivory,
+            body: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                TeamCollapsingHeader(
+                  contentHeight: 124,
+                  title: title,
+                  actions: [
+                    Builder(
+                      builder: (context) => TeamHeaderAction(
+                        icon: Icons.refresh_rounded,
+                        tooltip: 'Refresh',
+                        onPressed: () =>
+                            context.read<MeBloc>().add(const LoadRefreshed()),
+                      ),
+                    ),
+                  ],
+                  expanded: TeamPageHeader(
+                    title: title,
+                    eyebrow: 'My account',
+                    subtitle: const Text('Your Profile'),
+                    actions: [
+                      const TeamBrandMark(),
+                      Builder(
+                        builder: (context) => TeamHeaderAction(
+                          icon: Icons.refresh_rounded,
+                          tooltip: 'Refresh',
+                          onPressed: () => context
+                              .read<MeBloc>()
+                              .add(const LoadRefreshed()),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
+              body: switch (state.status) {
+                LoadStatus.loading ||
+                LoadStatus.initial =>
+                  const AppLoading(),
+                LoadStatus.failure => AppError(
+                    message:
+                        state.failure?.message ?? 'Could not load your profile.',
+                    onRetry: () =>
+                        context.read<MeBloc>().add(const LoadRefreshed()),
+                  ),
+                _ => _MeBody(profile: state.data),
+              },
             ),
-            Expanded(
-              child: BlocBuilder<MeBloc, LoadState<TeamProfile>>(
-                builder: (context, state) {
-                  return switch (state.status) {
-                    LoadStatus.loading ||
-                    LoadStatus.initial =>
-                      const AppLoading(),
-                    LoadStatus.failure => AppError(
-                        message: state.failure?.message ??
-                            'Could not load your profile.',
-                        onRetry: () =>
-                            context.read<MeBloc>().add(const LoadRefreshed()),
-                      ),
-                    _ => _MeBody(profile: state.data),
-                  };
-                },
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -84,37 +104,45 @@ class _AttendanceMe extends StatelessWidget {
     // the ESS's own GET /me (full name, code, designation, branch) — issue #13.
     return BlocProvider(
       create: (_) => getIt<LoadBloc<EssMe>>()..add(const LoadRequested()),
-      child: Builder(builder: (context) {
-        final employee =
-            context.watch<LoadBloc<EssMe>>().state.data?.employee;
-        final profile = TeamProfile(
-          id: employee?.id ?? auth.identity?.userId ?? '',
-          username: employee?.fullName ??
+      child: BlocBuilder<LoadBloc<EssMe>, LoadState<EssMe>>(
+        builder: (context, state) {
+          final employee = state.data?.employee;
+          final fallback = employee?.fullName ??
               (auth.attendanceName?.trim().isNotEmpty == true
                   ? auth.attendanceName!.trim()
-                  : 'My account'),
-          role: 'attendance',
-        );
-        return Scaffold(
-          backgroundColor: RvmColors.ivory,
-          body: Column(
-            children: [
-              const TeamPageHeader(
-                title: 'Me',
-                eyebrow: 'My account',
-                subtitle: Text('Your profile, documents and requests'),
-              ),
-              Expanded(
-                child: _MeBody(
-                  profile: profile,
-                  attendanceOnly: true,
-                  attendanceEmployee: employee,
+                  : null);
+          final profile = TeamProfile(
+            id: employee?.id ?? auth.identity?.userId ?? '',
+            username: fallback ?? 'My account',
+            role: 'attendance',
+          );
+          final title = (fallback != null && fallback.trim().isNotEmpty)
+              ? fallback.trim()
+              : 'Me';
+          return Scaffold(
+            backgroundColor: RvmColors.ivory,
+            body: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                TeamCollapsingHeader(
+                  contentHeight: 124,
+                  title: title,
+                  expanded: TeamPageHeader(
+                    title: title,
+                    eyebrow: 'My account',
+                    subtitle: const Text('Your Profile'),
+                    actions: [const TeamBrandMark()],
+                  ),
                 ),
+              ],
+              body: _MeBody(
+                profile: profile,
+                attendanceOnly: true,
+                attendanceEmployee: employee,
               ),
-            ],
-          ),
-        );
-      }),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -294,7 +322,7 @@ class _MeBody extends StatelessWidget {
             style: Theme.of(context)
                 .textTheme
                 .labelSmall
-                ?.copyWith(fontSize: 9.5, color: RvmColors.subtle),
+                ?.copyWith(fontSize: 10.5, color: RvmColors.subtle),
           ),
         ),
         const SizedBox(height: RvmSpacing.lg),
@@ -330,7 +358,7 @@ class _ProfileHeader extends StatelessWidget {
                 TeamPill(
                     label: (employee != null
                             ? 'ATTENDANCE'
-                            : (profile?.role ?? 'Member'))
+                            : appRoleLabelFromWire(profile?.role))
                         .toUpperCase(),
                     tone: TeamPillTone.clay,
                     dense: true),
@@ -400,8 +428,8 @@ class _Section extends StatelessWidget {
           padding: const EdgeInsets.only(left: 4, bottom: 7),
           child: Text(title.toUpperCase(),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontSize: 9.5,
-                    letterSpacing: 0.9,
+                    fontSize: 11,
+                    letterSpacing: 1,
                     color: RvmColors.subtle,
                     fontWeight: FontWeight.w600,
                   )),
@@ -429,14 +457,19 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: TeamIconBadge(icon: icon, size: 34, iconSize: 16, radius: 10),
+      leading: TeamIconBadge(icon: icon, size: 38, iconSize: 18, radius: 11),
       title: Text(title,
-          style:
-              Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 12.5)),
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontSize: 14.5, fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 10)),
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(fontSize: 12, height: 1.3)),
       trailing: const Icon(Icons.chevron_right_rounded,
-          size: 19, color: RvmColors.subtle),
+          size: 20, color: RvmColors.subtle),
       onTap: onTap,
     );
   }

@@ -4,6 +4,8 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../data/repositories/ess_repository.dart';
+import '../../../data/repositories/my_attendance_repository.dart';
+import '../../../domain/attendance_models.dart';
 import '../../../domain/ess_models.dart';
 
 sealed class AttendanceDayEvent {
@@ -44,6 +46,10 @@ class AttendanceDayState extends Equatable {
     this.reporting = false,
     this.reportFailure,
     this.reportedNonce = 0,
+    this.currentMonth,
+    this.previousMonth,
+    this.logsLoading = false,
+    this.logFailure,
   });
 
   final LoadStatus status;
@@ -52,37 +58,94 @@ class AttendanceDayState extends Equatable {
   final bool reporting;
   final Failure? reportFailure;
   final int reportedNonce;
+  final MyAttendance? currentMonth;
+  final MyAttendance? previousMonth;
+  final bool logsLoading;
+  final Failure? logFailure;
 
   @override
-  List<Object?> get props => [status, day, failure, reporting, reportFailure, reportedNonce];
+  List<Object?> get props => [
+        status,
+        day,
+        failure,
+        reporting,
+        reportFailure,
+        reportedNonce,
+        currentMonth,
+        previousMonth,
+        logsLoading,
+        logFailure,
+      ];
 }
 
 class AttendanceDayBloc extends Bloc<AttendanceDayEvent, AttendanceDayState> {
-  AttendanceDayBloc(this._repo) : super(const AttendanceDayState()) {
+  AttendanceDayBloc(this._repo, this._attendance)
+      : super(const AttendanceDayState()) {
     on<AttendanceDayLoadRequested>(_onLoad);
     on<AttendanceDayRefreshed>(_onLoad);
     on<MockLocationReportSubmitted>(_onReport);
   }
 
   final EssRepository _repo;
+  final MyAttendanceRepository _attendance;
 
   static String today() {
     final d = DateTime.now();
     return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _onLoad(AttendanceDayEvent e, Emitter<AttendanceDayState> emit) async {
-    emit(AttendanceDayState(status: LoadStatus.loading, day: state.day, reportedNonce: state.reportedNonce));
+  static String monthKey(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
+
+  Future<void> _onLoad(
+      AttendanceDayEvent e, Emitter<AttendanceDayState> emit) async {
+    emit(AttendanceDayState(
+      status: LoadStatus.loading,
+      day: state.day,
+      reportedNonce: state.reportedNonce,
+      currentMonth: state.currentMonth,
+      previousMonth: state.previousMonth,
+      logsLoading: true,
+    ));
     try {
       final day = await _repo.attendanceDay(today());
-      emit(AttendanceDayState(status: LoadStatus.success, day: day, reportedNonce: state.reportedNonce));
+      final now = DateTime.now();
+      final previous = DateTime(now.year, now.month - 1);
+      final results = await Future.wait([
+        _attendance.myAttendanceSafe(month: monthKey(now)),
+        _attendance.myAttendanceSafe(month: monthKey(previous)),
+      ]);
+      emit(AttendanceDayState(
+        status: LoadStatus.success,
+        day: day,
+        reportedNonce: state.reportedNonce,
+        currentMonth: results[0].data,
+        previousMonth: results[1].data,
+        logFailure: results[0].failure ?? results[1].failure,
+      ));
     } on Failure catch (f) {
-      emit(AttendanceDayState(status: LoadStatus.failure, failure: f, reportedNonce: state.reportedNonce));
+      emit(AttendanceDayState(
+        status: LoadStatus.failure,
+        failure: f,
+        reportedNonce: state.reportedNonce,
+        currentMonth: state.currentMonth,
+        previousMonth: state.previousMonth,
+      ));
     }
   }
 
-  Future<void> _onReport(MockLocationReportSubmitted e, Emitter<AttendanceDayState> emit) async {
-    emit(AttendanceDayState(status: state.status, day: state.day, reporting: true, reportedNonce: state.reportedNonce));
+  Future<void> _onReport(
+      MockLocationReportSubmitted e, Emitter<AttendanceDayState> emit) async {
+    emit(AttendanceDayState(
+      status: state.status,
+      day: state.day,
+      reporting: true,
+      reportedNonce: state.reportedNonce,
+      currentMonth: state.currentMonth,
+      previousMonth: state.previousMonth,
+      logsLoading: state.logsLoading,
+      logFailure: state.logFailure,
+    ));
     try {
       await _repo.reportMockLocation({
         'kind': 'punch',
@@ -96,6 +159,10 @@ class AttendanceDayBloc extends Bloc<AttendanceDayEvent, AttendanceDayState> {
         status: state.status,
         day: state.day,
         reportedNonce: state.reportedNonce + 1,
+        currentMonth: state.currentMonth,
+        previousMonth: state.previousMonth,
+        logsLoading: state.logsLoading,
+        logFailure: state.logFailure,
       ));
     } on Failure catch (f) {
       emit(AttendanceDayState(
@@ -103,6 +170,10 @@ class AttendanceDayBloc extends Bloc<AttendanceDayEvent, AttendanceDayState> {
         day: state.day,
         reportFailure: f,
         reportedNonce: state.reportedNonce,
+        currentMonth: state.currentMonth,
+        previousMonth: state.previousMonth,
+        logsLoading: state.logsLoading,
+        logFailure: state.logFailure,
       ));
     }
   }

@@ -206,6 +206,33 @@ class EssRemoteDataSource with DioExecutor {
       guard(() async => PersonalDetails.fromJson(_obj(
           _body(await _dio.put('/me/personal', data: patch))['personal'])));
 
+  Future<SocialProfile> readSocialProfile() => guard(() async =>
+      SocialProfile.fromJson(
+          _obj(_body(await _dio.get('/me/profile-details'))['profile'])));
+
+  Future<SocialProfile> updateSocialProfile(Map<String, dynamic> patch) =>
+      guard(() async => SocialProfile.fromJson(
+          _obj(_body(await _dio.put('/me/profile-details', data: patch))['profile'])));
+
+  Future<List<WorkExperience>> workExperience() => guard(() async => _list(
+        _body(await _dio.get('/me/work-experience'))['entries'],
+        WorkExperience.fromJson,
+      ));
+
+  Future<List<WorkExperience>> saveWorkExperience(
+          List<WorkExperience> entries) =>
+      guard(() async => _list(
+            _body(await _dio.put('/me/work-experience', data: {
+              'entries': entries.map((e) => e.toJson()).toList(),
+            }))['entries'],
+            WorkExperience.fromJson,
+          ));
+
+  Future<ColleagueProfile> colleagueProfile(String employeeId) =>
+      guard(() async => ColleagueProfile.fromJson(
+            _body(await _dio.get('/directory/$employeeId')),
+          ));
+
   Future<({EmployeeCard employee, PersonalDetails personal})> employeePersonal(
           String employeeId) =>
       guard(() async {

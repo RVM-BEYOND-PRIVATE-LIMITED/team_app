@@ -139,6 +139,222 @@ class TeamPageHeader extends StatelessWidget {
   }
 }
 
+/// A pinned page header for the five bottom tabs. It shows the full
+/// [TeamPageHeader] at rest and collapses to a compact title/action line as the
+/// page scrolls, like a Material collapsing toolbar.
+class TeamCollapsingHeader extends StatelessWidget {
+  const TeamCollapsingHeader({
+    super.key,
+    required this.expanded,
+    required this.title,
+    this.actions = const <Widget>[],
+    this.contentHeight = 124,
+    this.showBrandMark = true,
+  });
+
+  final Widget expanded;
+  final String title;
+  final List<Widget> actions;
+
+  /// Whether the compact bar keeps the RVM wordmark visible once the expanded
+  /// header has scrolled away.
+  final bool showBrandMark;
+
+  /// The expanded header's height below the status bar.
+  final double contentHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+    return SliverPersistentHeader(
+      pinned: true,
+      delegate: _TeamCollapsingHeaderDelegate(
+        expanded: expanded,
+        title: title,
+        actions: actions,
+        showBrandMark: showBrandMark,
+        topPadding: top,
+        maxExtent: top + contentHeight,
+        minExtent: top + 52,
+      ),
+    );
+  }
+}
+
+class _TeamCollapsingHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _TeamCollapsingHeaderDelegate({
+    required this.expanded,
+    required this.title,
+    required this.actions,
+    required this.showBrandMark,
+    required this.topPadding,
+    required this.maxExtent,
+    required this.minExtent,
+  });
+
+  final Widget expanded;
+  final String title;
+  final List<Widget> actions;
+  final bool showBrandMark;
+  final double topPadding;
+  @override
+  final double maxExtent;
+  @override
+  final double minExtent;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final range = maxExtent - minExtent;
+    final t = range <= 0 ? 1.0 : (shrinkOffset / range).clamp(0.0, 1.0);
+    final current = (maxExtent - shrinkOffset).clamp(minExtent, maxExtent);
+    final expandedOpacity = (1 - t * 1.4).clamp(0.0, 1.0);
+    final compactOpacity = ((t - 0.35) / 0.65).clamp(0.0, 1.0);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light
+          .copyWith(statusBarColor: Colors.transparent),
+      child: SizedBox(
+        height: current,
+        child: ClipRect(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [RvmColors.ironwood, RvmColors.ironwoodEnd],
+                    ),
+                    borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(RvmRadii.xl)),
+                  ),
+                ),
+              ),
+              if (expandedOpacity > 0.01)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: -shrinkOffset,
+                  height: maxExtent,
+                  child: IgnorePointer(
+                    ignoring: expandedOpacity < 0.9,
+                    child: Opacity(opacity: expandedOpacity, child: expanded),
+                  ),
+                ),
+              if (compactOpacity > 0.01)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: minExtent,
+                  child: IgnorePointer(
+                    ignoring: compactOpacity < 0.2,
+                    child: Opacity(
+                      opacity: compactOpacity,
+                      child: _CompactHeaderBar(
+                        title: title,
+                        actions: actions,
+                        showBrandMark: showBrandMark,
+                        topPadding: topPadding,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _TeamCollapsingHeaderDelegate old) =>
+      old.expanded != expanded ||
+      old.title != title ||
+      old.actions != actions ||
+      old.showBrandMark != showBrandMark ||
+      old.topPadding != topPadding ||
+      old.maxExtent != maxExtent ||
+      old.minExtent != minExtent;
+}
+
+class _CompactHeaderBar extends StatelessWidget {
+  const _CompactHeaderBar({
+    required this.title,
+    required this.actions,
+    required this.showBrandMark,
+    required this.topPadding,
+  });
+
+  final String title;
+  final List<Widget> actions;
+  final bool showBrandMark;
+  final double topPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.only(top: topPadding, left: 16, right: 8),
+      child: SizedBox(
+        height: 52,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.titleMedium?.copyWith(
+                  color: RvmColors.ivory,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+            if (showBrandMark) ...[
+              const SizedBox(width: 8),
+              const TeamBrandMark(size: 20),
+            ],
+            if (actions.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Row(mainAxisSize: MainAxisSize.min, children: actions),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The Team RVM wordmark for a page header: transparent, brand orange, and
+/// sized by its height so the rvm stays legible without a box or border.
+class TeamBrandMark extends StatelessWidget {
+  const TeamBrandMark({super.key, this.size = 22});
+
+  /// The rendered height of the wordmark; its width follows the asset's ratio.
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Image.asset(
+        'assets/branding/team_rvm_mark.png',
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.business_rounded,
+          size: size,
+          color: RvmColors.ivory,
+        ),
+      ),
+    );
+  }
+}
+
 /// A translucent circular action for an [TeamPageHeader] — e.g. refresh or
 /// notifications. Pass [badge] to show the org/orange notification dot.
 class TeamHeaderAction extends StatelessWidget {

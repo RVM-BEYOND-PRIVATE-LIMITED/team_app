@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app_crash.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../work/wfh_sheet.dart';
@@ -34,54 +35,72 @@ class HomeScreen extends StatelessWidget {
             children: [
               const OfflineBanner(),
               Expanded(
-                child: RefreshIndicator(
-                  color: RvmColors.clay,
-                  onRefresh: () async {},
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    children: [
-                      _HomeHeader(identity: identity),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(RvmSpacing.md,
-                            RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const _ScheduleCard(),
-                            const SizedBox(height: RvmSpacing.md),
-                            _OffThisWeekCard(),
-                            const SizedBox(height: RvmSpacing.md),
-                            if (perms.canSeeFacultyWork) ...[
-                              _FacultyCard(),
-                              const SizedBox(height: RvmSpacing.md),
-                            ],
-                            if (perms.canSeeHodWork) ...[
-                              _HodCard(),
-                              const SizedBox(height: RvmSpacing.md),
-                            ],
-                            if (!attendance && perms.canSeePriorityTasks) ...[
-                              _PrioritySummaryCard(),
-                              const SizedBox(height: RvmSpacing.md),
-                            ],
-                            // Interviews, priority tasks and announcements are
-                            // Scheduler reads. An attendance-only session's punch
-                            // token is accepted only on the punch routes, so these
-                            // would answer 401. The ESS cards above still work.
-                            if (!attendance) ...[
-                              _InterviewsCard(perms: perms),
-                              const SizedBox(height: RvmSpacing.md),
-                              _QuickActions(perms: perms),
-                              const SizedBox(height: RvmSpacing.md),
-                              _WorkFromHomeCard(),
-                              const SizedBox(height: RvmSpacing.md),
-                              _AnnouncementsSection(),
-                            ] else ...[
-                              _QuickActions(perms: perms),
-                            ],
-                          ],
+                child: NestedScrollView(
+                  headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                    TeamCollapsingHeader(
+                      contentHeight: 144,
+                      title: (identity?.username?.trim().isNotEmpty == true
+                          ? identity!.username!.trim()
+                          : 'Home'),
+                      actions: [
+                        TeamHeaderAction(
+                          icon: Icons.notifications_none_rounded,
+                          tooltip: 'Notifications',
+                          badge: true,
+                          onPressed: () => context.push('/notifications'),
                         ),
-                      ),
-                    ],
+                      ],
+                      expanded: _HomeHeader(identity: identity),
+                    ),
+                  ],
+                  body: RefreshIndicator(
+                    color: RvmColors.clay,
+                    onRefresh: () async {},
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(RvmSpacing.md,
+                              RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const _ScheduleCard(),
+                              const SizedBox(height: RvmSpacing.md),
+                              _OffThisWeekCard(),
+                              const SizedBox(height: RvmSpacing.md),
+                              if (perms.canSeeFacultyWork) ...[
+                                _FacultyCard(),
+                                const SizedBox(height: RvmSpacing.md),
+                              ],
+                              if (perms.canSeeHodWork) ...[
+                                _HodCard(),
+                                const SizedBox(height: RvmSpacing.md),
+                              ],
+                              if (!attendance && perms.canSeePriorityTasks) ...[
+                                _PrioritySummaryCard(),
+                                const SizedBox(height: RvmSpacing.md),
+                              ],
+                              // Interviews, priority tasks and announcements are
+                              // Scheduler reads. An attendance-only session's punch
+                              // token is accepted only on the punch routes, so these
+                              // would answer 401. The ESS cards above still work.
+                              if (!attendance) ...[
+                                _InterviewsCard(perms: perms),
+                                const SizedBox(height: RvmSpacing.md),
+                                _QuickActions(perms: perms),
+                                const SizedBox(height: RvmSpacing.md),
+                                _WorkFromHomeCard(),
+                                const SizedBox(height: RvmSpacing.md),
+                                _AnnouncementsSection(),
+                              ] else ...[
+                                _QuickActions(perms: perms),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -101,8 +120,7 @@ class _HomeHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = identity?.username ?? 'Welcome';
     final trimmed = name.trim();
-    final role =
-        (appRoleWire(identity?.role ?? AppRole.unknown) ?? '—').toUpperCase();
+    final role = appRoleLabel(identity?.role ?? AppRole.unknown).toUpperCase();
     final location = identity?.locationName;
 
     return TeamPageHeader(
@@ -128,6 +146,7 @@ class _HomeHeader extends StatelessWidget {
         ],
       ),
       actions: [
+        const TeamBrandMark(),
         TeamHeaderAction(
           icon: Icons.notifications_none_rounded,
           tooltip: 'Notifications',
@@ -321,6 +340,20 @@ class _ScheduleCard extends StatelessWidget {
                     }
                   },
                 ),
+                const SizedBox(height: 2),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _sendTestCrash(context),
+                    icon: const Icon(Icons.bug_report_outlined, size: 16),
+                    label: const Text('Send test crash'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: RvmColors.danger,
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                  ),
+                ),
               ],
             ),
           );
@@ -328,6 +361,37 @@ class _ScheduleCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _sendTestCrash(BuildContext context) async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Send a test crash?'),
+      content: const Text(
+          'This sends a fatal test report to Firebase Crashlytics. The app stays open.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('Send'),
+        ),
+      ],
+    ),
+  );
+  if (confirm != true || !context.mounted) return;
+  final sent = await CrashReporter.testCrash();
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: Text(sent
+          ? 'Test crash sent. Check Firebase Crashlytics in a few minutes.'
+          : 'Crashlytics is not enabled in this build. Check the debug console.'),
+    ));
 }
 
 /// A bounded, human message for the cases where a punch cannot be sent. The

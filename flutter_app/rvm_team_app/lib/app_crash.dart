@@ -1,8 +1,9 @@
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
+import 'firebase_bootstrap.dart';
 
 /// Every error in the app funnels through here.
 ///
@@ -12,20 +13,22 @@ import 'package:package_info_plus/package_info_plus.dart';
 /// - the real reason (exception message, backend error text, or stack),
 /// - the date and time (the console stamps every event).
 ///
-/// Without a Firebase project yet (`google-services.json` not added) the app
-/// keeps working: reports fall back to the debug log and the on-screen toast.
+/// The Firebase project `rvm-team-app-2026` is configured for Android through
+/// `android/app/google-services.json` and `lib/firebase_options.dart`. A build
+/// without that config still runs: reports fall back to the debug log and the
+/// on-screen toast.
 abstract final class CrashReporter {
   static bool _available = false;
 
   /// True once Firebase initialised successfully.
   static bool get available => _available;
 
-  /// Opt-in at build time: `--dart-define=USE_FIREBASE=true`.
-  /// Default is OFF so a build without `google-services.json` never even
-  /// touches the Firebase native plugin (no throw, no IDE pause).
-  /// Flip it on once the Firebase console config file is in place.
+  /// Build-time switch. Firebase is ON by default now that the project's
+  /// `google-services.json` and `firebase_options.dart` are in the repo.
+  /// A build without that config catches the init failure and stays local-only;
+  /// pass `--dart-define=USE_FIREBASE=false` to switch it off deliberately.
   static const _useFirebase =
-      bool.fromEnvironment('USE_FIREBASE', defaultValue: false);
+      bool.fromEnvironment('USE_FIREBASE', defaultValue: true);
 
   static Future<void> init() async {
     if (!_useFirebase) {
@@ -33,9 +36,8 @@ abstract final class CrashReporter {
       return;
     }
     try {
-      await Firebase.initializeApp();
-      await FirebaseCrashlytics.instance
-          .setCrashlyticsCollectionEnabled(true);
+      await ensureFirebase();
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
       _available = true;
       await _setContextKeys();
       await FirebaseCrashlytics.instance.log('Team RVM started');
@@ -49,8 +51,7 @@ abstract final class CrashReporter {
     try {
       final fields = await _deviceFields();
       for (final entry in fields.entries) {
-        await FirebaseCrashlytics.instance
-            .setCustomKey(entry.key, entry.value);
+        await FirebaseCrashlytics.instance.setCustomKey(entry.key, entry.value);
       }
       final pkg = await PackageInfo.fromPlatform();
       await FirebaseCrashlytics.instance
@@ -148,6 +149,39 @@ abstract final class CrashReporter {
       );
     } catch (_) {
       // Reporting must never crash the app it is watching.
+    }
+  }
+
+  /// A deliberate fatal test report for the Home screen's "Send test crash"
+  /// It never kills the process: Crashlytics records it as a fatal event with
+  /// the reason `crash-test-button`, so it is easy to find in the console.
+  /// Returns false when Firebase is not available in this build.
+  static Future<bool> testCrash() async {
+    const reason = 'crash-test-button';
+    const message = 'Team RVM test crash from the Home screen';
+    final stack = StackTrace.current;
+    debugPrint('RVM test crash requested: $message');
+    debugPrint('$stack');
+    if (!_available) {
+      debugPrint(
+          'Crashlytics is not enabled in this build. Build with Firebase config or --dart-define=USE_FIREBASE=true.');
+      return false;
+    }
+    try {
+      await FirebaseCrashlytics.instance.log('Team RVM test crash requested');
+      await FirebaseCrashlytics.instance.setCustomKey('reason', reason);
+      await FirebaseCrashlytics.instance.setCustomKey('crash_test', 'true');
+      await FirebaseCrashlytics.instance.recordError(
+        StateError(message),
+        stack,
+        reason: reason,
+        fatal: true,
+        printDetails: false,
+      );
+      return true;
+    } catch (error, stack) {
+      debugPrint('RVM test crash could not be sent: $error\n$stack');
+      return false;
     }
   }
 

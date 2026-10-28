@@ -3,6 +3,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../domain/attendance_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import 'bloc/attendance_day_bloc.dart';
@@ -123,6 +124,43 @@ class _AttendanceDayView extends StatelessWidget {
           _NoteCard(
               title: 'My remarks',
               body: day.myRemarks.map((r) => r.remarks).join('\n')),
+        ],
+        const SizedBox(height: RvmSpacing.lg),
+        Text('Attendance log', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text('This month and last month',
+            style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: RvmSpacing.sm),
+        if (state.logsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else ...[
+          if (state.logFailure != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: RvmSpacing.sm),
+              child: Text(
+                state.logFailure!.message,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          _MonthLog(
+            month: state.currentMonth?.month ?? _monthKey(DateTime.now()),
+            attendance: state.currentMonth,
+            initiallyExpanded: true,
+          ),
+          const SizedBox(height: RvmSpacing.sm),
+          _MonthLog(
+            month: state.previousMonth?.month ??
+                _monthKey(
+                    DateTime(DateTime.now().year, DateTime.now().month - 1)),
+            attendance: state.previousMonth,
+            initiallyExpanded: false,
+          ),
         ],
         const SizedBox(height: RvmSpacing.lg),
         OutlinedButton.icon(
@@ -252,5 +290,190 @@ class _NoteCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+String _monthKey(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
+
+String _monthLabel(String key) {
+  final parts = key.split('-');
+  if (parts.length < 2) return key;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  if (year == null || month == null || month < 1 || month > 12) return key;
+  const names = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ];
+  return '${names[month - 1]} $year';
+}
+
+String _dayLabel(String value) {
+  final d = DateTime.tryParse(value);
+  if (d == null) return value;
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return '${d.day} ${_monthLabel('${d.year}-${d.month.toString().padLeft(2, '0')}').split(' ').first} · ${weekdays[d.weekday - 1]}';
+}
+
+String _logStatus(String status, String? leaveType) => switch (status) {
+      'present' => leaveType == null ? 'Present' : leaveType.toUpperCase(),
+      'absent' => 'Absent',
+      'half_day' => 'Half day',
+      'leave' => leaveType == null ? 'On leave' : leaveType.toUpperCase(),
+      'week_off' => 'Week off',
+      'holiday' => 'Holiday',
+      _ => status.replaceAll('_', ' '),
+    };
+
+int _logTone(String status) {
+  if (status == 'present') return 0;
+  if (status == 'absent') return 1;
+  if (status == 'half_day' || status == 'leave') return 2;
+  return 3;
+}
+
+class _MonthLog extends StatelessWidget {
+  const _MonthLog({
+    required this.month,
+    required this.attendance,
+    required this.initiallyExpanded,
+  });
+
+  final String month;
+  final MyAttendance? attendance;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = [...?attendance?.days]..sort((a, b) => b.day.compareTo(a.day));
+    final present = days.where((d) => d.status == 'present').length;
+    final absent = days.where((d) => d.status == 'absent').length;
+    final leave =
+        days.where((d) => d.status == 'leave' || d.status == 'half_day').length;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        tilePadding: const EdgeInsets.symmetric(horizontal: RvmSpacing.md),
+        childrenPadding: const EdgeInsets.fromLTRB(
+            RvmSpacing.md, 0, RvmSpacing.md, RvmSpacing.sm),
+        title: Text(_monthLabel(month),
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700)),
+        subtitle: days.isEmpty
+            ? const Text('No attendance recorded yet')
+            : Text('$present present · $absent absent · $leave leave'),
+        children: [
+          if (days.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('No days recorded for this month.'),
+            )
+          else
+            for (final day in days) _LogDay(day: day),
+        ],
+      ),
+    );
+  }
+}
+
+class _LogDay extends StatelessWidget {
+  const _LogDay({required this.day});
+  final AttendanceMonthDay day;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (_logTone(day.status)) {
+      0 => RvmColors.success,
+      1 => RvmColors.danger,
+      2 => RvmColors.warning,
+      _ => RvmColors.muted,
+    };
+    final parsed = DateTime.tryParse(day.day);
+    final times = [
+      if (day.firstIn != null)
+        'In ${TimeOfDay.fromDateTime(day.firstIn!.toLocal()).format(context)}',
+      if (day.lastOut != null)
+        'Out ${TimeOfDay.fromDateTime(day.lastOut!.toLocal()).format(context)}',
+    ].join(' · ');
+    final worked = _minutes(day.workedMinutes);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(RvmRadii.sm),
+            ),
+            child: Text(
+              parsed == null ? '—' : '${parsed.day}',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(color: color, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(_dayLabel(day.day),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: RvmColors.ink)),
+                    ),
+                    Text(_logStatus(day.status, day.leaveType),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: color)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    if (times.isNotEmpty) times,
+                    if (worked != '—') 'Worked $worked'
+                  ].join(' · '),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _minutes(int? m) {
+    if (m == null) return '—';
+    final h = m ~/ 60;
+    final min = m % 60;
+    return h > 0 ? '${h}h ${min}m' : '${min}m';
   }
 }

@@ -22,26 +22,10 @@ class SplashScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 68,
-                height: 68,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: RvmColors.teamSeed,
-                  borderRadius: BorderRadius.circular(RvmRadii.lg),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: const Text('rvm',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 21)),
+              Image.asset(
+                'assets/branding/team_rvm_mark.png',
+                height: 38,
+                fit: BoxFit.contain,
               ),
               const SizedBox(height: RvmSpacing.lg),
               Text('Team RVM',

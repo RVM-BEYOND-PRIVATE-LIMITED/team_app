@@ -205,7 +205,9 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
   Future<void> _onProbe(
       TeamAuthProbeRequested e, Emitter<TeamAuthState> emit) async {
     try {
-      var token = await _session.readSchedulerToken();
+      var token = await _session
+          .readSchedulerToken()
+          .timeout(const Duration(seconds: 5), onTimeout: () => null);
       var identity = StaffIdentity.fromToken(token);
       // The ESS access token (1 hour) replaces the Scheduler one (64 hours) in
       // the same slot, so a stored token is often spent by the next launch. A
@@ -218,12 +220,17 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       // fresh install must go straight to the login screen without touching the
       // network: the very first cold-start call can race the OS resolver and
       // surface `Failed host lookup` on the splash screen.
-      final hasKeptSignIn = await _session.readEssRefreshToken() != null;
+      final hasKeptSignIn = await _session
+              .readEssRefreshToken()
+              .timeout(const Duration(seconds: 5), onTimeout: () => null) !=
+          null;
       if (stale && hasKeptSignIn) {
         // Rotate the kept sign-in directly. This is the one launch call that is
         // EXPECTED to answer 401 when the sign-in has ended; it must come back
         // as a value, never as a thrown DioException the debugger pauses on.
-        final restored = await _ess.restoreKeptSignIn();
+        final restored = await _ess
+            .restoreKeptSignIn()
+            .timeout(const Duration(seconds: 10), onTimeout: () => false);
         if (restored) {
           token = await _session.readSchedulerToken();
           identity = StaffIdentity.fromToken(token);
@@ -380,7 +387,7 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       emit(state.copyWith(
         submitting: false,
         errorMessage:
-            'This account (${appRoleWire(identity.role) ?? 'unknown'}) has no Team RVM access.',
+            'This account (${appRoleLabel(identity.role)}) has no Team RVM access.',
         clearTwoFactor: true,
       ));
       return;

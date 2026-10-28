@@ -383,6 +383,96 @@ class PersonalDetails extends Equatable {
       ];
 }
 
+
+
+class SocialProfile extends Equatable {
+  const SocialProfile({
+    this.about,
+    this.likes,
+    this.dislikes,
+    this.anniversaryDate,
+    this.bloodGroup,
+  });
+
+  final String? about;
+  final String? likes;
+  final String? dislikes;
+  final String? anniversaryDate;
+  final String? bloodGroup;
+
+  factory SocialProfile.fromJson(Map<String, dynamic> j) => SocialProfile(
+        about: _str(j['about']),
+        likes: _str(j['likes']),
+        dislikes: _str(j['dislikes']),
+        anniversaryDate: _str(j['anniversary_date']),
+        bloodGroup: _str(j['blood_group']),
+      );
+
+  @override
+  List<Object?> get props =>
+      [about, likes, dislikes, anniversaryDate, bloodGroup];
+}
+
+class WorkExperience extends Equatable {
+  const WorkExperience({
+    required this.id,
+    required this.company,
+    required this.roleTitle,
+    required this.fromDate,
+    this.toDate,
+    this.isCurrent = false,
+    this.location,
+    this.description,
+    this.isVisible = true,
+  });
+
+  final String id;
+  final String company;
+  final String roleTitle;
+  final String fromDate;
+  final String? toDate;
+  final bool isCurrent;
+  final String? location;
+  final String? description;
+  final bool isVisible;
+
+  factory WorkExperience.fromJson(Map<String, dynamic> j) => WorkExperience(
+        id: _str(j['id']) ?? '',
+        company: _str(j['company']) ?? '',
+        roleTitle: _str(j['role_title']) ?? '',
+        fromDate: _str(j['from_date']) ?? '',
+        toDate: _str(j['to_date']),
+        isCurrent: _bool(j['is_current']),
+        location: _str(j['location']),
+        description: _str(j['description']),
+        isVisible: j['is_visible'] != false,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'company': company,
+        'role_title': roleTitle,
+        'from_date': fromDate,
+        'to_date': isCurrent ? null : toDate,
+        'is_current': isCurrent,
+        'location': location,
+        'description': description,
+        'is_visible': isVisible,
+      };
+
+  @override
+  List<Object?> get props => [
+        id,
+        company,
+        roleTitle,
+        fromDate,
+        toDate,
+        isCurrent,
+        location,
+        description,
+        isVisible
+      ];
+}
+
 /// `EmployeeCard` — who a row is about.
 class EmployeeCard extends Equatable {
   const EmployeeCard(
@@ -791,6 +881,95 @@ class OrgCard extends Equatable {
       ];
 }
 
+
+class ColleagueProfile extends Equatable {
+  const ColleagueProfile({
+    required this.person,
+    this.dateOfJoining,
+    this.dateOfBirth,
+    this.photoUrl,
+    this.badges = const [],
+    this.workExperience = const [],
+    this.about,
+    this.likes,
+    this.dislikes,
+    this.anniversaryDate,
+    this.bloodGroup,
+  });
+
+  final OrgCard person;
+  final String? dateOfJoining;
+  final String? dateOfBirth;
+  final String? photoUrl;
+  final List<EarnedBadge> badges;
+  final List<WorkExperience> workExperience;
+  final String? about;
+  final String? likes;
+  final String? dislikes;
+  final String? anniversaryDate;
+  final String? bloodGroup;
+
+  factory ColleagueProfile.fromJson(Map<String, dynamic> j) {
+    final employee = _map(j['employee']) ?? const {};
+    return ColleagueProfile(
+      person: OrgCard.fromJson(employee),
+      dateOfJoining: _str(employee['date_of_joining']),
+      dateOfBirth: _str(employee['date_of_birth']),
+      photoUrl: _str(employee['photo_url']),
+      badges: _maps(j['earned_badges'])
+          .map(EarnedBadge.fromJson)
+          .toList(growable: false),
+      workExperience: _maps(j['work_experience'])
+          .map(WorkExperience.fromJson)
+          .toList(growable: false),
+      about: _str(j['about']),
+      likes: _str(j['likes']),
+      dislikes: _str(j['dislikes']),
+      anniversaryDate: _str(j['anniversary_date']),
+      bloodGroup: _str(j['blood_group']),
+    );
+  }
+
+  int get badgeCount => badges.fold(0, (sum, badge) => sum + badge.count);
+
+  @override
+  List<Object?> get props => [
+        person,
+        dateOfJoining,
+        dateOfBirth,
+        photoUrl,
+        badges,
+        workExperience,
+        about,
+        likes,
+        dislikes,
+        anniversaryDate,
+        bloodGroup
+      ];
+}
+
+class OrgNode extends Equatable {
+  const OrgNode({
+    required this.card,
+    required this.isMe,
+    this.children = const [],
+  });
+
+  final OrgCard card;
+  final bool isMe;
+  final List<OrgNode> children;
+
+  factory OrgNode.fromJson(Map<String, dynamic> j) => OrgNode(
+        card: OrgCard.fromJson(j),
+        isMe: _bool(j['is_me']),
+        children:
+            _maps(j['children']).map(OrgNode.fromJson).toList(growable: false),
+      );
+
+  @override
+  List<Object?> get props => [card, isMe, children];
+}
+
 /// `GET /me/org`.
 class OrgView extends Equatable {
   const OrgView({
@@ -801,6 +980,7 @@ class OrgView extends Equatable {
     required this.directReports,
     this.department,
     required this.departmentPeople,
+    this.tree = const [],
   });
 
   final List<OrgCard> managerChain;
@@ -810,6 +990,7 @@ class OrgView extends Equatable {
   final List<OrgCard> directReports;
   final BranchRef? department;
   final List<OrgCard> departmentPeople;
+  final List<OrgNode> tree;
 
   factory OrgView.fromJson(Map<String, dynamic> j) {
     final dept = _map(j['department']);
@@ -828,12 +1009,13 @@ class OrgView extends Equatable {
       departmentPeople: dept == null
           ? const []
           : _maps(dept['people']).map(OrgCard.fromJson).toList(growable: false),
+      tree: _maps(j['tree']).map(OrgNode.fromJson).toList(growable: false),
     );
   }
 
   @override
   List<Object?> get props =>
-      [managerChain, peers, directReportCount, department];
+      [managerChain, peers, directReportCount, department, tree];
 }
 
 /// `GET /directory`.
@@ -1028,24 +1210,33 @@ class MyProfileEmployee extends Equatable {
 
 class TimelineEvent extends Equatable {
   const TimelineEvent(
-      {required this.id, required this.title, this.kind, this.at});
+      {required this.id,
+      required this.title,
+      this.kind,
+      this.at,
+      this.detail});
   final String id;
 
-  /// The stable backend kind (`PROMOTED`, `BRANCH_CHANGED`, `TRIVIAL_UPDATE`, …).
+  /// The stable backend kind (`PROMOTED`, `REPORTING_LINE_CHANGED`, …).
   /// Clients filter on this, never on the English [title] (issue #15).
   final String? kind;
   final String title;
   final DateTime? at;
+
+  /// The safe extra line the backend adds, e.g. "From Sandeep Sharma to
+  /// Akshit Makhija" or "Now Technical Product Manager" (issue 24).
+  final String? detail;
 
   factory TimelineEvent.fromJson(Map<String, dynamic> j) => TimelineEvent(
         id: _str(j['id']) ?? '',
         kind: _str(j['kind']),
         title: _str(j['title']) ?? '',
         at: _date(j['at']),
+        detail: _str(j['detail']),
       );
 
   @override
-  List<Object?> get props => [id, kind, title, at];
+  List<Object?> get props => [id, kind, title, at, detail];
 }
 
 class MyProfile extends Equatable {
@@ -1935,31 +2126,75 @@ class WallReactionGroup extends Equatable {
 }
 
 class PraiseBadge extends Equatable {
-  const PraiseBadge({required this.id, required this.label, this.forGroup});
+  const PraiseBadge(
+      {required this.id,
+      required this.label,
+      this.forGroup,
+      this.awardedBy = const []});
   final String id;
   final String label;
   final String? forGroup;
+
+  /// Wire roles that may give this badge. Empty means every colleague may.
+  final List<String> awardedBy;
+
   factory PraiseBadge.fromJson(Map<String, dynamic> j) => PraiseBadge(
       id: _str(j['id']) ?? '',
       label: _str(j['label']) ?? '',
-      forGroup: _str(j['for']));
+      forGroup: _str(j['for']),
+      awardedBy: _strings(j['awarded_by']));
   @override
-  List<Object?> get props => [id, label, forGroup];
+  List<Object?> get props => [id, label, forGroup, awardedBy];
+}
+
+/// One badge a person has actually earned, with how many times and when last.
+class EarnedBadge extends Equatable {
+  const EarnedBadge({
+    required this.id,
+    required this.label,
+    this.forGroup,
+    this.count = 1,
+    this.lastEarnedAt,
+  });
+
+  final String id;
+  final String label;
+  final String? forGroup;
+  final int count;
+  final DateTime? lastEarnedAt;
+
+  factory EarnedBadge.fromJson(Map<String, dynamic> j) => EarnedBadge(
+        id: _str(j['id']) ?? '',
+        label: _str(j['label']) ?? '',
+        forGroup: _str(j['for']),
+        count: _int(j['count']) ?? 1,
+        lastEarnedAt: _date(j['last_earned_at']),
+      );
+
+  @override
+  List<Object?> get props => [id, label, forGroup, count, lastEarnedAt];
 }
 
 class PraisePage extends Equatable {
-  const PraisePage({required this.praise, required this.badges});
+  const PraisePage(
+      {required this.praise,
+      required this.badges,
+      this.earned = const []});
   final List<WallPost> praise;
   final List<PraiseBadge> badges;
+  final List<EarnedBadge> earned;
   factory PraisePage.fromJson(Map<String, dynamic> j) => PraisePage(
         praise:
             _maps(j['praise']).map(WallPost.fromJson).toList(growable: false),
         badges: _maps(j['badges'])
             .map(PraiseBadge.fromJson)
             .toList(growable: false),
+        earned: _maps(j['earned'])
+            .map(EarnedBadge.fromJson)
+            .toList(growable: false),
       );
   @override
-  List<Object?> get props => [praise, badges];
+  List<Object?> get props => [praise, badges, earned];
 }
 
 class WallComment extends Equatable {

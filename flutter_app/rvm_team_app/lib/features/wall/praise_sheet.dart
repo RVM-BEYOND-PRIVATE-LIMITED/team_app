@@ -3,10 +3,13 @@ import 'dart:convert';
 
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:domain/domain.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../auth/team_permissions.dart';
+import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
@@ -174,8 +177,11 @@ class _PraiseSheetState extends State<_PraiseSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final badges = context.select<WallBloc, List<PraiseBadge>>(
+    final allBadges = context.select<WallBloc, List<PraiseBadge>>(
         (b) => b.state.settings?.badges ?? const []);
+    final role = context.watch<TeamAuthBloc>().state.identity?.role ??
+        AppRole.unknown;
+    final badges = awardablePraiseBadges(allBadges, role);
     final submitting =
         context.select<WallBloc, bool>((b) => b.state.submitting);
     return MultiBlocListener(

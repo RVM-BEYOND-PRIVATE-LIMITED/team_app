@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "877248484629",
+    "project_id": "rvm-team-app-2026",
+    "storage_bucket": "rvm-team-app-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:877248484629:android:479c05c4450f86e3b6c51c",
+        "android_client_info": {
+          "package_name": "com.rvm.rvmteam"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDejeJtTJUK_tEgLIEpZ9DcS0XWKF7s7rs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

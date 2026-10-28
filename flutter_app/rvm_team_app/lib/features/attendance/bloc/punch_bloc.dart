@@ -207,6 +207,14 @@ class PunchBloc extends Bloc<PunchEvent, PunchState> {
     emit(state.copyWith(distanceLoading: true, clearDistanceError: true));
     try {
       final fix = await _repo.fix();
+      if (fix == null) {
+        emit(state.copyWith(
+          distanceLoading: false,
+          distanceError:
+              'Could not get a location fix. Step outside and try again.',
+        ));
+        return;
+      }
       _emitDistance(emit, data, fix);
     } on LocationException catch (ex) {
       emit(state.copyWith(distanceLoading: false, distanceError: ex.message));
@@ -260,6 +268,13 @@ class PunchBloc extends Bloc<PunchEvent, PunchState> {
         punching: true, clearMessage: true, clearLastPunch: true));
     try {
       final fix = await _repo.fix();
+      if (fix == null) {
+        emit(state.copyWith(
+          punching: false,
+          message: 'Could not get a location fix. Step outside and try again.',
+        ));
+        return;
+      }
       if (fix.mocked) {
         // Refuse on the phone and report the attempt to HR (decision 6, B14).
         unawaited(_reportMocked(fix));
@@ -360,7 +375,7 @@ class PunchBloc extends Bloc<PunchEvent, PunchState> {
   Future<void> _ping() async {
     try {
       final fix = await _repo.fix();
-      if (fix.mocked) return;
+      if (fix == null || fix.mocked) return;
       await _repo.ping(fix);
     } catch (_) {
       // Pings are silent: a missed ping is not an error the person must see.
