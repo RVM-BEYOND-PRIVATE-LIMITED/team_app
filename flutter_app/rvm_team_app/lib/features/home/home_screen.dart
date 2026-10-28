@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../app_crash.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
+import '../my_team/colleague_profile_sheet.dart';
 import '../work/wfh_sheet.dart';
 import '../../domain/attendance_models.dart';
 import '../../domain/ess_models.dart';
@@ -340,20 +340,6 @@ class _ScheduleCard extends StatelessWidget {
                     }
                   },
                 ),
-                const SizedBox(height: 2),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => _sendTestCrash(context),
-                    icon: const Icon(Icons.bug_report_outlined, size: 16),
-                    label: const Text('Send test crash'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: RvmColors.danger,
-                      minimumSize: const Size(0, 32),
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                    ),
-                  ),
-                ),
               ],
             ),
           );
@@ -361,37 +347,6 @@ class _ScheduleCard extends StatelessWidget {
       ),
     );
   }
-}
-
-Future<void> _sendTestCrash(BuildContext context) async {
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('Send a test crash?'),
-      content: const Text(
-          'This sends a fatal test report to Firebase Crashlytics. The app stays open.'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(dialogContext, true),
-          child: const Text('Send'),
-        ),
-      ],
-    ),
-  );
-  if (confirm != true || !context.mounted) return;
-  final sent = await CrashReporter.testCrash();
-  if (!context.mounted) return;
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-      content: Text(sent
-          ? 'Test crash sent. Check Firebase Crashlytics in a few minutes.'
-          : 'Crashlytics is not enabled in this build. Check the debug console.'),
-    ));
 }
 
 /// A bounded, human message for the cases where a punch cannot be sent. The
@@ -640,7 +595,7 @@ class _OffThisWeekCard extends StatelessWidget {
                 TeamSectionHeader(
                   title: 'Off this week',
                   trailing: Text(
-                    count == null ? 'Team' : 'Team ($count)',
+                    count == null ? 'Team' : 'Team($count)',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -664,46 +619,189 @@ class _OffThisWeekInner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = people.isEmpty
-        ? 'Nobody is off this week. Full team present!'
-        : people
-            .map((p) => '${p.card.fullName} · ${p.days.join(', ')}')
-            .join('\n');
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      decoration: BoxDecoration(
-        color: RvmColors.cream,
-        borderRadius: BorderRadius.circular(RvmRadii.md),
-        border: Border.all(color: RvmColors.sand),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(text,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 11.5,
-                      height: 1.35,
-                      color: RvmColors.muted,
-                    )),
-          ),
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: () => context.push('/team/directory'),
-            style: TextButton.styleFrom(
-              minimumSize: const Size(0, 32),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              foregroundColor: RvmColors.clay,
-            ),
-            child: const Text('Calendar',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-          ),
+    if (people.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: RvmColors.cream,
+          borderRadius: BorderRadius.circular(RvmRadii.md),
+          border: Border.all(color: RvmColors.sand),
+        ),
+        child: Text(
+          'Nobody is off this week. Full team present!',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontSize: 11.5,
+                height: 1.35,
+                color: RvmColors.muted,
+              ),
+        ),
+      );
+    }
+
+    final sorted = [...people]..sort((a, b) =>
+        a.card.fullName.toLowerCase().compareTo(b.card.fullName.toLowerCase()));
+    return Column(
+      children: [
+        for (var i = 0; i < sorted.length; i++) ...[
+          if (i > 0)
+            const Divider(height: 18, thickness: 1, color: RvmColors.line),
+          _OffWeekRow(person: sorted[i]),
         ],
+      ],
+    );
+  }
+}
+
+class _OffWeekRow extends StatelessWidget {
+  const _OffWeekRow({required this.person});
+  final OffWeekPerson person;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = person.card;
+    final designation = card.designation?.trim() ?? '';
+    final employeeCode = card.employeeCode?.trim() ?? '';
+    final role = [
+      if (designation.isNotEmpty) designation,
+      if (employeeCode.isNotEmpty) employeeCode,
+    ].join(' · ');
+    final place = {card.department?.name.trim(), card.branch?.name.trim()}
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .join(' · ');
+    final dayCount = person.days.length;
+    return InkWell(
+      onTap: () => showColleagueProfile(context, card),
+      borderRadius: BorderRadius.circular(RvmRadii.md),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TeamAvatar(name: card.fullName, size: 36),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          card.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontSize: 12.5),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      TeamPill(
+                        label: dayCount == 1 ? '1 day' : '$dayCount days',
+                        tone: TeamPillTone.warning,
+                        dense: true,
+                      ),
+                    ],
+                  ),
+                  if (role.isNotEmpty) ...[
+                    const SizedBox(height: 1),
+                    Text(
+                      role,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 10.5,
+                            color: RvmColors.muted,
+                          ),
+                    ),
+                  ],
+                  if (place.isNotEmpty) ...[
+                    const SizedBox(height: 1),
+                    Text(
+                      place,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 10,
+                            color: RvmColors.muted,
+                          ),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.event_outlined,
+                          size: 13, color: RvmColors.clay),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          _offDaysLabel(person.days),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: RvmColors.clay,
+                                  ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Icon(Icons.chevron_right_rounded,
+                  size: 18, color: RvmColors.subtle),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
+
+const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+String _offDaysLabel(List<String> days) {
+  final parsed = days.map(DateTime.tryParse).whereType<DateTime>().toList()
+    ..sort();
+  if (parsed.isEmpty) return 'Dates not recorded';
+  if (parsed.length == 1) return _offDayLabel(parsed.first);
+  final contiguous = [
+    for (var i = 1; i < parsed.length; i++)
+      DateTime.utc(parsed[i].year, parsed[i].month, parsed[i].day)
+              .difference(DateTime.utc(
+                  parsed[i - 1].year, parsed[i - 1].month, parsed[i - 1].day))
+              .inDays ==
+          1,
+  ].every((next) => next);
+  if (contiguous) {
+    return '${_offDayLabel(parsed.first)} – ${_offDayLabel(parsed.last)}';
+  }
+  return parsed.map(_offDayLabel).join(' · ');
+}
+
+String _offDayLabel(DateTime day) =>
+    '${_weekdays[day.weekday - 1]} ${day.day} ${_months[day.month - 1]}';
 
 // ── role work cards ───────────────────────────────────────────────────────
 
