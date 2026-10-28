@@ -34,6 +34,9 @@ dependencies:
   # ping while punched in. isMocked flags a mocked provider on the phone.
   geolocator: ^13.0.4
 
+  # POST_NOTIFICATIONS runtime grant on Android 13+ (Inbox alerts).
+  permission_handler: ^12.0.3
+
   # navigation (matches staff_app / student_app)
   go_router: ^14.0.0
 
@@ -43,6 +46,11 @@ dependencies:
   crop_your_image: ^2.0.0
   firebase_core: ^5.1.0
   firebase_crashlytics: ^6.0.1
+  firebase_messaging: ^17.0.1
+  # Foreground FCM messages are not displayed by Android/iOS on their own.
+  # This shows them (with the console's image as a BigPicture) and routes taps.
+  flutter_local_notifications: ^19.5.0
+  path_provider: ^2.1.5
   device_info_plus: ^12.4.0
   package_info_plus: ^9.0.1
 
@@ -55,6 +63,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/team_rvm_logo.png
+    - assets/branding/team_rvm_mark.png
   fonts:
     - family: PlusJakartaSans
       fonts:

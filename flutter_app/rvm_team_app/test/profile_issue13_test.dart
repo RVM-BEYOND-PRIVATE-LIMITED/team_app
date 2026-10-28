@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rvm_team_app/domain/ess_models.dart';
 import 'package:rvm_team_app/features/me/profile_screen.dart';
 import 'package:rvm_team_app/injection.dart';
+import 'package:rvm_team_app/widgets/badge_kit.dart';
 
 /// Regression tests for issues_image/issue13: Me -> Work profile must never
 /// crash when the refresh fails (offline DNS, dead avatar host). The fetch
@@ -96,5 +97,31 @@ void main() {
     expect(tester.takeException(), isNull);
     // The initial is shown both in the avatar fallback and nowhere else twice.
     expect(find.text('T'), findsOneWidget);
+  });
+
+  testWidgets('earned badges draw the avatar frame and the badge shelf',
+      (tester) async {
+    getIt
+      ..registerSingleton<LoadBloc<MyProfile>>(LoadBloc<MyProfile>(
+          () async => _profile()))
+      ..registerSingleton<LoadBloc<PraisePage>>(LoadBloc<PraisePage>(
+          () async => const PraisePage(
+                praise: [],
+                badges: [],
+                earned: [
+                  EarnedBadge(
+                      id: 'mentor', label: 'Mentor', forGroup: 'people', count: 2),
+                  EarnedBadge(
+                      id: 'extra_mile', label: 'Going the extra mile', count: 1),
+                ],
+              )));
+    await _pumpProfile(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(EarnedBadgeFrame), findsOneWidget);
+    expect(find.text('Badges earned'), findsOneWidget);
+    expect(find.text('Mentor'), findsOneWidget);
+    expect(find.text('×2'), findsOneWidget);
+    expect(find.text('Going the extra mile'), findsOneWidget);
   });
 }

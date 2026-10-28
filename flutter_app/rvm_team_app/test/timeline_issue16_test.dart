@@ -72,8 +72,9 @@ void main() {
     // and whatever the server calls them now.
     expect(find.text('Details updated'), findsNothing);
     expect(find.text('Record saved quietly'), findsNothing);
-    // Important lines stay, once each per day.
-    expect(find.text('Branch changed'), findsOneWidget);
+    // KP's milestones stay (once each per day); branch moves are not milestones
+    // and are dropped even when an older server still sends them (issue 24).
+    expect(find.text('Branch changed'), findsNothing);
     expect(find.text('Reporting line changed'), findsOneWidget);
     expect(find.text('Timeline'), findsOneWidget);
   });

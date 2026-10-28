@@ -216,6 +216,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Mohit'), findsOneWidget);
+    // The header now carries the user's name too (issue 24 follow-up), so it
+    // appears there and in the profile card below it.
+    expect(find.text('Mohit'), findsNWidgets(2));
   });
 }

@@ -1,11 +1,14 @@
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app_feedback.dart';
+import '../../auth/team_permissions.dart';
+import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
@@ -45,70 +48,78 @@ class _WallView extends StatelessWidget {
             ..showSnackBar(SnackBar(content: Text(msg)));
         }
       },
-      builder: (context, state) => Scaffold(
-        body: Column(
-          children: [
-            TeamPageHeader(
-              title: 'Wall',
-              subtitle: const Text('Company feed, praise and announcements'),
-              actions: [
-                Builder(
-                  builder: (context) {
-                    final caps = context.watch<CapabilitiesBloc>().state.data;
-                    if (caps == null ||
-                        (!caps.wallModerate && !caps.wallAnnounce)) {
-                      return const SizedBox.shrink();
-                    }
-                    return TeamHeaderAction(
-                      icon: Icons.shield_outlined,
-                      tooltip: 'Wall desk',
-                      onPressed: () => context.push('/wall/moderation'),
-                    );
-                  },
-                ),
-                Builder(
-                  builder: (context) => TeamHeaderAction(
-                    icon: Icons.tune_rounded,
-                    tooltip: 'Settings',
-                    onPressed: () => showModalBottomSheet<void>(
-                      context: context,
-                      showDragHandle: true,
-                      builder: (_) => const _WallSettingsSheet(),
-                    ),
+      builder: (context, state) {
+        List<Widget> headerActions() => [
+              Builder(
+                builder: (context) {
+                  final caps = context.watch<CapabilitiesBloc>().state.data;
+                  if (caps == null ||
+                      (!caps.wallModerate && !caps.wallAnnounce)) {
+                    return const SizedBox.shrink();
+                  }
+                  return TeamHeaderAction(
+                    icon: Icons.shield_outlined,
+                    tooltip: 'Wall desk',
+                    onPressed: () => context.push('/wall/moderation'),
+                  );
+                },
+              ),
+              Builder(
+                builder: (context) => TeamHeaderAction(
+                  icon: Icons.tune_rounded,
+                  tooltip: 'Settings',
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: context,
+                    showDragHandle: true,
+                    builder: (_) => const _WallSettingsSheet(),
                   ),
                 ),
-                Builder(
-                  builder: (context) => TeamHeaderAction(
-                    icon: Icons.refresh_rounded,
-                    tooltip: 'Refresh',
-                    onPressed: () =>
-                        context.read<WallBloc>().add(const WallRefreshed()),
-                  ),
+              ),
+              Builder(
+                builder: (context) => TeamHeaderAction(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Refresh',
+                  onPressed: () =>
+                      context.read<WallBloc>().add(const WallRefreshed()),
                 ),
-              ],
-            ),
-            Expanded(child: _body(context, state)),
-          ],
-        ),
-        floatingActionButton: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FloatingActionButton.small(
-              heroTag: 'praise',
-              onPressed: () => showPraiseSheet(context),
-              tooltip: 'Praise someone',
-              child: const Icon(Icons.emoji_events_outlined),
-            ),
-            const SizedBox(height: 8),
-            FloatingActionButton.extended(
-              heroTag: 'post',
-              onPressed: () => showCreatePostSheet(context),
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text('Post'),
-            ),
-          ],
-        ),
-      ),
+              ),
+            ];
+        return Scaffold(
+          body: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              TeamCollapsingHeader(
+                contentHeight: 116,
+                title: 'Wall',
+                actions: headerActions(),
+                expanded: TeamPageHeader(
+                  title: 'Wall',
+                  subtitle: const Text('Company feed, praise and announcements'),
+                  actions: [const TeamBrandMark(), ...headerActions()],
+                ),
+              ),
+            ],
+            body: _body(context, state),
+          ),
+          floatingActionButton: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FloatingActionButton.small(
+                heroTag: 'praise',
+                onPressed: () => showPraiseSheet(context),
+                tooltip: 'Praise someone',
+                child: const Icon(Icons.emoji_events_outlined),
+              ),
+              const SizedBox(height: 8),
+              FloatingActionButton.extended(
+                heroTag: 'post',
+                onPressed: () => showCreatePostSheet(context),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Post'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -136,6 +147,10 @@ class _WallView extends StatelessWidget {
     // A refresh (pull, a vote, a new praise) must NOT replace the scrolled
     // ListView with a spinner: doing that disposes the ScrollPosition during a
     // frame and Flutter reports "Build scheduled during frame" while scrolling.
+    final role = context.watch<TeamAuthBloc>().state.identity?.role ??
+        AppRole.unknown;
+    final badges =
+        awardablePraiseBadges(state.settings?.badges ?? const [], role);
     return RefreshIndicator(
       onRefresh: () async =>
           context.read<WallBloc>().add(const WallRefreshed()),
@@ -155,8 +170,8 @@ class _WallView extends StatelessWidget {
             CelebrationsCard(celebrations: state.celebrations!),
             const SizedBox(height: RvmSpacing.sm),
           ],
-          if ((state.settings?.badges ?? const []).isNotEmpty) ...[
-            GivePraiseCard(badges: state.settings!.badges),
+          if (badges.isNotEmpty) ...[
+            GivePraiseCard(badges: badges),
             const SizedBox(height: RvmSpacing.sm),
           ],
           for (final a in state.announcements.take(3)) ...[

@@ -12,8 +12,10 @@ import 'app_crash.dart';
 import 'app_feedback.dart';
 import 'bloc/connectivity_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
+import 'data/notification_permission.dart';
 import 'features/startup/version_gate.dart';
 import 'injection.dart';
+import 'push/push_service.dart';
 import 'router/app_router.dart';
 
 void main() {
@@ -22,7 +24,7 @@ void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     Bloc.observer = const AppBlocObserver();
-    await CrashReporter.init();
+    unawaited(CrashReporter.init());
     FlutterError.onError = (details) {
       if (_isImageNoise(details.exception)) {
         // Dead avatar/photo URL (offline DNS like issue13's Supabase host,
@@ -49,13 +51,23 @@ void main() {
 
     // Hydrate the session, wire the graph, probe the stored JWT (claims only).
     final session = AuthSession();
-    await session.load();
+    await session.load().timeout(const Duration(seconds: 5), onTimeout: () {});
     configureDependencies(session);
     getIt<TeamAuthBloc>().add(const TeamAuthProbeRequested());
 
-    // D5: register for push when a token is available (Firebase is not configured yet, ADR-0016).
-    const pushToken = String.fromEnvironment('FCM_TOKEN');
-    if (pushToken.isNotEmpty) unawaited(registerPushToken(pushToken));
+    // Failsafe: a secure-storage or restore call that never answers on one
+    // device must not leave the app on the splash forever. Once the probe has
+    // had time to run, show the sign-in screen instead.
+    Timer(const Duration(seconds: 10), () {
+      if (getIt<TeamAuthBloc>().state.status == TeamAuthStatus.unknown) {
+        getIt<TeamAuthBloc>().add(const TeamSessionExpired());
+      }
+    });
+
+    // Firebase Cloud Messaging: permission, token, foreground display (text and
+    // image), background data messages, and notification-tap routing. Sign-in
+    // attaches the token to the employee via /push-devices (see TeamApp below).
+    unawaited(PushService.instance.init());
 
     runApp(const TeamApp());
   }, (error, stack) {
@@ -126,6 +138,28 @@ class _TeamAppState extends State<TeamApp> {
   late final GoRouter _router =
       createRouter(_auth, navigatorKey: rootNavigatorKey);
 
+  static const _notificationPermission = NotificationPermission();
+  bool _askedNotifications = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_auth.state.status == TeamAuthStatus.authenticated) {
+      _askNotificationPermission();
+      unawaited(PushService.instance.onSignedIn());
+    }
+  }
+
+  /// Android 13+ hides notification alerts until POST_NOTIFICATIONS is granted.
+  /// Ask once per launch, after sign-in, without blocking the UI or the router.
+  void _askNotificationPermission() {
+    if (_askedNotifications) return;
+    _askedNotifications = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_notificationPermission.requestIfNeeded());
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
@@ -135,7 +169,13 @@ class _TeamAppState extends State<TeamApp> {
       ],
       child: BlocListener<TeamAuthBloc, TeamAuthState>(
         listenWhen: (p, c) => p.status != c.status,
-        listener: (_, __) => _router.refresh(),
+        listener: (_, state) {
+          _router.refresh();
+          if (state.status == TeamAuthStatus.authenticated) {
+            _askNotificationPermission();
+            unawaited(PushService.instance.onSignedIn());
+          }
+        },
         child: MaterialApp.router(
           title: 'Team RVM',
           scaffoldMessengerKey: rootScaffoldMessengerKey,

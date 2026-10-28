@@ -16,6 +16,15 @@ class AuthRemoteDataSource with DioExecutor {
 
   final Dio _dio;
 
+  /// Build the session identity from the token we just received, not only from
+  /// the login reply. The Scheduler signs a teaching account's `faculty_id` into
+  /// the token as `id` even when the reply's `user` object omits it, which is
+  /// what left a fresh install with no faculty link until the app was restarted
+  /// (My attendance health, 26 Oct). Fall back to the reply if the token cannot
+  /// be decoded.
+  StaffIdentity _identity(String token, Map<String, dynamic> user) =>
+      StaffIdentity.fromToken(token) ?? StaffIdentity.fromLoginUser(user);
+
   Future<TeamLoginOutcome> login({
     required String username,
     required String password,
@@ -34,7 +43,7 @@ class AuthRemoteDataSource with DioExecutor {
         final user = (data['user'] as Map).cast<String, dynamic>();
         return TeamSignedIn(
           token: data['token'] as String,
-          identity: StaffIdentity.fromLoginUser(user),
+          identity: _identity(data['token'] as String, user),
         );
       });
 
@@ -73,7 +82,7 @@ class AuthRemoteDataSource with DioExecutor {
       return (
         outcome: TeamSignedIn(
           token: data['token'] as String,
-          identity: StaffIdentity.fromLoginUser(user),
+          identity: _identity(data['token'] as String, user),
         ),
         failure: null,
       );
@@ -102,7 +111,7 @@ class AuthRemoteDataSource with DioExecutor {
         final user = (data['user'] as Map).cast<String, dynamic>();
         return TeamSignedIn(
             token: data['token'] as String,
-            identity: StaffIdentity.fromLoginUser(user));
+            identity: _identity(data['token'] as String, user));
       });
 
   Future<String?> forgotPasswordRequest(String identifier) => guard(() async {

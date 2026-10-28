@@ -9,6 +9,7 @@ import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import 'colleague_profile_sheet.dart';
 
 /// E2/E8: colleague search by name or employee code. Email to everyone; phone where the rule
 /// allows it (HR, or a manager above the person) — the server already applied the rule.
@@ -123,20 +124,17 @@ class _DirectoryScreenState extends State<DirectoryScreen> {
         final c = _people[i];
         return Card(
           child: ListTile(
+            onTap: () => showColleagueProfile(context, c),
             leading: CircleAvatar(
                 child: Text(c.fullName.trim().isEmpty
                     ? '?'
                     : c.fullName.trim().substring(0, 1).toUpperCase())),
             title: Text(c.fullName),
-            subtitle: Text([
-              c.designation,
-              c.department?.name,
-              c.email,
-              c.phone,
-            ].where((s) => s != null && s.isNotEmpty).join(' · ')),
+            subtitle: Text(c.designation ?? 'Job role not recorded'),
             trailing: c.noticePeriod
                 ? const Icon(Icons.info_outline, color: RvmColors.warning)
-                : null,
+                : const Icon(Icons.chevron_right_rounded,
+                    size: 18, color: RvmColors.subtle),
           ),
         );
       },

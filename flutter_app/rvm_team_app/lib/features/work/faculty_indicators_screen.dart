@@ -8,6 +8,13 @@ import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 
+Color _healthColor(BuildContext context, double? pct) {
+  if (pct == null) return Theme.of(context).colorScheme.onSurfaceVariant;
+  if (pct >= 80) return RvmColors.success;
+  if (pct >= 65) return RvmColors.warning;
+  return RvmColors.danger;
+}
+
 /// The faculty indicators card — month-to-date student attendance across the
 /// caller's sessions (`GET /api/attendance/reports/faculty/:id`).
 class FacultyIndicatorsScreen extends StatelessWidget {
@@ -33,11 +40,14 @@ class FacultyIndicatorsScreen extends StatelessWidget {
         appBar: AppBar(
           title: const Text('My indicators'),
           actions: [
-            IconButton(
-              tooltip: 'Refresh',
-              onPressed: () =>
-                  context.read<FacultyReportBloc>().add(const LoadRefreshed()),
-              icon: const Icon(Icons.refresh),
+            Builder(
+              builder: (context) => IconButton(
+                tooltip: 'Refresh',
+                onPressed: () => context
+                    .read<FacultyReportBloc>()
+                    .add(const LoadRefreshed()),
+                icon: const Icon(Icons.refresh),
+              ),
             ),
           ],
         ),
@@ -85,13 +95,27 @@ class FacultyIndicatorsScreen extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: RvmSpacing.sm),
                   Text(pct == null ? '—' : '${pct.toStringAsFixed(1)}%',
-                      style: Theme.of(context).textTheme.headlineMedium),
+                      style:
+                          Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                color: _healthColor(context, pct),
+                                fontWeight: FontWeight.w800,
+                              )),
                   const SizedBox(height: 4),
                   Text('Target 80% · month to date',
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
                           ?.copyWith(color: scheme.onSurfaceVariant)),
+                  const SizedBox(height: RvmSpacing.sm),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: const [
+                      _HealthKey(color: RvmColors.success, label: '80%+'),
+                      _HealthKey(color: RvmColors.warning, label: '65–79%'),
+                      _HealthKey(color: RvmColors.danger, label: 'Below 65%'),
+                    ],
+                  ),
                   if (report.missingSessions > 0) ...[
                     const SizedBox(height: RvmSpacing.sm),
                     Chip(
@@ -121,6 +145,27 @@ class FacultyIndicatorsScreen extends StatelessWidget {
   }
 }
 
+class _HealthKey extends StatelessWidget {
+  const _HealthKey({required this.color, required this.label});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+      ],
+    );
+  }
+}
+
 class _BatchRow extends StatelessWidget {
   const _BatchRow({required this.batch});
   final FacultyBatchReport batch;
@@ -130,6 +175,9 @@ class _BatchRow extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final pct = batch.attendancePercentage;
     return Card(
+      // Keep the batch cards apart; the default Card margin is only 4 px and
+      // they read as one block on the phone (KP, 26 Oct).
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(RvmSpacing.md),
         child: Column(
@@ -142,7 +190,8 @@ class _BatchRow extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w600))),
                 Text(pct == null ? '—' : '${pct.toStringAsFixed(1)}%',
                     style: TextStyle(
-                        color: scheme.primary, fontWeight: FontWeight.w700)),
+                        color: _healthColor(context, pct),
+                        fontWeight: FontWeight.w700)),
               ],
             ),
             const SizedBox(height: 4),

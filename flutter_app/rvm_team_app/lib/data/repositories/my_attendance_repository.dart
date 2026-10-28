@@ -41,10 +41,11 @@ class MyAttendanceRepository with ConnectivityGuard {
     }
   }
 
-  /// Take one fix and return it. Throws [LocationException] for a permission,
-  /// GPS or accuracy problem; a mocked fix comes back with `mocked: true` so the
-  /// caller can report it to HR and stop.
-  Future<LocationFix> fix() => _location.current();
+  /// Take one fix and return it. Returns `null` when no fix arrives within the
+  /// timeout (indoors/background); throws [LocationException] only for a
+  /// permission or GPS-service problem. A mocked fix comes back with
+  /// `mocked: true` so the caller can report it to HR and stop.
+  Future<LocationFix?> fix() => _location.current();
 
   /// Punch with an already-taken fix (so the caller can check `mocked` first).
   Future<PunchAccepted> punch({

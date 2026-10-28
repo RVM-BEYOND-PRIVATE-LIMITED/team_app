@@ -173,6 +173,32 @@ class EssRepository with ConnectivityGuard {
     return _remote.updateMyPersonal(patch);
   }
 
+  Future<SocialProfile> socialProfile() async {
+    await ensureOnline();
+    return _remote.readSocialProfile();
+  }
+
+  Future<SocialProfile> updateSocialProfile(Map<String, dynamic> patch) async {
+    await ensureOnline();
+    return _remote.updateSocialProfile(patch);
+  }
+
+  Future<List<WorkExperience>> workExperience() async {
+    await ensureOnline();
+    return _remote.workExperience();
+  }
+
+  Future<List<WorkExperience>> saveWorkExperience(
+      List<WorkExperience> entries) async {
+    await ensureOnline();
+    return _remote.saveWorkExperience(entries);
+  }
+
+  Future<ColleagueProfile> colleagueProfile(String employeeId) async {
+    await ensureOnline();
+    return _remote.colleagueProfile(employeeId);
+  }
+
   Future<({EmployeeCard employee, PersonalDetails personal})> employeePersonal(
       String id) async {
     await ensureOnline();

@@ -26,12 +26,14 @@ class PersonalSubmitted extends PersonalEvent {
     this.emergencyName,
     this.emergencyRelation,
     this.emergencyPhone,
+    this.workExperience = const [],
   });
 
   final String? bloodGroup;
   final String? emergencyName;
   final String? emergencyRelation;
   final String? emergencyPhone;
+  final List<WorkExperience> workExperience;
 }
 
 class PersonalState extends Equatable {
@@ -42,6 +44,8 @@ class PersonalState extends Equatable {
     this.saving = false,
     this.saveFailure,
     this.savedNonce = 0,
+    this.workExperience = const [],
+    this.workExperienceAvailable = false,
   });
 
   final LoadStatus status;
@@ -49,6 +53,8 @@ class PersonalState extends Equatable {
   final Failure? failure;
   final bool saving;
   final Failure? saveFailure;
+  final List<WorkExperience> workExperience;
+  final bool workExperienceAvailable;
 
   /// Bumped on every successful save so the screen can show one SnackBar.
   final int savedNonce;
@@ -60,6 +66,8 @@ class PersonalState extends Equatable {
     bool? saving,
     Failure? saveFailure,
     int? savedNonce,
+    List<WorkExperience>? workExperience,
+    bool? workExperienceAvailable,
   }) =>
       PersonalState(
         status: status ?? this.status,
@@ -68,10 +76,22 @@ class PersonalState extends Equatable {
         saving: saving ?? this.saving,
         saveFailure: saveFailure ?? this.saveFailure,
         savedNonce: savedNonce ?? this.savedNonce,
+        workExperience: workExperience ?? this.workExperience,
+        workExperienceAvailable:
+            workExperienceAvailable ?? this.workExperienceAvailable,
       );
 
   @override
-  List<Object?> get props => [status, data, failure, saving, saveFailure, savedNonce];
+  List<Object?> get props => [
+        status,
+        data,
+        failure,
+        saving,
+        saveFailure,
+        savedNonce,
+        workExperience,
+        workExperienceAvailable
+      ];
 }
 
 class PersonalBloc extends Bloc<PersonalEvent, PersonalState> {
@@ -84,16 +104,44 @@ class PersonalBloc extends Bloc<PersonalEvent, PersonalState> {
   final EssRepository _repo;
 
   Future<void> _onLoad(PersonalEvent e, Emitter<PersonalState> emit) async {
-    emit(PersonalState(status: LoadStatus.loading, data: state.data, savedNonce: state.savedNonce));
+    emit(PersonalState(
+      status: LoadStatus.loading,
+      data: state.data,
+      savedNonce: state.savedNonce,
+      workExperience: state.workExperience,
+      workExperienceAvailable: state.workExperienceAvailable,
+    ));
     try {
       final data = await _repo.personal();
-      emit(PersonalState(status: LoadStatus.success, data: data, savedNonce: state.savedNonce));
+      List<WorkExperience> experience = state.workExperience;
+      var available = state.workExperienceAvailable;
+      try {
+        experience = await _repo.workExperience();
+        available = true;
+      } on Failure {
+        experience = const [];
+        available = false;
+      }
+      emit(PersonalState(
+        status: LoadStatus.success,
+        data: data,
+        savedNonce: state.savedNonce,
+        workExperience: experience,
+        workExperienceAvailable: available,
+      ));
     } on Failure catch (f) {
-      emit(PersonalState(status: LoadStatus.failure, failure: f, savedNonce: state.savedNonce));
+      emit(PersonalState(
+        status: LoadStatus.failure,
+        failure: f,
+        savedNonce: state.savedNonce,
+        workExperience: state.workExperience,
+        workExperienceAvailable: state.workExperienceAvailable,
+      ));
     }
   }
 
-  Future<void> _onSubmit(PersonalSubmitted e, Emitter<PersonalState> emit) async {
+  Future<void> _onSubmit(
+      PersonalSubmitted e, Emitter<PersonalState> emit) async {
     emit(state.copyWith(saving: true));
     final patch = <String, dynamic>{
       'blood_group': e.bloodGroup,
@@ -103,10 +151,16 @@ class PersonalBloc extends Bloc<PersonalEvent, PersonalState> {
     };
     try {
       final data = await _repo.updatePersonal(patch);
+      var experience = state.workExperience;
+      if (state.workExperienceAvailable) {
+        experience = await _repo.saveWorkExperience(e.workExperience);
+      }
       emit(PersonalState(
         status: state.status,
         data: data,
         savedNonce: state.savedNonce + 1,
+        workExperience: experience,
+        workExperienceAvailable: state.workExperienceAvailable,
       ));
     } on Failure catch (f) {
       emit(state.copyWith(saving: false, saveFailure: f));

@@ -1,10 +1,12 @@
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../app_crash.dart';
+import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
@@ -81,8 +83,8 @@ class _TeamShellState extends State<TeamShell> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _failure = const UnknownFailure(
-            'Could not check your access. Try again.');
+        _failure =
+            const UnknownFailure('Could not check your access. Try again.');
       });
     }
   }
@@ -118,18 +120,24 @@ class _TeamShellState extends State<TeamShell> {
   }
 
   Widget _tabs(BuildContext context, EssCapabilities caps) {
-    final attendance =
-        context.watch<TeamAuthBloc>().state.identity?.attendance == true;
+    final identity = context.watch<TeamAuthBloc>().state.identity;
+    final attendance = identity?.attendance == true;
+    final teaching = TeamPermissions.forRole(identity?.role ?? AppRole.unknown)
+        .canSeeFacultyWork;
     final allowed = caps.tabs.isEmpty ? _allTabs : caps.tabs;
     final entries = <_ShellTab>[
       if (allowed.contains('home'))
         const _ShellTab(
             'Home', Icons.home_outlined, Icons.home_rounded, HomeScreen()),
       // Priority tasks are a Scheduler read; an attendance-only punch token is
-      // refused there. The Inbox tab is for portal sign-ins.
+      // refused there. The Inbox tab is for portal sign-ins. Teaching roles use
+      // it to mark their batches instead (KP, 27 Oct).
       if (!attendance && allowed.contains('inbox'))
-        const _ShellTab(
-            'Inbox', Icons.inbox_outlined, Icons.inbox_rounded, InboxScreen()),
+        _ShellTab(
+            teaching ? 'Attendance' : 'Inbox',
+            teaching ? Icons.fact_check_outlined : Icons.inbox_outlined,
+            teaching ? Icons.fact_check_rounded : Icons.inbox_rounded,
+            const InboxScreen()),
       if (allowed.contains('wall'))
         const _ShellTab(
             'Wall', Icons.forum_outlined, Icons.forum_rounded, WallScreen()),

@@ -3,29 +3,38 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:domain/domain.dart';
+
 import '../../app_feedback.dart';
+import '../../auth/team_permissions.dart';
+import '../../bloc/team_auth_bloc.dart';
 import '../../domain/models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
 import '../../widgets/team_kit.dart';
 import 'bloc/task_action_bloc.dart';
+import 'faculty_attendance_inbox.dart';
 
 class InboxScreen extends StatelessWidget {
   const InboxScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final role =
+        context.watch<TeamAuthBloc>().state.identity?.role ?? AppRole.unknown;
+    if (TeamPermissions.forRole(role).canSeeFacultyWork) {
+      return const FacultyAttendanceInbox();
+    }
     return BlocProvider(
       create: (_) => getIt<InboxBloc>()..add(const LoadRequested()),
       child: Scaffold(
         backgroundColor: RvmColors.ivory,
-        body: Column(
-          children: [
-            TeamPageHeader(
+        body: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            TeamCollapsingHeader(
+              contentHeight: 124,
               title: 'Inbox',
-              eyebrow: 'Priority tasks',
-              subtitle: const Text('Priority tasks assigned to you'),
               actions: [
                 Builder(
                   builder: (context) => TeamHeaderAction(
@@ -36,34 +45,48 @@ class InboxScreen extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-            Expanded(
-              child: BlocBuilder<InboxBloc, LoadState<PriorityInbox>>(
-                builder: (context, state) {
-                  final inbox = state.data;
-                  if (state.status == LoadStatus.initial ||
-                      (state.status == LoadStatus.loading && inbox == null)) {
-                    return const AppLoading(label: 'Loading your tasks');
-                  }
-                  if (state.status == LoadStatus.failure && inbox == null) {
-                    return AppError(
-                        message: state.failure?.message ??
-                            'Could not load your inbox.',
-                        onRetry: () => context
-                            .read<InboxBloc>()
-                            .add(const LoadRefreshed()));
-                  }
-                  if (inbox == null) {
-                    return const AppEmpty(
-                        message:
-                            'Nothing has landed on you yet. Priority tasks set by the CEO, HoO or super admin appear here.',
-                        icon: Icons.inbox_outlined);
-                  }
-                  return _Inbox(inbox: inbox);
-                },
+              expanded: TeamPageHeader(
+                title: 'Inbox',
+                eyebrow: 'Priority tasks',
+                subtitle: const Text('Priority tasks assigned to you'),
+                actions: [
+                  const TeamBrandMark(),
+                  Builder(
+                    builder: (context) => TeamHeaderAction(
+                      icon: Icons.refresh_rounded,
+                      tooltip: 'Refresh',
+                      onPressed: () =>
+                          context.read<InboxBloc>().add(const LoadRefreshed()),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
+          body: BlocBuilder<InboxBloc, LoadState<PriorityInbox>>(
+            builder: (context, state) {
+              final inbox = state.data;
+              if (state.status == LoadStatus.initial ||
+                  (state.status == LoadStatus.loading && inbox == null)) {
+                return const AppLoading(label: 'Loading your tasks');
+              }
+              if (state.status == LoadStatus.failure && inbox == null) {
+                return AppError(
+                    message:
+                        state.failure?.message ?? 'Could not load your inbox.',
+                    onRetry: () => context
+                        .read<InboxBloc>()
+                        .add(const LoadRefreshed()));
+              }
+              if (inbox == null) {
+                return const AppEmpty(
+                    message:
+                        'Nothing has landed on you yet. Priority tasks set by the CEO, HoO or super admin appear here.',
+                    icon: Icons.inbox_outlined);
+              }
+              return _Inbox(inbox: inbox);
+            },
+          ),
         ),
       ),
     );

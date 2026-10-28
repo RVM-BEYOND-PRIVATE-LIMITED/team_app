@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:geolocator/geolocator.dart';
 
 /// A single location fix for the geofenced punch (tasks B6/B7).
@@ -36,7 +38,7 @@ class LocationException implements Exception {
 class LocationService {
   const LocationService();
 
-  Future<LocationFix> current() async {
+  Future<LocationFix?> current() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw const LocationException('Turn on location (GPS) and try again.');
     }
@@ -48,25 +50,41 @@ class LocationService {
       throw const LocationException('Location permission is needed to punch.');
     }
     if (permission == LocationPermission.deniedForever) {
-      throw const LocationException('Location permission is blocked. Enable it for Team RVM in Settings.');
+      throw const LocationException(
+          'Location permission is blocked. Enable it for Team RVM in Settings.');
     }
 
-    final Position position;
-    try {
-      position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.best,
-          timeLimit: Duration(seconds: 20),
-        ),
-      );
-    } catch (_) {
-      throw const LocationException('Could not get a location fix. Step outside and try again.');
-    }
+    final position = await _bestEffortPosition();
+    if (position == null) return null;
     return LocationFix(
       latitude: position.latitude,
       longitude: position.longitude,
       accuracyM: position.accuracy,
       mocked: position.isMocked,
     );
+  }
+
+  /// Geolocator's own `timeLimit` throws a raw `TimeoutException` when a fix
+  /// does not arrive (indoors, or the app was backgrounded). That is a normal
+  /// condition here, but the debugger stops on it as if it were a crash. Race
+  /// the fix against a plain timer instead: first fix wins, a stalled request
+  /// just yields `null` so the caller can show its "step outside" note.
+  Future<Position?> _bestEffortPosition() {
+    final completer = Completer<Position?>();
+    Timer? timer;
+
+    void finish(Position? position) {
+      if (completer.isCompleted) return;
+      timer?.cancel();
+      completer.complete(position);
+    }
+
+    timer = Timer(const Duration(seconds: 20), () => finish(null));
+    Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.best,
+      ),
+    ).then(finish, onError: (_, __) => finish(null));
+    return completer.future;
   }
 }

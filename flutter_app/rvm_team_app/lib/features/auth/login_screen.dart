@@ -24,6 +24,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _branchField = GlobalKey<FormFieldState<String>>();
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _attIdentifier = TextEditingController();
@@ -68,6 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final resolution = await getIt<EssRepository>().resolveSignIn(identifier);
       if (!mounted || _username.text.trim() != identifier) return;
+      var clearedBranch = false;
       setState(() {
         switch (resolution.kind) {
           case 'attendance':
@@ -81,10 +83,19 @@ class _LoginScreenState extends State<LoginScreen> {
             _resolverHint = null;
         }
         if (resolution.locationNames.isNotEmpty) {
-          _branches = resolution.locationNames;
-          if (_branch != null && !_branches.contains(_branch)) _branch = null;
+          // Never let a partial resolver reply remove a known branch from the
+          // picker. Keep the fixed list and add anything new the server names.
+          _branches = {
+            ...teamBranches,
+            ...resolution.locationNames,
+          }.toList(growable: false);
+          if (_branch != null && !_branches.contains(_branch)) {
+            _branch = null;
+            clearedBranch = true;
+          }
         }
       });
+      if (clearedBranch) _branchField.currentState?.didChange(null);
     } catch (_) {
       // Resolver is an enhancement; a failure leaves the full branch list.
     }
@@ -121,6 +132,20 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
+              ),
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'RVM Beyond Pvt Ltd',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: RvmColors.subtle,
+                      fontSize: 11,
+                      letterSpacing: 0.3,
+                    ),
               ),
             ),
           ),
@@ -324,17 +349,7 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: RvmColors.claySoft,
-              borderRadius: BorderRadius.circular(RvmRadii.lg),
-            ),
-            child: const Icon(Icons.groups_2_outlined,
-                size: 26, color: RvmColors.clay),
-          ),
+          const _AppLogo(),
           const SizedBox(height: RvmSpacing.lg),
           Text('Sign in to Team RVM',
               style: Theme.of(context).textTheme.headlineSmall),
@@ -384,22 +399,64 @@ class _LoginScreenState extends State<LoginScreen> {
                 (v == null || v.isEmpty) ? 'Enter your password' : null,
           ),
           const SizedBox(height: RvmSpacing.md),
-          DropdownButtonFormField<String>(
+          FormField<String>(
+            key: _branchField,
             initialValue: _branch,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Branch',
-              prefixIcon: Icon(Icons.location_on_outlined),
-              helperText: 'Company-wide accounts can pick any branch.',
-            ),
-            items: [
-              for (final b in _branches)
-                DropdownMenuItem(
-                    value: b, child: Text(b, overflow: TextOverflow.ellipsis)),
-            ],
-            onChanged:
-                state.submitting ? null : (v) => setState(() => _branch = v),
             validator: (v) => v == null ? 'Select your branch' : null,
+            builder: (field) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        size: 18, color: RvmColors.clay),
+                    const SizedBox(width: 6),
+                    Text('Branch',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // All branches are on screen at once. A dropdown clipped this
+                // list to two rows on the phone and made the other branches look
+                // missing (KP, 26 Oct); a choice chip always shows every one.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final b in _branches)
+                      ChoiceChip(
+                        label: Text(b),
+                        selected: _branch == b,
+                        onSelected: state.submitting
+                            ? null
+                            : (selected) {
+                                setState(() => _branch = b);
+                                field.didChange(b);
+                              },
+                      ),
+                  ],
+                ),
+                if (field.hasError)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      field.errorText!,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Theme.of(context).colorScheme.error),
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Text('Company-wide accounts can pick any branch.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
           ),
           if (state.errorMessage != null) ...[
             const SizedBox(height: RvmSpacing.md),
@@ -432,6 +489,26 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The Team RVM app mark on its own, in place of the old people icon. The
+/// company line sits at the bottom of the sign-in screen (KP, 26 Oct).
+class _AppLogo extends StatelessWidget {
+  const _AppLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/branding/team_rvm_logo.png',
+      height: 38,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => const Text('rvm',
+          style: TextStyle(
+              color: RvmColors.clay,
+              fontWeight: FontWeight.w800,
+              fontSize: 26)),
     );
   }
 }

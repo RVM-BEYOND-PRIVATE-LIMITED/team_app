@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -47,6 +49,8 @@ class _SafePhotoState extends State<SafePhoto> {
   /// Small in-memory cache so scrolling the Wall does not refetch avatars.
   static final Map<String, Uint8List> _cache = {};
   static const _maxCache = 60;
+  static DateTime? _lastNetworkCheck;
+  static bool _lastNetwork = true;
 
   Uint8List? _bytes;
   int _token = 0;
@@ -81,6 +85,24 @@ class _SafePhotoState extends State<SafePhoto> {
       if (mounted && token == _token) setState(() => _bytes = cached);
       return;
     }
+    // The ESS now sends the profile photo as a data URI, so the phone never
+    // resolves or calls the storage host (issue13's first-install crash).
+    if (url.startsWith('data:')) {
+      final comma = url.indexOf(',');
+      if (comma > 0) {
+        try {
+          final bytes = base64Decode(url.substring(comma + 1));
+          if (bytes.isNotEmpty) {
+            if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
+            _cache[url] = bytes;
+            if (mounted && token == _token) setState(() => _bytes = bytes);
+          }
+        } catch (_) {
+          // A malformed data URI keeps the fallback.
+        }
+      }
+      return;
+    }
     final bytes = await _fetchGuarded(url);
     if (bytes == null) return;
     if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
@@ -102,6 +124,28 @@ class _SafePhotoState extends State<SafePhoto> {
   /// On top of that the whole fetch runs in its own guarded zone, so even an
   /// internal dart:io future error with no listener lands in the handler below
   /// instead of the root zone / debugger.
+  /// A fresh install can open a screen before the phone has a usable network,
+  /// and a DNS failure for the photo host then looks like an app crash in the
+  /// debugger (issue13). Skip the request while the interface is down and keep
+  /// the initial; cached for a few seconds so a list of avatars is cheap.
+  static Future<bool> _hasNetwork() async {
+    final now = DateTime.now();
+    final checked = _lastNetworkCheck;
+    if (checked != null && now.difference(checked) < const Duration(seconds: 5)) {
+      return _lastNetwork;
+    }
+    try {
+      final result = await Connectivity().checkConnectivity();
+      _lastNetwork = result.isNotEmpty &&
+          result.any((r) => r != ConnectivityResult.none);
+    } catch (_) {
+      // The plugin is an optimisation; a failure means "try the request".
+      _lastNetwork = true;
+    }
+    _lastNetworkCheck = now;
+    return _lastNetwork;
+  }
+
   static Future<Uint8List?> _fetchGuarded(String url) {
     final done = Completer<Uint8List?>();
     void finish(Uint8List? value) {
@@ -111,6 +155,7 @@ class _SafePhotoState extends State<SafePhoto> {
     runZonedGuarded(() async {
       HttpClient? client;
       try {
+        if (!await _hasNetwork()) return;
         client = HttpClient();
         final request = await client.getUrl(Uri.parse(url));
         final response = await request.close();
