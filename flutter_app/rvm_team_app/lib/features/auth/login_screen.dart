@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,9 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../app_validators.dart';
 import '../../auth/team_branches.dart';
 import '../../bloc/team_auth_bloc.dart';
-import '../../data/repositories/ess_repository.dart';
 import '../../domain/models.dart';
-import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_kit.dart';
 
@@ -24,81 +20,18 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _branchField = GlobalKey<FormFieldState<String>>();
   final _username = TextEditingController();
   final _password = TextEditingController();
-  final _attIdentifier = TextEditingController();
-  final _attPassword = TextEditingController();
   final _attCode = TextEditingController();
-  final _attFormKey = GlobalKey<FormState>();
-  String? _branch;
+  final _codeFormKey = GlobalKey<FormState>();
   bool _obscure = true;
-
-  // A5 one-field sign-in: the ESS resolver tells us which branches sign this
-  // identifier in. Until it answers, the full branch list is offered.
-  List<String> _branches = teamBranches;
-  String? _resolverHint;
-  Timer? _resolveDebounce;
 
   @override
   void dispose() {
-    _resolveDebounce?.cancel();
     _username.dispose();
     _password.dispose();
-    _attIdentifier.dispose();
-    _attPassword.dispose();
     _attCode.dispose();
     super.dispose();
-  }
-
-  void _onUsernameChanged(String value) {
-    _resolveDebounce?.cancel();
-    final identifier = value.trim();
-    if (identifier.isEmpty) {
-      setState(() {
-        _branches = teamBranches;
-        _resolverHint = null;
-      });
-      return;
-    }
-    _resolveDebounce =
-        Timer(const Duration(milliseconds: 450), () => _resolve(identifier));
-  }
-
-  Future<void> _resolve(String identifier) async {
-    try {
-      final resolution = await getIt<EssRepository>().resolveSignIn(identifier);
-      if (!mounted || _username.text.trim() != identifier) return;
-      var clearedBranch = false;
-      setState(() {
-        switch (resolution.kind) {
-          case 'attendance':
-            _resolverHint =
-                'This account signs in with attendance ${resolution.methods.join(' or ')}. '
-                'That flow is not in this app yet — use the portal password.';
-          case 'unknown':
-            _resolverHint =
-                'No single account matched. Check the username or phone.';
-          default:
-            _resolverHint = null;
-        }
-        if (resolution.locationNames.isNotEmpty) {
-          // Never let a partial resolver reply remove a known branch from the
-          // picker. Keep the fixed list and add anything new the server names.
-          _branches = {
-            ...teamBranches,
-            ...resolution.locationNames,
-          }.toList(growable: false);
-          if (_branch != null && !_branches.contains(_branch)) {
-            _branch = null;
-            clearedBranch = true;
-          }
-        }
-      });
-      if (clearedBranch) _branchField.currentState?.didChange(null);
-    } catch (_) {
-      // Resolver is an enhancement; a failure leaves the full branch list.
-    }
   }
 
   void _submit() {
@@ -107,7 +40,11 @@ class _LoginScreenState extends State<LoginScreen> {
     context.read<TeamAuthBloc>().add(TeamLoginSubmitted(
           username: _username.text.trim(),
           password: _password.text,
-          locationName: _branch!,
+          // The branch picker was removed from sign-in (KP, 29 Oct). The
+          // Scheduler still expects a branch name, but it resolves the account
+          // from the identifier and password, including when the named branch
+          // is not the person's own; the token carries their real branch id.
+          locationName: teamBranches.first,
         ));
   }
 
@@ -161,92 +98,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (state.attendanceCode != null) {
       return _attendanceCodeStep(context, state);
     }
-    if (state.attendanceMode) return _attendanceForm(context, state);
     return _form(context, state);
-  }
-
-  /// Attendance-only sign-in (A2) for staff with no portal login.
-  Widget _attendanceForm(BuildContext context, TeamAuthState state) {
-    final scheme = Theme.of(context).colorScheme;
-    return Form(
-      key: _attFormKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Attendance sign-in',
-              style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: RvmSpacing.xs),
-          Text(
-              'For staff without a portal login. Use your phone, email or employee code.',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant)),
-          const SizedBox(height: RvmSpacing.xl),
-          TextFormField(
-            controller: _attIdentifier,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(
-                labelText: 'Phone, email or employee code',
-                prefixIcon: Icon(Icons.badge_outlined)),
-            validator: (v) => validateIdentifier(v ?? '',
-                emptyMessage: 'Enter your phone, email or employee code'),
-          ),
-          const SizedBox(height: RvmSpacing.md),
-          TextFormField(
-            controller: _attPassword,
-            obscureText: _obscure,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              labelText: 'Attendance password',
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                onPressed: () => setState(() => _obscure = !_obscure),
-                icon: Icon(_obscure
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined),
-              ),
-            ),
-            validator: (v) =>
-                (v == null || v.isEmpty) ? 'Enter your password' : null,
-          ),
-          if (state.errorMessage != null) ...[
-            const SizedBox(height: RvmSpacing.md),
-            _ErrorNote(state.errorMessage!),
-          ],
-          const SizedBox(height: RvmSpacing.lg),
-          FilledButton(
-            onPressed: state.submitting ? null : _submitAttendance,
-            child: state.submitting
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.4))
-                : const Text('Sign in'),
-          ),
-          const SizedBox(height: RvmSpacing.sm),
-          TextButton(
-            onPressed: state.submitting ? null : _requestCode,
-            child: const Text('Send me a sign-in code instead'),
-          ),
-          TextButton(
-            onPressed: state.submitting
-                ? null
-                : () => context
-                    .read<TeamAuthBloc>()
-                    .add(const TeamAttendanceModeToggled(false)),
-            child: const Text('Back to portal sign-in'),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _attendanceCodeStep(BuildContext context, TeamAuthState state) {
     final scheme = Theme.of(context).colorScheme;
     final code = state.attendanceCode!;
     return Form(
-      key: _attFormKey,
+      key: _codeFormKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -313,30 +172,23 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _submitAttendance() {
-    if (!(_attFormKey.currentState?.validate() ?? false)) return;
-    FocusScope.of(context).unfocus();
-    context.read<TeamAuthBloc>().add(TeamAttendanceLoginSubmitted(
-          identifier: _attIdentifier.text.trim(),
-          password: _attPassword.text,
-        ));
-  }
-
   void _requestCode() {
-    final identifier = _attIdentifier.text.trim();
+    final identifier = _username.text.trim();
     final idError = validateIdentifier(identifier,
-        emptyMessage: 'Enter your phone, email or employee code first.');
+        emptyMessage:
+            'Enter your User ID, phone, email or employee code first.');
     if (idError != null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(idError)));
       return;
     }
+    FocusScope.of(context).unfocus();
     context.read<TeamAuthBloc>().add(TeamAttendanceCodeRequested(identifier));
   }
 
   void _submitCode(String challengeId) {
-    if (!(_attFormKey.currentState?.validate() ?? false)) return;
+    if (!(_codeFormKey.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
     context.read<TeamAuthBloc>().add(TeamAttendanceCodeSubmitted(
         challengeId: challengeId, code: _attCode.text.replaceAll(' ', '')));
@@ -354,7 +206,8 @@ class _LoginScreenState extends State<LoginScreen> {
           Text('Sign in to Team RVM',
               style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: RvmSpacing.xs),
-          Text('Use your RVM portal username or phone and password.',
+          Text(
+              'One sign-in for everyone. Use your User ID, registered phone, email or employee code and your password.',
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -364,27 +217,19 @@ class _LoginScreenState extends State<LoginScreen> {
             controller: _username,
             textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.username],
-            onChanged: _onUsernameChanged,
             decoration: const InputDecoration(
-                labelText: 'Username or phone',
+                labelText: 'User ID / phone / email',
                 prefixIcon: Icon(Icons.person_outline)),
             validator: (v) => validateIdentifier(v ?? '',
-                emptyMessage: 'Enter your username or phone'),
+                emptyMessage: 'Enter your User ID, phone or email'),
           ),
-          if (_resolverHint != null) ...[
-            const SizedBox(height: RvmSpacing.sm),
-            Text(_resolverHint!,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-          ],
           const SizedBox(height: RvmSpacing.md),
           TextFormField(
             controller: _password,
             obscureText: _obscure,
-            textInputAction: TextInputAction.next,
+            textInputAction: TextInputAction.done,
             autofillHints: const [AutofillHints.password],
+            onFieldSubmitted: (_) => _submit(),
             decoration: InputDecoration(
               labelText: 'Password',
               prefixIcon: const Icon(Icons.lock_outline),
@@ -397,66 +242,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             validator: (v) =>
                 (v == null || v.isEmpty) ? 'Enter your password' : null,
-          ),
-          const SizedBox(height: RvmSpacing.md),
-          FormField<String>(
-            key: _branchField,
-            initialValue: _branch,
-            validator: (v) => v == null ? 'Select your branch' : null,
-            builder: (field) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.location_on_outlined,
-                        size: 18, color: RvmColors.clay),
-                    const SizedBox(width: 6),
-                    Text('Branch',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelLarge
-                            ?.copyWith(fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // All branches are on screen at once. A dropdown clipped this
-                // list to two rows on the phone and made the other branches look
-                // missing (KP, 26 Oct); a choice chip always shows every one.
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final b in _branches)
-                      ChoiceChip(
-                        label: Text(b),
-                        selected: _branch == b,
-                        onSelected: state.submitting
-                            ? null
-                            : (selected) {
-                                setState(() => _branch = b);
-                                field.didChange(b);
-                              },
-                      ),
-                  ],
-                ),
-                if (field.hasError)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      field.errorText!,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Theme.of(context).colorScheme.error),
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Text('Company-wide accounts can pick any branch.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant)),
-              ],
-            ),
           ),
           if (state.errorMessage != null) ...[
             const SizedBox(height: RvmSpacing.md),
@@ -478,14 +263,9 @@ class _LoginScreenState extends State<LoginScreen> {
               child: const Text('Forgot password?')),
           const Divider(height: RvmSpacing.lg),
           TextButton.icon(
-            onPressed: state.submitting
-                ? null
-                : () => context
-                    .read<TeamAuthBloc>()
-                    .add(const TeamAttendanceModeToggled(true)),
-            icon: const Icon(Icons.fingerprint),
-            label: const Text(
-                'Staff without a portal login? Sign in with attendance'),
+            onPressed: state.submitting ? null : _requestCode,
+            icon: const Icon(Icons.pin_outlined),
+            label: const Text('Send me a sign-in code instead'),
           ),
         ],
       ),

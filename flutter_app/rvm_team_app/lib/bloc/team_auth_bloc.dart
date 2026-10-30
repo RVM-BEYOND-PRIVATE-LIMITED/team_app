@@ -205,8 +205,12 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
   Future<void> _onProbe(
       TeamAuthProbeRequested e, Emitter<TeamAuthState> emit) async {
     try {
+      // `then<String?>` pins the future's runtime type: a store that answers
+      // `Future<String>` (a test double, or a concrete impl) would otherwise
+      // make `timeout`'s null fallback fail its runtime type check.
       var token = await _session
           .readSchedulerToken()
+          .then<String?>((value) => value)
           .timeout(const Duration(seconds: 5), onTimeout: () => null);
       var identity = StaffIdentity.fromToken(token);
       // The ESS access token (1 hour) replaces the Scheduler one (64 hours) in
@@ -222,6 +226,7 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       // surface `Failed host lookup` on the splash screen.
       final hasKeptSignIn = await _session
               .readEssRefreshToken()
+              .then<String?>((value) => value)
               .timeout(const Duration(seconds: 5), onTimeout: () => null) !=
           null;
       if (stale && hasKeptSignIn) {
@@ -310,17 +315,71 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
           username: e.username,
           password: e.password,
           locationName: e.locationName);
-      if (result.failure != null) {
-        _pending = null;
-        emit(state.copyWith(
-            submitting: false, errorMessage: _message(result.failure!)));
+      if (result.failure == null) {
+        await _onOutcome(result.outcome!, emit);
         return;
       }
-      await _onOutcome(result.outcome!, emit);
+
+      final portalFailure = result.failure!;
+      // One sign-in screen for both doors. Portal login answers 404 for an
+      // identifier it has never seen and 401 for a wrong password; either way
+      // the same credentials may belong to an attendance-only account, so try
+      // that door before showing an error.
+      if (!_canTryAttendance(portalFailure)) {
+        _pending = null;
+        emit(state.copyWith(
+            submitting: false, errorMessage: _message(portalFailure)));
+        return;
+      }
+      await _tryAttendanceLogin(e, portalFailure, emit);
     } on Failure catch (f) {
       _pending = null;
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
     }
+  }
+
+  bool _canTryAttendance(Failure failure) =>
+      failure is NotFoundFailure || failure is UnauthorizedFailure;
+
+  Future<void> _tryAttendanceLogin(TeamLoginSubmitted e, Failure portalFailure,
+      Emitter<TeamAuthState> emit) async {
+    try {
+      final result = await _repo.attendancePasswordLogin(
+          identifier: e.username, password: e.password);
+      _pending = null;
+      await _finishAttendance(result, emit);
+    } on Failure catch (attendanceFailure) {
+      _pending = null;
+      emit(state.copyWith(
+        submitting: false,
+        errorMessage: _unifiedMessage(portalFailure, attendanceFailure),
+      ));
+    }
+  }
+
+  /// Pick the message that tells the person what actually went wrong when both
+  /// doors were tried with the same credentials.
+  String _unifiedMessage(Failure portal, Failure attendance) {
+    switch (attendance.code) {
+      case 'HAS_PORTAL_LOGIN':
+        // The identifier is a portal account, and that door rejected the
+        // password. Say so rather than blaming the attendance login.
+        return _message(portal);
+      case 'LOCKED':
+      case 'PASSWORD_NOT_SET':
+        return _message(attendance);
+      case 'NO_ATTENDANCE_LOGIN':
+      case 'WRONG_CREDENTIALS':
+        if (portal is UnauthorizedFailure) return _message(portal);
+        break;
+    }
+    if (attendance is NotFoundFailure ||
+        attendance is UnauthorizedFailure ||
+        attendance.code == 'WRONG_CREDENTIALS' ||
+        attendance is BadResponseFailure) {
+      return 'Incorrect User ID or password. Try again, or use “Send me a sign-in code”.';
+    }
+    return _message(attendance);
   }
 
   Future<void> _onTwoFactorCode(
