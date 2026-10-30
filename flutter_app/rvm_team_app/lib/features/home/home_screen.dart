@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:domain/domain.dart';
@@ -218,11 +220,13 @@ class _ScheduleCard extends StatelessWidget {
           final today = data?.today;
           final shift = data?.shift;
           final onDuty = today?.punchedIn ?? false;
-          final done = today?.done ?? false;
+          final punches = today?.punches ?? const <AttendancePunch>[];
+          final lastPunch = punches.isEmpty ? null : punches.last;
+          final sessionStart = _sessionStart(today);
           final shiftText = (shift?.start != null && shift?.end != null)
               ? '${_prettyTime(shift?.start ?? '')} – ${_prettyTime(shift?.end ?? '')}'
               : 'Shift not set';
-          final logged = today?.firstIn;
+          final logged = sessionStart ?? today?.firstIn;
           return TeamCard(
             child: Column(
               children: [
@@ -301,8 +305,8 @@ class _ScheduleCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 _HomePunchButton(
                   onDuty: onDuty,
-                  done: done,
                   busy: state.punching,
+                  lastPunchAt: lastPunch?.at,
                   onPressed: state.punching
                       ? null
                       : () {
@@ -328,6 +332,10 @@ class _ScheduleCard extends StatelessWidget {
                               .add(PunchRequested(onDuty ? 'out' : 'in'));
                         },
                 ),
+                if (onDuty) ...[
+                  const SizedBox(height: 8),
+                  _OnDutyTimer(start: sessionStart),
+                ],
                 const SizedBox(height: 8),
                 _DistanceNote(
                   state: state,
@@ -495,66 +503,272 @@ class _DistanceNote extends StatelessWidget {
   }
 }
 
-/// The Home tab's one-tap punch. Green while the person is on duty, red once
-/// they have punched out for the day, so the state is readable at a glance.
-class _HomePunchButton extends StatelessWidget {
+/// The Home tab's one-tap punch, exactly as KP described it:
+///
+///   green Punch In -> three grey minutes -> red Punch Out -> three grey minutes
+///   -> green Punch In again, and so on through the day.
+///
+/// The button also carries a small scale/glow pulse when the action changes.
+class _HomePunchButton extends StatefulWidget {
   const _HomePunchButton({
     required this.onDuty,
-    required this.done,
     required this.busy,
+    required this.lastPunchAt,
     required this.onPressed,
   });
 
   final bool onDuty;
-  final bool done;
   final bool busy;
+  final DateTime? lastPunchAt;
   final VoidCallback? onPressed;
 
   @override
+  State<_HomePunchButton> createState() => _HomePunchButtonState();
+}
+
+class _HomePunchButtonState extends State<_HomePunchButton>
+    with SingleTickerProviderStateMixin {
+  static const _cooldown = Duration(minutes: 3);
+  static const _cooldownGrey = Color(0xFF7C7C7C);
+
+  late final AnimationController _pulse;
+  late final Animation<double> _scale;
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 640));
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.045)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 42,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.045, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 58,
+      ),
+    ]).animate(_pulse);
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(_HomePunchButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lastPunchAt != widget.lastPunchAt) {
+      _syncTicker();
+      _pulse.forward(from: 0);
+    } else if (oldWidget.onDuty != widget.onDuty) {
+      _pulse.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  Duration get _remaining {
+    final at = widget.lastPunchAt;
+    if (at == null) return Duration.zero;
+    final left = at.add(_cooldown).difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
+
+  void _syncTicker() {
+    if (_remaining > Duration.zero) {
+      _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {});
+        if (_remaining == Duration.zero) {
+          _ticker?.cancel();
+          _ticker = null;
+        }
+      });
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  String _clock(Duration d) {
+    final minutes = d.inMinutes;
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final color = done
-        ? RvmColors.danger
-        : onDuty
-            ? RvmColors.success
-            : RvmColors.clay;
-    final label = done
-        ? 'Punched Out'
-        : onDuty
-            ? 'Punch Out'
-            : 'Punch In';
-    final icon = done
-        ? Icons.check_circle_rounded
-        : onDuty
-            ? Icons.logout_rounded
-            : Icons.login_rounded;
-    return SizedBox(
-      height: 46,
-      child: FilledButton(
-        onPressed: done || busy ? null : onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: color,
-          disabledBackgroundColor: done ? color : color.withValues(alpha: 0.55),
-          disabledForegroundColor: Colors.white,
-        ),
-        child: busy
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white))
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 17),
-                  const SizedBox(width: 8),
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 13.5, fontWeight: FontWeight.w600)),
+    final remaining = _remaining;
+    final cooling = remaining > Duration.zero;
+    final nextIsOut = widget.onDuty;
+    final color = cooling
+        ? _cooldownGrey
+        : (nextIsOut ? RvmColors.danger : RvmColors.success);
+    final label = cooling
+        ? '${nextIsOut ? 'Punch Out' : 'Punch In'} in ${_clock(remaining)}'
+        : (nextIsOut ? 'Punch Out' : 'Punch In');
+    final icon = cooling
+        ? Icons.timer_outlined
+        : (nextIsOut ? Icons.logout_rounded : Icons.login_rounded);
+    final enabled = !cooling && !widget.busy;
+
+    return ScaleTransition(
+      scale: _scale,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+        height: 46,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(RvmRadii.md),
+          boxShadow: cooling
+              ? const []
+              : [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.30),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
                 ],
-              ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(RvmRadii.md),
+          child: InkWell(
+            onTap: enabled ? widget.onPressed : null,
+            borderRadius: BorderRadius.circular(RvmRadii.md),
+            child: Center(
+              child: widget.busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 260),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.92, end: 1)
+                              .animate(animation),
+                          child: child,
+                        ),
+                      ),
+                      child: Row(
+                        key: ValueKey('$cooling-$nextIsOut'),
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon, size: 17, color: Colors.white),
+                          const SizedBox(width: 8),
+                          Text(label,
+                              style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white)),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+        ),
       ),
     );
   }
+}
+
+/// The live "on duty" clock under the punch button. It starts at the current
+/// punch-in, not the day's first one, so a second session shows its own time.
+class _OnDutyTimer extends StatefulWidget {
+  const _OnDutyTimer({required this.start});
+
+  final DateTime? start;
+
+  @override
+  State<_OnDutyTimer> createState() => _OnDutyTimerState();
+}
+
+class _OnDutyTimerState extends State<_OnDutyTimer> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(_OnDutyTimer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final start = widget.start;
+    final elapsed = start == null ? null : DateTime.now().difference(start);
+    final safe =
+        elapsed == null || elapsed.isNegative ? Duration.zero : elapsed;
+    final text =
+        elapsed == null ? 'On duty' : 'On duty for ${_durationText(safe)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: RvmColors.successSoft,
+        borderRadius: BorderRadius.circular(RvmRadii.sm),
+        border: Border.all(color: RvmColors.success.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: const BoxDecoration(
+                color: RvmColors.success, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 7),
+          Text(text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: RvmColors.success,
+                  )),
+        ],
+      ),
+    );
+  }
+}
+
+String _durationText(Duration d) {
+  final h = d.inHours;
+  final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return h > 0 ? '$h:$m:$s' : '$m:$s';
+}
+
+/// The current session begins at the latest punch-in.
+DateTime? _sessionStart(PunchToday? today) {
+  final punches = today?.punches ?? const <AttendancePunch>[];
+  for (final punch in punches.reversed) {
+    if (punch.kind == 'in') return punch.at;
+  }
+  return today?.firstIn;
 }
 
 String _prettyTime(String value) {
@@ -828,7 +1042,7 @@ class _FacultyCard extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: () => context.push('/work/indicators'),
             icon: const Icon(Icons.insights_outlined, size: 17),
-            label: const Text('My attendance health'),
+            label: const Text('Student attendance health'),
             style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(40)),
           ),

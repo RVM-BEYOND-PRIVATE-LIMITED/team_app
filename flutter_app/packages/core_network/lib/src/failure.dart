@@ -56,8 +56,8 @@ sealed class Failure extends Equatable implements Exception {
     if (status == null) return const UnknownFailure();
     return switch (status) {
       401 => _unauthorized(serverMessage, serverCode),
-      403 => ForbiddenFailure(serverMessage),
-      404 => NotFoundFailure(serverMessage),
+      403 => ForbiddenFailure(serverMessage, serverCode),
+      404 => NotFoundFailure(serverMessage, serverCode),
       408 => const TimeoutFailure(),
       // The limiter's message states the real wait (e.g. "…in 15 minutes").
       429 => TooManyRequestsFailure(serverMessage),
@@ -135,13 +135,14 @@ class UnauthorizedFailure extends Failure {
 class ForbiddenFailure extends Failure {
   // Prefer the server's message (RVM 403s carry actionable text, e.g. "Cannot
   // reply to a resolved ticket. Please reopen it first."); fall back generic.
-  const ForbiddenFailure([String? message])
-      : super(message ?? "You don't have access to this.", statusCode: 403);
+  const ForbiddenFailure([String? message, String? code])
+      : super(message ?? "You don't have access to this.",
+            statusCode: 403, code: code);
 }
 
 class NotFoundFailure extends Failure {
-  const NotFoundFailure([String? message])
-      : super(message ?? 'No data found.', statusCode: 404);
+  const NotFoundFailure([String? message, String? code])
+      : super(message ?? 'No data found.', statusCode: 404, code: code);
 }
 
 class TooManyRequestsFailure extends Failure {

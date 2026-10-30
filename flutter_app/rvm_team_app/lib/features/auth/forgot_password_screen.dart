@@ -9,8 +9,9 @@ import '../../bloc/forgot_password_bloc.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 
-/// Code-based reset: request a code to the account's verified email, then set a
-/// new password. (Never the retired username+phone reset.)
+/// Code-based reset: request a code to the account's verified email or, when
+/// there is none, its registered phone; then set a new password. (Never the
+/// retired username+phone reset.)
 class ForgotPasswordScreen extends StatelessWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -53,7 +54,9 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
           if (state.done) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
-              ..showSnackBar(const SnackBar(content: Text('Password changed. Sign in with the new one.')));
+              ..showSnackBar(const SnackBar(
+                  content:
+                      Text('Password changed. Sign in with the new one.')));
             context.go('/login');
           }
         },
@@ -64,7 +67,9 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 460),
-                child: state.codeSent ? _confirmForm(context, state) : _requestForm(context, state),
+                child: state.codeSent
+                    ? _confirmForm(context, state)
+                    : _requestForm(context, state),
               ),
             ),
           );
@@ -77,15 +82,18 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Enter your username or email',
+        Text('Enter your username, phone or email',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: RvmSpacing.xs),
-        Text('If that account has a verified email, we will send a 6-digit code.',
+        Text(
+            'We will send a 6-digit code to your verified email, or to your registered phone by SMS.',
             style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: RvmSpacing.lg),
         TextField(
           controller: _identifier,
-          decoration: const InputDecoration(labelText: 'Username or email', prefixIcon: Icon(Icons.person_outline)),
+          decoration: const InputDecoration(
+              labelText: 'Username, phone or email',
+              prefixIcon: Icon(Icons.person_outline)),
         ),
         if (state.error != null || _localError != null) ...[
           const SizedBox(height: RvmSpacing.md),
@@ -93,22 +101,25 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
         ],
         const SizedBox(height: RvmSpacing.lg),
         FilledButton(
-              onPressed: state.submitting
-                  ? null
-                  : () {
-                      final id = _identifier.text.trim();
-                      final idError = validateIdentifier(id,
-                          emptyMessage: 'Enter your username or email.');
-                      if (idError != null) {
-                        setState(() => _localError = idError);
-                        return;
-                      }
+          onPressed: state.submitting
+              ? null
+              : () {
+                  final id = _identifier.text.trim();
+                  final idError = validateIdentifier(id,
+                      emptyMessage: 'Enter your username, phone or email.');
+                  if (idError != null) {
+                    setState(() => _localError = idError);
+                    return;
+                  }
                   setState(() => _localError = null);
                   FocusScope.of(context).unfocus();
                   context.read<ForgotPasswordBloc>().add(ForgotRequested(id));
                 },
           child: state.submitting
-              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4))
               : const Text('Get a code'),
         ),
       ],
@@ -129,14 +140,20 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
         TextField(
           controller: _code,
           keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
-          decoration: const InputDecoration(labelText: '6-digit code', prefixIcon: Icon(Icons.pin_outlined)),
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(6)
+          ],
+          decoration: const InputDecoration(
+              labelText: '6-digit code', prefixIcon: Icon(Icons.pin_outlined)),
         ),
         const SizedBox(height: RvmSpacing.md),
         TextField(
           controller: _password,
           obscureText: true,
-          decoration: const InputDecoration(labelText: 'New password (8+ characters)', prefixIcon: Icon(Icons.lock_outline)),
+          decoration: const InputDecoration(
+              labelText: 'New password (8+ characters)',
+              prefixIcon: Icon(Icons.lock_outline)),
         ),
         if (state.error != null || _localError != null) ...[
           const SizedBox(height: RvmSpacing.md),
@@ -166,12 +183,18 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
                       ));
                 },
           child: state.submitting
-              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4))
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4))
               : const Text('Change password'),
         ),
         const SizedBox(height: RvmSpacing.sm),
         TextButton(
-          onPressed: state.submitting ? null : () => context.read<ForgotPasswordBloc>().add(const ForgotReset()),
+          onPressed: state.submitting
+              ? null
+              : () =>
+                  context.read<ForgotPasswordBloc>().add(const ForgotReset()),
           child: const Text('Start over'),
         ),
       ],
@@ -192,7 +215,11 @@ class _Error extends StatelessWidget {
         borderRadius: BorderRadius.circular(RvmRadii.sm),
         border: Border.all(color: RvmColors.danger.withValues(alpha: 0.35)),
       ),
-      child: Text(message, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: RvmColors.danger)),
+      child: Text(message,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: RvmColors.danger)),
     );
   }
 }
