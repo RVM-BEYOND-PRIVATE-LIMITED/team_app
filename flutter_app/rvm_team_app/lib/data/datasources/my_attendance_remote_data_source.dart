@@ -12,12 +12,23 @@ class MyAttendanceRemoteDataSource with DioExecutor {
 
   final Dio _dio;
 
-  Future<MyAttendance> myAttendance({String? month}) => guard(() async {
-        final res = await _dio.get('/hr/my-attendance', queryParameters: {
-          if (month != null) 'month': month,
-        });
-        return MyAttendance.fromJson((res.data as Map).cast<String, dynamic>());
-      });
+  /// Expected refusals on this path (a 409 cooldown, an already-punched-in
+  /// state, a 403 device rule) are results the screen must render, not a
+  /// DioException the debugger stops on. Returning them as a normal Response
+  /// lets [DioExecutor.guard] turn them into the typed Failure the blocs
+  /// already handle. 401 still throws so the bearer interceptor ends the
+  /// session.
+  Options _readOptions() => Options(
+      validateStatus: (status) => status != null && status != 401);
+
+  Future<MyAttendance> myAttendance({String? month}) async {
+    final res = await guard<Response<dynamic>>(() => _dio.get(
+          '/hr/my-attendance',
+          queryParameters: {if (month != null) 'month': month},
+          options: _readOptions(),
+        ));
+    return MyAttendance.fromJson((res.data as Map).cast<String, dynamic>());
+  }
 
   /// The Home/schedule read without throwing for a 401/403/5xx. A portal
   /// token can be refused by the Scheduler's own employee link rules even
@@ -49,11 +60,12 @@ class MyAttendanceRemoteDataSource with DioExecutor {
     }
   }
 
-  Future<PunchChallenge> challenge() => guard(() async {
-        final res = await _dio.get('/hr/my-attendance/challenge');
-        return PunchChallenge.fromJson(
-            (res.data as Map).cast<String, dynamic>());
-      });
+  Future<PunchChallenge> challenge() async {
+    final res = await guard<Response<dynamic>>(
+        () => _dio.get('/hr/my-attendance/challenge', options: _readOptions()));
+    return PunchChallenge.fromJson(
+        (res.data as Map).cast<String, dynamic>());
+  }
 
   Future<PunchAccepted> punch({
     required String kind,
@@ -63,9 +75,9 @@ class MyAttendanceRemoteDataSource with DioExecutor {
     required double accuracyM,
     DateTime? clientAt,
     String? note,
-  }) =>
-      guard(() async {
-        final res = await _dio.post('/hr/my-attendance/punch', data: {
+  }) async {
+    final res = await guard<Response<dynamic>>(() =>
+        _dio.post('/hr/my-attendance/punch', options: _readOptions(), data: {
           'kind': kind,
           'nonce': nonce,
           'latitude': latitude,
@@ -73,38 +85,39 @@ class MyAttendanceRemoteDataSource with DioExecutor {
           'accuracy_m': accuracyM,
           if (clientAt != null) 'client_at': clientAt.toIso8601String(),
           if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
-        });
-        return PunchAccepted.fromJson(
-            (res.data as Map).cast<String, dynamic>());
-      });
+        }));
+    return PunchAccepted.fromJson(
+        (res.data as Map).cast<String, dynamic>());
+  }
 
   Future<void> ping({
     required double latitude,
     required double longitude,
     required double accuracyM,
-  }) =>
-      guard(() async {
-        await _dio.post('/hr/my-attendance/ping', data: {
+  }) async {
+    await guard<Response<dynamic>>(() =>
+        _dio.post('/hr/my-attendance/ping', options: _readOptions(), data: {
           'latitude': latitude,
           'longitude': longitude,
           'accuracy_m': accuracyM,
-        });
-      });
+        }));
+  }
 
-  Future<void> saveRemark({required String day, String? remarks}) =>
-      guard(() async {
-        await _dio.put('/hr/my-attendance/remarks',
-            data: {'day': day, 'remarks': remarks});
-      });
+  Future<void> saveRemark({required String day, String? remarks}) async {
+    await guard<Response<dynamic>>(() => _dio.put('/hr/my-attendance/remarks',
+        options: _readOptions(), data: {'day': day, 'remarks': remarks}));
+  }
 
   /// Set/replace the attendance password (first-time password / none yet). The
   /// reply's fresh 30-day token replaces the current session; every older
   /// session of this login stops working.
-  Future<String> setAttendancePassword(String password) => guard(() async {
-        final res = await _dio
-            .post('/hr/my-attendance/password', data: {'password': password});
-        return ((res.data as Map).cast<String, dynamic>()['token']
-                as String?) ??
-            '';
-      });
+  Future<String> setAttendancePassword(String password) async {
+    final res = await guard<Response<dynamic>>(() => _dio.post(
+        '/hr/my-attendance/password',
+        options: _readOptions(),
+        data: {'password': password}));
+    return ((res.data as Map).cast<String, dynamic>()['token']
+            as String?) ??
+        '';
+  }
 }

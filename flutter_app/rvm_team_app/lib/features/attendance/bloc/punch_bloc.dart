@@ -263,6 +263,17 @@ class PunchBloc extends Bloc<PunchEvent, PunchState> {
 
   static double _radians(double degrees) => degrees * math.pi / 180;
 
+  /// A punch refused because the phone's picture of today is stale. Reload the
+  /// day so the button shows the server's truth instead of inviting the same
+  /// refusal again.
+  static const _resyncCodes = {
+    'PUNCH_COOLDOWN',
+    'ALREADY_IN',
+    'NOT_IN',
+    'DAY_DONE',
+    'CHALLENGE_REUSED',
+  };
+
   Future<void> _onPunch(PunchRequested e, Emitter<PunchState> emit) async {
     emit(state.copyWith(
         punching: true, clearMessage: true, clearLastPunch: true));
@@ -297,7 +308,15 @@ class PunchBloc extends Bloc<PunchEvent, PunchState> {
     } on LocationException catch (ex) {
       emit(state.copyWith(punching: false, message: ex.message));
     } on Failure catch (f) {
-      emit(state.copyWith(punching: false, message: f.message));
+      emit(state.copyWith(punching: false, message: _punchFailureMessage(f)));
+      if (_resyncCodes.contains(f.code)) {
+        final result = await _repo.myAttendanceSafe();
+        final refreshed = result.data;
+        if (refreshed != null) {
+          emit(state.copyWith(status: LoadStatus.success, data: refreshed));
+          _syncPing(refreshed);
+        }
+      }
     } on Object {
       // A plugin error or an unexpected parse must not leave `punching` true,
       // which would disable the punch button until the screen is reopened.
@@ -306,6 +325,17 @@ class PunchBloc extends Bloc<PunchEvent, PunchState> {
           message: 'The punch could not be completed. Please try again.'));
     }
   }
+
+  /// Plain language for the punch refusals a person can actually cause.
+  String _punchFailureMessage(Failure f) => switch (f.code) {
+        'PUNCH_COOLDOWN' => 'Please wait a moment before punching again.',
+        'ALREADY_IN' => 'You are already punched in.',
+        'NOT_IN' => 'You have not punched in yet.',
+        'DAY_DONE' => 'You have already punched out for today.',
+        'CHALLENGE_REUSED' =>
+          'That punch was already sent. Pull to refresh the card.',
+        _ => f.message,
+      };
 
   Future<void> _onRemark(
       PunchRemarkRequested e, Emitter<PunchState> emit) async {
