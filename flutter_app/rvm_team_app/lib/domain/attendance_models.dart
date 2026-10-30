@@ -45,6 +45,8 @@ class PunchToday extends Equatable {
     this.lastOut,
     this.punches = const [],
     this.workedMinutes,
+    this.cooldownSeconds,
+    this.nextPunchAt,
     this.status,
     this.holiday,
     this.lateMinutes,
@@ -60,6 +62,11 @@ class PunchToday extends Equatable {
   final DateTime? lastOut;
   final List<AttendancePunch> punches;
   final int? workedMinutes;
+
+  /// Seconds still to wait before the next punch, from the server clock. `done`
+  /// is no longer "the day is over": a day may hold several in/out sessions.
+  final int? cooldownSeconds;
+  final DateTime? nextPunchAt;
   final String? status;
   final String? holiday;
   final int? lateMinutes;
@@ -75,6 +82,8 @@ class PunchToday extends Equatable {
         lastOut: _date(j['last_out']),
         punches: _maps(j['punches']).map(AttendancePunch.fromJson).toList(growable: false),
         workedMinutes: _int(j['worked_minutes']),
+        cooldownSeconds: _int(j['cooldown_seconds']),
+        nextPunchAt: _date(j['next_punch_at']),
         status: _str(j['status']),
         holiday: _str(j['holiday']),
         lateMinutes: _int(j['late_minutes']),
@@ -84,7 +93,7 @@ class PunchToday extends Equatable {
       );
 
   @override
-  List<Object?> get props => [day, punchedIn, done, firstIn, lastOut, workedMinutes, status];
+  List<Object?> get props => [day, punchedIn, done, firstIn, lastOut, workedMinutes, cooldownSeconds, nextPunchAt, status];
 }
 
 class AttendanceDevice extends Equatable {
