@@ -775,25 +775,68 @@ class _PraiseBody extends StatelessWidget {
     return BlocBuilder<LoadBloc<PraisePage>, LoadState<PraisePage>>(
       builder: (context, state) {
         final page = state.data;
-        if (page == null || page.praise.isEmpty) return const SizedBox.shrink();
+        final praise = page?.praise ?? const <WallPost>[];
+        if (page == null || praise.isEmpty) return const SizedBox.shrink();
+        final badgesById = {for (final b in page.badges) b.id: b};
+        final shown = praise.take(6).toList(growable: false);
         return Card(
           child: Padding(
             padding: const EdgeInsets.all(RvmSpacing.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Praise received',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: RvmSpacing.sm),
-                for (final p in page.praise.take(5))
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.emoji_events_outlined,
-                        color: RvmColors.teamSeed),
-                    title: Text(p.badgeLabel ?? 'Praise'),
-                    subtitle: Text(
-                        '${p.author?.fullName ?? 'Someone'}: ${p.body ?? ''}'),
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.military_tech_rounded,
+                        size: 20, color: RvmColors.teamSeed),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Praise received',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                    ),
+                    Text('${praise.length}',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelLarge
+                            ?.copyWith(color: RvmColors.subtle)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap a medal to read what your colleague wrote.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        color: RvmColors.muted,
+                      ),
+                ),
+                const SizedBox(height: 10),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    const columns = 3;
+                    const gap = 6.0;
+                    final cellWidth =
+                        (constraints.maxWidth - (columns - 1) * gap) / columns;
+                    return Wrap(
+                      spacing: gap,
+                      runSpacing: 10,
+                      children: [
+                        for (final post in shown)
+                          SizedBox(
+                            width: cellWidth,
+                            child: _PraiseMedal(
+                              post: post,
+                              badge: badgesById[post.badgeId],
+                              onTap: () => _showPraiseDialog(
+                                  context, post, badgesById[post.badgeId]),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -801,6 +844,274 @@ class _PraiseBody extends StatelessWidget {
       },
     );
   }
+}
+
+/// One praise drawn as a medal: a golden disc on two ribbons, with the badge
+/// name and giver beneath. Tapping opens the message that came with it.
+class _PraiseMedal extends StatelessWidget {
+  const _PraiseMedal({
+    required this.post,
+    required this.badge,
+    required this.onTap,
+  });
+
+  final WallPost post;
+  final PraiseBadge? badge;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = post.badgeLabel ?? badge?.label ?? 'Praise';
+    final author = post.author?.fullName ?? 'A colleague';
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(RvmRadii.md),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MedalArt(icon: praiseBadgeIcon(badge?.forGroup)),
+              const SizedBox(height: 7),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: RvmColors.ink,
+                      height: 1.2,
+                    ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                author,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      color: RvmColors.muted,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MedalArt extends StatelessWidget {
+  const _MedalArt({required this.icon, this.size = 62});
+
+  final IconData icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final disc = size * 0.81;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          Positioned(
+            top: size * 0.50,
+            left: size * 0.27,
+            child: Transform.rotate(angle: 0.20, child: const _Ribbon()),
+          ),
+          Positioned(
+            top: size * 0.50,
+            right: size * 0.27,
+            child: Transform.rotate(angle: -0.20, child: const _Ribbon()),
+          ),
+          Container(
+            width: disc,
+            height: disc,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFFE9A8),
+                  Color(0xFFF2C14E),
+                  Color(0xFFC98A1E),
+                ],
+              ),
+              border: Border.all(color: const Color(0xFFFFF6DA), width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFC98A1E).withValues(alpha: 0.34),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Container(
+                width: disc * 0.70,
+                height: disc * 0.70,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFFFF8E6),
+                  border:
+                      Border.all(color: const Color(0xFFE0B45C), width: 1.5),
+                ),
+                child: Icon(icon,
+                    size: disc * 0.38, color: const Color(0xFF8A5A12)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Ribbon extends StatelessWidget {
+  const _Ribbon();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipPath(
+      clipper: _RibbonClipper(),
+      child: Container(
+        width: 15,
+        height: 28,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFD7623A), Color(0xFFA63E1F)],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RibbonClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    return Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(size.width / 2, size.height - 7)
+      ..lineTo(0, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+Future<void> _showPraiseDialog(
+    BuildContext context, WallPost post, PraiseBadge? badge) {
+  final label = post.badgeLabel ?? badge?.label ?? 'Praise';
+  final author = post.author?.fullName ?? 'A colleague';
+  final message = (post.body ?? '').trim();
+  final date = _praiseDate(post.createdAt);
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+          horizontal: RvmSpacing.lg, vertical: RvmSpacing.lg),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(RvmRadii.lg)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+              RvmSpacing.lg, RvmSpacing.lg, RvmSpacing.lg, RvmSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _MedalArt(icon: praiseBadgeIcon(badge?.forGroup), size: 86),
+              const SizedBox(height: RvmSpacing.sm),
+              Text(label,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(dialogContext)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text('Praise from $author',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(dialogContext).textTheme.bodySmall),
+              if (date.isNotEmpty)
+                Text(date,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(dialogContext)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontSize: 11, color: RvmColors.subtle)),
+              const SizedBox(height: RvmSpacing.md),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: RvmColors.cream,
+                  borderRadius: BorderRadius.circular(RvmRadii.md),
+                  border: Border.all(color: RvmColors.line),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.format_quote_rounded,
+                        size: 20, color: RvmColors.teamSeed),
+                    const SizedBox(height: 4),
+                    Text(
+                      message.isEmpty
+                          ? 'No message was left with this praise.'
+                          : message,
+                      style: Theme.of(dialogContext)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: RvmSpacing.md),
+              TeamPrimaryButton(
+                label: 'Close',
+                height: 46,
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+String _praiseDate(DateTime? at) {
+  if (at == null) return '';
+  final d = at.toLocal();
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  return '${d.day} ${months[d.month - 1]} ${d.year}';
 }
 
 class _Section extends StatelessWidget {

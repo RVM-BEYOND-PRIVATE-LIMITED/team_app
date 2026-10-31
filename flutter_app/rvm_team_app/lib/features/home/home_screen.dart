@@ -303,10 +303,11 @@ class _ScheduleCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _HomePunchButton(
+                HomePunchButton(
                   onDuty: onDuty,
                   busy: state.punching,
                   lastPunchAt: lastPunch?.at,
+                  onDutySince: sessionStart,
                   onPressed: state.punching
                       ? null
                       : () {
@@ -332,10 +333,6 @@ class _ScheduleCard extends StatelessWidget {
                               .add(PunchRequested(onDuty ? 'out' : 'in'));
                         },
                 ),
-                if (onDuty) ...[
-                  const SizedBox(height: 8),
-                  _OnDutyTimer(start: sessionStart),
-                ],
                 const SizedBox(height: 8),
                 _DistanceNote(
                   state: state,
@@ -509,24 +506,27 @@ class _DistanceNote extends StatelessWidget {
 ///   -> green Punch In again, and so on through the day.
 ///
 /// The button also carries a small scale/glow pulse when the action changes.
-class _HomePunchButton extends StatefulWidget {
-  const _HomePunchButton({
+class HomePunchButton extends StatefulWidget {
+  const HomePunchButton({
+    super.key,
     required this.onDuty,
     required this.busy,
     required this.lastPunchAt,
+    required this.onDutySince,
     required this.onPressed,
   });
 
   final bool onDuty;
   final bool busy;
   final DateTime? lastPunchAt;
+  final DateTime? onDutySince;
   final VoidCallback? onPressed;
 
   @override
-  State<_HomePunchButton> createState() => _HomePunchButtonState();
+  State<HomePunchButton> createState() => _HomePunchButtonState();
 }
 
-class _HomePunchButtonState extends State<_HomePunchButton>
+class _HomePunchButtonState extends State<HomePunchButton>
     with SingleTickerProviderStateMixin {
   static const _cooldown = Duration(minutes: 3);
   static const _cooldownGrey = Color(0xFF7C7C7C);
@@ -556,10 +556,14 @@ class _HomePunchButtonState extends State<_HomePunchButton>
   }
 
   @override
-  void didUpdateWidget(_HomePunchButton oldWidget) {
+  void didUpdateWidget(HomePunchButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.lastPunchAt != widget.lastPunchAt) {
+    if (oldWidget.lastPunchAt != widget.lastPunchAt ||
+        oldWidget.onDuty != widget.onDuty ||
+        oldWidget.onDutySince != widget.onDutySince) {
       _syncTicker();
+    }
+    if (oldWidget.lastPunchAt != widget.lastPunchAt) {
       _pulse.forward(from: 0);
     } else if (oldWidget.onDuty != widget.onDuty) {
       _pulse.forward(from: 0);
@@ -580,12 +584,25 @@ class _HomePunchButtonState extends State<_HomePunchButton>
     return left.isNegative ? Duration.zero : left;
   }
 
+  /// How long the current session has been on duty, counting from its own
+  /// punch-in. The button carries this clock so Home has one fewer widget.
+  Duration get _onDutyElapsed {
+    final start = widget.onDutySince;
+    if (start == null) return Duration.zero;
+    final elapsed = DateTime.now().difference(start);
+    return elapsed.isNegative ? Duration.zero : elapsed;
+  }
+
+  bool get _needsTicker =>
+      _remaining > Duration.zero ||
+      (widget.onDuty && widget.onDutySince != null);
+
   void _syncTicker() {
-    if (_remaining > Duration.zero) {
+    if (_needsTicker) {
       _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         setState(() {});
-        if (_remaining == Duration.zero) {
+        if (!_needsTicker) {
           _ticker?.cancel();
           _ticker = null;
         }
@@ -607,6 +624,7 @@ class _HomePunchButtonState extends State<_HomePunchButton>
     final remaining = _remaining;
     final cooling = remaining > Duration.zero;
     final nextIsOut = widget.onDuty;
+    final showDutyClock = widget.onDuty && widget.onDutySince != null;
     final color = cooling
         ? _cooldownGrey
         : (nextIsOut ? RvmColors.danger : RvmColors.success);
@@ -660,96 +678,53 @@ class _HomePunchButtonState extends State<_HomePunchButton>
                           child: child,
                         ),
                       ),
-                      child: Row(
+                      child: FittedBox(
                         key: ValueKey('$cooling-$nextIsOut'),
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(icon, size: 17, color: Colors.white),
-                          const SizedBox(width: 8),
-                          Text(label,
-                              style: const TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white)),
-                        ],
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(icon, size: 17, color: Colors.white),
+                            const SizedBox(width: 8),
+                            Text(label,
+                                style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white)),
+                            if (showDutyClock) ...[
+                              const SizedBox(width: 9),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.24)),
+                                ),
+                                child: Text(
+                                  _durationText(_onDutyElapsed),
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    letterSpacing: 0.2,
+                                    fontFeatures: [
+                                      FontFeature.tabularFigures()
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The live "on duty" clock under the punch button. It starts at the current
-/// punch-in, not the day's first one, so a second session shows its own time.
-class _OnDutyTimer extends StatefulWidget {
-  const _OnDutyTimer({required this.start});
-
-  final DateTime? start;
-
-  @override
-  State<_OnDutyTimer> createState() => _OnDutyTimerState();
-}
-
-class _OnDutyTimerState extends State<_OnDutyTimer> {
-  Timer? _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void didUpdateWidget(_OnDutyTimer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final start = widget.start;
-    final elapsed = start == null ? null : DateTime.now().difference(start);
-    final safe =
-        elapsed == null || elapsed.isNegative ? Duration.zero : elapsed;
-    final text =
-        elapsed == null ? 'On duty' : 'On duty for ${_durationText(safe)}';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: RvmColors.successSoft,
-        borderRadius: BorderRadius.circular(RvmRadii.sm),
-        border: Border.all(color: RvmColors.success.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: const BoxDecoration(
-                color: RvmColors.success, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 7),
-          Text(text,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: RvmColors.success,
-                  )),
-        ],
       ),
     );
   }

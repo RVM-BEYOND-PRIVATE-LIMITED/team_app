@@ -87,12 +87,22 @@ void configureDependencies(AuthSession session) {
     ..registerLazySingleton<ConnectivityService>(ConnectivityService.new)
     ..registerLazySingleton<ApiEnvironment>(ApiEnvironment.fromDefines)
     // Scheduler client: bearer JWT + the persistent punch device cookie (B8/B13).
-    ..registerLazySingleton<Dio>(() => DioFactory.scheduler(
-          env: getIt<ApiEnvironment>(),
-          tokens: getIt<AuthSession>(),
-          cookieJar: getIt<AuthSession>().schedulerCookieJar,
-          logging: kDebugMode,
-        ))
+    ..registerLazySingleton<Dio>(() {
+      final dio = DioFactory.scheduler(
+        env: getIt<ApiEnvironment>(),
+        tokens: getIt<AuthSession>(),
+        cookieJar: getIt<AuthSession>().schedulerCookieJar,
+        logging: kDebugMode,
+      );
+      // Refused responses are values, not exceptions (the same rule the ESS
+      // client uses). A 400/403/409/5xx must reach the data source as a typed
+      // Failure so the screen shows the reason; before this, a server refusal
+      // escaped as a raw DioException (notably when switching accounts and the
+      // new user's first Scheduler card was refused). 401 still throws: the
+      // bearer interceptor needs it to end a rejected session.
+      dio.options.validateStatus = (status) => status != null && status != 401;
+      return dio;
+    })
     // ESS client: bearer + rotating kept sign-in (A3).
     ..registerLazySingleton<Dio>(
       () {
