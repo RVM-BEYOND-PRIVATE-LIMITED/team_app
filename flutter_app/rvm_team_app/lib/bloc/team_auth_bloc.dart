@@ -267,6 +267,10 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       await _finishAttendance(result, emit);
     } on Failure catch (f) {
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
+    } catch (_) {
+      emit(state.copyWith(
+          submitting: false,
+          errorMessage: 'Could not sign in. Please try again.'));
     }
   }
 
@@ -278,6 +282,10 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       emit(state.copyWith(submitting: false, attendanceCode: sent));
     } on Failure catch (f) {
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
+    } catch (_) {
+      emit(state.copyWith(
+          submitting: false,
+          errorMessage: 'Could not send a sign-in code. Please try again.'));
     }
   }
 
@@ -290,11 +298,18 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       await _finishAttendance(result, emit);
     } on Failure catch (f) {
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
+    } catch (_) {
+      emit(state.copyWith(
+          submitting: false,
+          errorMessage: 'Could not verify the code. Please try again.'));
     }
   }
 
   Future<void> _finishAttendance(
       AttendanceLoginResult result, Emitter<TeamAuthState> emit) async {
+    // A new sign-in starts a new session: never let the previous user's kept
+    // sign-in survive into this one (switching accounts on the same phone).
+    await _session.clearEssSession();
     await _session.saveSchedulerSession(token: result.token);
     emit(TeamAuthState(
       status: TeamAuthStatus.authenticated,
@@ -335,6 +350,11 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
     } on Failure catch (f) {
       _pending = null;
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
+    } catch (_) {
+      _pending = null;
+      emit(state.copyWith(
+          submitting: false,
+          errorMessage: 'Could not sign in. Please try again.'));
     }
   }
 
@@ -353,6 +373,12 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       emit(state.copyWith(
         submitting: false,
         errorMessage: _unifiedMessage(portalFailure, attendanceFailure),
+      ));
+    } catch (_) {
+      _pending = null;
+      emit(state.copyWith(
+        submitting: false,
+        errorMessage: _message(portalFailure),
       ));
     }
   }
@@ -396,6 +422,10 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       await _completeSignIn(signedIn, emit);
     } on Failure catch (f) {
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
+    } catch (_) {
+      emit(state.copyWith(
+          submitting: false,
+          errorMessage: 'Could not verify the code. Please try again.'));
     }
   }
 
@@ -418,6 +448,10 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       await _onOutcome(result.outcome!, emit);
     } on Failure catch (f) {
       emit(state.copyWith(submitting: false, errorMessage: _message(f)));
+    } catch (_) {
+      emit(state.copyWith(
+          submitting: false,
+          errorMessage: 'Could not resend the code. Please try again.'));
     }
   }
 
@@ -451,6 +485,7 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       ));
       return;
     }
+    await _session.clearEssSession();
     await _session.saveSchedulerSession(
         token: signedIn.token, role: appRoleWire(identity.role));
     emit(TeamAuthState(
@@ -475,9 +510,14 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       await _ess.signOut();
     } on Failure {
       // Sign out locally even if the server call fails.
+    } catch (_) {
+      // Nor can an unexpected transport/plugin error keep the old session.
     }
-    await _session.signOutAll();
-    emit(const TeamAuthState(status: TeamAuthStatus.unauthenticated));
+    try {
+      await _session.signOutAll();
+    } finally {
+      emit(const TeamAuthState(status: TeamAuthStatus.unauthenticated));
+    }
   }
 
   /// State the real, actionable cause. /users/login answers 404 for an unknown
