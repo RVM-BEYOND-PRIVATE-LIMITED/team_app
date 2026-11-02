@@ -70,10 +70,12 @@ function mayDecide({ auth, entries }) {
 }
 
 /**
- * RVM, 27 Oct 2026: leave no longer follows the reporting line. The branch Admin Manager
- * decides the first round (with class coverage), then a super admin gives the final approval.
- * HR is the bypass only where the branch has no active Admin Manager. A manager/HOD never
- * decides leave now.
+ * RVM, 27 Oct 2026 + Nov 2026: leave no longer follows the reporting line.
+ * Faculty: branch Admin Manager first (with class coverage), then the HOO final
+ * (Vishal Narwat for Pune/Ahmedabad, Bhupender Singh for Faridabad/Lucknow,
+ * super_admin fallback). Non-faculty: single approval by the reporting manager
+ * (stage=final, final_approver=manager). HR is the bypass only where the branch
+ * has no active Admin Manager. A manager/HOD never decides faculty leave.
  */
 function mayDecideLeave({ auth, request, requesterBranchId, branchHasAdminManager = false }) {
   if (!request) return false;

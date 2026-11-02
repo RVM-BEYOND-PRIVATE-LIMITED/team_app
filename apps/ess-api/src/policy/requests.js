@@ -168,9 +168,11 @@ function requestView(r, family, { employee = null } = {}) {
     view.substitute_faculty_id = r.substitute_faculty_id ?? null;
     view.substitute_faculty_name = r.substitute_faculty_name ?? null;
     view.class_timing = r.class_timing ?? null;
+    view.manager_approved_by_employee_id = r.manager_approved_by_employee_id ?? null;
     view.manager_approved_by_name = r.manager_approved_by_name ?? null;
     view.manager_approved_at = r.manager_approved_at ?? null;
     view.manager_remark = r.manager_remark ?? null;
+    view.decided_by_employee_id = r.decided_by_employee_id ?? null;
   }
   if (family === 'attendance') {
     view.place = r.place ?? null;

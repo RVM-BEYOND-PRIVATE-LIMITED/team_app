@@ -133,7 +133,7 @@ const COLUMNS = Object.freeze({
     + 'substitute_faculty_id, substitute_faculty_name, class_timing, '
     + 'manager_approved_by_employee_id, manager_approved_by_name, '
     + 'manager_remark, manager_approved_at, reason, '
-    + 'decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
+    + 'decided_by_employee_id, decided_by_name, decided_at, decision_note, cancelled_by_name, cancelled_at, cancel_reason, created_at, updated_at',
   leaveAdminManager: 'id, full_name, employee_code, branch_id, user_id, is_archived',
   leaveApprover: 'branch_id, employee_id, configured_by_name, updated_at',
   facultyOption: 'id, name, location_id, is_active',
@@ -905,6 +905,18 @@ function createSupabaseStore(config, { client } = {}) {
     listPendingLeaveRequests: async () =>
       (await read('hr_ess_leave_requests', (q) => q.select(COLUMNS.leaveRequest)
         .eq('status', 'pending').order('created_at', { ascending: true }).limit(500))) || [],
+    /** Recent decided leave (approved/rejected) for the approver history. */
+    listRecentDecidedLeaveRequests: async () =>
+      (await read('hr_ess_leave_requests', (q) => q.select(COLUMNS.leaveRequest)
+        .in('status', ['approved', 'rejected']).order('decided_at', { ascending: false }).limit(200))) || [],
+    /** Pending final-stage requests this approver advanced (Admin Manager -> HOO waiting). */
+    listAdvancedLeaveRequestsFor: async (employeeId) =>
+      (await read('hr_ess_leave_requests', (q) => q.select(COLUMNS.leaveRequest)
+        .eq('status', 'pending').eq('stage', 'final').eq('manager_approved_by_employee_id', employeeId)
+        .order('created_at', { ascending: false }).limit(50))) || [],
+    /** Direct report ids for manager-scoped history. */
+    listDirectReportIds: async (managerId) =>
+      (await read('hr_employees', (q) => q.select('id').eq('manager_id', managerId).eq('is_archived', false).limit(200))) || [],
     assignLeaveRequestApprover: ({ id, employeeId, name, at }) =>
       write('hr_ess_leave_requests', (q) => q.update({
         admin_manager_employee_id: employeeId, admin_manager_name: name, updated_at: at,

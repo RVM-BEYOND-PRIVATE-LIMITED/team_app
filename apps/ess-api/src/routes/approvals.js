@@ -87,6 +87,46 @@ async function leaveQueue(store, auth) {
   return pending.filter((r) => chosen.has(r.id) && r.employee_id !== auth.employee.id);
 }
 
+/**
+ * Approved / advanced leave history for managers, Admin Managers and HOO final
+ * approvers — so an approval does not vanish the moment it is given.
+ *
+ * Faculty: Admin Manager advances (pending final, waiting for HOO Vishal /
+ * Bhupender), then HOO decides (approved). Non-faculty: reporting manager
+ * decides directly. Each side stays visible to the approver, plus the branch
+ * team for an Admin Manager and direct reports for a reporting manager.
+ */
+async function leaveHistory(store, auth) {
+  const [decided, advanced, reportRows] = await Promise.all([
+    store.listRecentDecidedLeaveRequests().catch(() => []),
+    store.listAdvancedLeaveRequestsFor(auth.employee.id).catch(() => []),
+    store.listDirectReportIds(auth.employee.id).catch(() => []),
+  ]);
+  const reportIds = new Set((reportRows || []).map((r) => r.id || r));
+  const rows = [...(decided || []), ...(advanced || [])]
+    .filter((r) => r.employee_id !== auth.employee.id);
+  if (!rows.length) return [];
+  const requesterIds = [...new Set(rows.map((r) => r.employee_id))];
+  const cards = new Map((await Promise.all(requesterIds.map((id) => store.getEmployeeById(id))))
+    .filter(Boolean).map((e) => [e.id, e]));
+  const branchOf = (r) => cards.get(r.employee_id)?.branch_id;
+  return rows.filter((r) => {
+    if (r.manager_approved_by_employee_id === auth.employee.id) return true;
+    if (r.decided_by_employee_id === auth.employee.id) return true;
+    if (r.final_approver_employee_id === auth.employee.id) return true;
+    if (reportIds.has(r.employee_id)) return true;
+    if (auth.role === 'admin_manager') {
+      const b = branchOf(r);
+      if (b && b === auth.employee?.branch_id) {
+        if (r.status === 'approved' || r.status === 'rejected') return true;
+        if (r.status === 'pending' && r.stage === 'final') return true;
+      }
+    }
+    return false;
+  }).sort((a, b) => String(b.decided_at || b.manager_approved_at || b.created_at)
+    .localeCompare(String(a.decided_at || a.manager_approved_at || a.created_at)));
+}
+
 /** GET /api/ess/approvals?status=... */
 function listApprovals({ store, now }) {
   return asyncRoute(async (req, res) => {
@@ -111,13 +151,16 @@ function listApprovals({ store, now }) {
 
     const filter = status === 'all' ? null : status;
     const fetch = (family, wanted) => store.listRequestsForApprover({ family, employeeIds: reportIds, status: wanted });
-    const leaveAll = await leaveQueue(store, req.auth);
-    const shownLeave = status === 'pending' || status === 'all' ? leaveAll : [];
+    const leavePending = await leaveQueue(store, req.auth);
+    const leaveHist = await leaveHistory(store, req.auth);
+    const shownLeave = status === 'pending' ? leavePending
+      : status === 'all' ? [...leavePending, ...leaveHist]
+      : leaveHist.filter((r) => r.status === status);
     const shownAttendance = await fetch('attendance', filter);
     const pendingAttendance = filter === 'pending'
       ? shownAttendance
       : await fetch('attendance', 'pending');
-    const pendingLeave = leaveAll;
+    const pendingLeave = leavePending;
 
     // Archived requests stay out of the caller's Inbox (archiving is per approver, task D1).
     const archives = await store.listMyArchives(employee.id);
@@ -290,12 +333,13 @@ function decideRequest({ store, now }) {
       if (outcome === 'note_required') throw invalid(MESSAGES.DECIDE_REJECT_NOTE);
 
       try {
+        const hooName = request.final_approver_name ? ` (${request.final_approver_name})` : '';
         await store.createNotification({
           employee_id: request.employee_id,
           category: 'decisions',
           title: body.decision === 'approve' ? 'Admin Manager approved your leave' : 'Leave rejected',
           body: body.decision === 'approve'
-            ? `The Admin Manager approved the leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''}. It now waits for super-admin final approval.`
+            ? `The Admin Manager approved the leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''}. It now waits for HOO final approval${hooName}.`
             : `Your leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} was rejected by ${req.auth.employee.full_name}.`,
           data: { request_id: id, request_family: 'leave' },
         });
@@ -306,8 +350,8 @@ function decideRequest({ store, now }) {
               await store.createNotification({
                 employee_id: person.id,
                 category: 'approvals',
-                title: 'Leave needs final approval',
-                body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for final approval.`,
+                title: `Leave needs HOO final approval${hooName}`,
+                body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for HOO final approval.`,
                 data: { request_id: id, request_family: 'leave' },
               });
             }
@@ -319,8 +363,8 @@ function decideRequest({ store, now }) {
               await store.createNotification({
                 employee_id: person.id,
                 category: 'approvals',
-                title: 'Leave needs super-admin approval',
-                body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for final approval.`,
+                title: 'Leave needs HOO final approval',
+                body: `${requester.full_name}'s leave from ${request.day}${request.end_day && request.end_day !== request.day ? ` to ${request.end_day}` : ''} waits for HOO final approval.`,
                 data: { request_id: id, request_family: 'leave' },
               });
             }

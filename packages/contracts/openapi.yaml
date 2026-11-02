@@ -12225,7 +12225,7 @@ components:
     LeaveRequest:
       type: object
       description: One leave request as the employee and the approver read it. `employee` is present in an approver's reply, never in the person's own list.
-      required: [id, family, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage, manager_approved_by_name, manager_approved_at, manager_remark, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
+      required: [id, family, type, status, day, end_day, portion, day_count, working_days, requires_final_approval, stage, manager_approved_by_employee_id, manager_approved_by_name, manager_approved_at, manager_remark, reason, created_at, decided_at, decided_by_employee_id, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason]
       properties:
         id:
           type: string
@@ -12295,6 +12295,10 @@ components:
           type: [string, 'null']
           maxLength: 200
           description: The class timing the Admin Manager records for the substitute.
+        manager_approved_by_employee_id:
+          type: [string, 'null']
+          format: uuid
+          description: The Admin Manager (or manager) who approved the first round, if any.
         manager_approved_by_name:
           type: [string, 'null']
           description: The manager's name once the first round is approved.
@@ -12314,6 +12318,10 @@ components:
         decided_at:
           type: [string, 'null']
           format: date-time
+        decided_by_employee_id:
+          type: [string, 'null']
+          format: uuid
+          description: The final approver (HOO for faculty, reporting manager otherwise) who decided, if any.
         decided_by_name:
           type: [string, 'null']
         decision_note:
@@ -12434,7 +12442,7 @@ components:
     InboxLeaveRequest:
       type: object
       description: A leave request in an approver's Inbox, with whose it is and its context.
-      required: [id, family, type, status, day, reason, created_at, decided_at, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason, employee, context]
+      required: [id, family, type, status, day, reason, created_at, decided_at, decided_by_employee_id, decided_by_name, decision_note, cancelled_at, cancelled_by_name, cancel_reason, employee, context]
       properties:
         id:
           type: string
@@ -12492,6 +12500,9 @@ components:
         class_timing:
           type: [string, 'null']
           maxLength: 200
+        manager_approved_by_employee_id:
+          type: [string, 'null']
+          format: uuid
         manager_approved_by_name:
           type: [string, 'null']
         manager_approved_at:
@@ -12509,6 +12520,9 @@ components:
         decided_at:
           type: [string, 'null']
           format: date-time
+        decided_by_employee_id:
+          type: [string, 'null']
+          format: uuid
         decided_by_name:
           type: [string, 'null']
         decision_note:

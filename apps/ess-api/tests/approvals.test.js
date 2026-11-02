@@ -141,7 +141,7 @@ describe('GET /api/ess/approvals', () => {
     expect(res.body.counts).toEqual({ attendance: 0, leave: 0, total: 0 });
   });
 
-  it('an Admin Manager may filter their own attendance by any status; leave history is not their Inbox', async () => {
+  it('an Admin Manager may filter their own attendance by any status; approved team leave stays in the Inbox history', async () => {
     const { app, people } = buildApp({ setup: (w) => {
       withTwoRequests(w);
       w.tables.hr_ess_attendance_requests.push(requestRow('attendance', w.people.attendance.employee.id, 3, {
@@ -153,10 +153,10 @@ describe('GET /api/ess/approvals', () => {
     } });
     const approved = await inbox(app, tokens.portal(people.admin_manager), '?status=approved');
     expect(approved.status).toBe(200);
-    expect(approved.body.requests.map((r) => r.id)).toEqual([REQ(3)]);
+    expect(approved.body.requests.map((r) => r.id)).toEqual([REQ(3), REQ(4)]);
     const all = await inbox(app, tokens.portal(people.admin_manager), '?status=all');
     expect(all.status).toBe(200);
-    expect(all.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(3), REQ(2)]);
+    expect(all.body.requests.map((r) => r.id)).toEqual([REQ(1), REQ(3), REQ(2), REQ(4)]);
   });
 
   it('HR sees attendance everywhere, but not leave where an Admin Manager exists', async () => {
