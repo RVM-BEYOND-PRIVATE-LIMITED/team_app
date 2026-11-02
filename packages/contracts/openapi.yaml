@@ -2349,12 +2349,14 @@ paths:
                       working_days: ['2026-10-20']
                       requires_final_approval: false
                       stage: manager
+                      manager_approved_by_employee_id: null
                       manager_approved_by_name: null
                       manager_approved_at: null
                       manager_remark: null
                       reason: Family function at home.
                       created_at: '2026-10-16T06:30:00+00:00'
                       decided_at: null
+                      decided_by_employee_id: null
                       decided_by_name: null
                       decision_note: null
                       cancelled_at: null
@@ -2456,12 +2458,14 @@ paths:
                       working_days: ['2026-10-20']
                       requires_final_approval: false
                       stage: manager
+                      manager_approved_by_employee_id: null
                       manager_approved_by_name: null
                       manager_approved_at: null
                       manager_remark: null
                       reason: Family function at home.
                       created_at: '2026-10-16T06:30:00+00:00'
                       decided_at: null
+                      decided_by_employee_id: null
                       decided_by_name: null
                       decision_note: null
                       cancelled_at: null
@@ -3060,12 +3064,14 @@ paths:
                       working_days: ['2026-10-16']
                       requires_final_approval: true
                       stage: manager
+                      manager_approved_by_employee_id: null
                       manager_approved_by_name: null
                       manager_approved_at: null
                       manager_remark: null
                       reason: Family function in the home town.
                       created_at: '2026-10-14T05:00:00+00:00'
                       decided_at: null
+                      decided_by_employee_id: null
                       decided_by_name: null
                       decision_note: null
                       cancelled_at: null
@@ -3410,12 +3416,14 @@ paths:
                       working_days: ['2026-10-20']
                       requires_final_approval: false
                       stage: manager
+                      manager_approved_by_employee_id: null
                       manager_approved_by_name: null
                       manager_approved_at: null
                       manager_remark: null
                       reason: Family function at home.
                       created_at: '2026-10-16T06:30:00+00:00'
                       decided_at: '2026-10-16T07:00:00+00:00'
+                      decided_by_employee_id: null
                       decided_by_name: Priya Sharma
                       decision_note: null
                       cancelled_at: '2026-10-16T08:00:00+00:00'
