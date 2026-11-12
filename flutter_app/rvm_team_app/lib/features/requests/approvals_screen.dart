@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/repositories/ess_repository.dart';
+import '../../data/repositories/leave_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -63,7 +64,9 @@ class _ApprovalsView extends StatelessWidget {
                   selectedIndex: 1,
                   onDark: true,
                   onChanged: (i) {
-                    if (i == 0) context.pop();
+                    if (i != 0) return;
+                    // Opened from a push (`go`), there is nothing to pop back to.
+                    context.canPop() ? context.pop() : context.go('/requests');
                   },
                 ),
               );
@@ -83,8 +86,10 @@ class _ApprovalsView extends StatelessWidget {
                 } else if (state.decidedNonce > 0) {
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                        const SnackBar(content: Text('Decision saved.')));
+                    ..showSnackBar(SnackBar(
+                        content: Text(state.lastOutcome == 'advanced'
+                            ? 'Approved and sent on to the 2nd approver.'
+                            : 'Decision saved.')));
                 }
               },
               builder: (context, state) => _body(context, state),
@@ -110,6 +115,17 @@ class _ApprovalsView extends StatelessWidget {
     final inbox = state.inbox;
     return Column(
       children: [
+        if (state.partialFailure != null)
+          Padding(
+            padding:
+                const EdgeInsets.fromLTRB(RvmSpacing.md, 12, RvmSpacing.md, 0),
+            child: TeamNotice(
+              icon: Icons.cloud_off_rounded,
+              tone: TeamPillTone.danger,
+              text:
+                  'Some approvals could not load: ${state.partialFailure!.message}',
+            ),
+          ),
         const SizedBox(height: 12),
         _FilterRow(
           selected: state.filter,
@@ -328,16 +344,50 @@ class _ApprovalCard extends StatelessWidget {
   const _ApprovalCard({required this.request});
   final EssRequest request;
 
-  /// The Admin Manager round: approving moves the leave to the Super Admin.
+  /// ESS rows (work from home): the older two-round flow.
   bool get _managerStage =>
-      request.requiresFinalApproval && request.stage == 'manager';
+      !request.isSchedulerLeave &&
+      request.requiresFinalApproval &&
+      request.stage == 'manager';
 
-  /// The Super Admin round. The ESS only puts these rows in a super admin's
-  /// Inbox, so HR and the CEO never get a final-approval button.
   bool get _finalStage =>
+      !request.isSchedulerLeave &&
       request.requiresFinalApproval &&
       request.stage == 'final' &&
       request.status == 'pending';
+
+  /// A teaching leave's 1st approver chooses the substitute and the class
+  /// timing before approving (the Scheduler answers COVERAGE_REQUIRED without).
+  bool get _needsCoverage => request.isSchedulerLeave
+      ? request.stage == 'manager' && request.isTeaching
+      : _managerStage && request.isTeaching;
+
+  /// "Approve & send on" when a 2nd approver still has to decide (#43).
+  String get _approveLabel {
+    if (request.isSchedulerLeave) {
+      return request.approvalSendsOn ? 'Approve & send on' : 'Approve';
+    }
+    return _managerStage
+        ? 'Approve & send to Super Admin'
+        : _finalStage
+            ? 'Final approval'
+            : 'Approve';
+  }
+
+  /// Scheduler leave: where it is in its approvals, named from HR's mapping.
+  String? get _leaveStageLabel {
+    if (!request.isSchedulerLeave || !request.isPending) return null;
+    if (!request.secondApprovalNeeded) return null;
+    if (request.stage == 'manager') {
+      final next = request.finalApproverIsHrPool
+          ? 'HR'
+          : request.finalApproverName?.trim();
+      return next == null || next.isEmpty
+          ? '1st of 2 approvals'
+          : '1st of 2 approvals · then $next';
+    }
+    return '2nd approval';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -356,6 +406,17 @@ class _ApprovalCard extends StatelessWidget {
               '${ctx.typeThisMonth} of ${ctx.monthLimit} ${isLeave ? 'this month' : 'late excuses used this month'}',
             if (ctx.othersOffCount > 0) '${ctx.othersOffCount} others off',
           ].where((s) => s.isNotEmpty).join(' · ');
+
+    final leave = context.select<ApprovalsBloc, LeaveOverview?>(
+        (b) => b.state.leave);
+    // Nobody approves their own leave (#43): an HR-pool member can see their
+    // own leave waiting on "HR"; another approver decides it.
+    final ownLeave = request.isSchedulerLeave &&
+        leave?.employeeId != null &&
+        request.employee?.id == leave!.employeeId;
+    final canCancel = request.isSchedulerLeave
+        ? (leave?.canManage ?? false)
+        : true;
 
     return TeamCard(
       child: Column(
@@ -437,7 +498,36 @@ class _ApprovalCard extends StatelessWidget {
               ),
             ],
           ),
-          if (request.requiresFinalApproval) ...[
+          if (request.isSchedulerLeave &&
+              (request.waitingLabel != null ||
+                  request.lateNotice ||
+                  _leaveStageLabel != null)) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (request.waitingLabel != null)
+                  TeamPill(
+                      label: request.waitingLabel!,
+                      tone: (request.waitingDays ?? 0) >= 2
+                          ? TeamPillTone.warning
+                          : TeamPillTone.neutral,
+                      dense: true),
+                if (request.lateNotice)
+                  const TeamPill(
+                      label: 'Late notice',
+                      tone: TeamPillTone.danger,
+                      dense: true),
+                if (_leaveStageLabel != null)
+                  TeamPill(
+                      label: _leaveStageLabel!,
+                      tone: TeamPillTone.neutral,
+                      dense: true),
+              ],
+            ),
+          ] else if (!request.isSchedulerLeave &&
+              request.requiresFinalApproval) ...[
             const SizedBox(height: 6),
             TeamPill(
                 label: request.stage == 'final'
@@ -449,6 +539,14 @@ class _ApprovalCard extends StatelessWidget {
                     ? TeamPillTone.warning
                     : TeamPillTone.neutral,
                 dense: true),
+          ],
+          if (request.routingNoteLabel != null) ...[
+            const SizedBox(height: 6),
+            Text(request.routingNoteLabel!,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(fontSize: 10, color: RvmColors.muted)),
           ],
           if (request.coverageLabel != null) ...[
             const SizedBox(height: 6),
@@ -473,7 +571,10 @@ class _ApprovalCard extends StatelessWidget {
           if (request.managerRemark != null &&
               request.managerRemark!.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('Admin Manager’s remark: ${request.managerRemark!.trim()}',
+            Text(
+                request.isSchedulerLeave
+                    ? '1st approver’s remark: ${request.managerRemark!.trim()}'
+                    : 'Admin Manager’s remark: ${request.managerRemark!.trim()}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 10.5,
                       color: RvmColors.teamSeed,
@@ -521,6 +622,18 @@ class _ApprovalCard extends StatelessWidget {
                           ?.copyWith(fontSize: 9, color: RvmColors.muted)),
                 ),
               const Spacer(),
+              if (request.isSchedulerLeave) ...[
+                GestureDetector(
+                  onTap: () => _showWhosOff(context),
+                  child: Text('Who else is off',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontSize: 9.5,
+                            color: RvmColors.clay,
+                            fontWeight: FontWeight.w600,
+                          )),
+                ),
+                const SizedBox(width: 12),
+              ],
               GestureDetector(
                 onTap: () => _showChain(context),
                 child: Row(
@@ -546,6 +659,14 @@ class _ApprovalCard extends StatelessWidget {
             const SizedBox(height: 10),
             // Switched off on 12 Nov 2026 (#44): a pending one can only be
             // rejected; the server refuses an approval anyway.
+            if (ownLeave) ...[
+              const TeamNotice(
+                icon: Icons.person_off_outlined,
+                tone: TeamPillTone.neutral,
+                text:
+                    'This is your own leave. Nobody approves their own leave, so another approver decides it.',
+              ),
+            ] else ...[
             if (request.isSwitchedOffType) ...[
               const TeamNotice(
                 icon: Icons.block_rounded,
@@ -576,12 +697,7 @@ class _ApprovalCard extends StatelessWidget {
                       onPressed: () => _approve(context),
                       style: FilledButton.styleFrom(
                           minimumSize: const Size.fromHeight(40)),
-                      child: Text(
-                          _managerStage
-                              ? 'Approve & send to Super Admin'
-                              : _finalStage
-                                  ? 'Final approval'
-                                  : 'Approve',
+                      child: Text(_approveLabel,
                           style: const TextStyle(
                               fontSize: 12, fontWeight: FontWeight.w600)),
                     ),
@@ -589,13 +705,14 @@ class _ApprovalCard extends StatelessWidget {
                 ],
               ],
             ),
+            ],
           ] else
             Align(
               alignment: Alignment.centerRight,
               child: Wrap(
                 spacing: 4,
                 children: [
-                  if (request.status == 'approved')
+                  if (request.status == 'approved' && canCancel)
                     TextButton(
                       onPressed: () => _cancel(context),
                       style: TextButton.styleFrom(
@@ -605,6 +722,8 @@ class _ApprovalCard extends StatelessWidget {
                       child: const Text('Cancel (HR)',
                           style: TextStyle(fontSize: 10.5)),
                     ),
+                  // Archive is an ESS action; Scheduler leave has none.
+                  if (!request.isSchedulerLeave)
                   TextButton(
                     onPressed: () => context.read<ApprovalsBloc>().add(
                         ApprovalArchived(
@@ -660,7 +779,142 @@ class _ApprovalCard extends StatelessWidget {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
+  /// "Who else is off" on this leave's dates, in the same branch and
+  /// approver team (`/leave/whos-off`, #43).
+  Future<void> _showWhosOff(BuildContext context) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.7),
+          child: FutureBuilder<LeaveWhosOff>(
+            future: getIt<LeaveRepository>().whosOff(request.id),
+            builder: (context, snap) {
+              final text = Theme.of(context).textTheme;
+              Widget body;
+              if (snap.connectionState != ConnectionState.done) {
+                body = const Padding(
+                    padding: EdgeInsets.all(24), child: AppLoading());
+              } else if (snap.hasError) {
+                final error = snap.error;
+                body = Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                      error is Failure
+                          ? error.message
+                          : 'Could not load who else is off.',
+                      style: text.bodySmall),
+                );
+              } else {
+                final off = snap.data?.off ?? const <LeaveOffEntry>[];
+                body = off.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text('Nobody else is off on these dates.',
+                            style: text.bodySmall),
+                      )
+                    : ListView(
+                        shrinkWrap: true,
+                        children: [
+                          for (final o in off)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.event_busy_rounded,
+                                  size: 18, color: RvmColors.muted),
+                              title: Text(o.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              subtitle: Text(o.dateLabel),
+                              trailing: TeamPill(
+                                  label: o.status == 'approved'
+                                      ? 'Approved'
+                                      : 'Pending',
+                                  tone: o.status == 'approved'
+                                      ? TeamPillTone.success
+                                      : TeamPillTone.warning,
+                                  dense: true),
+                            ),
+                        ],
+                      );
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text('Who else is off · ${request.dateLabel}',
+                        style: text.titleSmall),
+                  ),
+                  Flexible(child: body),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A Scheduler leave's chain, from its own fields: the Scheduler has no
+  /// chain endpoint, and the approvers come from HR's mapping (#43).
+  void _showLeaveChain(BuildContext context) {
+    String who(String? name, bool hrPool) =>
+        hrPool ? 'HR' : ((name == null || name.trim().isEmpty) ? '—' : name);
+    // One approval: the Scheduler names that approver in `final_approver_*`.
+    // Two: the 1st is `admin_manager_*`, the 2nd `final_approver_*`.
+    final last = who(request.finalApproverName, request.finalApproverIsHrPool);
+    final steps = <(String, String)>[
+      if (request.secondApprovalNeeded) ...[
+        ('1st approver', who(request.adminManagerName, request.approverIsHrPool)),
+        ('2nd approver', last),
+      ] else
+        ('Approver', last),
+    ];
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Approval chain'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final (label, name) in steps)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.circle_outlined, size: 18),
+                  title: Text(name),
+                  subtitle: Text(label),
+                ),
+              if (request.waitingSummary != null)
+                Text(request.waitingSummary!,
+                    style: Theme.of(dialogContext).textTheme.bodySmall),
+              if (request.routingNoteLabel != null)
+                Text(request.routingNoteLabel!,
+                    style: Theme.of(dialogContext).textTheme.bodySmall),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'))
+        ],
+      ),
+    );
+  }
+
   Future<void> _showChain(BuildContext context) async {
+    if (request.isSchedulerLeave) {
+      _showLeaveChain(context);
+      return;
+    }
     try {
       final chain = await getIt<EssRepository>()
           .approvalChain(request.family, request.id);
@@ -724,6 +978,8 @@ class _ApprovalCard extends StatelessWidget {
             controller: controller,
             minLines: 2,
             maxLines: 3,
+            // The Scheduler takes 3 to 200 characters for a leave (#43).
+            maxLength: request.isSchedulerLeave ? 200 : null,
             decoration: const InputDecoration(
                 hintText: 'Reason (at least 3 characters)')),
         actions: [
@@ -739,8 +995,12 @@ class _ApprovalCard extends StatelessWidget {
     );
     if (reason == null || reason.length < 3 || !context.mounted) return;
     try {
-      await getIt<EssRepository>()
-          .cancelRequest(request.family, request.id, reason);
+      if (request.isSchedulerLeave) {
+        await getIt<LeaveRepository>().cancel(request.id, reason);
+      } else {
+        await getIt<EssRepository>()
+            .cancelRequest(request.family, request.id, reason);
+      }
       if (context.mounted) {
         context.read<ApprovalsBloc>().add(const ApprovalsRefreshed());
       }
@@ -753,12 +1013,12 @@ class _ApprovalCard extends StatelessWidget {
     }
   }
 
-  /// Approve at the current round. A teaching leave at the Admin Manager round
-  /// first collects the substitute and class timing the ESS requires; every
-  /// round may carry a remark the employee and the next approver read.
+  /// Approve at the current round. A teaching leave's 1st approver first
+  /// chooses the substitute and the class timing; every round may carry a
+  /// remark the employee and the next approver read.
   Future<void> _approve(BuildContext context) async {
     if (request.isSwitchedOffType) return; // #44: reject or withdraw only.
-    if (_managerStage && request.isTeaching) {
+    if (_needsCoverage) {
       final coverage = await _askCoverage(context);
       if (coverage == null || !context.mounted) return;
       context.read<ApprovalsBloc>().add(ApprovalDecided(
@@ -776,22 +1036,28 @@ class _ApprovalCard extends StatelessWidget {
     final note = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(_managerStage
-            ? 'Approve and send to Super Admin'
-            : _finalStage
-                ? 'Super Admin final approval'
-                : 'Approve this request'),
+        title: Text(request.isSchedulerLeave
+            ? (request.approvalSendsOn
+                ? 'Approve and send on'
+                : 'Approve this leave')
+            : _managerStage
+                ? 'Approve and send to Super Admin'
+                : _finalStage
+                    ? 'Super Admin final approval'
+                    : 'Approve this request'),
         content: TextField(
             controller: controller,
             minLines: 2,
             maxLines: 4,
             maxLength: 1000,
             decoration: InputDecoration(
-                labelText: _managerStage
-                    ? 'Admin Manager’s remark (optional)'
-                    : _finalStage
-                        ? 'Super Admin final remark (optional)'
-                        : 'Remark (optional)',
+                labelText: request.isSchedulerLeave
+                    ? 'Your remark (optional)'
+                    : _managerStage
+                        ? 'Admin Manager’s remark (optional)'
+                        : _finalStage
+                            ? 'Super Admin final remark (optional)'
+                            : 'Remark (optional)',
                 alignLabelWithHint: true,
                 hintText: 'Anything the employee should know')),
         actions: [
@@ -801,11 +1067,13 @@ class _ApprovalCard extends StatelessWidget {
           FilledButton(
               onPressed: () =>
                   Navigator.pop(dialogContext, controller.text.trim()),
-              child: Text(_managerStage
-                  ? 'Send to Super Admin'
-                  : _finalStage
-                      ? 'Approve leave'
-                      : 'Approve')),
+              child: Text(request.isSchedulerLeave
+                  ? _approveLabel
+                  : _managerStage
+                      ? 'Send to Super Admin'
+                      : _finalStage
+                          ? 'Approve leave'
+                          : 'Approve')),
         ],
       ),
     );
@@ -817,12 +1085,14 @@ class _ApprovalCard extends StatelessWidget {
         note: note.isEmpty ? null : note));
   }
 
-  /// The Admin Manager's coverage choice for a teaching leave. The substitute
-  /// list comes from the request's own branch (GET /leave-faculty).
+  /// The 1st approver's coverage choice for a teaching leave. The substitute
+  /// list comes from the request's own branch (Scheduler `/leave/faculty`).
   Future<_CoverageChoice?> _askCoverage(BuildContext context) async {
     List<LeaveFacultyOption> faculty;
     try {
-      faculty = await getIt<EssRepository>().leaveFaculty(requestId: request.id);
+      faculty = request.isSchedulerLeave
+          ? await getIt<LeaveRepository>().faculty(requestId: request.id)
+          : await getIt<EssRepository>().leaveFaculty(requestId: request.id);
     } on Failure catch (f) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
@@ -878,8 +1148,10 @@ class _ApprovalCard extends StatelessWidget {
                   minLines: 2,
                   maxLines: 3,
                   maxLength: 1000,
-                  decoration: const InputDecoration(
-                      labelText: 'Admin Manager’s remark (optional)',
+                  decoration: InputDecoration(
+                      labelText: request.isSchedulerLeave
+                          ? 'Your remark (optional)'
+                          : 'Admin Manager’s remark (optional)',
                       alignLabelWithHint: true),
                 ),
                 if (error != null)
@@ -911,7 +1183,9 @@ class _ApprovalCard extends StatelessWidget {
                         timing: value,
                         note: remark.text.trim()));
               },
-              child: const Text('Send to Super Admin'),
+              child: Text(request.isSchedulerLeave
+                  ? _approveLabel
+                  : 'Send to Super Admin'),
             ),
           ],
         ),
@@ -958,7 +1232,7 @@ class _ApprovalCard extends StatelessWidget {
 }
 
 
-/// What the Admin Manager records when a teaching leave moves to final approval.
+/// What a teaching leave's 1st approver records: who covers the class, when.
 class _CoverageChoice {
   const _CoverageChoice(
       {required this.facultyId, required this.timing, required this.note});

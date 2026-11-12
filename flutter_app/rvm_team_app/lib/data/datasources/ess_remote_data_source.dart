@@ -565,19 +565,6 @@ class EssRemoteDataSource with DioExecutor {
   Future<void> archiveRequest({required String family, required String id}) =>
       guard(() async => _dio.post('/approvals/$family/$id/archive'));
 
-  /// The branches and the Admin Manager each routes its leave to (super admin).
-  Future<LeaveApproverList> leaveApprovers() => guard(() async =>
-      LeaveApproverList.fromJson(_body(await _dio.get('/leave-approvers'))));
-
-  /// Save a branch's Admin Manager. The reply is the whole list again.
-  Future<LeaveApproverList> setLeaveApprover({
-    required String branchId,
-    required String employeeId,
-  }) =>
-      guard(() async => LeaveApproverList.fromJson(
-          _body(await _dio.put('/leave-approvers/$branchId',
-              data: {'employee_id': employeeId}))));
-
   /// The active faculty who can cover a teaching leave in the request's branch.
   Future<List<LeaveFacultyOption>> leaveFaculty({String? requestId}) =>
       guard(() async => _list(

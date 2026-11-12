@@ -332,7 +332,23 @@ String _routeFrom(Map<String, dynamic> data) {
       return uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
     }
   }
-  return '/notifications';
+  return requestRouteFor(data) ?? '/notifications';
+}
+
+/// A request notification's screen (team_app #45). The Scheduler's leave rows
+/// and the ESS's request rows carry `{category, request_family, request_id}`
+/// and no route: `approvals` goes to an approver, so it opens the Approvals
+/// list; `decisions` goes to the employee, so it opens My requests.
+@visibleForTesting
+String? requestRouteFor(Map<String, dynamic> data) {
+  final isRequest = _text(data['request_family']).isNotEmpty ||
+      _text(data['request_id']).isNotEmpty;
+  if (!isRequest) return null;
+  return switch (_text(data['category'])) {
+    'approvals' => '/approvals',
+    'decisions' => '/requests',
+    _ => null,
+  };
 }
 
 Future<void> _showNotification(

@@ -1,8 +1,11 @@
+import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/repositories/leave_repository.dart';
 import '../../domain/ess_models.dart';
+import '../../injection.dart';
 import '../../widgets/team_kit.dart';
 import 'bloc/requests_bloc.dart';
 
@@ -37,6 +40,14 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   final _fixOut = TextEditingController();
   String? _error;
 
+  /// Leave (#43): "I have spoken to my approver about this leave".
+  bool _spoke = false;
+
+  /// "Goes to X, then Y" for the chosen dates, from `/leave/route`.
+  LeaveRoute? _route;
+  bool _routeLoading = false;
+  int _routeSeq = 0;
+
   @override
   void dispose() {
     _reason.dispose();
@@ -54,7 +65,45 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       _portion = 'full';
       _error = null;
       _keepDayInWindow();
+      _route = _leave?.myRoute;
     });
+    _refreshRoute();
+  }
+
+  /// The Scheduler's leave rules, loaded with the requests (#43); null when
+  /// that half could not load.
+  LeaveOverview? get _leave => context.read<RequestsBloc>().state.leave;
+
+  /// The first day a person may apply for themselves: today + 3 (IST). A
+  /// leave starting sooner goes through the approver and HR instead.
+  DateTime? get _earliestLeaveDay {
+    final raw = _leave?.earliestSelfDay;
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  Future<void> _refreshRoute() async {
+    if (_family != 'leave' || _leave == null) return;
+    final seq = ++_routeSeq;
+    setState(() => _routeLoading = true);
+    try {
+      final preview = await getIt<LeaveRepository>().route(
+        day: _dayIso,
+        endDay: _multiDay ? _endDayIso : null,
+        portion: _portion,
+      );
+      if (!mounted || seq != _routeSeq) return;
+      setState(() {
+        _route = preview.route;
+        _routeLoading = false;
+      });
+    } on Failure {
+      if (!mounted || seq != _routeSeq) return;
+      // The preview is a help, not a gate: keep the person's usual route.
+      setState(() {
+        _route = _leave?.myRoute;
+        _routeLoading = false;
+      });
+    }
   }
 
   void _setType(String type) {
@@ -74,14 +123,26 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   /// payroll cut-off (the 5th). A day before it is a 400/409 the picker can
   /// simply not offer.
   DateTime get _firstSelectable {
+    final earliest = _earliestLeaveDay;
+    if (_family == 'leave' && earliest != null) return earliest;
     final now = DateTime.now();
     return DateTime(now.year, now.month - (now.day <= 5 ? 1 : 0), 1);
   }
 
+  /// Leave is planned ahead; 180 days is the picker's horizon.
+  DateTime get _lastSelectable => _family == 'leave'
+      ? _firstSelectable.add(const Duration(days: 180))
+      : _mayBeAhead
+          ? DateTime.now().add(const Duration(days: 62))
+          : DateTime.now();
+
   void _keepDayInWindow() {
     final today = DateTime.now();
     if (!_mayBeAhead && _day.isAfter(today)) _day = today;
-    if (_day.isBefore(_firstSelectable)) _day = today;
+    if (_day.isBefore(_firstSelectable)) {
+      _day = _family == 'leave' ? _firstSelectable : today;
+    }
+    if (_endDay.isBefore(_day)) _endDay = _day;
   }
 
   String _iso(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
@@ -91,12 +152,11 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   String get _endDayIso => _iso(_multiDay ? _endDay : _day);
 
   Future<void> _pickDay() async {
-    final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: _day,
       firstDate: _firstSelectable,
-      lastDate: _mayBeAhead ? now.add(const Duration(days: 62)) : now,
+      lastDate: _lastSelectable,
       helpText: _multiDay ? 'Pick the first day' : 'Pick the day',
     );
     if (picked != null) {
@@ -105,6 +165,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
         if (_endDay.isBefore(_day)) _endDay = _day;
         _error = null;
       });
+      _refreshRoute();
     }
   }
 
@@ -114,7 +175,10 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       context: context,
       initialDate: _endDay.isBefore(_day) ? _day : _endDay,
       firstDate: _day,
-      lastDate: now.add(const Duration(days: 62)),
+      // The Scheduler takes a range of up to 62 days.
+      lastDate: _family == 'leave'
+          ? _day.add(const Duration(days: 61))
+          : now.add(const Duration(days: 62)),
       helpText: 'Pick the last day',
     );
     if (picked != null) {
@@ -122,6 +186,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
         _endDay = picked;
         _error = null;
       });
+      _refreshRoute();
     }
   }
 
@@ -201,6 +266,22 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       }
     }
     if (_family == 'leave') {
+      final leave = _leave;
+      if (leave == null) {
+        _showError(_leaveUnavailable);
+        return;
+      }
+      final earliest = _earliestLeaveDay;
+      if (earliest != null && _day.isBefore(earliest)) {
+        _showError(leave.shortNoticeMessage ??
+            'Leave starting within 2 days: speak to your approver. They will inform HR.');
+        return;
+      }
+      if (!_spoke) {
+        _showError(
+            'Tick "I have spoken to my approver about this leave" first.');
+        return;
+      }
       if (_multiDay && _endDay.isBefore(_day)) {
         _showError('The last day cannot be before the first day.');
         return;
@@ -214,7 +295,9 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     // The balances on screen are for the CURRENT month. The date picker also
     // allows next month, so only apply this local check when the chosen day is
     // in that same month; otherwise the server decides with its own month data.
-    final balance = _balanceFor(bloc.state.balances);
+    // Leave has no local check: the Scheduler uses CL where the person has it
+    // and writes the rest as LWP (#43), so CL running out never refuses it.
+    final balance = _family == 'leave' ? null : _balanceFor(bloc.state.balances);
     final remaining = balance?.remaining ??
         (balance?.allowed == null
             ? null
@@ -236,7 +319,13 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     // Stop the known duplicate before the server answers 409. The list may be
     // stale by a few seconds, so the bloc still handles a server refusal.
     final duplicate = bloc.state.requests.any((r) {
-      if (!r.isPending || r.family != _family || r.type != _type) return false;
+      if (!r.isPending || r.family != _family) return false;
+      // The Scheduler refuses an overlap across CL and LWP alike (#43).
+      if (_family == 'leave') {
+        if (r.type == 'wfh') return false;
+      } else if (r.type != _type) {
+        return false;
+      }
       if (_family != 'leave') return r.day == _dayIso;
       final otherEnd = r.endDay ?? r.day;
       return r.day.compareTo(_endDayIso) <= 0 && otherEnd.compareTo(_dayIso) >= 0;
@@ -256,6 +345,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       place: _type == 'on_duty' ? _place.text.trim() : null,
       fixIn: _type == 'fix_a_day' ? _normalizeTime(fixInRaw) : null,
       fixOut: _type == 'fix_a_day' ? _normalizeTime(fixOutRaw) : null,
+      spokeToApprover: _family == 'leave' && _spoke,
     ));
     // Do not pop here: the listeners below pop on success and keep the sheet
     // open on a refusal, with the message inside the sheet where it is visible.
@@ -266,11 +356,17 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     // The form may be filed for next month; the shown balances only describe
     // the current month, so they cannot decide that request.
     if (balances.month != _dayIso.substring(0, 7)) return null;
-    final key = _family == 'leave' ? 'leave_$_type' : _type;
     for (final type in balances.types) {
-      if (type.type == key) return type;
+      if (type.type == _type) return type;
     }
     return null;
+  }
+
+  String get _leaveUnavailable {
+    final reason = context.read<RequestsBloc>().state.leaveFailure?.message;
+    return reason == null || reason.isEmpty
+        ? 'Leave cannot be applied for right now. Try again shortly.'
+        : 'Leave cannot be applied for right now: $reason';
   }
 
   String _formatDays(num value) =>
@@ -280,8 +376,6 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     final detail =
         '(${_formatDays(balance.used)} used, ${_formatDays(balance.pending)} pending)';
     return switch (_type) {
-      'leave_cl' =>
-        'You have no casual leave left this month $detail. Choose Leave without pay or another day.',
       'fix_a_day' => "You have reached this month's Fix a Day limit $detail.",
       _ => "You have reached this month's limit for this request $detail.",
     };
@@ -294,11 +388,15 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   @override
   Widget build(BuildContext context) {
     final types = _family == 'leave'
-        ? const [('cl', 'Casual leave'), ('lwp', 'Leave without pay')]
+        // CL is automatic (#43): "Leave" uses CL where the person has it this
+        // month and writes the rest as LWP; "Without pay" is all LWP.
+        ? const [('cl', 'Leave (CL if available, else LWP)'), ('lwp', 'Without pay')]
         // Excuse-late and short leave were switched off on 12 Nov 2026 (#44).
         : const [('on_duty', 'On duty'), ('fix_a_day', 'Fix a day')];
     final submitting =
         context.select<RequestsBloc, bool>((b) => b.state.submitting);
+    final leave =
+        context.select<RequestsBloc, LeaveOverview?>((b) => b.state.leave);
     return MultiBlocListener(
       listeners: [
         BlocListener<RequestsBloc, RequestsState>(
@@ -352,11 +450,16 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                 // type its own family does not take.
                 key: ValueKey('type-$_family'),
                 initialValue: _type,
+                // The leave labels are long (#43); fit any phone width.
+                isExpanded: true,
                 decoration: const InputDecoration(
                     labelText: 'Type', border: OutlineInputBorder()),
                 items: [
                   for (final t in types)
-                    DropdownMenuItem(value: t.$1, child: Text(t.$2))
+                    DropdownMenuItem(
+                        value: t.$1,
+                        child: Text(t.$2,
+                            maxLines: 1, overflow: TextOverflow.ellipsis))
                 ],
                 onChanged: (v) {
                   if (v != null) _setType(v);
@@ -370,6 +473,17 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                     '${_multiDay ? 'From' : 'Date'}: ${MaterialLocalizations.of(context).formatMediumDate(_day)}'),
               ),
               if (_family == 'leave') ...[
+                const SizedBox(height: 6),
+                // Talk first (#43): leave starting within 2 days is not applied
+                // for here; the approver tells HR, who records it.
+                Text(
+                  leave?.shortNoticeMessage ??
+                      'Leave starting within 2 days: speak to your approver. They will inform HR.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 10.5,
+                        color: RvmColors.subtle,
+                      ),
+                ),
                 const SizedBox(height: RvmSpacing.sm),
                 SegmentedButton<bool>(
                   segments: const [
@@ -383,11 +497,14 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                         icon: Icon(Icons.date_range_rounded)),
                   ],
                   selected: {_multiDay},
-                  onSelectionChanged: (s) => setState(() {
-                    _multiDay = s.first;
-                    _endDay = _day;
-                    _error = null;
-                  }),
+                  onSelectionChanged: (s) {
+                    setState(() {
+                      _multiDay = s.first;
+                      _endDay = _day;
+                      _error = null;
+                    });
+                    _refreshRoute();
+                  },
                 ),
                 if (_multiDay) ...[
                   const SizedBox(height: RvmSpacing.sm),
@@ -408,22 +525,51 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                         value: 'second_half', label: Text('Second half')),
                   ],
                   selected: {_portion},
-                  onSelectionChanged: (s) => setState(() {
-                    _portion = s.first;
-                    if (_portion != 'full') _multiDay = false;
-                    _error = null;
-                  }),
+                  onSelectionChanged: (s) {
+                    setState(() {
+                      _portion = s.first;
+                      if (_portion != 'full') _multiDay = false;
+                      _error = null;
+                    });
+                    _refreshRoute();
+                  },
                 ),
                 const SizedBox(height: 6),
                 Text(
                   _multiDay
                       ? 'Working days are counted when you send. Sundays, weekly offs and holidays are skipped.'
-                      : 'A half day counts as 0.5 against the monthly allowance.',
+                      : _type == 'cl'
+                          ? 'Uses your casual leave for the month if you have it; the rest is written as leave without pay.'
+                          : 'Written as leave without pay. A half day counts as 0.5.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontSize: 10.5,
                         color: RvmColors.subtle,
                       ),
                 ),
+                if (leave == null) ...[
+                  const SizedBox(height: RvmSpacing.sm),
+                  TeamNotice(
+                    icon: Icons.cloud_off_rounded,
+                    tone: TeamPillTone.danger,
+                    text: _leaveUnavailable,
+                  ),
+                ] else ...[
+                  const SizedBox(height: RvmSpacing.sm),
+                  _RoutePreview(route: _route, loading: _routeLoading),
+                  const SizedBox(height: 4),
+                  CheckboxListTile(
+                    value: _spoke,
+                    onChanged: (v) => setState(() {
+                      _spoke = v ?? false;
+                      _error = null;
+                    }),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text(
+                        'I have spoken to my approver about this leave.'),
+                  ),
+                ],
               ],
               const SizedBox(height: RvmSpacing.md),
               if (_type == 'on_duty')
@@ -503,6 +649,33 @@ class _RaiseSheetState extends State<_RaiseSheet> {
 
 /// A read-only field that opens the system time picker. The value is still
 /// normalised and validated by the form before it is sent.
+/// "Goes to Shallu, then Bhupender" for the chosen dates (#43).
+class _RoutePreview extends StatelessWidget {
+  const _RoutePreview({required this.route, required this.loading});
+  final LeaveRoute? route;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = route?.summary;
+    if (summary == null) {
+      return Text(
+        loading ? 'Checking who approves…' : 'Your approver is set by HR.',
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(fontSize: 10.5, color: RvmColors.subtle),
+      );
+    }
+    final note = route?.routingNoteLabel;
+    return TeamNotice(
+      icon: Icons.alt_route_rounded,
+      tone: TeamPillTone.info,
+      text: note == null ? summary : '$summary. $note',
+    );
+  }
+}
+
 class _TimeField extends StatelessWidget {
   const _TimeField({
     required this.controller,

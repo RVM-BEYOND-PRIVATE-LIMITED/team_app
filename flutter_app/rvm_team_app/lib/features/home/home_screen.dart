@@ -1163,13 +1163,46 @@ class _InterviewsCard extends StatelessWidget {
 
 // ── quick actions ─────────────────────────────────────────────────────────
 
-class _QuickActions extends StatelessWidget {
+class _QuickActions extends StatefulWidget {
   const _QuickActions({required this.perms});
   final TeamPermissions perms;
 
   @override
+  State<_QuickActions> createState() => _QuickActionsState();
+}
+
+class _QuickActionsState extends State<_QuickActions> {
+  /// What waits on this person (#45). Reloaded when they come back from
+  /// Approvals or Requests, where they may have decided or filed something.
+  late final ApprovalsSummaryBloc _summary = getIt<ApprovalsSummaryBloc>()
+    ..add(const LoadRequested());
+
+  @override
+  void dispose() {
+    _summary.close();
+    super.dispose();
+  }
+
+  void _reloadSummary() => _summary.add(const LoadRefreshed());
+
+  @override
   Widget build(BuildContext context) {
     final caps = context.watch<CapabilitiesBloc>().state.data;
+    return BlocBuilder<ApprovalsSummaryBloc, LoadState<ApprovalsSummary>>(
+      bloc: _summary,
+      builder: (context, state) => _actions(context, caps, state.data),
+    );
+  }
+
+  Widget _actions(
+      BuildContext context, EssCapabilities? caps, ApprovalsSummary? summary) {
+    final pending = summary?.pending ?? 0;
+    // Leave approvers now come from HR's approver mapping (#43), not only from
+    // reporting lines, so the Scheduler can make someone an approver too.
+    final approver = caps?.approvalsOwnReports == true ||
+        caps?.approvalsAnyRequest == true ||
+        (summary?.canApproveLeave ?? false) ||
+        pending > 0;
     final actions = <_QuickAction>[
       // The punch itself lives in the schedule card above, so this row does not
       // send anyone to the full punch screen.
@@ -1182,11 +1215,10 @@ class _QuickActions extends StatelessWidget {
           RvmColors.teamSeed,
           const Color(0xFFFCEBE2),
           '/requests'),
-      if (caps?.approvalsOwnReports == true ||
-          caps?.approvalsAnyRequest == true)
+      if (approver)
         _QuickAction(Icons.fact_check_outlined, 'Approvals', 'Pending reviews',
             RvmColors.warning, RvmColors.warningSoft, '/approvals',
-            badge: '2 new'),
+            badge: pending > 0 ? '$pending pending' : null),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1204,7 +1236,9 @@ class _QuickActions extends StatelessWidget {
               runSpacing: 10,
               children: [
                 for (final a in actions)
-                  SizedBox(width: width, child: _QuickTile(action: a)),
+                  SizedBox(
+                      width: width,
+                      child: _QuickTile(action: a, onReturn: _reloadSummary)),
               ],
             );
           },
@@ -1228,15 +1262,21 @@ class _QuickAction {
 }
 
 class _QuickTile extends StatelessWidget {
-  const _QuickTile({required this.action});
+  const _QuickTile({required this.action, this.onReturn});
   final _QuickAction action;
+
+  /// Called after the pushed screen is popped (refreshes the Approvals count).
+  final VoidCallback? onReturn;
 
   @override
   Widget build(BuildContext context) {
     return TeamCard(
       padding: const EdgeInsets.all(12),
       radius: RvmRadii.md,
-      onTap: () => context.push(action.route),
+      onTap: () async {
+        await context.push(action.route);
+        onReturn?.call();
+      },
       child: SizedBox(
         height: 88,
         child: Stack(

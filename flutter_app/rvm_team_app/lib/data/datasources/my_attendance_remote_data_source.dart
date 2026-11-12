@@ -2,6 +2,7 @@ import 'package:core_network/core_network.dart';
 import 'package:dio/dio.dart';
 
 import '../../domain/attendance_models.dart';
+import '../../domain/ess_models.dart';
 import '../dio_executor.dart';
 
 /// The Scheduler's own punch path (`/api/hr/my-attendance`). The device cookie
@@ -119,5 +120,126 @@ class MyAttendanceRemoteDataSource with DioExecutor {
     return ((res.data as Map).cast<String, dynamic>()['token']
             as String?) ??
         '';
+  }
+
+  // ── Leave (team_app #43) ─────────────────────────────────────────────────
+  // From 23 Nov 2026 the Scheduler owns leave: the approver comes from HR's
+  // mapping, CL is used automatically, and the rules live in the database.
+  // Work from home stays on the ESS.
+
+  static const _leave = '/hr/my-attendance/leave';
+
+  Map<String, dynamic> _body(Response<dynamic> res) =>
+      res.data is Map ? (res.data as Map).cast<String, dynamic>() : const {};
+
+  EssRequest _request(Response<dynamic> res) => EssRequest.fromSchedulerLeave(
+      (_body(res)['request'] as Map?)?.cast<String, dynamic>() ?? const {});
+
+  /// Balances, my requests, the approvals waiting on me (oldest first),
+  /// `earliest_self_day` and the short-notice message.
+  Future<LeaveOverview> leaveOverview({String? month}) async {
+    final res = await guard<Response<dynamic>>(() => _dio.get(_leave,
+        queryParameters: {if (month != null) 'month': month},
+        options: _readOptions()));
+    return LeaveOverview.fromJson(_body(res));
+  }
+
+  /// Who a leave on these dates would go to ("Goes to X, then Y").
+  Future<LeaveRoutePreview> leaveRoute({
+    required String day,
+    String? endDay,
+    String portion = 'full',
+  }) async {
+    final res = await guard<Response<dynamic>>(() => _dio.get('$_leave/route',
+        queryParameters: {
+          'day': day,
+          if (endDay != null) 'end_day': endDay,
+          'portion': portion,
+        },
+        options: _readOptions()));
+    return LeaveRoutePreview.fromJson(_body(res));
+  }
+
+  /// `type` is `cl` (CL where the person has it, else LWP) or `lwp`.
+  /// `spoke_to_approver` must be the JSON boolean true.
+  Future<EssRequest> createLeave({
+    required String type,
+    required String day,
+    String? endDay,
+    String portion = 'full',
+    required String reason,
+    required bool spokeToApprover,
+  }) async {
+    final res = await guard<Response<dynamic>>(() => _dio.post(_leave,
+        options: _readOptions(),
+        data: {
+          'type': type,
+          'day': day,
+          if (endDay != null) 'end_day': endDay,
+          'portion': portion,
+          'reason': reason,
+          'spoke_to_approver': spokeToApprover,
+        }));
+    return _request(res);
+  }
+
+  Future<EssRequest> withdrawLeave(String id) async {
+    final res = await guard<Response<dynamic>>(() =>
+        _dio.post('$_leave/$id/withdraw', options: _readOptions()));
+    return _request(res);
+  }
+
+  /// Approve or reject. A teaching leave's 1st approver must send the
+  /// substitute and the class timing (400 COVERAGE_REQUIRED otherwise).
+  Future<LeaveDecision> decideLeave(
+    String id, {
+    required String decision,
+    String? note,
+    String? substituteFacultyId,
+    String? classTiming,
+  }) async {
+    final res = await guard<Response<dynamic>>(
+        () => _dio.post('$_leave/$id/decide', options: _readOptions(), data: {
+              'decision': decision,
+              if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+              if (substituteFacultyId != null)
+                'substitute_faculty_id': substituteFacultyId,
+              if (classTiming != null) 'class_timing': classTiming,
+            }));
+    return LeaveDecision.fromJson(_body(res));
+  }
+
+  /// HR, HR Executive, CEO or super admin cancels an approved leave (reason
+  /// 3 to 200 characters).
+  Future<EssRequest> cancelLeave(String id, String reason) async {
+    final res = await guard<Response<dynamic>>(() => _dio.post(
+        '$_leave/$id/cancel',
+        options: _readOptions(),
+        data: {'reason': reason}));
+    return _request(res);
+  }
+
+  /// Colleagues in the same branch and approver team off on the request's dates.
+  Future<LeaveWhosOff> leaveWhosOff(String requestId) async {
+    final res = await guard<Response<dynamic>>(() => _dio.get(
+        '$_leave/whos-off',
+        queryParameters: {'request_id': requestId},
+        options: _readOptions()));
+    return LeaveWhosOff.fromJson(_body(res));
+  }
+
+  /// Substitute faculty for a teaching leave's approver.
+  Future<List<LeaveFacultyOption>> leaveFaculty({String? requestId}) async {
+    final res = await guard<Response<dynamic>>(() => _dio.get(
+        '$_leave/faculty',
+        queryParameters: {if (requestId != null) 'request_id': requestId},
+        options: _readOptions()));
+    final rows = _body(res)['faculty'];
+    return rows is List
+        ? rows
+            .whereType<Map>()
+            .map((m) => LeaveFacultyOption.fromJson(m.cast<String, dynamic>()))
+            .toList(growable: false)
+        : const [];
   }
 }

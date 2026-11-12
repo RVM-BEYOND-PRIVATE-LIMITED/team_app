@@ -473,18 +473,6 @@ class EssRepository with ConnectivityGuard {
     return _remote.archiveRequest(family: family, id: id);
   }
 
-  Future<LeaveApproverList> leaveApprovers() async {
-    await ensureOnline();
-    return _remote.leaveApprovers();
-  }
-
-  Future<LeaveApproverList> setLeaveApprover(
-      {required String branchId, required String employeeId}) async {
-    await ensureOnline();
-    return _remote.setLeaveApprover(
-        branchId: branchId, employeeId: employeeId);
-  }
-
   Future<List<LeaveFacultyOption>> leaveFaculty({String? requestId}) async {
     await ensureOnline();
     return _remote.leaveFaculty(requestId: requestId);

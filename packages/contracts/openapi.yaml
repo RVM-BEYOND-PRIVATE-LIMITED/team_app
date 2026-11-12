@@ -11162,6 +11162,513 @@ paths:
         - >-
           The 500 characters are counted after trimming, as characters rather than bytes.
 
+  /hr/my-attendance/leave:
+    get:
+      operationId: getMyLeave
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: My leave, my approvals queue and the leave rules
+      description: |
+        Balances, the person's own leave, the leave waiting on them (`approvals`, oldest first, and `approvals_count`), recently `decided` ones, `earliest_self_day` (today + 3, IST), `short_notice_message`, `my_route` and the flags `in_hr_pool`, `can_approve`, `can_manage`. Rows can include work-from-home rows from the shared table; the app keeps only `cl` and `lwp`.
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      parameters:
+        - name: month
+          in: query
+          required: false
+          description: The month, YYYY-MM. Defaults to this month (IST).
+          schema: {"type": "string", "pattern": "^\\\\d{4}-\\\\d{2}$"}
+      responses:
+        '200':
+          description: The overview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveOverview'
+              examples:
+                approver:
+                  value: {"month": "2026-11", "today": "2026-11-12", "earliest_self_day": "2026-11-15", "short_notice_message": "Leave starting within 2 days: speak to your approver. They will inform HR.", "employee": {"id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "full_name": "Shallu Chandra", "employee_code": null}, "my_route": {"group": null, "approver": null, "approver_is_hr_pool": true, "second_needed": false, "second": null, "second_is_hr_pool": false, "threshold_days": null, "routing_note": "no_approver"}, "balances": [{"type": "leave_cl", "allowed": 1, "used": 0, "pending": 0, "remaining": 1, "over_limit": false, "unit": "days"}, {"type": "leave_lwp", "allowed": null, "used": 0, "pending": 0, "remaining": null, "over_limit": false, "unit": "days"}], "requests": [], "approvals": [{"id": "b83487aa-cba4-46cc-8736-430df60fb358", "employee_id": "aae26595-adb4-48b3-ac89-803b85505f84", "employee": {"id": "aae26595-adb4-48b3-ac89-803b85505f84", "full_name": "Pulkit Sharma", "employee_code": null}, "type": "cl", "status": "pending", "day": "2026-11-18", "end_day": "2026-11-19", "portion": "full", "day_count": 2, "working_days": ["2026-11-18", "2026-11-19"], "requires_final_approval": true, "second_approval_needed": true, "stage": "manager", "approval_group": "faculty", "admin_manager_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "admin_manager_name": "Shallu Chandra", "approver_is_hr_pool": false, "final_approver_employee_id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "final_approver_name": "Bhupender Singh", "final_approver_is_hr_pool": false, "routing_note": null, "waiting_on": "Shallu Chandra", "waiting_days": 0, "is_teaching": true, "substitute_faculty_id": null, "substitute_faculty_name": null, "class_timing": null, "manager_approved_by_employee_id": null, "manager_approved_by_name": null, "manager_approved_at": null, "manager_remark": null, "reason": "Family function", "filed_via": "self", "spoke_to_approver": true, "late_notice": false, "informed_at": null, "informed_via": null, "entered_by_name": null, "entered_at": null, "parent_request_id": null, "cl_units": null, "lwp_units": null, "created_at": "2026-11-12T10:02:08.637595+00:00", "decided_by_employee_id": null, "decided_at": null, "decided_by_name": null, "decision_note": null, "cancelled_at": null, "cancelled_by_name": null, "cancel_reason": null}], "approvals_count": 1, "decided": [], "decided_count": 0, "team_alerts": null, "in_hr_pool": false, "can_manage": false, "can_approve": true, "can_hr_entry": false, "can_configure_mapping": false, "can_configure_approvers": false, "viewer_role": "admin_manager"}
+                employee:
+                  value: {"month": "2026-11", "today": "2026-11-12", "earliest_self_day": "2026-11-15", "short_notice_message": "Leave starting within 2 days: speak to your approver. They will inform HR.", "employee": {"id": "aae26595-adb4-48b3-ac89-803b85505f84", "full_name": "Pulkit Sharma", "employee_code": null}, "my_route": {"group": "faculty", "approver": {"id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "full_name": "Shallu Chandra"}, "approver_is_hr_pool": false, "second_needed": false, "second": null, "second_is_hr_pool": false, "threshold_days": 1, "routing_note": null}, "balances": [{"type": "leave_cl", "allowed": 1, "used": 2, "pending": 0, "remaining": 0, "over_limit": true, "unit": "days"}, {"type": "leave_lwp", "allowed": null, "used": 1, "pending": 0, "remaining": null, "over_limit": false, "unit": "days"}], "requests": [{"id": "b83487aa-cba4-46cc-8736-430df60fb358", "employee_id": "aae26595-adb4-48b3-ac89-803b85505f84", "type": "cl", "status": "approved", "day": "2026-11-18", "end_day": "2026-11-19", "portion": "full", "day_count": 2, "working_days": ["2026-11-18", "2026-11-19"], "requires_final_approval": true, "second_approval_needed": true, "stage": "final", "approval_group": "faculty", "admin_manager_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "admin_manager_name": "Shallu Chandra", "approver_is_hr_pool": false, "final_approver_employee_id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "final_approver_name": "Bhupender Singh", "final_approver_is_hr_pool": false, "routing_note": null, "waiting_on": null, "waiting_days": null, "is_teaching": true, "substitute_faculty_id": "8001957a-9e89-4edb-9596-2dee711f5396", "substitute_faculty_name": "Anita Gupta", "class_timing": "10:00-12:00", "manager_approved_by_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "manager_approved_by_name": "Shallu Chandra", "manager_approved_at": "2026-11-12T10:02:08.859+00:00", "manager_remark": null, "reason": "Family function", "filed_via": "self", "spoke_to_approver": true, "late_notice": false, "informed_at": null, "informed_via": null, "entered_by_name": null, "entered_at": null, "parent_request_id": null, "cl_units": 1, "lwp_units": 1, "created_at": "2026-11-12T10:02:08.637595+00:00", "decided_by_employee_id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "decided_at": "2026-11-12T10:02:08.97+00:00", "decided_by_name": "Bhupender Singh", "decision_note": "ok", "cancelled_at": null, "cancelled_by_name": null, "cancel_reason": null}], "approvals": [], "approvals_count": 0, "decided": [], "decided_count": 0, "team_alerts": null, "in_hr_pool": false, "can_manage": false, "can_approve": false, "can_hr_entry": false, "can_configure_mapping": false, "can_configure_approvers": false, "viewer_role": "faculty"}
+        '400':
+          description: |
+            `VALIDATION_FAILED`: a bad month.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                badMonth:
+                  value: {"error": "Month must be YYYY-MM.", "code": "VALIDATION_FAILED"}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          $ref: '#/components/responses/PunchIdentityForbidden'
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+    post:
+      operationId: fileMyLeave
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: Apply for planned leave
+      description: |
+        `type` is `cl` (casual leave where the person has it this month, the rest written as LWP) or `lwp`. Leave must start 3 or more days from today (IST); sooner is `LEAVE_SHORT_NOTICE` and HR records it instead. `spoke_to_approver` must be the JSON boolean `true`. The approver comes from HR's approver mapping; a 2nd approver only when the leave is longer than the person's threshold.
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveCreateRequest'
+            examples:
+              planned:
+                value: {"type": "cl", "day": "2026-11-18", "end_day": "2026-11-19", "portion": "full", "reason": "Family function", "spoke_to_approver": true}
+      responses:
+        '201':
+          description: Filed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveRequestReply'
+              examples:
+                filed:
+                  value: {"request": {"id": "b83487aa-cba4-46cc-8736-430df60fb358", "employee_id": "aae26595-adb4-48b3-ac89-803b85505f84", "employee": {"id": "aae26595-adb4-48b3-ac89-803b85505f84", "full_name": "Pulkit Sharma", "employee_code": null}, "type": "cl", "status": "pending", "day": "2026-11-18", "end_day": "2026-11-19", "portion": "full", "day_count": 2, "working_days": ["2026-11-18", "2026-11-19"], "requires_final_approval": true, "second_approval_needed": true, "stage": "manager", "approval_group": "faculty", "admin_manager_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "admin_manager_name": "Shallu Chandra", "approver_is_hr_pool": false, "final_approver_employee_id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "final_approver_name": "Bhupender Singh", "final_approver_is_hr_pool": false, "routing_note": null, "waiting_on": "Shallu Chandra", "waiting_days": 0, "is_teaching": true, "substitute_faculty_id": null, "substitute_faculty_name": null, "class_timing": null, "manager_approved_by_employee_id": null, "manager_approved_by_name": null, "manager_approved_at": null, "manager_remark": null, "reason": "Family function", "filed_via": "self", "spoke_to_approver": true, "late_notice": false, "informed_at": null, "informed_via": null, "entered_by_name": null, "entered_at": null, "parent_request_id": null, "cl_units": null, "lwp_units": null, "created_at": "2026-11-12T10:02:08.637595+00:00", "decided_by_employee_id": null, "decided_at": null, "decided_by_name": null, "decision_note": null, "cancelled_at": null, "cancelled_by_name": null, "cancel_reason": null}}
+        '400':
+          description: |
+            `VALIDATION_FAILED` for a bad field; `SPEAK_TO_APPROVER_FIRST` when the box is not ticked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notTicked:
+                  value: {"error": "Speak to your approver first, then tick \"I have spoken to my approver about this leave\".", "code": "SPEAK_TO_APPROVER_FIRST"}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          $ref: '#/components/responses/PunchIdentityForbidden'
+        '409':
+          description: |
+            `LEAVE_SHORT_NOTICE`, `DAY_OFF`, or `DUPLICATE_REQUEST` (an overlap with pending or approved leave of either type).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                shortNotice:
+                  value: {"error": "Leave starting within 2 days: speak to your approver. They will inform HR.", "code": "LEAVE_SHORT_NOTICE"}
+                duplicate:
+                  value: {"error": "You already have leave pending or approved on some of those dates.", "code": "DUPLICATE_REQUEST"}
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+  /hr/my-attendance/leave/route:
+    get:
+      operationId: previewMyLeaveRoute
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: Who a leave on these dates would go to
+      description: |
+        The approver and, when the leave is longer than the person's threshold, the 2nd approver (or the HR pool). The app shows it as "Goes to X, then Y".
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      parameters:
+        - name: day
+          in: query
+          required: true
+          description: First day, YYYY-MM-DD.
+          schema: {"type": "string", "format": "date"}
+        - name: end_day
+          in: query
+          required: false
+          description: Last day, YYYY-MM-DD.
+          schema: {"type": "string", "format": "date"}
+        - name: portion
+          in: query
+          required: false
+          description: full, first_half or second_half.
+          schema: {"type": "string", "enum": ["full", "first_half", "second_half"]}
+      responses:
+        '200':
+          description: The route.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveRoutePreview'
+              examples:
+                twoApprovers:
+                  value: {"route": {"group": "faculty", "approver": {"id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "full_name": "Shallu Chandra"}, "approver_is_hr_pool": false, "second_needed": true, "second": {"id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "full_name": "Bhupender Singh"}, "second_is_hr_pool": false, "threshold_days": 1, "routing_note": null}, "working_days": ["2026-11-18", "2026-11-19"], "day_count": 2}
+                oneApprover:
+                  value: {"route": {"group": "sales_marketing_tech", "approver": {"id": "219d5651-6f36-4562-b975-196e5a8887c6", "full_name": "Nisha Verma"}, "approver_is_hr_pool": false, "second_needed": false, "second": null, "second_is_hr_pool": false, "threshold_days": 3, "routing_note": null}, "working_days": ["2026-12-02", "2026-12-03", "2026-12-04"], "day_count": 3}
+        '400':
+          description: |
+            `VALIDATION_FAILED`: bad dates or portion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                badDay:
+                  value: {"error": "Dates must be real days written YYYY-MM-DD.", "code": "VALIDATION_FAILED"}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          $ref: '#/components/responses/PunchIdentityForbidden'
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+  /hr/my-attendance/leave/{id}/withdraw:
+    post:
+      operationId: withdrawMyLeave
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: Withdraw a pending leave
+      description: |
+        Only the applicant, only while pending.
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The leave request id.
+          schema: {"type": "string", "format": "uuid"}
+      responses:
+        '200':
+          description: Withdrawn.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveRequestReply'
+              examples:
+                withdrawn:
+                  value: {"request": {"id": "317ac226-d728-4a09-b57c-c5d9c40fca17", "employee_id": "3e91a504-49d3-4998-938c-209212c6f8fd", "type": "cl", "status": "withdrawn", "day": "2026-12-27", "end_day": "2026-12-27", "portion": "full", "day_count": 1, "working_days": ["2026-12-27"], "requires_final_approval": false, "second_approval_needed": false, "stage": "final", "approval_group": "sales_marketing_tech", "admin_manager_employee_id": null, "admin_manager_name": null, "approver_is_hr_pool": false, "final_approver_employee_id": "219d5651-6f36-4562-b975-196e5a8887c6", "final_approver_name": "Nisha Verma", "final_approver_is_hr_pool": false, "routing_note": null, "waiting_on": null, "waiting_days": null, "is_teaching": false, "substitute_faculty_id": null, "substitute_faculty_name": null, "class_timing": null, "manager_approved_by_employee_id": null, "manager_approved_by_name": null, "manager_approved_at": null, "manager_remark": null, "reason": "Family function", "filed_via": "self", "spoke_to_approver": true, "late_notice": false, "informed_at": null, "informed_via": null, "entered_by_name": null, "entered_at": null, "parent_request_id": null, "cl_units": null, "lwp_units": null, "created_at": "2026-11-12T10:02:09.572012+00:00", "decided_by_employee_id": null, "decided_at": null, "decided_by_name": null, "decision_note": null, "cancelled_at": null, "cancelled_by_name": null, "cancel_reason": null}}
+        '404':
+          description: |
+            `NOT_FOUND`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notFound:
+                  value: {"error": "Request not found", "code": "NOT_FOUND"}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          $ref: '#/components/responses/PunchIdentityForbidden'
+        '409':
+          description: |
+            `REQUEST_CLOSED`: no longer pending.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                closed:
+                  value: {"error": "This request is no longer pending.", "code": "REQUEST_CLOSED"}
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+  /hr/my-attendance/leave/{id}/decide:
+    post:
+      operationId: decideLeave
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: Approve or reject a leave
+      description: |
+        `outcome` is `advanced` (sent on to the 2nd approver), `approved` or `rejected`. A teaching leave's 1st approver must send `substitute_faculty_id` and `class_timing` to approve (`COVERAGE_REQUIRED`). A reject needs a note of at least 3 characters. Nobody approves their own leave (`SELF_APPROVAL`).
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The leave request id.
+          schema: {"type": "string", "format": "uuid"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveDecideRequest'
+            examples:
+              approveWithCover:
+                value: {"decision": "approve", "substitute_faculty_id": "8001957a-9e89-4edb-9596-2dee711f5396", "class_timing": "10:00-12:00"}
+              reject:
+                value: {"decision": "reject", "note": "Exams that week."}
+      responses:
+        '200':
+          description: Decided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveDecisionReply'
+              examples:
+                advanced:
+                  value: {"request": {"id": "b83487aa-cba4-46cc-8736-430df60fb358", "employee_id": "aae26595-adb4-48b3-ac89-803b85505f84", "employee": {"id": "aae26595-adb4-48b3-ac89-803b85505f84", "full_name": "Pulkit Sharma", "employee_code": null}, "type": "cl", "status": "pending", "day": "2026-11-18", "end_day": "2026-11-19", "portion": "full", "day_count": 2, "working_days": ["2026-11-18", "2026-11-19"], "requires_final_approval": true, "second_approval_needed": true, "stage": "final", "approval_group": "faculty", "admin_manager_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "admin_manager_name": "Shallu Chandra", "approver_is_hr_pool": false, "final_approver_employee_id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "final_approver_name": "Bhupender Singh", "final_approver_is_hr_pool": false, "routing_note": null, "waiting_on": "Bhupender Singh", "waiting_days": 0, "is_teaching": true, "substitute_faculty_id": "8001957a-9e89-4edb-9596-2dee711f5396", "substitute_faculty_name": "Anita Gupta", "class_timing": "10:00-12:00", "manager_approved_by_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "manager_approved_by_name": "Shallu Chandra", "manager_approved_at": "2026-11-12T10:02:08.859+00:00", "manager_remark": null, "reason": "Family function", "filed_via": "self", "spoke_to_approver": true, "late_notice": false, "informed_at": null, "informed_via": null, "entered_by_name": null, "entered_at": null, "parent_request_id": null, "cl_units": null, "lwp_units": null, "created_at": "2026-11-12T10:02:08.637595+00:00", "decided_by_employee_id": null, "decided_at": null, "decided_by_name": null, "decision_note": null, "cancelled_at": null, "cancelled_by_name": null, "cancel_reason": null}, "outcome": "advanced", "stage": "final"}
+                approved:
+                  value: {"request": {"id": "b83487aa-cba4-46cc-8736-430df60fb358", "employee_id": "aae26595-adb4-48b3-ac89-803b85505f84", "employee": {"id": "aae26595-adb4-48b3-ac89-803b85505f84", "full_name": "Pulkit Sharma", "employee_code": null}, "type": "cl", "status": "approved", "day": "2026-11-18", "end_day": "2026-11-19", "portion": "full", "day_count": 2, "working_days": ["2026-11-18", "2026-11-19"], "requires_final_approval": true, "second_approval_needed": true, "stage": "final", "approval_group": "faculty", "admin_manager_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "admin_manager_name": "Shallu Chandra", "approver_is_hr_pool": false, "final_approver_employee_id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "final_approver_name": "Bhupender Singh", "final_approver_is_hr_pool": false, "routing_note": null, "waiting_on": null, "waiting_days": null, "is_teaching": true, "substitute_faculty_id": "8001957a-9e89-4edb-9596-2dee711f5396", "substitute_faculty_name": "Anita Gupta", "class_timing": "10:00-12:00", "manager_approved_by_employee_id": "84d5c7ec-0d22-4991-aaef-37cc76888efb", "manager_approved_by_name": "Shallu Chandra", "manager_approved_at": "2026-11-12T10:02:08.859+00:00", "manager_remark": null, "reason": "Family function", "filed_via": "self", "spoke_to_approver": true, "late_notice": false, "informed_at": null, "informed_via": null, "entered_by_name": null, "entered_at": null, "parent_request_id": null, "cl_units": 1, "lwp_units": 1, "created_at": "2026-11-12T10:02:08.637595+00:00", "decided_by_employee_id": "f5178f75-de6b-4d15-857f-a3510babbbd2", "decided_at": "2026-11-12T10:02:08.97+00:00", "decided_by_name": "Bhupender Singh", "decision_note": "ok", "cancelled_at": null, "cancelled_by_name": null, "cancel_reason": null}, "outcome": "approved", "stage": "final"}
+        '400':
+          description: |
+            `VALIDATION_FAILED`, `COVERAGE_REQUIRED` or `BAD_SUBSTITUTE`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                noCover:
+                  value: {"error": "Choose the substitute faculty and give the class timing before approving this teaching leave.", "code": "COVERAGE_REQUIRED"}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            `SELF_APPROVAL`, or `NOT_AN_APPROVER` (it waits on someone else).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                self:
+                  value: {"error": "Nobody approves their own leave.", "code": "SELF_APPROVAL"}
+                notApprover:
+                  value: {"error": "This leave is waiting on someone else.", "code": "NOT_AN_APPROVER"}
+        '409':
+          description: |
+            `REQUEST_CLOSED`, or `REQUEST_TYPE_SWITCHED_OFF` for a switched-off type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                closed:
+                  value: {"error": "This request is no longer pending.", "code": "REQUEST_CLOSED"}
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+  /hr/my-attendance/leave/{id}/cancel:
+    post:
+      operationId: cancelApprovedLeave
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: Cancel an approved leave (HR, HR Executive, CEO, super admin)
+      description: |
+        Restores every day the leave wrote. `reason` is 3 to 200 characters. Punch sessions never qualify; nobody cancels their own leave.
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The leave request id.
+          schema: {"type": "string", "format": "uuid"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveCancelRequest'
+            examples:
+              reason:
+                value: {"reason": "Plans changed."}
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveRequestReply'
+              examples:
+                cancelled:
+                  value: {"request": {"id": "317ac226-d728-4a09-b57c-c5d9c40fca17", "employee_id": "3e91a504-49d3-4998-938c-209212c6f8fd", "type": "cl", "status": "cancelled", "day": "2026-12-27", "end_day": "2026-12-27", "portion": "full", "day_count": 1, "working_days": ["2026-12-27"], "requires_final_approval": false, "second_approval_needed": false, "stage": "final", "approval_group": "sales_marketing_tech", "admin_manager_employee_id": null, "admin_manager_name": null, "approver_is_hr_pool": false, "final_approver_employee_id": "219d5651-6f36-4562-b975-196e5a8887c6", "final_approver_name": "Nisha Verma", "final_approver_is_hr_pool": false, "routing_note": null, "waiting_on": null, "waiting_days": null, "is_teaching": false, "substitute_faculty_id": null, "substitute_faculty_name": null, "class_timing": null, "manager_approved_by_employee_id": null, "manager_approved_by_name": null, "manager_approved_at": null, "manager_remark": null, "reason": "Family function", "filed_via": "self", "spoke_to_approver": true, "late_notice": false, "informed_at": null, "informed_via": null, "entered_by_name": null, "entered_at": null, "parent_request_id": null, "cl_units": null, "lwp_units": null, "created_at": "2026-11-12T10:02:09.572012+00:00", "decided_by_employee_id": null, "decided_at": null, "decided_by_name": null, "decision_note": null, "cancelled_at": null, "cancelled_by_name": "Harshita Jain", "cancel_reason": "Plans changed."}}
+        '400':
+          description: |
+            `VALIDATION_FAILED`: the reason length.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                reason:
+                  value: {"error": "Say why it is cancelled, in 3 to 200 characters.", "code": "VALIDATION_FAILED"}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            `NOT_ALLOWED` or `SELF_APPROVAL`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notAllowed:
+                  value: {"error": "Only HR, the CEO or a super admin may cancel an approved leave.", "code": "NOT_ALLOWED"}
+        '409':
+          description: |
+            `CANNOT_CANCEL`: only an approved request can be cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notApproved:
+                  value: {"error": "Only an approved request can be cancelled.", "code": "CANNOT_CANCEL"}
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+  /hr/my-attendance/leave/whos-off:
+    get:
+      operationId: whosOffOnLeave
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: Who else is off on a leave's dates
+      description: |
+        People in the applicant's branch and approver team with pending or approved leave overlapping the request (not work from home). For the approvers, MANAGE roles and the applicant.
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      parameters:
+        - name: request_id
+          in: query
+          required: true
+          description: The leave request.
+          schema: {"type": "string", "format": "uuid"}
+      responses:
+        '200':
+          description: Who is off.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveWhosOff'
+              examples:
+                someoneOff:
+                  value: {"from": "2026-11-18", "to": "2026-11-19", "off": [{"request_id": "d0000000-0000-4000-8000-000000000004", "employee": {"id": "e0000000-0000-4000-8000-000000000025", "full_name": "Arvind Kumar", "employee_code": "RVM/F/25", "designation": "Faculty"}, "status": "approved", "day": "2026-11-19", "end_day": "2026-11-19", "portion": "first_half"}]}
+                nobody:
+                  value: {"from": "2026-11-18", "to": "2026-11-19", "off": []}
+        '400':
+          description: |
+            `VALIDATION_FAILED`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                noId:
+                  value: {"error": "request_id must be a request id.", "code": "VALIDATION_FAILED"}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            `NOT_ALLOWED`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notYours:
+                  value: {"error": "That request is not yours to see.", "code": "NOT_ALLOWED"}
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+  /hr/my-attendance/leave/faculty:
+    get:
+      operationId: leaveSubstituteFaculty
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'Scheduler_Backend feat/leave-policy 4f50ae0: routes/hr.js:219-234; controllers/hr/leaveController.js; supabase/migrations/20261206000000_leave_policy.sql'
+      summary: Substitute faculty for a teaching leave
+      description: |
+        Active faculty of the applicant's branch, for the 1st approver's class cover.
+        From Scheduler_Backend `feat/leave-policy` (4f50ae0); live once migration `20261206000000_leave_policy.sql` is applied and the Scheduler is deployed (team_app #43). Either token kind (punch session or portal token).
+      parameters:
+        - name: request_id
+          in: query
+          required: false
+          description: The leave request.
+          schema: {"type": "string", "format": "uuid"}
+      responses:
+        '200':
+          description: The choices.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveFacultyList'
+              examples:
+                choices:
+                  value: {"faculty": [{"id": "8001957a-9e89-4edb-9596-2dee711f5396", "name": "Anita Gupta"}]}
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: |
+            `NOT_ALLOWED`: only this leave's approver chooses the substitute.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notApprover:
+                  value: {"error": "Only this leave's approver chooses the substitute.", "code": "NOT_ALLOWED"}
+        '503':
+          description: |
+            `MODULE_NOT_INSTALLED`: the leave policy migration is not applied yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+              examples:
+                notInstalled:
+                  value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
+
 components:
 
   securitySchemes:
@@ -11298,6 +11805,250 @@ components:
         type: string
 
   schemas:
+
+    LeaveEmployeeRef:
+      type: object
+      description: A person on a leave row.
+      required: [id, full_name]
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+        employee_code: { type: ['string', 'null'] }
+        designation: { type: ['string', 'null'] }
+
+    LeaveApproverRef:
+      type: object
+      required: [id, full_name]
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+
+    SchedulerLeaveRequest:
+      type: object
+      description: |
+        One leave row as the Scheduler returns it (team_app #43). It has no `family`. `stage` is `manager` for the first of two approvals (or a teaching leave's approver) and `final` for the approval that writes the days. With one approval, the approver is in `final_approver_*`.
+      required: [id, type, status, day, end_day, portion, day_count, stage, second_approval_needed]
+      properties:
+        id: { type: string, format: uuid }
+        employee_id: { type: string, format: uuid }
+        employee:
+          oneOf:
+            - $ref: '#/components/schemas/LeaveEmployeeRef'
+            - type: 'null'
+        type: { type: string, enum: [cl, lwp, wfh] }
+        status: { type: string, enum: [pending, approved, rejected, withdrawn, cancelled] }
+        day: { type: string, format: date }
+        end_day: { type: string, format: date }
+        portion: { type: string, enum: [full, first_half, second_half] }
+        day_count: { type: number }
+        working_days:
+          type: array
+          items: { type: string, format: date }
+        requires_final_approval: { type: boolean }
+        second_approval_needed: { type: boolean }
+        stage: { type: string, enum: [manager, final] }
+        approval_group: { type: ['string', 'null'] }
+        admin_manager_employee_id: { type: ['string', 'null'] }
+        admin_manager_name: { type: ['string', 'null'] }
+        approver_is_hr_pool: { type: boolean }
+        final_approver_employee_id: { type: ['string', 'null'] }
+        final_approver_name: { type: ['string', 'null'] }
+        final_approver_is_hr_pool: { type: boolean }
+        routing_note:
+          type: ['string', 'null']
+          description: Why the usual approver was replaced (no_approver, same_person, not_active, on_leave, no_employee, switch_over_hr_close).
+        waiting_on:
+          type: ['string', 'null']
+          description: A pending leave's current approver, or "HR".
+        waiting_days: { type: ['integer', 'null'] }
+        is_teaching: { type: boolean }
+        substitute_faculty_id: { type: ['string', 'null'] }
+        substitute_faculty_name: { type: ['string', 'null'] }
+        class_timing: { type: ['string', 'null'] }
+        manager_approved_by_employee_id: { type: ['string', 'null'] }
+        manager_approved_by_name: { type: ['string', 'null'] }
+        manager_approved_at: { type: ['string', 'null'] }
+        manager_remark: { type: ['string', 'null'] }
+        reason: { type: string }
+        filed_via: { type: string, enum: [self, hr_entry, legacy] }
+        spoke_to_approver: { type: ['boolean', 'null'] }
+        late_notice: { type: boolean }
+        informed_at:
+          type: ['string', 'null']
+          description: HR entry of a short-notice leave, when the approver was told.
+        informed_via: { type: ['string', 'null'] }
+        entered_by_name: { type: ['string', 'null'] }
+        entered_at: { type: ['string', 'null'] }
+        parent_request_id: { type: ['string', 'null'] }
+        cl_units: { type: ['number', 'null'] }
+        lwp_units: { type: ['number', 'null'] }
+        created_at: { type: string }
+        decided_at: { type: ['string', 'null'] }
+        decided_by_employee_id: { type: ['string', 'null'] }
+        decided_by_name: { type: ['string', 'null'] }
+        decision_note: { type: ['string', 'null'] }
+        cancelled_at: { type: ['string', 'null'] }
+        cancelled_by_name: { type: ['string', 'null'] }
+        cancel_reason: { type: ['string', 'null'] }
+
+    LeaveRequestReply:
+      type: object
+      required: [request]
+      properties:
+        request:
+          $ref: '#/components/schemas/SchedulerLeaveRequest'
+
+    LeaveDecisionReply:
+      type: object
+      required: [request, outcome]
+      properties:
+        request:
+          $ref: '#/components/schemas/SchedulerLeaveRequest'
+        outcome:
+          type: string
+          enum: [advanced, approved, rejected]
+          description: '`advanced`: sent on to the 2nd approver.'
+        stage: { type: string, enum: [manager, final] }
+
+    LeaveRoute:
+      type: object
+      required: [approver_is_hr_pool, second_needed, second_is_hr_pool]
+      properties:
+        group: { type: ['string', 'null'] }
+        approver:
+          oneOf:
+            - $ref: '#/components/schemas/LeaveApproverRef'
+            - type: 'null'
+        approver_is_hr_pool: { type: boolean }
+        second_needed: { type: boolean }
+        second:
+          oneOf:
+            - $ref: '#/components/schemas/LeaveApproverRef'
+            - type: 'null'
+        second_is_hr_pool: { type: boolean }
+        threshold_days: { type: ['integer', 'null'] }
+        routing_note: { type: ['string', 'null'] }
+
+    LeaveRoutePreview:
+      type: object
+      required: [route]
+      properties:
+        route:
+          $ref: '#/components/schemas/LeaveRoute'
+        working_days:
+          type: array
+          items: { type: string, format: date }
+        day_count: { type: number }
+
+    LeaveBalanceRow:
+      type: object
+      required: [type, used, pending]
+      properties:
+        type: { type: string, enum: [leave_cl, leave_lwp] }
+        allowed: { type: ['number', 'null'] }
+        used: { type: number }
+        pending: { type: number }
+        remaining: { type: ['number', 'null'] }
+        over_limit: { type: boolean }
+        unit: { type: string }
+
+    LeaveOverview:
+      type: object
+      required: [month, today, earliest_self_day, balances, requests, approvals, approvals_count, decided]
+      properties:
+        month: { type: string }
+        today: { type: string, format: date }
+        earliest_self_day:
+          type: string
+          format: date
+          description: The first day the person may apply for themselves (today + 3, IST).
+        short_notice_message: { type: string }
+        employee:
+          oneOf:
+            - $ref: '#/components/schemas/LeaveEmployeeRef'
+            - type: 'null'
+        my_route:
+          oneOf:
+            - $ref: '#/components/schemas/LeaveRoute'
+            - type: 'null'
+        balances:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeaveBalanceRow'
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulerLeaveRequest'
+        approvals:
+          type: array
+          description: Leave waiting on this person, oldest first.
+          items:
+            $ref: '#/components/schemas/SchedulerLeaveRequest'
+        approvals_count: { type: integer, minimum: 0 }
+        decided:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchedulerLeaveRequest'
+        decided_count: { type: integer, minimum: 0 }
+        team_alerts: { type: ['object', 'null'] }
+        in_hr_pool: { type: boolean }
+        can_manage: { type: boolean }
+        can_approve: { type: boolean }
+        can_hr_entry: { type: boolean }
+        can_configure_mapping: { type: boolean }
+        can_configure_approvers: { type: boolean }
+        viewer_role: { type: ['string', 'null'] }
+
+    LeaveWhosOff:
+      type: object
+      required: [off]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        off:
+          type: array
+          items:
+            type: object
+            required: [request_id, status, day]
+            properties:
+              request_id: { type: string, format: uuid }
+              employee:
+                oneOf:
+                  - $ref: '#/components/schemas/LeaveEmployeeRef'
+                  - type: 'null'
+              status: { type: string, enum: [pending, approved] }
+              day: { type: string, format: date }
+              end_day: { type: string, format: date }
+              portion: { type: string, enum: [full, first_half, second_half] }
+
+    LeaveCreateRequest:
+      type: object
+      required: [day, reason, spoke_to_approver]
+      properties:
+        type: { type: string, enum: [cl, lwp], default: cl }
+        day: { type: string, format: date }
+        end_day: { type: string, format: date }
+        portion: { type: string, enum: [full, first_half, second_half], default: full }
+        reason: { type: string, minLength: 5, maxLength: 1000 }
+        spoke_to_approver:
+          type: boolean
+          const: true
+          description: '"I have spoken to my approver about this leave". Must be the JSON boolean true.'
+
+    LeaveDecideRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        note: { type: string, maxLength: 1000, description: 'Required (3+ characters) to reject.' }
+        substitute_faculty_id: { type: string, format: uuid }
+        class_timing: { type: string, maxLength: 200 }
+
+    LeaveCancelRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 200 }
 
     Error:
       type: object

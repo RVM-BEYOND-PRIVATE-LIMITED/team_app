@@ -40,8 +40,12 @@ class _RequestsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final caps = context.watch<CapabilitiesBloc>().state.data;
-    final canApprove =
-        caps?.approvalsOwnReports == true || caps?.approvalsAnyRequest == true;
+    // Leave approvers come from HR's approver mapping too (#43).
+    final leaveApprover = context
+        .select<RequestsBloc, bool>((b) => b.state.leave?.canApprove ?? false);
+    final canApprove = caps?.approvalsOwnReports == true ||
+        caps?.approvalsAnyRequest == true ||
+        leaveApprover;
     return Scaffold(
       backgroundColor: RvmColors.ivory,
       body: Column(
@@ -134,6 +138,24 @@ class _RequestsView extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(
             RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, 96),
         children: [
+          // One host down shows what the other returned, with the reason.
+          if (state.leaveFailure != null) ...[
+            TeamNotice(
+              icon: Icons.cloud_off_rounded,
+              tone: TeamPillTone.danger,
+              text: 'Leave could not load: ${state.leaveFailure!.message}',
+            ),
+            const SizedBox(height: RvmSpacing.sm),
+          ],
+          if (state.essFailure != null) ...[
+            TeamNotice(
+              icon: Icons.cloud_off_rounded,
+              tone: TeamPillTone.danger,
+              text:
+                  'Attendance requests could not load: ${state.essFailure!.message}',
+            ),
+            const SizedBox(height: RvmSpacing.sm),
+          ],
           if (state.balances != null) _QuotaCard(balances: state.balances!),
           const SizedBox(height: RvmSpacing.lg),
           TeamSectionHeader(
@@ -508,19 +530,51 @@ class _RequestCard extends StatelessWidget {
                       )),
             ),
           ],
-          if (!compact && request.stageLabel != null) ...[
+          if (!compact &&
+              (request.waitingSummary != null ||
+                  request.isRecordedByHr ||
+                  request.writtenAsLabel != null)) ...[
             const SizedBox(height: 8),
-            TeamPill(
-                label: request.stageLabel!,
-                tone: TeamPillTone.warning,
-                dense: true),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                // Who it waits on now, from HR's approver mapping (#43).
+                if (request.waitingSummary != null)
+                  TeamPill(
+                      label: request.waitingSummary!,
+                      tone: TeamPillTone.warning,
+                      dense: true),
+                if (request.isRecordedByHr)
+                  const TeamPill(
+                      label: 'Recorded by HR',
+                      tone: TeamPillTone.info,
+                      dense: true),
+                if (request.writtenAsLabel != null)
+                  TeamPill(
+                      label: request.writtenAsLabel!,
+                      tone: TeamPillTone.success,
+                      dense: true),
+              ],
+            ),
+          ],
+          if (!compact && request.routingNoteLabel != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              request.routingNoteLabel!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 10.5,
+                    height: 1.45,
+                    color: RvmColors.muted,
+                  ),
+            ),
           ],
           if (!compact &&
               request.managerRemark != null &&
               request.managerRemark!.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'Admin Manager’s remark: ${request.managerRemark!.trim()}',
+              'Approver’s remark: ${request.managerRemark!.trim()}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 10.5,
                     height: 1.45,
