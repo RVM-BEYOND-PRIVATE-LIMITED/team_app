@@ -3428,6 +3428,7 @@ class ClassRosterStudent extends Equatable {
     this.marked,
     this.absentReason,
     this.followUpComment,
+    this.feeHold = false,
   });
 
   final String id;
@@ -3438,6 +3439,12 @@ class ClassRosterStudent extends Equatable {
   final String? marked;
   final String? absentReason;
   final String? followUpComment;
+
+  /// The server's yes/no fee hold (`fee_hold: boolean`, the roster flag agreed
+  /// in Scheduler_Backend#178). Today's roster does not send it, so a missing
+  /// or non-boolean value reads as false. The app never works a hold out and
+  /// never sees an amount or a date. Nothing shows it yet (#57 item 1).
+  final bool feeHold;
 
   bool get isPresent => marked == 'present';
   bool get isAbsent => marked == 'absent';
@@ -3451,11 +3458,19 @@ class ClassRosterStudent extends Equatable {
         marked: _str(j['marked']),
         absentReason: _str(j['absent_reason']),
         followUpComment: _str(j['follow_up_comment']),
+        feeHold: _bool(j['fee_hold']),
       );
 
   @override
-  List<Object?> get props =>
-      [id, fullName, admissionNumber, marked, absentReason, followUpComment];
+  List<Object?> get props => [
+        id,
+        fullName,
+        admissionNumber,
+        marked,
+        absentReason,
+        followUpComment,
+        feeHold
+      ];
 }
 
 /// `GET /me/batches/{id}/roster?date=` — the day and its lock state.
