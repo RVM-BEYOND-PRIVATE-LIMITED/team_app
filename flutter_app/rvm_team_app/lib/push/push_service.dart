@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:core_network/core_network.dart' show Redact;
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -20,6 +21,11 @@ import '../injection.dart';
 const notificationChannelId = 'team_rvm_alerts';
 const _channelName = 'Team RVM alerts';
 const _channelDescription = 'Tasks, approvals, announcements and reminders';
+
+/// Every push debug line goes through here, so a number or a name that rides
+/// in an error or a route never reaches the device log (team_app #61).
+@visibleForTesting
+void pushLog(String line) => debugPrint(Redact.text(line));
 
 /// Runs in a separate isolate when a push arrives while the app is in the
 /// background or terminated. Notification payloads are drawn by FCM itself;
@@ -55,7 +61,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       }),
     );
   } catch (error) {
-    debugPrint('RVM background push could not be shown: $error');
+    pushLog('RVM background push could not be shown: $error');
   }
 }
 
@@ -82,7 +88,7 @@ class PushService {
     try {
       await ensureFirebase();
     } catch (error) {
-      debugPrint('RVM push unavailable: Firebase did not initialise ($error)');
+      pushLog('RVM push unavailable: Firebase did not initialise ($error)');
       return;
     }
 
@@ -143,7 +149,7 @@ class PushService {
         _openPayload(launch?.notificationResponse?.payload);
       }
     } catch (error) {
-      debugPrint('RVM push setup failed: $error');
+      pushLog('RVM push setup failed: $error');
     }
   }
 
@@ -185,7 +191,7 @@ class PushService {
         provisional: false,
       );
     } catch (error) {
-      debugPrint('RVM push permission request failed: $error');
+      pushLog('RVM push permission request failed: $error');
     }
   }
 
@@ -206,22 +212,18 @@ class PushService {
             ),
           );
     } catch (error) {
-      debugPrint('RVM notification channel could not be created: $error');
+      pushLog('RVM notification channel could not be created: $error');
     }
   }
 
   Future<String?> _safeToken(FirebaseMessaging messaging) async {
     try {
-      // Classic FCM registration token — what `/push-devices` expects.
+      // Classic FCM registration token — what `/push-devices` expects. It is
+      // never printed: it addresses this phone (#50, "Numbers and logs").
       // ignore: deprecated_member_use
-      final token = await messaging.getToken();
-      if (kDebugMode && token != null && token.isNotEmpty) {
-        // Paste this in Firebase Console → Cloud Messaging → Send test message.
-        debugPrint('RVM FCM token: $token');
-      }
-      return token;
+      return await messaging.getToken();
     } catch (error) {
-      debugPrint('RVM push token unavailable: $error');
+      pushLog('RVM push token unavailable: $error');
       return null;
     }
   }
@@ -299,7 +301,7 @@ class PushService {
       try {
         GoRouter.of(context).go(route);
       } catch (error) {
-        debugPrint('RVM push route "$route" could not be opened: $error');
+        pushLog('RVM push route "$route" could not be opened: $error');
       }
     });
   }
@@ -403,7 +405,7 @@ Future<void> _showNotification(
   try {
     await plugin.show(id, title, body, details, payload: payload);
   } catch (error) {
-    debugPrint('RVM notification could not be shown: $error');
+    pushLog('RVM notification could not be shown: $error');
   }
 }
 
@@ -439,7 +441,7 @@ Future<String?> _downloadImage(String? url) async {
     await file.writeAsBytes(bytes, flush: true);
     return file.path;
   } catch (error) {
-    debugPrint('RVM notification image could not be downloaded: $error');
+    pushLog('RVM notification image could not be downloaded: $error');
     return null;
   }
 }

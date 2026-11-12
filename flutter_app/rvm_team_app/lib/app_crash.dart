@@ -1,3 +1,4 @@
+import 'package:core_network/core_network.dart' show Redact;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,10 @@ import 'firebase_bootstrap.dart';
 /// `android/app/google-services.json` and `lib/firebase_options.dart`. A build
 /// without that config still runs: reports fall back to the debug log and the
 /// on-screen toast.
+///
+/// Every custom key, reason and error text passes through [Redact] first, so a
+/// report never carries a phone number or a value kept under a name or phone
+/// key (team_app #61).
 abstract final class CrashReporter {
   static bool _available = false;
 
@@ -51,7 +56,8 @@ abstract final class CrashReporter {
     try {
       final fields = await _deviceFields();
       for (final entry in fields.entries) {
-        await FirebaseCrashlytics.instance.setCustomKey(entry.key, entry.value);
+        await FirebaseCrashlytics.instance
+            .setCustomKey(entry.key, safeKeyValue(entry.key, entry.value));
       }
       final pkg = await PackageInfo.fromPlatform();
       await FirebaseCrashlytics.instance
@@ -107,7 +113,7 @@ abstract final class CrashReporter {
   static void note(String key, String value) {
     if (!_available) return;
     try {
-      FirebaseCrashlytics.instance.setCustomKey(key, value);
+      FirebaseCrashlytics.instance.setCustomKey(key, safeKeyValue(key, value));
     } catch (_) {
       // Reporting must never crash the app it is watching.
     }
@@ -122,7 +128,23 @@ abstract final class CrashReporter {
       return;
     }
     try {
-      await FirebaseCrashlytics.instance.recordFlutterError(details);
+      // What `recordFlutterError` does, with the text cleaned before it is
+      // sent: the plugin sends only these strings and the stack.
+      FlutterError.presentError(details);
+      final context = details.context
+          ?.toStringDeep(minLevel: DiagnosticLevel.info)
+          .trim();
+      await FirebaseCrashlytics.instance.recordError(
+        Redact.text(details.exceptionAsString()),
+        details.stack,
+        reason: context == null ? null : Redact.text(context),
+        information: [
+          for (final node in details.informationCollector?.call() ??
+              const <DiagnosticsNode>[])
+            Redact.text('$node'),
+        ],
+        printDetails: false,
+      );
     } catch (_) {
       FlutterError.presentError(details);
     }
@@ -134,16 +156,18 @@ abstract final class CrashReporter {
   /// next launch if the process dies before the flush completes.
   static Future<void> record(Object error, StackTrace? stack,
       {String? reason, bool fatal = false}) async {
-    final summary = reason ?? error.toString();
+    final summary = Redact.text(reason ?? error.toString());
     debugPrint('RVM error${fatal ? ' (fatal)' : ''}: $summary');
     if (stack != null) debugPrint('$stack');
     if (!_available) return;
     try {
       await FirebaseCrashlytics.instance.setCustomKey('reason', _clip(summary));
+      // The plugin sends only the error's text (`toString()`) and the stack,
+      // so sending the cleaned text drops nothing but the personal data.
       await FirebaseCrashlytics.instance.recordError(
-        error,
+        Redact.text(error.toString()),
         stack,
-        reason: reason,
+        reason: reason == null ? null : Redact.text(reason),
         fatal: fatal,
         printDetails: false,
       );
@@ -187,6 +211,12 @@ abstract final class CrashReporter {
 
   static String _clip(String value) =>
       value.length <= 1000 ? value : '${value.substring(0, 1000)}…';
+
+  /// A custom key's value as it may be sent: masked whole under a name or
+  /// phone key, otherwise with every phone-like number removed.
+  @visibleForTesting
+  static String safeKeyValue(String key, String value) =>
+      Redact.isSensitiveKey(key) ? Redact.mask : Redact.text(value);
 
   /// `METHOD /path` with id-like segments redacted — safe for the dashboard,
   /// no tokens (tokens travel in headers, never in paths here).
