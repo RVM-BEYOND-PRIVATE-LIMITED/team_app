@@ -544,6 +544,17 @@ class _ApprovalCard extends StatelessWidget {
             const SizedBox(height: 8),
             const Divider(height: 1),
             const SizedBox(height: 10),
+            // Switched off on 12 Nov 2026 (#44): a pending one can only be
+            // rejected; the server refuses an approval anyway.
+            if (request.isSwitchedOffType) ...[
+              const TeamNotice(
+                icon: Icons.block_rounded,
+                tone: TeamPillTone.warning,
+                text:
+                    'Excuse-late and short leave requests are switched off. Reject this one with a short note.',
+              ),
+              const SizedBox(height: 10),
+            ],
             Row(
               children: [
                 Expanded(
@@ -558,22 +569,24 @@ class _ApprovalCard extends StatelessWidget {
                             fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => _approve(context),
-                    style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(40)),
-                    child: Text(
-                        _managerStage
-                            ? 'Approve & send to Super Admin'
-                            : _finalStage
-                                ? 'Final approval'
-                                : 'Approve',
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w600)),
+                if (!request.isSwitchedOffType) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => _approve(context),
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(40)),
+                      child: Text(
+                          _managerStage
+                              ? 'Approve & send to Super Admin'
+                              : _finalStage
+                                  ? 'Final approval'
+                                  : 'Approve',
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ] else
@@ -744,6 +757,7 @@ class _ApprovalCard extends StatelessWidget {
   /// first collects the substitute and class timing the ESS requires; every
   /// round may carry a remark the employee and the next approver read.
   Future<void> _approve(BuildContext context) async {
+    if (request.isSwitchedOffType) return; // #44: reject or withdraw only.
     if (_managerStage && request.isTeaching) {
       final coverage = await _askCoverage(context);
       if (coverage == null || !context.mounted) return;

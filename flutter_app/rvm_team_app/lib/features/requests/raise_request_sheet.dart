@@ -35,7 +35,6 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   final _place = TextEditingController();
   final _fixIn = TextEditingController();
   final _fixOut = TextEditingController();
-  final _minutes = TextEditingController();
   String? _error;
 
   @override
@@ -44,7 +43,6 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     _place.dispose();
     _fixIn.dispose();
     _fixOut.dispose();
-    _minutes.dispose();
     super.dispose();
   }
 
@@ -67,8 +65,8 @@ class _RaiseSheetState extends State<_RaiseSheet> {
     });
   }
 
-  /// A fix, an excuse and a short leave describe a day that has happened, so the
-  /// server refuses a future one. Keeping the picker inside the same window
+  /// A fix describes a day that has happened, so the server refuses a future
+  /// one. Keeping the picker inside the same window
   /// avoids a needless 400; on duty and leave may still be filed ahead.
   bool get _mayBeAhead => _family == 'leave' || _type == 'on_duty';
 
@@ -212,14 +210,6 @@ class _RaiseSheetState extends State<_RaiseSheet> {
         return;
       }
     }
-    int? minutes;
-    if (_family == 'attendance' && _type == 'short_leave') {
-      minutes = int.tryParse(_minutes.text.trim());
-      if (minutes == null || minutes < 1 || minutes > 480) {
-        _showError('Short leave is 1 to 480 minutes.');
-        return;
-      }
-    }
     final bloc = context.read<RequestsBloc>();
     // The balances on screen are for the CURRENT month. The date picker also
     // allows next month, so only apply this local check when the chosen day is
@@ -230,13 +220,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
             ? null
             : balance!.allowed! - balance.used - balance.pending);
     if (balance != null && remaining != null) {
-      if (_type == 'short_leave') {
-        if (minutes != null && minutes > remaining) {
-          _showError(
-              'Only $remaining short-leave minutes are left this month.');
-          return;
-        }
-      } else if (_family == 'leave' && !_multiDay) {
+      if (_family == 'leave' && !_multiDay) {
         // A half day costs 0.5, a full day 1. A range is left to the server,
         // which knows the working days after skipping weekly offs and holidays.
         final needed = _portion == 'full' ? 1 : 0.5;
@@ -272,7 +256,6 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       place: _type == 'on_duty' ? _place.text.trim() : null,
       fixIn: _type == 'fix_a_day' ? _normalizeTime(fixInRaw) : null,
       fixOut: _type == 'fix_a_day' ? _normalizeTime(fixOutRaw) : null,
-      minutes: minutes,
     ));
     // Do not pop here: the listeners below pop on success and keep the sheet
     // open on a refusal, with the message inside the sheet where it is visible.
@@ -300,10 +283,6 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       'leave_cl' =>
         'You have no casual leave left this month $detail. Choose Leave without pay or another day.',
       'fix_a_day' => "You have reached this month's Fix a Day limit $detail.",
-      'excuse_late' =>
-        "You have reached this month's Excuse a Late limit $detail.",
-      'short_leave' =>
-        "You have reached this month's short-leave limit $detail.",
       _ => "You have reached this month's limit for this request $detail.",
     };
   }
@@ -316,12 +295,8 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   Widget build(BuildContext context) {
     final types = _family == 'leave'
         ? const [('cl', 'Casual leave'), ('lwp', 'Leave without pay')]
-        : const [
-            ('on_duty', 'On duty'),
-            ('fix_a_day', 'Fix a day'),
-            ('excuse_late', 'Excuse a late'),
-            ('short_leave', 'Short leave')
-          ];
+        // Excuse-late and short leave were switched off on 12 Nov 2026 (#44).
+        : const [('on_duty', 'On duty'), ('fix_a_day', 'Fix a day')];
     final submitting =
         context.select<RequestsBloc, bool>((b) => b.state.submitting);
     return MultiBlocListener(
@@ -487,16 +462,6 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                     ),
                   ),
                 ]),
-              ],
-              if (_type == 'short_leave') ...[
-                const SizedBox(height: RvmSpacing.md),
-                TextField(
-                  controller: _minutes,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: 'Minutes (1–480)',
-                      border: OutlineInputBorder()),
-                ),
               ],
               if (_type == 'on_duty' || _type == 'fix_a_day')
                 const SizedBox(height: RvmSpacing.md),

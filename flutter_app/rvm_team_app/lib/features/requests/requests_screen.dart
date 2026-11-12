@@ -12,7 +12,8 @@ import '../../widgets/team_kit.dart';
 import 'bloc/requests_bloc.dart';
 import 'raise_request_sheet.dart';
 
-/// C1–C5: my requests (on duty, fix a day, excuse a late, CL, leave without pay), the month's
+/// C1–C5: my requests (on duty, fix a day, CL, leave without pay; excuse-late and short leave
+/// were switched off on 12 Nov 2026 and only show as history), the month's
 /// balances, raise and withdraw. Backend: `/attendance-requests`, `/leave-requests`,
 /// `/leave/balances` (Phase 1C).
 class RequestsScreen extends StatelessWidget {
@@ -224,9 +225,9 @@ class _QuotaCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final offered = balances.types.where((t) => t.offered).toList();
+    // Excuse-late and short leave were switched off on 12 Nov 2026 (#44), so
+    // they have no allowance to show.
     final cl = _find(offered, const ['leave_cl']);
-    final late = _find(offered, const ['excuse_late']);
-    final short = _find(offered, const ['short_leave']);
     final fix = _find(offered, const ['fix_a_day']);
     final onDuty = _find(balances.types, const ['on_duty']);
     final lwp = _find(balances.types, const ['leave_lwp']);
@@ -280,21 +281,6 @@ class _QuotaCard extends StatelessWidget {
                         context, cl, 'Casual Leave', RvmColors.clay)),
                 const SizedBox(width: 8),
                 Expanded(
-                    child: _quotaTile(
-                        context, late, 'Excuse Late', RvmColors.teamSeed,
-                        showPending: true)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                    child: _quotaTile(
-                        context, short, 'Short Leave', RvmColors.clay,
-                        unitMinutes: true)),
-                const SizedBox(width: 8),
-                Expanded(
                     child: _quotaTile(context, fix, 'Fix a Day', RvmColors.clay,
                         available: true)),
               ],
@@ -329,8 +315,6 @@ class _QuotaCard extends StatelessWidget {
     LeaveBalanceType? t,
     String title,
     Color accent, {
-    bool showPending = false,
-    bool unitMinutes = false,
     bool available = false,
   }) {
     final allowed = t?.allowed;
@@ -339,14 +323,10 @@ class _QuotaCard extends StatelessWidget {
     final used = t?.used ?? 0;
     final progress =
         (allowed == null || allowed == 0) ? 0.0 : ((remaining ?? 0) / allowed);
-    final value = unitMinutes
-        ? _n(remaining ?? used)
-        : _n(remaining ?? allowed ?? used);
-    final suffix = unitMinutes
-        ? '/ ${_n(allowed)} mins'
-        : available
-            ? '/ ${_n(allowed)} available'
-            : '/ ${_n(allowed)} ${allowed == 1 ? 'day' : 'days'} left';
+    final value = _n(remaining ?? allowed ?? used);
+    final suffix = available
+        ? '/ ${_n(allowed)} available'
+        : '/ ${_n(allowed)} ${allowed == 1 ? 'day' : 'days'} left';
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
@@ -368,12 +348,7 @@ class _QuotaCard extends StatelessWidget {
                         .titleSmall
                         ?.copyWith(fontSize: 11.5)),
               ),
-              if (showPending && (t?.pending ?? 0) > 0)
-                TeamPill(
-                    label: '${_n(t!.pending)} Pending',
-                    tone: TeamPillTone.warning,
-                    dense: true)
-              else if (available)
+              if (available)
                 Text('/ ${allowed ?? '—'}',
                     style: Theme.of(context)
                         .textTheme

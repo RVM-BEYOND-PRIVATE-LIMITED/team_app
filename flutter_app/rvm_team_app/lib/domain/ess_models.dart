@@ -1325,6 +1325,17 @@ class ApprovalContext extends Equatable {
       [typeThisMonth, monthLimit, late, othersOffCount, othersOffNames];
 }
 
+/// Request types RVM switched off on 12 Nov 2026 (team_app #44): the new
+/// attendance policy has no grace period, so a late mark can no longer be
+/// excused. They are no longer offered; a pending one may only be rejected or
+/// withdrawn. The server refuses new ones with `REQUEST_TYPE_SWITCHED_OFF`.
+const switchedOffRequestTypes = {'excuse_late', 'short_leave'};
+
+/// The server's code for a switched-off type, and what staff are told.
+const requestTypeSwitchedOffCode = 'REQUEST_TYPE_SWITCHED_OFF';
+const requestTypeSwitchedOffMessage =
+    'Excuse-late and short leave requests are switched off.';
+
 /// One request (attendance or leave) as the app reads it (C1–C4, D1).
 class EssRequest extends Equatable {
   const EssRequest({
@@ -1402,6 +1413,9 @@ class EssRequest extends Equatable {
   final ApprovalContext? context;
 
   bool get isPending => status == 'pending';
+
+  /// An excuse-late or short-leave request: may be rejected or withdrawn, never approved.
+  bool get isSwitchedOffType => switchedOffRequestTypes.contains(type);
 
   bool get isLeave => family == 'leave';
   bool get isHalfDay => portion == 'first_half' || portion == 'second_half';
@@ -3243,6 +3257,9 @@ class RequestLimit extends Equatable {
         'wfh' => 'Work from home',
         _ => type,
       };
+
+  /// Excuse-late / short-leave: switched off, so HR has no limit to edit.
+  bool get isSwitchedOff => switchedOffRequestTypes.contains(type);
 
   factory RequestLimit.fromJson(Map<String, dynamic> j) => RequestLimit(
         type: _str(j['type']) ?? '',
