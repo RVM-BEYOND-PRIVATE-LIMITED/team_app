@@ -17,15 +17,16 @@ class MarkRosterRequested extends MarkAttendanceEvent {
 }
 
 /// Re-reads the roster in place, on pull-to-refresh or when the app comes back
-/// to the foreground (#57 item 4). Unlike [MarkRosterRequested] it never shows
-/// the full-screen loader, and it keeps the marks changed on this phone that
-/// are not saved yet (see [MarkAttendanceBloc]).
+/// into view (#57 item 4). Unlike [MarkRosterRequested] it never shows the
+/// full-screen loader, and it keeps the marks changed on this phone that are
+/// not saved yet (see [MarkAttendanceBloc]).
 class MarkRosterRefreshed extends MarkAttendanceEvent {
   const MarkRosterRefreshed({this.done});
 
   /// Completed once the re-read is over: with null when it worked or was not
-  /// needed, or with the reason it failed. A pull-to-refresh spinner waits on
-  /// it and shows that reason.
+  /// needed, or with the reason it failed. When a re-read is already on its
+  /// way, no second one starts and this waits on that one's result. A
+  /// pull-to-refresh spinner waits on it and shows that reason.
   final Completer<String?>? done;
 }
 
@@ -116,7 +117,10 @@ class MarkAttendanceBloc
   /// after either one started drops that reply, so it never overwrites newer
   /// marks or the lock a save reads back.
   int _generation = 0;
-  bool _refreshing = false;
+
+  /// The re-read on its way, if any, completing with its failure reason. A
+  /// refresh asked for meanwhile waits on it instead of reading again.
+  Future<String?>? _refreshing;
 
   String get dateIso =>
       '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
@@ -146,16 +150,25 @@ class MarkAttendanceBloc
 
   Future<void> _onRefresh(
       MarkRosterRefreshed e, Emitter<MarkAttendanceState> emit) async {
+    // A re-read is already on its way (say, the silent one on coming back to
+    // the app): a pull waits on it, so its spinner stays up until the reply
+    // and it still shows why the read failed.
+    final running = _refreshing;
+    if (running != null) {
+      final error = await running;
+      e.done?.complete(error);
+      return;
+    }
     // Nothing to refresh yet, or a newer read is on its way: the first load,
-    // another refresh, or a save (which reads the roster back itself).
-    if (_refreshing ||
-        state.status == LoadStatus.initial ||
+    // or a save (which reads the roster back itself).
+    if (state.status == LoadStatus.initial ||
         state.status == LoadStatus.loading ||
         state.writeStatus == WriteStatus.submitting) {
       e.done?.complete();
       return;
     }
-    _refreshing = true;
+    final read = Completer<String?>();
+    _refreshing = read.future;
     final generation = _generation;
     String? error;
     try {
@@ -165,7 +178,8 @@ class MarkAttendanceBloc
       // The roster and the marks on screen stay as they are.
       error = f.message;
     } finally {
-      _refreshing = false;
+      _refreshing = null;
+      read.complete(error);
       e.done?.complete(error);
     }
   }

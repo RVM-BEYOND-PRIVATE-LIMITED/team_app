@@ -59,7 +59,7 @@ class MarkAttendanceScreen extends StatelessWidget {
               ..showSnackBar(SnackBar(content: Text(state.error!)));
           }
         },
-        child: _RefreshOnResume(
+        child: _RefreshOnReturn(
           builder: (context) => Scaffold(
             appBar: AppBar(
               title: Text(_batchTitle(batchName)),
@@ -120,25 +120,31 @@ class MarkAttendanceScreen extends StatelessWidget {
   }
 }
 
-/// A [Builder] that also re-reads the roster each time the app comes back to
-/// the foreground, so what changed while the faculty was away (a day saved
-/// from the web, a student who joined) shows without leaving the screen. The
-/// bloc keeps the marks not saved yet (#57 item 4).
-class _RefreshOnResume extends StatefulWidget {
-  const _RefreshOnResume({required this.builder});
+/// A [Builder] that also re-reads the roster each time the app comes back into
+/// view after it was hidden (another app, the home screen or the lock screen
+/// was in front), so what changed while the faculty was away (a day saved from
+/// the web, a student who joined) shows without leaving the screen. The bloc
+/// keeps the marks not saved yet (#57 item 4).
+///
+/// It listens for `onShow`, not `onResume`: a focus change while the app stays
+/// in view (the notification shade, a system dialog, split screen) is reported
+/// as inactive and then resumed, and must not cost a read each time.
+/// Pull-to-refresh covers those cases.
+class _RefreshOnReturn extends StatefulWidget {
+  const _RefreshOnReturn({required this.builder});
   final WidgetBuilder builder;
 
   @override
-  State<_RefreshOnResume> createState() => _RefreshOnResumeState();
+  State<_RefreshOnReturn> createState() => _RefreshOnReturnState();
 }
 
-class _RefreshOnResumeState extends State<_RefreshOnResume> {
+class _RefreshOnReturnState extends State<_RefreshOnReturn> {
   late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
-    _lifecycle = AppLifecycleListener(onResume: _refresh);
+    _lifecycle = AppLifecycleListener(onShow: _refresh);
   }
 
   void _refresh() {

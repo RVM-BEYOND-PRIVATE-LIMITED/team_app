@@ -21,7 +21,8 @@ import 'package:rvm_team_app/router/app_router.dart';
 
 /// Issue #57, the parts that need no backend change: the roster's fee-hold
 /// flag in the model (item 2), refreshing the roster in place (item 4, first
-/// half) and the faculty's one-tap path to marking (item 11, check 9).
+/// half), and one tap from today's classes to marking that works as before
+/// (item 11 as far as this change goes, and the marking half of check 9).
 class _MockEssRepository extends Mock implements EssRepository {}
 
 class _MockTeamAuthBloc extends Mock implements TeamAuthBloc {}
@@ -382,6 +383,34 @@ void main() {
       expect(bloc.state.error, isNull);
     });
 
+    test('a pull during another read waits for it and gets its failure',
+        () async {
+      final repo = _MockEssRepository();
+      final slow = Completer<ClassRoster>();
+      _answerRoster(repo, [
+        _unsaved(const [_one, _two]),
+        slow,
+      ]);
+      final bloc = _bloc(repo);
+      await _loaded(bloc);
+
+      // The silent read made on coming back to the app is on its way.
+      bloc.add(const MarkRosterRefreshed());
+      await Future<void>.delayed(Duration.zero);
+      final pull = Completer<String?>();
+      bloc.add(MarkRosterRefreshed(done: pull));
+      await Future<void>.delayed(Duration.zero);
+
+      // The pull's spinner stays up: no answer before the read's reply.
+      expect(pull.isCompleted, isFalse);
+
+      slow.completeError(const NoConnectionFailure());
+      expect(await pull.future, 'No internet connection');
+      // One read, shared: the pull did not start a second one.
+      verify(() => repo.classRoster(batchId: 'b1', date: _date)).called(2);
+      expect(bloc.state.students, const [_one, _two]);
+    });
+
     test('does nothing while the first load is still running', () async {
       final repo = _MockEssRepository();
       final first = Completer<ClassRoster>();
@@ -498,9 +527,38 @@ void main() {
       expect(find.text('Test Student Three'), findsOneWidget);
       expect(_ticked(tester, 'Test Student One'), isTrue);
     });
+
+    testWidgets('a focus change while the app stays in view reads nothing',
+        (tester) async {
+      final repo = _MockEssRepository();
+      _answerRoster(repo, [
+        _unsaved(const [_one, _two]),
+        _unsaved(const [_one, _two, _three]),
+      ]);
+      _registerMarkBloc(repo);
+      await _lifecycle(tester, AppLifecycleState.resumed);
+      await _pumpMarkScreen(tester);
+
+      // The notification shade, a system dialog or split screen takes focus
+      // and gives it back: the engine reports inactive, then resumed.
+      await _lifecycle(tester, AppLifecycleState.inactive);
+      await _lifecycle(tester, AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      verify(() => repo.classRoster(batchId: 'b1', date: any(named: 'date')))
+          .called(1);
+      expect(find.text('Test Student Three'), findsNothing);
+    });
   });
 
-  group('item 11 and check 9: the faculty main screen stays one tap away', () {
+  // What this group pins: the screen behind a teaching role's Attendance tab
+  // (InboxScreen) lists today's classes, and one tap on a class opens the
+  // app's own marking route, where marking works as before. What it does not
+  // pin: where a sign-in lands. That is the Home tab (TeamShell starts on
+  // index 0), whose "Today's classes" card links to My batches and lists no
+  // classes, so the landing half of check 9 is still open on #57.
+  group('item 11 and check 9 (marking half): today\'s classes to marking', () {
     const day = FacultyDay(
       date: _date,
       sessions: [
@@ -539,7 +597,8 @@ void main() {
     }
 
     for (final role in const [AppRole.faculty, AppRole.hod]) {
-      testWidgets('${role.name}: the Attendance tab opens on today\'s classes',
+      testWidgets(
+          '${role.name}: the Attendance tab\'s screen lists today\'s classes',
           (tester) async {
         getIt.registerFactory<LoadBloc<FacultyDay>>(
             () => LoadBloc<FacultyDay>(() async => day));
