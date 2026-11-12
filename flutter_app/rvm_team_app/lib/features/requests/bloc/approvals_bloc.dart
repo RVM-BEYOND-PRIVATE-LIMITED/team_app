@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../data/repositories/ess_repository.dart';
 import '../../../domain/ess_models.dart';
+import 'request_failure.dart';
 
 /// D1/H6: the approvals Inbox and the decision.
 sealed class ApprovalsEvent {
@@ -116,7 +117,7 @@ class ApprovalsBloc extends Bloc<ApprovalsEvent, ApprovalsState> {
         decidedNonce: state.decidedNonce + 1,
       ));
     } on Failure catch (f) {
-      emit(ApprovalsState(status: state.status, filter: state.filter, inbox: state.inbox, actionFailure: f, decidedNonce: state.decidedNonce));
+      emit(ApprovalsState(status: state.status, filter: state.filter, inbox: state.inbox, actionFailure: requestFailure(f), decidedNonce: state.decidedNonce));
     }
   }
 
@@ -125,7 +126,7 @@ class ApprovalsBloc extends Bloc<ApprovalsEvent, ApprovalsState> {
       await _repo.archiveRequest(family: e.family, id: e.id);
       await _load(emit, state.filter);
     } on Failure catch (f) {
-      emit(ApprovalsState(status: state.status, filter: state.filter, inbox: state.inbox, actionFailure: f, decidedNonce: state.decidedNonce));
+      emit(ApprovalsState(status: state.status, filter: state.filter, inbox: state.inbox, actionFailure: requestFailure(f), decidedNonce: state.decidedNonce));
     }
   }
 }

@@ -7,6 +7,7 @@ import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
+import '../../widgets/team_kit.dart';
 
 /// C6: HR edits the monthly request limits. Backend: `GET/PUT /api/ess/hr/request-limits`.
 class RequestLimitsScreen extends StatefulWidget {
@@ -49,8 +50,9 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
   }
 
   Future<void> _edit(RequestLimit limit) async {
-    final minutes = limit.type == 'short_leave';
-    final current = minutes ? limit.limitMinutes : limit.limitCount;
+    // Excuse-late and short leave were switched off on 12 Nov 2026 (#44).
+    if (limit.isSwitchedOff) return;
+    final current = limit.limitCount;
     final controller = TextEditingController(text: current?.toString() ?? '');
     final value = await showDialog<String>(
       context: context,
@@ -59,10 +61,8 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-              hintText: minutes
-                  ? 'Minutes (blank = no limit)'
-                  : 'Count (blank = no limit)'),
+          decoration:
+              const InputDecoration(hintText: 'Count (blank = no limit)'),
         ),
         actions: [
           TextButton(
@@ -79,12 +79,7 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
     final number = value.isEmpty ? null : int.tryParse(value);
     if (value.isNotEmpty && number == null) return;
     try {
-      if (minutes) {
-        await getIt<EssRepository>()
-            .setRequestLimit(limit.type, minutes: number);
-      } else {
-        await getIt<EssRepository>().setRequestLimit(limit.type, count: number);
-      }
+      await getIt<EssRepository>().setRequestLimit(limit.type, count: number);
       await _load();
     } on Failure catch (f) {
       if (mounted) {
@@ -130,9 +125,19 @@ class _RequestLimitsScreenState extends State<RequestLimitsScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: RvmSpacing.sm),
       itemBuilder: (context, i) {
         final l = _limits[i];
-        final value = l.type == 'short_leave'
-            ? (l.limitMinutes == null ? 'No limit' : '${l.limitMinutes} min')
-            : (l.limitCount == null ? 'No limit' : '${l.limitCount}');
+        if (l.isSwitchedOff) {
+          return Card(
+            child: ListTile(
+              title: Text(l.label),
+              subtitle: const Text('Switched off on 12 Nov 2026'),
+              trailing: const TeamPill(
+                  label: 'Switched off',
+                  tone: TeamPillTone.neutral,
+                  dense: true),
+            ),
+          );
+        }
+        final value = l.limitCount == null ? 'No limit' : '${l.limitCount}';
         return Card(
           child: ListTile(
             title: Text(l.label),

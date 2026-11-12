@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../data/repositories/ess_repository.dart';
 import '../../../domain/ess_models.dart';
+import 'request_failure.dart';
 
 /// C1–C5: my attendance and leave requests, and the month's balances.
 sealed class RequestsEvent {
@@ -148,7 +149,7 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
             status: state.status,
             requests: state.requests,
             balances: state.balances,
-            submitFailure: result.failure,
+            submitFailure: requestFailure(result.failure!),
             createdNonce: state.createdNonce));
         return;
       }
@@ -164,7 +165,7 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
           status: state.status,
           requests: state.requests,
           balances: state.balances,
-          submitFailure: f,
+          submitFailure: requestFailure(f),
           createdNonce: state.createdNonce));
     } catch (e) {
       // A parse or plugin error must not leave the form saying it is submitting
@@ -195,7 +196,7 @@ class RequestsBloc extends Bloc<RequestsEvent, RequestsState> {
           status: state.status,
           requests: state.requests,
           balances: state.balances,
-          submitFailure: f,
+          submitFailure: requestFailure(f),
           createdNonce: state.createdNonce));
     }
   }
