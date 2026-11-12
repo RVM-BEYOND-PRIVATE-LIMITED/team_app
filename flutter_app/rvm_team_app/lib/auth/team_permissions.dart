@@ -12,6 +12,11 @@ import '../domain/ess_models.dart';
 ///   the caller's own batches for faculty.
 /// - Interviews = open to any authenticated caller (the reply is empty unless
 ///   the caller is on a panel).
+/// - Sales Executive = fenced to its own workspace (`SALES_WORKSPACE_PATHS` in
+///   `middleware/auth.js`: `/api/sales-dialer`, `/api/me`,
+///   `/api/users/change-password`, `/api/hr/my-attendance`). Everything else
+///   answers 403 `SALES_WORKSPACE_ONLY`, so the priority-task Inbox, interviews
+///   and branch announcements are hidden for it (team_app #50, item 4).
 class TeamPermissions {
   const TeamPermissions({
     required this.role,
@@ -20,6 +25,8 @@ class TeamPermissions {
     required this.canSeeInterviews,
     required this.canSeeHodWork,
     required this.canWriteHod,
+    required this.canSeeInbox,
+    required this.canSeeAnnouncements,
   });
 
   final AppRole role;
@@ -33,6 +40,13 @@ class TeamPermissions {
   /// May fill Faculty Development sheets (risk logs, comments, verdicts) —
   /// FD_WRITE_ROLES = HOD, super admin, CEO. The HoO only oversees.
   final bool canWriteHod;
+
+  /// The Inbox tab: priority tasks, or a teaching role's batch attendance.
+  /// Both are Scheduler reads outside the sales workspace.
+  final bool canSeeInbox;
+
+  /// Branch announcements (Scheduler `GET /api/announcements`) on Home.
+  final bool canSeeAnnouncements;
 
   static bool _adminLevel(AppRole r) => switch (r) {
         AppRole.admin ||
@@ -52,15 +66,36 @@ class TeamPermissions {
         role == AppRole.superAdmin ||
         role == AppRole.ceo;
     final hodWrite = role == AppRole.hod || role == AppRole.superAdmin || role == AppRole.ceo;
+    final salesOnly = role == AppRole.salesExecutive;
     return TeamPermissions(
       role: role,
       canSeePriorityTasks: _adminLevel(role),
       canSeeFacultyWork: faculty,
-      canSeeInterviews: true,
+      canSeeInterviews: !salesOnly,
       canSeeHodWork: hod,
       canWriteHod: hodWrite,
+      canSeeInbox: !salesOnly,
+      canSeeAnnouncements: !salesOnly,
     );
   }
+}
+
+/// Who is looking: what every tab, Home card and Me tile rule reads
+/// (team_app #50, item 6).
+class TeamViewer {
+  TeamViewer({required this.role, this.attendance = false, this.caps})
+      : perms = TeamPermissions.forRole(role);
+
+  final AppRole role;
+
+  /// An attendance-only sign-in: a punch token with no portal role, which the
+  /// Scheduler accepts only on the punch routes.
+  final bool attendance;
+
+  /// The ESS capabilities, once they have loaded.
+  final EssCapabilities? caps;
+
+  final TeamPermissions perms;
 }
 
 /// The badges this sign-in may give. The server holds the same list and refuses

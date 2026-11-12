@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../my_team/colleague_profile_sheet.dart';
+import '../shell/tile_registry.dart';
 import '../work/wfh_sheet.dart';
 import '../../domain/attendance_models.dart';
 import '../../domain/ess_models.dart';
@@ -28,9 +29,11 @@ class HomeScreen extends StatelessWidget {
     return BlocBuilder<TeamAuthBloc, TeamAuthState>(
       builder: (context, auth) {
         final identity = auth.identity;
-        final attendance = identity?.attendance == true;
-        final perms =
-            TeamPermissions.forRole(identity?.role ?? AppRole.unknown);
+        final viewer = TeamViewer(
+          role: identity?.role ?? AppRole.unknown,
+          attendance: identity?.attendance == true,
+        );
+        final cards = homeCardsFor(viewer);
         return Scaffold(
           backgroundColor: RvmColors.ivory,
           body: Column(
@@ -64,39 +67,15 @@ class HomeScreen extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(RvmSpacing.md,
                               RvmSpacing.md, RvmSpacing.md, RvmSpacing.lg),
+                          // The cards come from the Home registry
+                          // (homeCardRegistry), which holds who sees each one.
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const _ScheduleCard(),
-                              const SizedBox(height: RvmSpacing.md),
-                              _OffThisWeekCard(),
-                              const SizedBox(height: RvmSpacing.md),
-                              if (perms.canSeeFacultyWork) ...[
-                                _FacultyCard(),
-                                const SizedBox(height: RvmSpacing.md),
-                              ],
-                              if (perms.canSeeHodWork) ...[
-                                _HodCard(),
-                                const SizedBox(height: RvmSpacing.md),
-                              ],
-                              if (!attendance && perms.canSeePriorityTasks) ...[
-                                _PrioritySummaryCard(),
-                                const SizedBox(height: RvmSpacing.md),
-                              ],
-                              // Interviews, priority tasks and announcements are
-                              // Scheduler reads. An attendance-only session's punch
-                              // token is accepted only on the punch routes, so these
-                              // would answer 401. The ESS cards above still work.
-                              if (!attendance) ...[
-                                _InterviewsCard(perms: perms),
-                                const SizedBox(height: RvmSpacing.md),
-                                _QuickActions(perms: perms),
-                                const SizedBox(height: RvmSpacing.md),
-                                _WorkFromHomeCard(),
-                                const SizedBox(height: RvmSpacing.md),
-                                _AnnouncementsSection(),
-                              ] else ...[
-                                _QuickActions(perms: perms),
+                              for (var i = 0; i < cards.length; i++) ...[
+                                if (i > 0)
+                                  const SizedBox(height: RvmSpacing.md),
+                                _homeCard(cards[i], viewer.perms),
                               ],
                             ],
                           ),
@@ -113,6 +92,18 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
+
+Widget _homeCard(HomeCard card, TeamPermissions perms) => switch (card) {
+      HomeCard.schedule => const _ScheduleCard(),
+      HomeCard.offThisWeek => _OffThisWeekCard(),
+      HomeCard.faculty => _FacultyCard(),
+      HomeCard.hod => _HodCard(),
+      HomeCard.priorityTasks => _PrioritySummaryCard(),
+      HomeCard.interviews => _InterviewsCard(perms: perms),
+      HomeCard.quickActions => _QuickActions(perms: perms),
+      HomeCard.workFromHome => _WorkFromHomeCard(),
+      HomeCard.announcements => _AnnouncementsSection(),
+    };
 
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader({required this.identity});

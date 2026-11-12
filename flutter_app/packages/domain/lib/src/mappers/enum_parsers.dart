@@ -34,6 +34,8 @@ AppRole parseAppRole(String? raw) {
       return AppRole.hrExecutive;
     case 'hod_placement':
       return AppRole.hodPlacement;
+    case 'sales_executive':
+      return AppRole.salesExecutive;
     case 'admin_executive':
       return AppRole.adminExecutive;
     case 'placement_head':
@@ -64,6 +66,7 @@ String appRoleLabel(AppRole role) => switch (role) {
       AppRole.hr => 'HR',
       AppRole.hrExecutive => 'HR Executive',
       AppRole.hodPlacement => 'Head of Department (Placement)',
+      AppRole.salesExecutive => 'Sales Executive',
       AppRole.adminExecutive => 'Admin Executive',
       AppRole.placementHead => 'Placement Head',
       AppRole.placementExecutive => 'Placement Executive',
@@ -89,6 +92,7 @@ String? appRoleWire(AppRole role) => switch (role) {
       AppRole.hr => 'hr',
       AppRole.hrExecutive => 'hr_executive',
       AppRole.hodPlacement => 'hod_placement',
+      AppRole.salesExecutive => 'sales_executive',
       AppRole.adminExecutive => 'admin_executive',
       AppRole.placementHead => 'placement_head',
       AppRole.placementExecutive => 'placement_executive',
