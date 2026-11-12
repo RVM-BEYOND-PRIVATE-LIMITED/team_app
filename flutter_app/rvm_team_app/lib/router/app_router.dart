@@ -41,6 +41,7 @@ import '../features/work/faculty_indicators_screen.dart';
 import '../features/work/interviews_screen.dart';
 import '../features/work/mark_attendance_screen.dart';
 import '../features/work/my_batches_screen.dart';
+import 'module_routes.dart';
 
 /// Locations that only a portal sign-in can use (issue #13).
 ///
@@ -66,8 +67,14 @@ bool attendanceBlockedLocation(String location) {
 
 /// Auth-gated router. Redirect reads [TeamAuthBloc] state; the app calls
 /// `router.refresh()` when that state changes: splash → login → five-tab shell.
+///
+/// [modules] answers which staff modules the signed-in person has. A module
+/// route (one prefix per module, [TeamModule]) that is not among them falls
+/// back to `/home` (team_app #50, item 7). The default is none, because the
+/// modules reply does not exist yet (Scheduler_Backend#157 / #175).
 GoRouter createRouter(TeamAuthBloc authBloc,
-    {GlobalKey<NavigatorState>? navigatorKey}) {
+    {GlobalKey<NavigatorState>? navigatorKey,
+    Set<TeamModule> Function() modules = noTeamModules}) {
   const authOnly = {'/login', '/forgot'};
   return GoRouter(
     navigatorKey: navigatorKey,
@@ -84,6 +91,7 @@ GoRouter createRouter(TeamAuthBloc authBloc,
               attendanceBlockedLocation(loc)) {
             return '/home';
           }
+          if (moduleBlockedLocation(loc, modules())) return '/home';
           return (loc == '/splash' || authOnly.contains(loc)) ? '/home' : null;
       }
     },
