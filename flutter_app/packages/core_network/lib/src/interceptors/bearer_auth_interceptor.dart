@@ -1,34 +1,47 @@
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
 
+import '../session_rotator.dart';
 import '../token_store.dart';
 
-/// Attaches the Scheduler bearer token to every request and triggers
-/// [TokenStore.onUnauthorized] when the Scheduler REJECTS THE TOKEN. The
-/// Scheduler JWT is a 64h access token with NO refresh endpoint, so a rejected
-/// token == session over == sign out.
+/// Attaches the Scheduler bearer token to every request and decides, from the
+/// reply's `code`, whether a 401 ends the session.
+///
+/// With [sessions] (the kept sign-in shared with the ESS client, team_app #50)
+/// the token is also renewed: before sending when it is about to expire, and
+/// once after the Scheduler refuses it, after which the request is sent again
+/// through [dio]. That keeps a Scheduler-only screen working past the access
+/// token's hour, for a portal and for an attendance-only sign-in.
 ///
 /// Not every Scheduler 401 is a rejected token: several controllers answer 401
 /// for their own reasons while the session is fine (e.g. GET /activities →
 /// "Authentication required with location."). Signing out on those kicks a
-/// working user back to login, so only a real rejection ends the session.
+/// working user back to login, so [SessionRotator.verdictFor] decides.
 class BearerAuthInterceptor extends Interceptor {
-  BearerAuthInterceptor(this._tokens, {DateTime Function()? clock}) : _now = clock ?? DateTime.now;
+  BearerAuthInterceptor(
+    this._tokens, {
+    DateTime Function()? clock,
+    SessionRotator? sessions,
+    Dio? dio,
+  })  : _now = clock ?? sessions?.clock ?? DateTime.now,
+        _sessions = sessions,
+        _dio = dio;
 
   final TokenStore _tokens;
   final DateTime Function() _now;
+  final SessionRotator? _sessions;
+  final Dio? _dio;
 
-  /// The only bodies the Scheduler's auth guards send when they reject a token
-  /// (middleware/auth.js, allowRoles.js, requireRole.js).
-  static const _tokenRejections = {'No token provided', 'Please authenticate'};
+  static const _retriedKey = 'rvm.auth.retried';
 
   @override
   Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    final token = await _tokens.readSchedulerToken();
+    final sessions = _sessions;
+    final token = sessions == null
+        ? await _tokens.readSchedulerToken()
+        : await sessions.tokenForRequest();
     if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
     }
@@ -40,33 +53,61 @@ class BearerAuthInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    if (err.response?.statusCode == 401 && await _isSessionOver(err.response?.data)) {
+    if (err.response?.statusCode != 401) {
+      handler.next(err);
+      return;
+    }
+    final options = err.requestOptions;
+    final verdict = SessionRotator.verdictFor(
+      err.response?.data,
+      sentToken: _sentToken(options) ?? await _tokens.readSchedulerToken(),
+      now: _now(),
+    );
+    if (verdict == SessionVerdict.keep) {
+      handler.next(err);
+      return;
+    }
+
+    // Renew once, then send the request again. Without a kept sign-in, after
+    // a renewal that did not succeed, or when the renewed token is refused
+    // too, the session is over, unless the verdict says to keep it.
+    final sessions = _sessions;
+    final dio = _dio;
+    if (verdict == SessionVerdict.over ||
+        sessions == null ||
+        dio == null ||
+        options.extra[_retriedKey] == true ||
+        !await sessions.renew()) {
+      if (verdict != SessionVerdict.renewOrKeep) await _endSession();
+      handler.next(err);
+      return;
+    }
+
+    options.extra[_retriedKey] = true;
+    try {
+      // The replay runs the whole chain again, so it picks up the renewed
+      // token, the punch cookie and the same Idempotency-Key, and a 401 on it
+      // is judged here once more, with no second renewal.
+      handler.resolve(await dio.fetch<dynamic>(options));
+    } on DioException catch (e) {
+      handler.next(e);
+    }
+  }
+
+  Future<void> _endSession() async {
+    final sessions = _sessions;
+    if (sessions != null) {
+      await sessions.endSession();
+    } else {
       await _tokens.onUnauthorized();
     }
-    handler.next(err);
   }
 
-  /// Session over when the stored JWT has expired, the auth guard rejected the
-  /// token, or the 401 carries no Scheduler error text to tell otherwise.
-  Future<bool> _isSessionOver(dynamic body) async {
-    if (_isExpired(await _tokens.readSchedulerToken())) return true;
-    final error = body is Map ? body['error'] : null;
-    if (error is! String) return true;
-    return _tokenRejections.contains(error);
-  }
-
-  /// True only when the token's `exp` claim is in the past. Unreadable tokens
-  /// are left to the server's answer.
-  bool _isExpired(String? token) {
-    final parts = token?.split('.');
-    if (parts == null || parts.length != 3) return false;
-    try {
-      final claims = json.decode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
-      final exp = claims is Map ? claims['exp'] : null;
-      if (exp is! num) return false;
-      return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000).isBefore(_now());
-    } catch (_) {
-      return false;
-    }
+  /// The token the refused request carried.
+  static String? _sentToken(RequestOptions options) {
+    final header = options.headers['Authorization'];
+    if (header is! String || !header.startsWith('Bearer ')) return null;
+    final token = header.substring('Bearer '.length);
+    return token.isEmpty ? null : token;
   }
 }

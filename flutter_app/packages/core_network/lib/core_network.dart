@@ -9,8 +9,10 @@ library core_network;
 
 export 'src/api_environment.dart';
 export 'src/failure.dart';
+export 'src/redact.dart';
 export 'src/token_store.dart';
 export 'src/ess_token_store.dart';
+export 'src/session_rotator.dart';
 export 'src/dio_factory.dart';
 export 'src/doh_http_client_adapter.dart';
 export 'src/connectivity_service.dart';
@@ -18,5 +20,6 @@ export 'src/interceptors/bearer_auth_interceptor.dart';
 export 'src/interceptors/ess_auth_interceptor.dart';
 export 'src/interceptors/envelope_interceptor.dart';
 export 'src/interceptors/error_mapping_interceptor.dart';
+export 'src/interceptors/idempotency_interceptor.dart';
 export 'src/interceptors/logging_interceptor.dart';
 export 'src/interceptors/retry_interceptor.dart';
