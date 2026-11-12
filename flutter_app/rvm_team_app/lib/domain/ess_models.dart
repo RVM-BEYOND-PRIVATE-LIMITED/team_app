@@ -1325,6 +1325,18 @@ class ApprovalContext extends Equatable {
       [typeThisMonth, monthLimit, late, othersOffCount, othersOffNames];
 }
 
+/// Why a leave's usual approver was replaced (`routing_note`, #43), in staff
+/// words, or null.
+String? leaveRoutingNoteText(String? note) => switch (note) {
+      'on_leave' => 'Your usual approver is on leave, so a backup decides.',
+      'not_active' =>
+        'Your usual approver is no longer active, so a backup decides.',
+      'same_person' => 'Nobody approves their own leave, so a backup decides.',
+      'no_approver' => 'No approver is set yet, so a backup decides.',
+      'switch_over_hr_close' => 'Moved to HR when the new leave policy started.',
+      _ => null,
+    };
+
 /// Request types RVM switched off on 12 Nov 2026 (team_app #44): the new
 /// attendance policy has no grace period, so a late mark can no longer be
 /// excused. They are no longer offered; a pending one may only be rejected or
@@ -1372,6 +1384,19 @@ class EssRequest extends Equatable {
     this.fixOut,
     this.employee,
     this.context,
+    this.source = 'ess',
+    this.secondApprovalNeeded = false,
+    this.approverIsHrPool = false,
+    this.finalApproverName,
+    this.finalApproverIsHrPool = false,
+    this.routingNote,
+    this.waitingOn,
+    this.waitingDays,
+    this.filedVia,
+    this.lateNotice = false,
+    this.enteredByName,
+    this.clUnits,
+    this.lwpUnits,
   });
 
   final String id;
@@ -1412,7 +1437,80 @@ class EssRequest extends Equatable {
   final RequestEmployee? employee;
   final ApprovalContext? context;
 
+  /// Where the row lives: `ess` (attendance requests, work from home) or
+  /// `scheduler` (casual leave and leave without pay, team_app #43). It decides
+  /// which backend withdraws or decides it.
+  final String source;
+
+  /// Scheduler leave (#43): a 2nd approver is needed because the leave is
+  /// longer than the person's threshold; the last required approval is final.
+  final bool secondApprovalNeeded;
+
+  /// The 1st approver is "any HR approver" rather than a named person.
+  final bool approverIsHrPool;
+  final String? finalApproverName;
+  final bool finalApproverIsHrPool;
+
+  /// Why the usual approver was replaced: on_leave | not_active | same_person |
+  /// no_approver | switch_over_hr_close.
+  final String? routingNote;
+
+  /// A pending leave's current approver (a name, or "HR") and how long it has waited.
+  final String? waitingOn;
+  final int? waitingDays;
+
+  /// self | hr_entry | legacy.
+  final String? filedVia;
+
+  /// Starts with less notice than the rule wants (a faculty leave 3 days ahead).
+  final bool lateNotice;
+  final String? enteredByName;
+
+  /// What an approved leave was written as (CL is used first, the rest is LWP).
+  final num? clUnits;
+  final num? lwpUnits;
+
   bool get isPending => status == 'pending';
+
+  /// Casual leave / leave without pay, read from and decided on the Scheduler.
+  bool get isSchedulerLeave => source == 'scheduler';
+
+  /// HR entered this short-notice leave on the person's behalf, already approved.
+  bool get isRecordedByHr => filedVia == 'hr_entry';
+
+  /// The 1st of two approvals: approving sends it on to the 2nd approver.
+  bool get approvalSendsOn => stage == 'manager' && secondApprovalNeeded;
+
+  /// "Written as 1 CL + 1 LWP" for an approved leave, or null.
+  String? get writtenAsLabel {
+    if (status != 'approved') return null;
+    final parts = <String>[
+      if ((clUnits ?? 0) > 0) '${_daysLabel(clUnits!)} CL',
+      if ((lwpUnits ?? 0) > 0) '${_daysLabel(lwpUnits!)} LWP',
+    ];
+    return parts.isEmpty ? null : 'Written as ${parts.join(' + ')}';
+  }
+
+  /// "Waiting on Shallu · 2 days" for a pending leave, or null.
+  String? get waitingSummary {
+    final stage = stageLabel;
+    if (stage == null) return null;
+    final days = waitingDays;
+    if (days == null) return stage;
+    if (days <= 0) return '$stage · since today';
+    return '$stage · $days ${days == 1 ? 'day' : 'days'}';
+  }
+
+  /// "Waiting 3 days" for a pending leave, or null.
+  String? get waitingLabel {
+    final days = waitingDays;
+    if (!isPending || days == null) return null;
+    if (days <= 0) return 'Waiting since today';
+    return 'Waiting $days ${days == 1 ? 'day' : 'days'}';
+  }
+
+  /// Why the usual approver was replaced, in staff words, or null.
+  String? get routingNoteLabel => leaveRoutingNoteText(routingNote);
 
   /// An excuse-late or short-leave request: may be rejected or withdrawn, never approved.
   bool get isSwitchedOffType => switchedOffRequestTypes.contains(type);
@@ -1436,16 +1534,13 @@ class EssRequest extends Equatable {
   String get daysLabel =>
       '${_daysLabel(dayCount)} ${dayCount == 1 ? 'day' : 'days'}';
 
-  /// The round a pending leave waits in, in the new flow's words.
+  /// Who a pending leave waits on, from the Scheduler's approver mapping
+  /// (#43): "Waiting on Shallu", or "Waiting on HR". Null when not known.
   String? get stageLabel {
-    if (!isPending || !requiresFinalApproval) return null;
-    if (stage == 'final') {
-      return 'Admin Manager approved — waiting for Super Admin final approval';
-    }
-    final manager = adminManagerName?.trim();
-    return manager == null || manager.isEmpty
-        ? 'Waiting for Admin Manager approval'
-        : 'Waiting for $manager (Admin Manager)';
+    if (!isPending) return null;
+    final who = waitingOn?.trim();
+    if (who == null || who.isEmpty) return null;
+    return 'Waiting on $who';
   }
 
   /// 'Substitute · timing' once a teaching leave has coverage, or null.
@@ -1468,10 +1563,18 @@ class EssRequest extends Equatable {
         'excuse_late' => 'Excuse a late',
         'cl' => 'Casual leave',
         'lwp' => 'Leave without pay',
+        'wfh' => 'Work from home',
         _ => type,
       };
 
-  factory EssRequest.fromJson(Map<String, dynamic> j) => EssRequest(
+  /// A Scheduler leave row (`/hr/my-attendance/leave*`, #43). It carries no
+  /// `family`, so it is set here; without it the row would read as attendance.
+  factory EssRequest.fromSchedulerLeave(Map<String, dynamic> j) =>
+      EssRequest.fromJson({...j, 'family': 'leave'}, source: 'scheduler');
+
+  factory EssRequest.fromJson(Map<String, dynamic> j,
+          {String source = 'ess'}) =>
+      EssRequest(
         id: _str(j['id']) ?? '',
         family: _str(j['family']) ?? 'attendance',
         type: _str(j['type']) ?? '',
@@ -1513,6 +1616,19 @@ class EssRequest extends Equatable {
         context: _map(j['context']) == null
             ? null
             : ApprovalContext.fromJson(_map(j['context'])!),
+        source: source,
+        secondApprovalNeeded: _bool(j['second_approval_needed']),
+        approverIsHrPool: _bool(j['approver_is_hr_pool']),
+        finalApproverName: _str(j['final_approver_name']),
+        finalApproverIsHrPool: _bool(j['final_approver_is_hr_pool']),
+        routingNote: _str(j['routing_note']),
+        waitingOn: _str(j['waiting_on']),
+        waitingDays: _int(j['waiting_days']),
+        filedVia: _str(j['filed_via']),
+        lateNotice: _bool(j['late_notice']),
+        enteredByName: _str(j['entered_by_name']),
+        clUnits: _num(j['cl_units']),
+        lwpUnits: _num(j['lwp_units']),
       );
 
   @override
@@ -1532,7 +1648,15 @@ class EssRequest extends Equatable {
         classTiming,
         reason,
         decidedByName,
-        decisionNote
+        decisionNote,
+        source,
+        secondApprovalNeeded,
+        waitingOn,
+        waitingDays,
+        filedVia,
+        lateNotice,
+        clUnits,
+        lwpUnits,
       ];
 }
 
@@ -1564,79 +1688,6 @@ class ApprovalInbox extends Equatable {
   List<Object?> get props => [attendance, leave, total, requests];
 }
 
-/// An active Admin Manager a branch may route its leave to.
-class LeaveApproverChoice extends Equatable {
-  const LeaveApproverChoice(
-      {required this.id, required this.fullName, this.employeeCode});
-  final String id;
-  final String fullName;
-  final String? employeeCode;
-  factory LeaveApproverChoice.fromJson(Map<String, dynamic> j) =>
-      LeaveApproverChoice(
-        id: _str(j['id']) ?? '',
-        fullName: _str(j['full_name']) ?? '',
-        employeeCode: _str(j['employee_code']),
-      );
-  @override
-  List<Object?> get props => [id, fullName, employeeCode];
-}
-
-/// One branch and the Admin Manager chosen to decide its leave.
-class LeaveApproverBranch extends Equatable {
-  const LeaveApproverBranch({
-    required this.id,
-    required this.name,
-    this.selectedEmployeeId,
-    this.selectedName,
-    this.adminManagers = const [],
-  });
-  final String id;
-  final String name;
-  final String? selectedEmployeeId;
-  final String? selectedName;
-  final List<LeaveApproverChoice> adminManagers;
-
-  bool get hasNoAdminManager => adminManagers.isEmpty;
-  bool get hasOneAdminManager => adminManagers.length == 1;
-  bool get hasSeveralAdminManagers => adminManagers.length > 1;
-
-  /// The name shown for a branch: the saved choice, or the only manager.
-  String? get effectiveManagerName {
-    final chosen = selectedName?.trim();
-    if (chosen != null && chosen.isNotEmpty) return chosen;
-    return hasOneAdminManager ? adminManagers.first.fullName : null;
-  }
-
-  factory LeaveApproverBranch.fromJson(Map<String, dynamic> j) =>
-      LeaveApproverBranch(
-        id: _str(j['id']) ?? '',
-        name: _str(j['name']) ?? '',
-        selectedEmployeeId: _str(j['selected_employee_id']),
-        selectedName: _str(j['selected_name']),
-        adminManagers: _maps(j['admin_managers'])
-            .map(LeaveApproverChoice.fromJson)
-            .toList(growable: false),
-      );
-
-  @override
-  List<Object?> get props =>
-      [id, name, selectedEmployeeId, selectedName, adminManagers];
-}
-
-/// `GET /leave-approvers` and the PUT's reply.
-class LeaveApproverList extends Equatable {
-  const LeaveApproverList({required this.branches});
-  final List<LeaveApproverBranch> branches;
-  factory LeaveApproverList.fromJson(Map<String, dynamic> j) =>
-      LeaveApproverList(
-        branches: _maps(j['branches'])
-            .map(LeaveApproverBranch.fromJson)
-            .toList(growable: false),
-      );
-  @override
-  List<Object?> get props => [branches];
-}
-
 /// A substitute faculty choice from `GET /leave-faculty`.
 class LeaveFacultyOption extends Equatable {
   const LeaveFacultyOption({required this.id, required this.name});
@@ -1649,6 +1700,251 @@ class LeaveFacultyOption extends Equatable {
       );
   @override
   List<Object?> get props => [id, name];
+}
+
+/// Where a leave would go (`GET /hr/my-attendance/leave/route`, and `my_route`
+/// on the overview): the approver from HR's mapping, and a 2nd approver only
+/// when the leave is longer than the person's threshold (#43).
+class LeaveRoute extends Equatable {
+  const LeaveRoute({
+    this.approverName,
+    this.approverIsHrPool = false,
+    this.secondNeeded = false,
+    this.secondName,
+    this.secondIsHrPool = false,
+    this.thresholdDays,
+    this.routingNote,
+  });
+  final String? approverName;
+  final bool approverIsHrPool;
+  final bool secondNeeded;
+  final String? secondName;
+  final bool secondIsHrPool;
+  final int? thresholdDays;
+  final String? routingNote;
+
+  String? get routingNoteLabel => leaveRoutingNoteText(routingNote);
+
+  String? get _first => approverIsHrPool ? 'HR' : approverName?.trim();
+  String? get _second => secondIsHrPool ? 'HR' : secondName?.trim();
+
+  /// "Goes to Shallu, then Bhupender", "Goes to Nisha", or null when unknown.
+  String? get summary {
+    final first = _first;
+    if (first == null || first.isEmpty) return null;
+    final second = _second;
+    if (secondNeeded && second != null && second.isNotEmpty) {
+      return 'Goes to $first, then $second';
+    }
+    return 'Goes to $first';
+  }
+
+  factory LeaveRoute.fromJson(Map<String, dynamic> j) {
+    final approver = _map(j['approver']);
+    final second = _map(j['second']);
+    return LeaveRoute(
+      approverName: approver == null ? null : _str(approver['full_name']),
+      approverIsHrPool: _bool(j['approver_is_hr_pool']),
+      secondNeeded: _bool(j['second_needed']),
+      secondName: second == null ? null : _str(second['full_name']),
+      secondIsHrPool: _bool(j['second_is_hr_pool']),
+      thresholdDays: _int(j['threshold_days']),
+      routingNote: _str(j['routing_note']),
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        approverName,
+        approverIsHrPool,
+        secondNeeded,
+        secondName,
+        secondIsHrPool,
+        thresholdDays,
+        routingNote,
+      ];
+}
+
+/// What the Approvals entry shows (#45): everything waiting on this person
+/// (Scheduler leave + ESS attendance and work from home), and whether the
+/// Scheduler's approver mapping makes them a leave approver at all.
+class ApprovalsSummary extends Equatable {
+  const ApprovalsSummary({required this.pending, required this.canApproveLeave});
+  final int pending;
+  final bool canApproveLeave;
+  @override
+  List<Object?> get props => [pending, canApproveLeave];
+}
+
+/// `GET /hr/my-attendance/leave/route?day=&end_day=&portion=`.
+class LeaveRoutePreview extends Equatable {
+  const LeaveRoutePreview(
+      {required this.route, this.workingDays = const [], this.dayCount});
+  final LeaveRoute route;
+  final List<String> workingDays;
+  final num? dayCount;
+  factory LeaveRoutePreview.fromJson(Map<String, dynamic> j) =>
+      LeaveRoutePreview(
+        route: LeaveRoute.fromJson(_map(j['route']) ?? const {}),
+        workingDays: _strings(j['working_days']),
+        dayCount: _num(j['day_count']),
+      );
+  @override
+  List<Object?> get props => [route, workingDays, dayCount];
+}
+
+/// `GET /hr/my-attendance/leave?month=` (#43): the person's own leave, the
+/// approvals waiting on them, and the rules the apply form needs.
+class LeaveOverview extends Equatable {
+  const LeaveOverview({
+    required this.month,
+    this.today,
+    this.earliestSelfDay,
+    this.shortNoticeMessage,
+    this.myRoute,
+    this.balances = const [],
+    this.requests = const [],
+    this.approvals = const [],
+    this.approvalsCount = 0,
+    this.decided = const [],
+    this.inHrPool = false,
+    this.canApprove = false,
+    this.canManage = false,
+    this.employeeId,
+  });
+  final String month;
+  final String? today;
+
+  /// The viewer's own employee id: nobody approves their own leave.
+  final String? employeeId;
+
+  /// The first day the person may apply for themselves (today + 3, IST).
+  final String? earliestSelfDay;
+  final String? shortNoticeMessage;
+  final LeaveRoute? myRoute;
+  final List<LeaveBalanceType> balances;
+  final List<EssRequest> requests;
+
+  /// Leave waiting on this person, oldest first.
+  final List<EssRequest> approvals;
+  final int approvalsCount;
+  final List<EssRequest> decided;
+  final bool inHrPool;
+  final bool canApprove;
+
+  /// HR, HR Executive, CEO and super admin: may cancel an approved leave.
+  final bool canManage;
+
+  /// The Scheduler reads the table the ESS shares, so its lists can include
+  /// work-from-home rows; those stay on the ESS and are dropped here.
+  static List<EssRequest> _leave(dynamic rows) => _maps(rows)
+      .where((r) => r['type'] == 'cl' || r['type'] == 'lwp')
+      .map(EssRequest.fromSchedulerLeave)
+      .toList(growable: false);
+
+  factory LeaveOverview.fromJson(Map<String, dynamic> j) {
+    final route = _map(j['my_route']);
+    final approvals = _leave(j['approvals']);
+    return LeaveOverview(
+      month: _str(j['month']) ?? '',
+      today: _str(j['today']),
+      earliestSelfDay: _str(j['earliest_self_day']),
+      shortNoticeMessage: _str(j['short_notice_message']),
+      myRoute: route == null ? null : LeaveRoute.fromJson(route),
+      balances: _maps(j['balances'])
+          .map(LeaveBalanceType.fromJson)
+          .toList(growable: false),
+      requests: _leave(j['requests']),
+      approvals: approvals,
+      approvalsCount: _int(j['approvals_count']) ?? approvals.length,
+      decided: _leave(j['decided']),
+      inHrPool: _bool(j['in_hr_pool']),
+      canApprove: _bool(j['can_approve']),
+      canManage: _bool(j['can_manage']),
+      employeeId: _str(_map(j['employee'])?['id']),
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        month,
+        earliestSelfDay,
+        myRoute,
+        balances,
+        requests,
+        approvals,
+        approvalsCount,
+        decided,
+        canApprove,
+        canManage,
+      ];
+}
+
+/// One colleague off on a leave's dates (`GET /leave/whos-off`).
+class LeaveOffEntry extends Equatable {
+  const LeaveOffEntry({
+    required this.name,
+    required this.status,
+    required this.day,
+    this.endDay,
+    this.portion = 'full',
+  });
+  final String name;
+  final String status; // pending | approved
+  final String day;
+  final String? endDay;
+  final String portion;
+
+  String get dateLabel {
+    final last = endDay;
+    if (last == null || last == day) return _shortDate(day);
+    return '${_shortDate(day)} – ${_shortDate(last)}';
+  }
+
+  factory LeaveOffEntry.fromJson(Map<String, dynamic> j) {
+    final employee = _map(j['employee']);
+    return LeaveOffEntry(
+      name: (employee == null ? null : _str(employee['full_name'])) ??
+          'Unknown',
+      status: _str(j['status']) ?? '',
+      day: _str(j['day']) ?? '',
+      endDay: _str(j['end_day']),
+      portion: _str(j['portion']) ?? 'full',
+    );
+  }
+  @override
+  List<Object?> get props => [name, status, day, endDay, portion];
+}
+
+/// `GET /hr/my-attendance/leave/whos-off?request_id=`: who else in the same
+/// branch and approver team is off on the request's dates.
+class LeaveWhosOff extends Equatable {
+  const LeaveWhosOff({this.from, this.to, this.off = const []});
+  final String? from;
+  final String? to;
+  final List<LeaveOffEntry> off;
+  factory LeaveWhosOff.fromJson(Map<String, dynamic> j) => LeaveWhosOff(
+        from: _str(j['from']),
+        to: _str(j['to']),
+        off: _maps(j['off']).map(LeaveOffEntry.fromJson).toList(growable: false),
+      );
+  @override
+  List<Object?> get props => [from, to, off];
+}
+
+/// `POST /hr/my-attendance/leave/:id/decide`: `advanced` (sent on to the 2nd
+/// approver), `approved` or `rejected`.
+class LeaveDecision extends Equatable {
+  const LeaveDecision({required this.request, required this.outcome});
+  final EssRequest request;
+  final String outcome;
+  bool get advanced => outcome == 'advanced';
+  factory LeaveDecision.fromJson(Map<String, dynamic> j) => LeaveDecision(
+        request: EssRequest.fromSchedulerLeave(_map(j['request']) ?? const {}),
+        outcome: _str(j['outcome']) ?? '',
+      );
+  @override
+  List<Object?> get props => [request, outcome];
 }
 
 /// One row of `GET /leave/balances`.
@@ -1685,7 +1981,9 @@ class LeaveBalanceType extends Equatable {
 
   factory LeaveBalanceType.fromJson(Map<String, dynamic> j) => LeaveBalanceType(
         type: _str(j['type']) ?? '',
-        offered: _bool(j['offered']),
+        // The Scheduler's leave balances (#43) carry no `offered`; every row it
+        // returns is one the person has. The ESS rows say so explicitly.
+        offered: j.containsKey('offered') ? _bool(j['offered']) : true,
         unit: _str(j['unit']) ?? 'days',
         phase: _int(j['phase']) ?? 1,
         allowed: _num(j['allowed']),

@@ -1,11 +1,9 @@
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_ui/core_ui.dart';
-import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../bloc/team_auth_bloc.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
@@ -38,9 +36,6 @@ class _HrToolsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final caps = context.watch<CapabilitiesBloc>().state.data;
-    final isSuperAdmin =
-        context.watch<TeamAuthBloc>().state.identity?.role ==
-            AppRole.superAdmin;
     // Attendance queues and request limits need ATTENDANCE_OVERRIDE_ROLES.
     final canAttendance = caps?.approvalsAnyRequest == true;
     // The Wall desk needs an announcer or a moderator; an HR Executive has
@@ -75,10 +70,8 @@ class _HrToolsView extends StatelessWidget {
                   ActionChip(
                       label: const Text('WFH allowances'),
                       onPressed: () => context.push('/hr/wfh-allowances')),
-                if (isSuperAdmin)
-                  ActionChip(
-                      label: const Text('Leave approvers'),
-                      onPressed: () => context.push('/hr/leave-approvers')),
+                // Leave approvers: retired (#43). HR edits the approver
+                // mapping in the Scheduler.
                 ActionChip(
                     label: const Text('Profile changes'),
                     onPressed: () => context.push('/hr/change-requests')),
