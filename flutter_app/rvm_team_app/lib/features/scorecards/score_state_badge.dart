@@ -9,6 +9,20 @@ import 'score_state.dart';
 ///
 /// The words do not say above or below: the server has already applied each
 /// target's better direction (for dropouts, fewer is better).
+///
+/// It shows a [ScoreState] and nothing else. A number the server sends with
+/// `available: false` (Scheduler_Backend#177, item 7) can still have a
+/// target, so do not show it here as `none` ("No target"): how such a number
+/// shows is for the `ScoreNumber` model (#55, item 2) to decide.
+///
+/// Room: in the app's font the pill needs about 90 px at the default text
+/// size and about 140 px at twice that (dense: about 78 px at the default).
+/// With less it shrinks as a whole instead of overflowing, and its word
+/// shrinks with it: in a 56 px column the word draws under 7 px at 1x and
+/// under 9 px at 2x, smaller than its normal 10.5 px. Where a cell is that
+/// tight, use [dense] or an icon with a screen-reader label instead. It only
+/// shrinks when its parent limits its width: as a plain [Row] child (not in
+/// a [Flexible]) or in a sideways scroll it keeps its full size.
 class ScoreStateBadge extends StatelessWidget {
   const ScoreStateBadge({super.key, required this.state, this.dense = false});
 
@@ -38,7 +52,8 @@ class ScoreStateBadge extends StatelessWidget {
         ),
     };
     // When a narrow column or a large text size leaves less room than the
-    // pill needs, it scales down instead of overflowing; the word stays whole.
+    // pill needs, it scales down instead of overflowing. The word stays
+    // whole but gets smaller (see "Room" above).
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: AlignmentDirectional.centerStart,

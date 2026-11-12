@@ -166,7 +166,8 @@ void main() {
     });
 
     testWidgets('a screen reader hears the word', (tester) async {
-      final semantics = tester.ensureSemantics();
+      // testWidgets keeps semantics on by default (semanticsEnabled: true),
+      // so no handle of its own is needed, or left open when a check fails.
       for (final (state, word) in [
         (ScoreState.green, 'On target'),
         (ScoreState.red, 'Off target'),
@@ -175,7 +176,6 @@ void main() {
         await _pump(tester, ScoreStateBadge(state: state));
         expect(find.bySemanticsLabel(word), findsOneWidget, reason: '$state');
       }
-      semantics.dispose();
     });
 
     testWidgets('dense gives the smaller pill', (tester) async {
