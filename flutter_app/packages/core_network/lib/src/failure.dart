@@ -68,7 +68,9 @@ sealed class Failure extends Equatable implements Exception {
       404 => NotFoundFailure(serverMessage, serverCode, requestId),
       408 => const TimeoutFailure(),
       // The limiter's message states the real wait (e.g. "…in 15 minutes").
-      429 => TooManyRequestsFailure(serverMessage, requestId),
+      // Its code stays too (`RATE_LIMITED`, `LOCKED`, `TOO_MANY_CODES`…), so a
+      // screen can tell a limit from a lock-out (team_app #50, item 12).
+      429 => TooManyRequestsFailure(serverMessage, requestId, serverCode),
       // The ESS's 503s (MODULE_NOT_INSTALLED / MODULE_DISABLED / UNAVAILABLE)
       // carry copy written for staff, so those keep their message; other 5xx
       // text stays generic (it may name internals).
@@ -170,10 +172,12 @@ class NotFoundFailure extends Failure {
 }
 
 class TooManyRequestsFailure extends Failure {
-  const TooManyRequestsFailure([String? message, String? requestId])
+  const TooManyRequestsFailure(
+      [String? message, String? requestId, String? code])
       : super(
             message ?? 'Too many attempts. Please try again in a few minutes.',
             statusCode: 429,
+            code: code,
             requestId: requestId);
 }
 

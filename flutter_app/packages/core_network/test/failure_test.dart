@@ -115,6 +115,31 @@ void main() {
       final f =
           Failure.fromDio(_dio(DioExceptionType.badResponse, status: 429));
       expect(f.message, contains('Too many attempts'));
+      expect(f.code, isNull);
+    });
+
+    // team_app #50, item 12: the limiter's code stays on the typed failure.
+    // Scheduler middleware/punchCodeLimiter.js and apps/ess-api
+    // src/middleware/rateLimit.js both answer 429 {error, code: RATE_LIMITED}.
+    test('429 keeps the RATE_LIMITED code and its message', () {
+      final f = Failure.fromDio(
+          _dio(DioExceptionType.badResponse, status: 429, data: {
+        'error': 'Too many sign-in attempts from this network. '
+            'Wait fifteen minutes and try again.',
+        'code': 'RATE_LIMITED',
+      }));
+      expect(f, isA<TooManyRequestsFailure>());
+      expect(f.statusCode, 429);
+      expect(f.code, 'RATE_LIMITED');
+      expect(f.message, contains('Wait fifteen minutes'));
+    });
+
+    test('429 keeps any other limiter code (a lock-out is not a limit)', () {
+      // Scheduler controllers/hr/attendanceOtpController.js: 429 LOCKED.
+      final f = Failure.fromStatus(429, 'Too many wrong passwords.', 'LOCKED');
+      expect(f, isA<TooManyRequestsFailure>());
+      expect(f.code, 'LOCKED');
+      expect(f.message, 'Too many wrong passwords.');
     });
 
     test('5xx keeps the real status + machine code but NOT the server text',
