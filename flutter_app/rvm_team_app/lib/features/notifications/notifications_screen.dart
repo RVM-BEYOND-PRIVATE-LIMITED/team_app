@@ -2,9 +2,11 @@ import 'package:core_bloc/core_bloc.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
+import '../../push/push_service.dart' show notificationRowRoute;
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
 import 'bloc/notifications_bloc.dart';
@@ -118,15 +120,17 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // A row opens the screen it is about (its data.route, or the request
+    // screens for a request row) and is marked read on the way (#50, item 8).
+    final route =
+        notificationRowRoute(notification.category, notification.data);
     return Card(
       color: notification.unread
           ? scheme.primaryContainer.withValues(alpha: 0.35)
           : null,
       child: ListTile(
-        onTap: notification.unread
-            ? () => context
-                .read<NotificationsBloc>()
-                .add(NotificationReadRequested(notification.id))
+        onTap: notification.unread || route != null
+            ? () => _open(context, route)
             : null,
         leading: CircleAvatar(
           backgroundColor: notification.unread
@@ -150,6 +154,15 @@ class _NotificationTile extends StatelessWidget {
                 style: Theme.of(context).textTheme.labelSmall),
       ),
     );
+  }
+
+  void _open(BuildContext context, String? route) {
+    if (notification.unread) {
+      context
+          .read<NotificationsBloc>()
+          .add(NotificationReadRequested(notification.id));
+    }
+    if (route != null) context.push(route);
   }
 
   static IconData _icon(String category) => switch (category) {
