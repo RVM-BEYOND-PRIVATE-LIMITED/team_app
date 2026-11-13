@@ -80,12 +80,26 @@ class CallLauncher {
   /// number, in case a server wrote one into its error text (team_app #61).
   /// The app's own failure messages carry none, so they come back as they are.
   static Failure _withoutNumbers(Failure failure) {
-    final message = Redact.text(failure.message);
+    // Redact.text masks runs of 10+ digits; a dialable number can be shorter
+    // (e.g. a landline), so any run of 6+ digits, spaces, dots, dashes or
+    // brackets between them included, is masked too.
+    final message = Redact.text(failure.message)
+        .replaceAll(_shortNumber, Redact.mask);
     if (message == failure.message) return failure;
     final status = failure.statusCode;
-    if (status == null) return UnknownFailure(message);
-    return Failure.fromStatus(status, message, failure.code, failure.requestId);
+    if (status != null) {
+      return Failure.fromStatus(
+          status, message, failure.code, failure.requestId);
+    }
+    // No status: keep the failure's kind where it can carry server text.
+    if (failure is BadResponseFailure) {
+      return BadResponseFailure(message,
+          code: failure.code, requestId: failure.requestId);
+    }
+    return UnknownFailure(message);
   }
+
+  static final RegExp _shortNumber = RegExp(r'\+?\d(?:[\s.\-()]*\d){5,}');
 }
 
 /// What [CallLauncher.dial] did. None of these carries the number.

@@ -264,6 +264,34 @@ void main() {
       expectNoNumber(result);
     });
 
+    test('masks a short (landline-length) number too', () async {
+      final result = await dialThrowing(const BadResponseFailure(
+          'Landline 0129-4 123 456 is blocked.',
+          statusCode: 409,
+          code: 'TEST_REFUSED'));
+
+      final failure = (result as CallStartFailed).failure;
+      expect(failure, isA<BadResponseFailure>());
+      expect(failure.message, isNot(contains('123 456')));
+      expect(failure.message, contains(Redact.mask));
+      expect(failure.code, 'TEST_REFUSED');
+    });
+
+    test('keeps the kind, code and request id of a failure with no status',
+        () async {
+      final result = await dialThrowing(const BadResponseFailure(
+          'Number 98765 43210 refused.',
+          code: 'TEST_REFUSED',
+          requestId: 'req-1'));
+
+      final failure = (result as CallStartFailed).failure;
+      expect(failure, isA<BadResponseFailure>());
+      expect(failure.code, 'TEST_REFUSED');
+      expect(failure.requestId, 'req-1');
+      expect(failure.message, isNot(contains('98765')));
+      expect(failure.message, contains(Redact.mask));
+    });
+
     test('maps a raw dio timeout', () async {
       final result = await dialThrowing(DioException(
           requestOptions: RequestOptions(path: '/test/start-call'),
