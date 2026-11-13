@@ -64,6 +64,14 @@ keytool -genkeypair -keystore /tmp/throwaway.jks -storetype PKCS12 \
 Set `CI=true` for such a build, so its R8 mapping is not uploaded to the
 production Firebase project.
 
+## Device checks
+
+[docs/device-checks.md](docs/device-checks.md) holds the checks only a real
+phone can show, with the exact `adb` steps and a results table: sensitive
+screens (the class roster in a `SECURE_ROSTER=true` build, and each module
+marked sensitive) cannot be screenshotted, recorded or previewed in the app
+switcher, and every other screen still can (team_app #52, item 13).
+
 ## CI
 
 `.github/workflows/flutter.yml` runs on every pull request that touches
