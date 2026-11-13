@@ -15,10 +15,10 @@ import '../token_store.dart';
 /// renew in one flight. The replay goes through a bare [refreshDio] (no
 /// interceptors), which is how a 401 on it ends the family without recursion.
 ///
-/// A 403 `NOT_ACTIVE` (the employee record is no longer active) and a refresh
-/// refused because the person left or changed their password end the session
-/// with the server's message for the sign-in screen (team_app #52 item 8,
-/// [SessionRotator.accessEndedMessage]).
+/// A refresh refused because the person left or changed their password ends
+/// the session with the ESS's message for the sign-in screen (team_app #52
+/// item 8, [SessionRotator.accessEndedMessage]). A 403 never ends it: a 403
+/// `NOT_ACTIVE` reaches the screen that asked, as before.
 class EssAuthInterceptor extends Interceptor {
   EssAuthInterceptor({
     required TokenStore tokens,
@@ -58,32 +58,12 @@ class EssAuthInterceptor extends Interceptor {
     handler.next(options);
   }
 
-  /// The app's ESS client takes refusals as replies (every status but 401),
-  /// so a 403 arrives here rather than in [onError].
-  @override
-  Future<void> onResponse(
-    Response<dynamic> response,
-    ResponseInterceptorHandler handler,
-  ) async {
-    if (_endsAccess(response)) {
-      await _endSession(response.requestOptions,
-          message: SessionRotator.accessEndedMessage(response.data));
-    }
-    handler.next(response);
-  }
-
   @override
   Future<void> onError(
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
     final options = err.requestOptions;
-    if (_endsAccess(err.response)) {
-      await _endSession(options,
-          message: SessionRotator.accessEndedMessage(err.response?.data));
-      handler.next(err);
-      return;
-    }
     // Only a 401 about the TOKEN ends a session. The ESS's account surface
     // answers 401 WRONG_PASSWORD for a bad current password (issue #13) and
     // that must reach the screen as a message, not sign the person out.
@@ -114,28 +94,9 @@ class EssAuthInterceptor extends Interceptor {
       final response = await _refreshDio.fetch(retried);
       handler.resolve(response);
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        await _endSession(options);
-      } else if (_endsAccess(e.response)) {
-        await _endSession(options,
-            message: SessionRotator.accessEndedMessage(e.response?.data));
-      }
+      if (e.response?.statusCode == 401) await _endSession(options);
       handler.next(e);
     }
-  }
-
-  /// A 403 `NOT_ACTIVE` ([SessionRotator.endsSessionOn403]) to a request that
-  /// carried a token: the employee record is no longer active, so this
-  /// sign-in can do nothing more.
-  static bool _endsAccess(Response<dynamic>? response) {
-    if (response?.statusCode != 403 ||
-        !SessionRotator.endsSessionOn403(response?.data)) {
-      return false;
-    }
-    final header = response!.requestOptions.headers['Authorization'];
-    return header is String &&
-        header.startsWith('Bearer ') &&
-        header.length > 'Bearer '.length;
   }
 
   /// True when a 401 is about the token itself. The ESS marks those

@@ -5,9 +5,10 @@ import 'package:test/test.dart';
 import 'support/fakes.dart';
 
 /// team_app #52, item 8: when the server says the person's access has ended
-/// (an exited account, a changed password, an employee record no longer
-/// active), the session is over and the server's own message reaches the
-/// sign-in screen. Every other refusal keeps today's behaviour.
+/// (an exited account, a changed password: the two the issue names), the
+/// session is over and the server's own message reaches the sign-in screen.
+/// Every other refusal keeps today's behaviour, a 403 `NOT_ACTIVE` included:
+/// it reaches the screen that asked and the session stays.
 ///
 /// The codes and messages are the servers' own on main:
 ///  * Scheduler_Backend middleware/auth.js: 401 ACCOUNT_EXITED, 401
@@ -15,7 +16,8 @@ import 'support/fakes.dart';
 ///    NOT_ACTIVE.
 ///  * team_app apps/ess-api src/middleware/employeeAuth.js: 403 NOT_ACTIVE;
 ///    src/routes/sessions.js: a refused refresh, 401 NOT_AUTHENTICATED with a
-///    `reason`; src/lib/errors.js: the messages.
+///    `reason` (`left`, `password_changed`, ...); src/lib/errors.js: the
+///    messages.
 const _env = ApiEnvironment(
   schedulerBaseUrl: 'https://scheduler.test/api',
   jobPortalBaseUrl: 'https://jobs.test/api/v1',
@@ -143,27 +145,37 @@ void main() {
       });
     }
 
-    test('403 NOT_ACTIVE ends the session with the server\'s message',
+    // Not one of the issue's two codes: the punch card shows its refusal
+    // inline and the session stays, as before.
+    test('403 NOT_ACTIVE reaches the punch screen and keeps the session',
         () async {
-      final world = _World();
+      final world = _World(keptSignIn: true);
       final dio = world
           .scheduler(403, {'error': _punchNotActive, 'code': 'NOT_ACTIVE'});
 
-      final res = await dio.get<dynamic>('/hr/my-attendance');
+      final res = await dio.post<dynamic>('/hr/my-attendance/punch');
 
-      expect(res.statusCode, 403, reason: 'the screen still gets the reply');
-      expect(world.tokens.messages, [_punchNotActive]);
+      expect(res.statusCode, 403);
+      expect((res.data as Map)['error'], _punchNotActive);
+      expect(world.tokens.unauthorized, 0);
+      expect(world.tokens.refreshToken, 'refresh-0');
     });
 
-    test('403 NOT_ACTIVE ends it too when the client throws refusals',
+    test('403 NOT_ACTIVE keeps it too when the client throws refusals',
         () async {
-      final world = _World();
-
-      await _get(world.scheduler(
+      final world = _World(keptSignIn: true);
+      final dio = world.scheduler(
           403, {'error': _punchNotActive, 'code': 'NOT_ACTIVE'},
-          validateStatus: (s) => s != null && s >= 200 && s < 300));
+          validateStatus: (s) => s != null && s >= 200 && s < 300);
 
-      expect(world.tokens.messages, [_punchNotActive]);
+      final error = await dio
+          .post<dynamic>('/hr/my-attendance/punch')
+          .then<DioException?>((_) => null,
+              onError: (Object e) => e as DioException);
+
+      expect(error?.response?.statusCode, 403);
+      expect(world.tokens.unauthorized, 0);
+      expect(world.tokens.refreshToken, 'refresh-0');
     });
 
     test('a refused sign-in code (no token sent) is the sign-in screen\'s',
@@ -305,17 +317,31 @@ void main() {
   });
 
   group('ESS client', () {
-    test('403 NOT_ACTIVE ends the session with the server\'s message',
-        () async {
+    // Not one of the issue's two codes: the screen that asked shows it (the
+    // shell's access screen for capabilities) and the session stays.
+    test('403 NOT_ACTIVE reaches the screen and keeps the session', () async {
       final world = _World(keptSignIn: true);
       final dio =
           world.ess(403, {'error': _essNotActive, 'code': 'NOT_ACTIVE'});
 
-      final res = await dio.get<dynamic>('/me');
+      final res = await dio.get<dynamic>('/me/capabilities');
 
-      expect(res.statusCode, 403, reason: 'the screen still gets the reply');
-      expect(world.tokens.messages, [_essNotActive]);
-      expect(world.tokens.refreshToken, isNull);
+      expect(res.statusCode, 403);
+      expect((res.data as Map)['error'], _essNotActive);
+      expect(world.tokens.unauthorized, 0);
+      expect(world.tokens.refreshToken, 'refresh-0');
+    });
+
+    test('403 NOT_ACTIVE keeps it too when the client throws refusals',
+        () async {
+      final world = _World(keptSignIn: true);
+      final dio = world.ess(403, {'error': _essNotActive, 'code': 'NOT_ACTIVE'})
+        ..options.validateStatus = (s) => s != null && s >= 200 && s < 300;
+
+      await _get(dio, '/me');
+
+      expect(world.tokens.unauthorized, 0);
+      expect(world.tokens.refreshToken, 'refresh-0');
     });
 
     test('a refresh refused because the password changed says so', () async {
@@ -392,7 +418,9 @@ void main() {
       expect(m({'error': _exited, 'code': 'ACCOUNT_EXITED'}), _exited);
       expect(m({'error': _passwordChanged, 'code': 'PASSWORD_CHANGED'}),
           _passwordChanged);
-      expect(m({'error': _essNotActive, 'code': 'NOT_ACTIVE'}), _essNotActive);
+      // A 403 NOT_ACTIVE is the asking screen's to show, not a sign-out.
+      expect(m({'error': _essNotActive, 'code': 'NOT_ACTIVE'}), isNull);
+      expect(m({'error': _punchNotActive, 'code': 'NOT_ACTIVE'}), isNull);
       expect(
           m({
             'error': _essNotActive,
@@ -420,19 +448,10 @@ void main() {
       expect(m(null), isNull);
     });
 
-    test('only 403 NOT_ACTIVE ends a session among the 403s', () {
-      expect(SessionRotator.endsSessionOn403({'code': 'NOT_ACTIVE'}), isTrue);
-      for (final code in [
-        'NOT_LINKED',
-        'NOT_AN_EMPLOYEE',
-        'ACCOUNT_EXITED', // the sign-in refusal (userController.js), no token
-        'SALES_WORKSPACE_ONLY',
-        'PASSWORD_CHANGE_REQUIRED',
-      ]) {
-        expect(SessionRotator.endsSessionOn403({'code': code}), isFalse,
-            reason: code);
-      }
-      expect(SessionRotator.endsSessionOn403(null), isFalse);
+    test('the codes that end access are exactly the issue\'s two', () {
+      expect(SessionRotator.accessEndedCodes,
+          {'ACCOUNT_EXITED', 'PASSWORD_CHANGED'});
+      expect(SessionRotator.accessEndedReasons, {'left', 'password_changed'});
     });
 
     test('a refusal stands through a renewal with nothing left to send',

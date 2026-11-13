@@ -83,20 +83,14 @@ class SessionRotator {
   static const _codelessRejections = {'No token provided', 'Please authenticate'};
 
   /// Codes that say the person's access has ended, not only this token's
-  /// (team_app #52 item 8). The reply's message is shown on the sign-in
-  /// screen:
-  ///  * 401 `ACCOUNT_EXITED` and 401 `PASSWORD_CHANGED`: the Scheduler's
-  ///    middleware/auth.js, for an exited account and for a token issued
-  ///    before the password last changed;
-  ///  * 403 `NOT_ACTIVE`: an employee record that is no longer active, from
-  ///    the Scheduler's punch path (controllers/hr/attendancePunchController.js
-  ///    loadEmployee) and from every ESS route (apps/ess-api
-  ///    src/middleware/employeeAuth.js).
-  static const accessEndedCodes = {
-    'ACCOUNT_EXITED',
-    'PASSWORD_CHANGED',
-    'NOT_ACTIVE',
-  };
+  /// (team_app #52 item 8, which names these two): 401 `ACCOUNT_EXITED` and
+  /// 401 `PASSWORD_CHANGED`, from the Scheduler's middleware/auth.js, for an
+  /// exited account and for a token issued before the password last changed.
+  /// The reply's message is shown on the sign-in screen.
+  ///
+  /// A 403 `NOT_ACTIVE` is not one of them: it reaches the screen that asked
+  /// (the shell's access screen, the punch card's refusal), as before.
+  static const accessEndedCodes = {'ACCOUNT_EXITED', 'PASSWORD_CHANGED'};
 
   /// The ESS's reasons for refusing a refresh that mean the same: the
   /// employee has left, or the password changed since the sign-in (apps/ess-api
@@ -166,12 +160,6 @@ class SessionRotator {
     final text = error is String ? error.trim() : '';
     return text.isEmpty ? null : text;
   }
-
-  /// True for a 403 that ends the session: `NOT_ACTIVE`, the employee record
-  /// is no longer active, so nothing this sign-in asks for will be answered.
-  /// Every other 403 refuses one request and keeps the session.
-  static bool endsSessionOn403(Object? body) =>
-      body is Map && body['code'] == 'NOT_ACTIVE';
 
   /// True when [token] expires within [leeway] of now. A token with no
   /// readable `exp` is left to the server's answer.
