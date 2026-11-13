@@ -21,6 +21,9 @@
 CREATE TABLE public.users (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
   password_hash text,
+  -- 20260826000001_hrms_tables.sql: the login's role. hr_ess_leave_route reads it to tell a
+  -- faculty member from everybody else and to find the branch's Admin Manager and HR.
+  role text,
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 
@@ -31,16 +34,35 @@ CREATE TABLE public.hr_employees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name text,
   branch_id uuid,
-  -- 20261022000000_hr_attendance_shifts.sql:83. hr_ess_leave_working_days reads it.
-  week_off_days smallint[] NOT NULL DEFAULT '{0}',
+  -- 20260826000001_hrms_tables.sql: the login this HR record belongs to, the employee code the
+  -- leave routing matches first, the reporting manager, and whether the person has left.
+  user_id uuid,
+  employee_code text,
+  manager_id uuid,
+  is_archived boolean NOT NULL DEFAULT false,
+  -- 20261022000000_hr_attendance_shifts.sql:83. hr_ess_leave_working_days reads it. The test
+  -- inserts employees with only an id, name and branch, and the request flow's last-month check
+  -- lands on the 4th; the snapshot keeps every calendar day a working day so that check does not
+  -- depend on the weekday the test runs.
+  week_off_days smallint[] NOT NULL DEFAULT '{}',
   -- Read only when an attendance-only faculty member has no portal login.
   email text
 );
 
 -- hr_branches: supabase/migrations/20260826000001_hrms_tables.sql:39-48. Referenced by
--- hr_ess_mock_location_reports.branch_id and hr_holidays.branch_id.
+-- hr_ess_mock_location_reports.branch_id and hr_holidays.branch_id. The leave routing and the
+-- Level 2 mapping also match a branch by its name.
 CREATE TABLE public.hr_branches (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text
+);
+
+-- faculty: supabase/migrations/20260826000001_hrms_tables.sql (the teaching staff).
+-- hr_ess_leave_route matches a login to it by email, and hr_ess_leave_requests'
+-- substitute_faculty_id points at it. Only the key and the email are needed here.
+CREATE TABLE public.faculty (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text
 );
 
 -- hr_holidays: 20261022000000_hr_attendance_shifts.sql:91-100. A leave range skips them.
