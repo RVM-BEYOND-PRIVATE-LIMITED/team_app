@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +16,18 @@ String _batchTitle(String? name) {
   final trimmed = name?.trim() ?? '';
   if (trimmed.isEmpty) return 'Mark attendance';
   return trimmed.replaceAll('_', ' ');
+}
+
+/// Pull-to-refresh: re-reads the roster in place and waits for the reply. If
+/// it cannot be read, the list stays and the reason is shown.
+Future<void> _pullToRefresh(BuildContext context) async {
+  final done = Completer<String?>();
+  context.read<MarkAttendanceBloc>().add(MarkRosterRefreshed(done: done));
+  final error = await done.future;
+  if (error == null || !context.mounted) return;
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(error)));
 }
 
 /// Mark one batch's student attendance for today through the ESS
@@ -45,7 +59,7 @@ class MarkAttendanceScreen extends StatelessWidget {
               ..showSnackBar(SnackBar(content: Text(state.error!)));
           }
         },
-        child: Builder(
+        child: _RefreshOnReturn(
           builder: (context) => Scaffold(
             appBar: AppBar(
               title: Text(_batchTitle(batchName)),
@@ -81,9 +95,20 @@ class MarkAttendanceScreen extends StatelessWidget {
                   );
                 }
                 if (state.students.isEmpty) {
-                  return const AppEmpty(
-                      message: 'No students are linked to this batch.',
-                      icon: Icons.people_outline);
+                  return RefreshIndicator(
+                    onRefresh: () => _pullToRefresh(context),
+                    child: LayoutBuilder(
+                      builder: (context, box) => SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: box.maxHeight),
+                          child: const AppEmpty(
+                              message: 'No students are linked to this batch.',
+                              icon: Icons.people_outline),
+                        ),
+                      ),
+                    ),
+                  );
                 }
                 return _Roster(state: state);
               },
@@ -93,6 +118,48 @@ class MarkAttendanceScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A [Builder] that also re-reads the roster each time the app comes back into
+/// view after it was hidden (another app, the home screen or the lock screen
+/// was in front), so what changed while the faculty was away (a day saved from
+/// the web, a student who joined) shows without leaving the screen. The bloc
+/// keeps the marks not saved yet (#57 item 4).
+///
+/// It listens for `onShow`, not `onResume`: a focus change while the app stays
+/// in view (the notification shade, a system dialog, split screen) is reported
+/// as inactive and then resumed, and must not cost a read each time.
+/// Pull-to-refresh covers those cases.
+class _RefreshOnReturn extends StatefulWidget {
+  const _RefreshOnReturn({required this.builder});
+  final WidgetBuilder builder;
+
+  @override
+  State<_RefreshOnReturn> createState() => _RefreshOnReturnState();
+}
+
+class _RefreshOnReturnState extends State<_RefreshOnReturn> {
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onShow: _refresh);
+  }
+
+  void _refresh() {
+    if (!mounted) return;
+    context.read<MarkAttendanceBloc>().add(const MarkRosterRefreshed());
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }
 
 class _Roster extends StatelessWidget {
@@ -126,35 +193,39 @@ class _Roster extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: state.students.length,
-            itemBuilder: (context, i) {
-              final s = state.students[i];
-              final present = state.present[s.id] ?? false;
-              final canRemark = s.isAbsent;
-              return CheckboxListTile(
-                value: present,
-                onChanged: state.canEdit
-                    ? (_) => context
-                        .read<MarkAttendanceBloc>()
-                        .add(MarkToggled(s.id))
-                    : null,
-                title: Text(s.fullName ?? 'Student'),
-                subtitle: Text([
-                  if (s.admissionNumber != null) s.admissionNumber!,
-                  if (s.isAbsent && (s.absentReason?.isNotEmpty ?? false))
-                    'reason: ${s.absentReason}',
-                ].join(' · ')),
-                controlAffinity: ListTileControlAffinity.leading,
-                secondary: canRemark
-                    ? IconButton(
-                        tooltip: 'Absent reason',
-                        icon: const Icon(Icons.edit_note_outlined),
-                        onPressed: () => _openRemark(context, s),
-                      )
-                    : null,
-              );
-            },
+          child: RefreshIndicator(
+            onRefresh: () => _pullToRefresh(context),
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: state.students.length,
+              itemBuilder: (context, i) {
+                final s = state.students[i];
+                final present = state.present[s.id] ?? false;
+                final canRemark = s.isAbsent;
+                return CheckboxListTile(
+                  value: present,
+                  onChanged: state.canEdit
+                      ? (_) => context
+                          .read<MarkAttendanceBloc>()
+                          .add(MarkToggled(s.id))
+                      : null,
+                  title: Text(s.fullName ?? 'Student'),
+                  subtitle: Text([
+                    if (s.admissionNumber != null) s.admissionNumber!,
+                    if (s.isAbsent && (s.absentReason?.isNotEmpty ?? false))
+                      'reason: ${s.absentReason}',
+                  ].join(' · ')),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  secondary: canRemark
+                      ? IconButton(
+                          tooltip: 'Absent reason',
+                          icon: const Icon(Icons.edit_note_outlined),
+                          onPressed: () => _openRemark(context, s),
+                        )
+                      : null,
+                );
+              },
+            ),
           ),
         ),
         Container(
