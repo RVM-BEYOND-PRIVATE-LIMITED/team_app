@@ -7,7 +7,8 @@ import 'module_request.dart';
 /// [message] that states the REAL cause, so centered error states never fall
 /// back to a generic "something went wrong" when the cause is known.
 sealed class Failure extends Equatable implements Exception {
-  const Failure(this.message, {this.statusCode, this.code, this.requestId});
+  const Failure(this.message,
+      {this.statusCode, this.code, this.requestId, this.details});
 
   final String message;
   final int? statusCode;
@@ -19,9 +20,25 @@ sealed class Failure extends Equatable implements Exception {
   /// every Team RVM and Scheduler reply.
   final String? requestId;
 
-  @override
-  List<Object?> get props => [message, statusCode, code, requestId];
+  /// The error body's top-level `details`, exactly as decoded from JSON: a
+  /// map, a list or a scalar (the error shape student_app #1 names). It is not
+  /// read or typed here: student_app #10 defines its inner shape. Null when the
+  /// reply carries none; Scheduler utils/apiError.js can send it, and no route
+  /// passes one today.
+  ///
+  /// It may hold personal data (e.g. the values a form sent), so it is left
+  /// out of [toString], and with it out of every log line and crash report
+  /// made from a failure. Do not print it, log it or report it.
+  ///
+  /// It is part of equality, as [requestId] is: two refusals whose details
+  /// differ (e.g. different fields refused) are different failures, so a bloc
+  /// shows the newer one. A failure without details compares as before.
+  final Object? details;
 
+  @override
+  List<Object?> get props => [message, statusCode, code, requestId, details];
+
+  /// Never names [details], which may hold personal data.
   @override
   String toString() =>
       '$runtimeType($statusCode${code == null ? '' : ' $code'}): $message'
@@ -53,7 +70,8 @@ sealed class Failure extends Equatable implements Exception {
         final data = e.response?.data;
         return Failure.forModule(
             Failure.fromStatus(e.response?.statusCode, _extract(data),
-                _extractCode(data), _extractRequestId(data)),
+                _extractCode(data), _extractRequestId(data),
+                _extractDetails(data)),
             ModuleRequest.of(e.requestOptions));
     }
   }
@@ -70,26 +88,33 @@ sealed class Failure extends Equatable implements Exception {
         failure.code != ModuleUnavailableFailure.serverCode) {
       return failure;
     }
-    return ModuleUnavailableFailure(module, requestId: failure.requestId);
+    return ModuleUnavailableFailure(module,
+        requestId: failure.requestId, details: failure.details);
   }
 
   /// Map an HTTP status to a typed failure, preferring a server-supplied message.
   /// [serverCode] is the backend's machine-readable `code` (e.g. Scheduler
   /// `TWO_FACTOR_UNAVAILABLE`, `WRONG_CODE`) — kept so a caller can pick
   /// app-owned copy; 5xx text itself stays generic (it may name internals).
-  /// [requestId] is the reply's `request_id`, when it sends one.
+  /// [requestId] is the reply's `request_id`, when it sends one, and
+  /// [details] its `details` as decoded ([Failure.details]); each goes
+  /// wherever the other does.
   factory Failure.fromStatus(int? status,
-      [String? serverMessage, String? serverCode, String? requestId]) {
+      [String? serverMessage,
+      String? serverCode,
+      String? requestId,
+      Object? details]) {
     if (status == null) return const UnknownFailure();
     return switch (status) {
-      401 => _unauthorized(serverMessage, serverCode, requestId),
-      403 => ForbiddenFailure(serverMessage, serverCode, requestId),
-      404 => NotFoundFailure(serverMessage, serverCode, requestId),
+      401 => _unauthorized(serverMessage, serverCode, requestId, details),
+      403 => ForbiddenFailure(serverMessage, serverCode, requestId, details),
+      404 => NotFoundFailure(serverMessage, serverCode, requestId, details),
       408 => const TimeoutFailure(),
       // The limiter's message states the real wait (e.g. "…in 15 minutes").
       // Its code stays too (`RATE_LIMITED`, `LOCKED`, `TOO_MANY_CODES`…), so a
       // screen can tell a limit from a lock-out (team_app #50, item 12).
-      429 => TooManyRequestsFailure(serverMessage, requestId, serverCode),
+      429 => TooManyRequestsFailure(
+          serverMessage, requestId, serverCode, details),
       // The ESS's 503s (MODULE_NOT_INSTALLED / MODULE_DISABLED / UNAVAILABLE)
       // carry copy written for staff, so those keep their message; other 5xx
       // text stays generic (it may name internals).
@@ -98,14 +123,18 @@ sealed class Failure extends Equatable implements Exception {
               serverCode == 'MODULE_DISABLED' ||
               serverCode == 'UNAVAILABLE' =>
         ServerFailure.status(status,
-            code: serverCode, message: serverMessage, requestId: requestId),
-      _ when status >= 500 =>
-        ServerFailure.status(status, code: serverCode, requestId: requestId),
+            code: serverCode,
+            message: serverMessage,
+            requestId: requestId,
+            details: details),
+      _ when status >= 500 => ServerFailure.status(status,
+          code: serverCode, requestId: requestId, details: details),
       _ when status >= 400 => BadResponseFailure(
           serverMessage ?? 'Request could not be completed.',
           statusCode: status,
           code: serverCode,
-          requestId: requestId),
+          requestId: requestId,
+          details: details),
       _ => const UnknownFailure(),
     };
   }
@@ -117,16 +146,20 @@ sealed class Failure extends Equatable implements Exception {
   /// again for no reason.
   static const _tokenRejections = {'No token provided', 'Please authenticate'};
 
-  static Failure _unauthorized(
-      String? serverMessage, String? serverCode, String? requestId) {
+  static Failure _unauthorized(String? serverMessage, String? serverCode,
+      String? requestId, Object? details) {
     final message = serverMessage?.trim();
     if (message != null &&
         message.isNotEmpty &&
         !_tokenRejections.contains(message)) {
       return UnauthorizedFailure(
-          message: message, code: serverCode, requestId: requestId);
+          message: message,
+          code: serverCode,
+          requestId: requestId,
+          details: details);
     }
-    return UnauthorizedFailure(code: serverCode, requestId: requestId);
+    return UnauthorizedFailure(
+        code: serverCode, requestId: requestId, details: details);
   }
 
   /// Pull `{error:{message}}` (JobPortal) or `{message|error}` (Scheduler).
@@ -160,6 +193,12 @@ sealed class Failure extends Equatable implements Exception {
     final text = '$id'.trim();
     return text.isEmpty ? null : text;
   }
+
+  /// Pull the top-level `details` of the error shape student_app #1 names,
+  /// exactly as decoded: nothing is read from it, typed or printed. A body
+  /// that is not a JSON object has none.
+  static Object? _extractDetails(dynamic data) =>
+      data is Map ? data['details'] : null;
 }
 
 class NoConnectionFailure extends Failure {
@@ -171,23 +210,35 @@ class TimeoutFailure extends Failure {
 }
 
 class UnauthorizedFailure extends Failure {
-  const UnauthorizedFailure({String? message, String? code, String? requestId})
+  const UnauthorizedFailure(
+      {String? message, String? code, String? requestId, Object? details})
       : super(message ?? 'Session expired, please log in again.',
-            statusCode: 401, code: code, requestId: requestId);
+            statusCode: 401,
+            code: code,
+            requestId: requestId,
+            details: details);
 }
 
 class ForbiddenFailure extends Failure {
   // Prefer the server's message (RVM 403s carry actionable text, e.g. "Cannot
   // reply to a resolved ticket. Please reopen it first."); fall back generic.
-  const ForbiddenFailure([String? message, String? code, String? requestId])
+  const ForbiddenFailure(
+      [String? message, String? code, String? requestId, Object? details])
       : super(message ?? "You don't have access to this.",
-            statusCode: 403, code: code, requestId: requestId);
+            statusCode: 403,
+            code: code,
+            requestId: requestId,
+            details: details);
 }
 
 class NotFoundFailure extends Failure {
-  const NotFoundFailure([String? message, String? code, String? requestId])
+  const NotFoundFailure(
+      [String? message, String? code, String? requestId, Object? details])
       : super(message ?? 'No data found.',
-            statusCode: 404, code: code, requestId: requestId);
+            statusCode: 404,
+            code: code,
+            requestId: requestId,
+            details: details);
 }
 
 /// A staff module's route answered 404 `NOT_FOUND`: its feature switch is
@@ -199,8 +250,9 @@ class NotFoundFailure extends Failure {
 /// It is a [NotFoundFailure], so code that already handles "not found" keeps
 /// working; a screen that knows modules shows its "module off" state instead.
 class ModuleUnavailableFailure extends NotFoundFailure {
-  const ModuleUnavailableFailure(this.module, {String? requestId})
-      : super(defaultMessage, serverCode, requestId);
+  const ModuleUnavailableFailure(this.module,
+      {String? requestId, Object? details})
+      : super(defaultMessage, serverCode, requestId, details);
 
   /// The module the refused request was for, as tagged, e.g. `crm`.
   final String module;
@@ -216,12 +268,13 @@ class ModuleUnavailableFailure extends NotFoundFailure {
 
 class TooManyRequestsFailure extends Failure {
   const TooManyRequestsFailure(
-      [String? message, String? requestId, String? code])
+      [String? message, String? requestId, String? code, Object? details])
       : super(
             message ?? 'Too many attempts. Please try again in a few minutes.',
             statusCode: 429,
             code: code,
-            requestId: requestId);
+            requestId: requestId,
+            details: details);
 }
 
 class ServerFailure extends Failure {
@@ -231,16 +284,19 @@ class ServerFailure extends Failure {
   /// A real 5xx response: keeps its status + the backend's machine `code`.
   /// [message] is only passed for 5xx bodies written for staff to read.
   const ServerFailure.status(int statusCode,
-      {String? code, String? message, String? requestId})
+      {String? code, String? message, String? requestId, Object? details})
       : super(message ?? _generic,
-            statusCode: statusCode, code: code, requestId: requestId);
+            statusCode: statusCode,
+            code: code,
+            requestId: requestId,
+            details: details);
 
   static const _generic = 'Server error, please try again.';
 }
 
 class BadResponseFailure extends Failure {
   const BadResponseFailure(super.message,
-      {super.statusCode, super.code, super.requestId});
+      {super.statusCode, super.code, super.requestId, super.details});
 }
 
 class ParseFailure extends Failure {
