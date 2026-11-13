@@ -1,0 +1,388 @@
+import 'package:core_network/core_network.dart';
+import 'package:dio/dio.dart';
+import 'package:test/test.dart';
+
+import 'support/fakes.dart';
+
+/// team_app #52, item 8: when the server says the person's access has ended
+/// (an exited account, a changed password, an employee record no longer
+/// active), the session is over and the server's own message reaches the
+/// sign-in screen. Every other refusal keeps today's behaviour.
+///
+/// The codes and messages are the servers' own on main:
+///  * Scheduler_Backend middleware/auth.js: 401 ACCOUNT_EXITED, 401
+///    PASSWORD_CHANGED; controllers/hr/attendancePunchController.js: 403
+///    NOT_ACTIVE.
+///  * team_app apps/ess-api src/middleware/employeeAuth.js: 403 NOT_ACTIVE;
+///    src/routes/sessions.js: a refused refresh, 401 NOT_AUTHENTICATED with a
+///    `reason`; src/lib/errors.js: the messages.
+const _env = ApiEnvironment(
+  schedulerBaseUrl: 'https://scheduler.test/api',
+  jobPortalBaseUrl: 'https://jobs.test/api/v1',
+  essBaseUrl: 'https://ess.test/api/ess',
+);
+
+const _exited =
+    'This account has been marked exited. Contact a Super Admin if you need '
+    'access restored.';
+const _passwordChanged = 'Your password was changed. Please sign in again.';
+const _punchNotActive =
+    'Your employee record is not active, so punching is closed.';
+const _essNotActive =
+    'Your employee record is no longer active, so Team RVM is closed for this '
+    'login. Ask HR if this is wrong.';
+
+/// What the ESS answers a refused refresh with, per reason (routes/sessions.js
+/// REFUSED).
+const _refusedRefresh = {
+  'left': _essNotActive,
+  'password_changed': _passwordChanged,
+  'expired': 'Your sign-in has expired. Please sign in again.',
+  'signed_out': 'You have signed out. Please sign in again.',
+};
+
+final _now = DateTime.utc(2026, 11, 13, 9);
+
+String _token(DateTime exp) => fakeJwt({
+      'userId': 'u-test',
+      'role': 'faculty',
+      'iat': epochSeconds(_now.subtract(const Duration(minutes: 30))),
+      'exp': epochSeconds(exp),
+    });
+
+/// The app's validateStatus for each client (rvm_team_app lib/injection.dart):
+/// every refusal but a 401 comes back as a reply, not a thrown error.
+bool _appScheduler(int? s) => s != null && s != 401;
+bool _appEss(int? s) =>
+    s != null && ((s >= 200 && s < 300) || (s >= 400 && s != 401));
+
+class _World {
+  _World({
+    bool live = true,
+    bool keptSignIn = false,
+    this.refreshRefusal,
+    bool signedIn = true,
+  }) {
+    tokens = FakeTokens(
+      schedulerToken: signedIn
+          ? _token(live ? _now.add(const Duration(hours: 1)) : _now)
+          : null,
+      refreshToken: keptSignIn ? 'refresh-0' : null,
+    );
+    sessions = SessionRotator(
+      tokens: tokens,
+      essTokens: tokens,
+      refreshDio: Dio(BaseOptions(baseUrl: _env.essBaseUrl))
+        ..httpClientAdapter = refresh,
+      clock: () => _now,
+    );
+  }
+
+  late final FakeTokens tokens;
+  late final SessionRotator sessions;
+
+  /// The reason the ESS refuses every refresh with, or null to renew.
+  final String? refreshRefusal;
+
+  late final ScriptedAdapter refresh = ScriptedAdapter((_) {
+    final reason = refreshRefusal;
+    if (reason == null) {
+      final exp = _now.add(const Duration(hours: 1));
+      return jsonReply(200, {
+        'access_token': _token(exp),
+        'access_expires_at': exp.toIso8601String(),
+        'refresh_token': 'refresh-1',
+      });
+    }
+    return jsonReply(401, {
+      'error': _refusedRefresh[reason] ?? 'Please sign in again.',
+      'code': 'NOT_AUTHENTICATED',
+      'reason': reason,
+    });
+  });
+
+  /// The Scheduler client as the app builds it, answering [status]/[body].
+  Dio scheduler(int status, Map<String, Object?> body,
+          {bool Function(int?) validateStatus = _appScheduler}) =>
+      DioFactory.scheduler(env: _env, tokens: tokens, sessions: sessions)
+        ..httpClientAdapter = ScriptedAdapter((_) => jsonReply(status, body))
+        ..options.validateStatus = validateStatus;
+
+  /// The ESS client as the app builds it, answering [status]/[body].
+  Dio ess(int status, Map<String, Object?> body) => DioFactory.ess(
+        env: _env,
+        tokens: tokens,
+        essTokens: tokens,
+        sessions: sessions,
+      )
+        ..httpClientAdapter = ScriptedAdapter((_) => jsonReply(status, body))
+        ..options.validateStatus = _appEss;
+}
+
+Future<void> _get(Dio dio, [String path = '/x']) async {
+  try {
+    await dio.get<dynamic>(path);
+  } on DioException catch (_) {}
+}
+
+void main() {
+  group('Scheduler client', () {
+    for (final (code, message) in [
+      ('ACCOUNT_EXITED', _exited),
+      ('PASSWORD_CHANGED', _passwordChanged),
+    ]) {
+      test('401 $code ends the session with the server\'s message', () async {
+        final world = _World(keptSignIn: true);
+
+        await _get(world.scheduler(401, {'error': message, 'code': code}));
+
+        expect(world.tokens.messages, [message]);
+        expect(world.tokens.refreshToken, isNull,
+            reason: 'both halves of the session end');
+        expect(world.refresh.seen, isEmpty, reason: 'no renewal can help');
+      });
+    }
+
+    test('403 NOT_ACTIVE ends the session with the server\'s message',
+        () async {
+      final world = _World();
+      final dio = world
+          .scheduler(403, {'error': _punchNotActive, 'code': 'NOT_ACTIVE'});
+
+      final res = await dio.get<dynamic>('/hr/my-attendance');
+
+      expect(res.statusCode, 403, reason: 'the screen still gets the reply');
+      expect(world.tokens.messages, [_punchNotActive]);
+    });
+
+    test('403 NOT_ACTIVE ends it too when the client throws refusals',
+        () async {
+      final world = _World();
+
+      await _get(world.scheduler(
+          403, {'error': _punchNotActive, 'code': 'NOT_ACTIVE'},
+          validateStatus: (s) => s != null && s >= 200 && s < 300));
+
+      expect(world.tokens.messages, [_punchNotActive]);
+    });
+
+    test('a refused sign-in code (no token sent) is the sign-in screen\'s',
+        () async {
+      final world = _World(signedIn: false);
+
+      await _get(world
+          .scheduler(403, {'error': _punchNotActive, 'code': 'NOT_ACTIVE'}));
+
+      expect(world.tokens.unauthorized, 0);
+    });
+
+    for (final body in [
+      {'error': 'Access denied. Insufficient privileges.'},
+      {
+        'error': 'Sales executives can only use the sales dialer.',
+        'code': 'SALES_WORKSPACE_ONLY',
+      },
+      {
+        'error': 'Your login is not linked to an employee record yet.',
+        'code': 'NOT_LINKED',
+      },
+    ]) {
+      test('403 ${body['code'] ?? body['error']} keeps the session', () async {
+        final world = _World();
+
+        await _get(world.scheduler(403, body));
+
+        expect(world.tokens.unauthorized, 0);
+      });
+    }
+
+    test('an ordinary expiry still ends the session with no message', () async {
+      final world = _World(live: false);
+
+      await _get(world.scheduler(401, {
+        'error': 'Your session has expired. Please sign in again.',
+        'code': 'TOKEN_EXPIRED',
+      }));
+
+      expect(world.tokens.messages, [null]);
+    });
+
+    test('a controller 401 with a live token keeps the session', () async {
+      final world = _World();
+
+      await _get(world
+          .scheduler(401, {'error': 'Authentication required with location.'}));
+
+      expect(world.tokens.unauthorized, 0);
+    });
+
+    for (final (reason, message) in [
+      ('left', _essNotActive),
+      ('password_changed', _passwordChanged),
+    ]) {
+      test('a renewal refused because "$reason" shows the ESS\'s message',
+          () async {
+        final world = _World(keptSignIn: true, refreshRefusal: reason);
+
+        await _get(world.scheduler(401, {
+          'error': 'Your session has expired. Please sign in again.',
+          'code': 'TOKEN_EXPIRED',
+        }));
+
+        expect(world.refresh.seen, hasLength(1));
+        expect(world.tokens.messages, [message]);
+      });
+    }
+
+    for (final reason in ['expired', 'signed_out']) {
+      test('a renewal refused because "$reason" ends it with no message',
+          () async {
+        final world = _World(keptSignIn: true, refreshRefusal: reason);
+
+        await _get(world.scheduler(401, {
+          'error': 'Your session has expired. Please sign in again.',
+          'code': 'TOKEN_EXPIRED',
+        }));
+
+        expect(world.tokens.messages, [null]);
+      });
+    }
+  });
+
+  group('ESS client', () {
+    test('403 NOT_ACTIVE ends the session with the server\'s message',
+        () async {
+      final world = _World(keptSignIn: true);
+      final dio =
+          world.ess(403, {'error': _essNotActive, 'code': 'NOT_ACTIVE'});
+
+      final res = await dio.get<dynamic>('/me');
+
+      expect(res.statusCode, 403, reason: 'the screen still gets the reply');
+      expect(world.tokens.messages, [_essNotActive]);
+      expect(world.tokens.refreshToken, isNull);
+    });
+
+    test('a refresh refused because the password changed says so', () async {
+      final world =
+          _World(keptSignIn: true, refreshRefusal: 'password_changed');
+
+      await _get(world.ess(401,
+          {'error': 'Please sign in again.', 'code': 'NOT_AUTHENTICATED'}));
+
+      expect(world.tokens.messages, [_passwordChanged]);
+    });
+
+    test('a refresh refused for another reason ends it with no message',
+        () async {
+      final world = _World(keptSignIn: true, refreshRefusal: 'signed_out');
+
+      await _get(world.ess(401,
+          {'error': 'Please sign in again.', 'code': 'NOT_AUTHENTICATED'}));
+
+      expect(world.tokens.messages, [null]);
+    });
+
+    test('403 NOT_LINKED keeps the session', () async {
+      final world = _World();
+
+      await _get(world.ess(403, {
+        'error': 'Your login is not linked to an employee record yet.',
+        'code': 'NOT_LINKED',
+      }));
+
+      expect(world.tokens.unauthorized, 0);
+    });
+
+    test('the kept-sign-in exchange never signs out, even on NOT_ACTIVE',
+        () async {
+      final world = _World();
+      final dio =
+          world.ess(403, {'error': _essNotActive, 'code': 'NOT_ACTIVE'});
+
+      await dio.post<dynamic>('/session');
+
+      expect(world.tokens.unauthorized, 0);
+    });
+  });
+
+  group('SessionRotator', () {
+    test('accessEndedMessage reads only the codes and reasons that end access',
+        () {
+      String? m(Object? body) => SessionRotator.accessEndedMessage(body);
+
+      expect(m({'error': _exited, 'code': 'ACCOUNT_EXITED'}), _exited);
+      expect(m({'error': _passwordChanged, 'code': 'PASSWORD_CHANGED'}),
+          _passwordChanged);
+      expect(m({'error': _essNotActive, 'code': 'NOT_ACTIVE'}), _essNotActive);
+      expect(
+          m({
+            'error': _essNotActive,
+            'code': 'NOT_AUTHENTICATED',
+            'reason': 'left',
+          }),
+          _essNotActive);
+      expect(
+          m({
+            'error': _passwordChanged,
+            'code': 'NOT_AUTHENTICATED',
+            'reason': 'password_changed',
+          }),
+          _passwordChanged);
+      // Not about access ending: today's silent return to sign-in.
+      expect(
+          m({'error': 'Please authenticate', 'code': 'INVALID_TOKEN'}), isNull);
+      expect(
+          m({'error': 'Please sign in again.', 'reason': 'expired'}), isNull);
+      expect(m({'error': 'Please authenticate'}), isNull);
+      // A code with no words to show.
+      expect(m({'code': 'ACCOUNT_EXITED'}), isNull);
+      expect(m({'error': '  ', 'code': 'ACCOUNT_EXITED'}), isNull);
+      expect(m('<html>Unauthorized</html>'), isNull);
+      expect(m(null), isNull);
+    });
+
+    test('only 403 NOT_ACTIVE ends a session among the 403s', () {
+      expect(SessionRotator.endsSessionOn403({'code': 'NOT_ACTIVE'}), isTrue);
+      for (final code in [
+        'NOT_LINKED',
+        'NOT_AN_EMPLOYEE',
+        'ACCOUNT_EXITED', // the sign-in refusal (userController.js), no token
+        'SALES_WORKSPACE_ONLY',
+        'PASSWORD_CHANGE_REQUIRED',
+      ]) {
+        expect(SessionRotator.endsSessionOn403({'code': code}), isFalse,
+            reason: code);
+      }
+      expect(SessionRotator.endsSessionOn403(null), isFalse);
+    });
+
+    test('a refusal message lasts only until the next renewal', () async {
+      final world = _World(keptSignIn: true, refreshRefusal: 'left');
+
+      expect(await world.sessions.renew(), isFalse);
+      expect(world.sessions.refusalMessage, _essNotActive);
+
+      // The kept sign-in is gone, so the next renewal has nothing to send.
+      expect(await world.sessions.renew(), isFalse);
+      expect(world.sessions.refusalMessage, isNull);
+    });
+
+    test('a refresh that succeeds leaves no refusal', () async {
+      final world = _World(keptSignIn: true);
+
+      expect(await world.sessions.renew(), isTrue);
+      expect(world.sessions.refusalMessage, isNull);
+    });
+
+    test('endSession hands the message to the token store', () async {
+      final world = _World(keptSignIn: true);
+
+      await world.sessions.endSession(message: _exited);
+      await world.sessions.endSession();
+
+      expect(world.tokens.messages, [_exited, null]);
+      expect(world.tokens.refreshToken, isNull);
+    });
+  });
+}

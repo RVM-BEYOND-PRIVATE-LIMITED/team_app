@@ -43,13 +43,17 @@ class AuthSession implements TokenStore, EssTokenStore {
   String? _schedulerRole;
   String? _essRefreshToken;
 
-  final StreamController<void> _expiredController =
-      StreamController<void>.broadcast();
+  final StreamController<String?> _expiredController =
+      StreamController<String?>.broadcast();
 
   /// Fires when the network layer hits a 401 ([onUnauthorized]) — the session
   /// has been cleared and the app should route back to login. Blocs listen to
   /// this to react to expiry without polling. (Explicit sign-out does NOT emit.)
-  Stream<void> get sessionExpired => _expiredController.stream;
+  ///
+  /// Each event is the server's message when the person's access has ended
+  /// (an exited account, a changed password; team_app #52 item 8), for the
+  /// sign-in screen to show, or null for an ordinary expiry.
+  Stream<String?> get sessionExpired => _expiredController.stream;
 
   String? get schedulerRole => _schedulerRole;
   bool get isSchedulerAuthenticated =>
@@ -77,9 +81,9 @@ class AuthSession implements TokenStore, EssTokenStore {
       _schedulerToken ??= await _store.read(key: _kSchedulerToken);
 
   @override
-  Future<void> onUnauthorized() async {
+  Future<void> onUnauthorized({String? message}) async {
     await signOutScheduler();
-    if (!_expiredController.isClosed) _expiredController.add(null);
+    if (!_expiredController.isClosed) _expiredController.add(message);
   }
 
   // --- EssTokenStore (Team RVM kept sign-in) ------------------------------

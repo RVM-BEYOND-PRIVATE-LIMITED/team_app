@@ -14,6 +14,11 @@ import '../token_store.dart';
 /// [SessionRotator] the Scheduler client shares (team_app #50), so both clients
 /// renew in one flight. The replay goes through a bare [refreshDio] (no
 /// interceptors), which is how a 401 on it ends the family without recursion.
+///
+/// A 403 `NOT_ACTIVE` (the employee record is no longer active) and a refresh
+/// refused because the person left or changed their password end the session
+/// with the server's message for the sign-in screen (team_app #52 item 8,
+/// [SessionRotator.accessEndedMessage]).
 class EssAuthInterceptor extends Interceptor {
   EssAuthInterceptor({
     required TokenStore tokens,
@@ -53,12 +58,32 @@ class EssAuthInterceptor extends Interceptor {
     handler.next(options);
   }
 
+  /// The app's ESS client takes refusals as replies (every status but 401),
+  /// so a 403 arrives here rather than in [onError].
+  @override
+  Future<void> onResponse(
+    Response<dynamic> response,
+    ResponseInterceptorHandler handler,
+  ) async {
+    if (_endsAccess(response)) {
+      await _endSession(response.requestOptions,
+          message: SessionRotator.accessEndedMessage(response.data));
+    }
+    handler.next(response);
+  }
+
   @override
   Future<void> onError(
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
     final options = err.requestOptions;
+    if (_endsAccess(err.response)) {
+      await _endSession(options,
+          message: SessionRotator.accessEndedMessage(err.response?.data));
+      handler.next(err);
+      return;
+    }
     // Only a 401 about the TOKEN ends a session. The ESS's account surface
     // answers 401 WRONG_PASSWORD for a bad current password (issue #13) and
     // that must reach the screen as a message, not sign the person out.
@@ -73,8 +98,10 @@ class EssAuthInterceptor extends Interceptor {
     }
 
     // No kept sign-in, or a rotation that did not succeed, ends the session.
+    // A refresh refused because the person left or changed their password
+    // says so, and the sign-in screen shows it.
     if (!await _sessions.renew()) {
-      await _endSession(options);
+      await _endSession(options, message: _sessions.refusalMessage);
       handler.next(err);
       return;
     }
@@ -87,9 +114,28 @@ class EssAuthInterceptor extends Interceptor {
       final response = await _refreshDio.fetch(retried);
       handler.resolve(response);
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) await _endSession(options);
+      if (e.response?.statusCode == 401) {
+        await _endSession(options);
+      } else if (_endsAccess(e.response)) {
+        await _endSession(options,
+            message: SessionRotator.accessEndedMessage(e.response?.data));
+      }
       handler.next(e);
     }
+  }
+
+  /// A 403 `NOT_ACTIVE` ([SessionRotator.endsSessionOn403]) to a request that
+  /// carried a token: the employee record is no longer active, so this
+  /// sign-in can do nothing more.
+  static bool _endsAccess(Response<dynamic>? response) {
+    if (response?.statusCode != 403 ||
+        !SessionRotator.endsSessionOn403(response?.data)) {
+      return false;
+    }
+    final header = response!.requestOptions.headers['Authorization'];
+    return header is String &&
+        header.startsWith('Bearer ') &&
+        header.length > 'Bearer '.length;
   }
 
   /// True when a 401 is about the token itself. The ESS marks those
@@ -114,8 +160,8 @@ class EssAuthInterceptor extends Interceptor {
   /// of the session so the app returns to login, not to a screen that keeps
   /// drawing 401s. The kept-sign-in exchange is exempt: its 401 only says the
   /// Scheduler sign-in is too old to keep, and the session itself is fine.
-  Future<void> _endSession(RequestOptions options) async {
+  Future<void> _endSession(RequestOptions options, {String? message}) async {
     if (options.path == _exchangePath) return;
-    await _sessions.endSession();
+    await _sessions.endSession(message: message);
   }
 }

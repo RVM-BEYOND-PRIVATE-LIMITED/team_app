@@ -68,14 +68,18 @@ class FakeTokens implements TokenStore, EssTokenStore {
   String? schedulerToken;
   String? refreshToken;
   int unauthorized = 0;
+
+  /// The message each [onUnauthorized] carried, in order.
+  final List<String?> messages = [];
   int cleared = 0;
 
   @override
   Future<String?> readSchedulerToken() async => schedulerToken;
 
   @override
-  Future<void> onUnauthorized() async {
+  Future<void> onUnauthorized({String? message}) async {
     unauthorized++;
+    messages.add(message);
     schedulerToken = null;
   }
 

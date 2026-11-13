@@ -37,7 +37,7 @@ void main() {
   setUp(() {
     session = _MockAuthSession();
     ess = _MockEssRepository();
-    when(() => session.sessionExpired).thenAnswer((_) => Stream<void>.empty());
+    when(() => session.sessionExpired).thenAnswer((_) => Stream<String?>.empty());
     bloc = TeamAuthBloc(
         repository: _MockAuthRepository(), session: session, ess: ess);
   });
