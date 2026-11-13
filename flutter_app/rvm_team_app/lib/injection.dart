@@ -8,6 +8,7 @@ import 'package:get_it/get_it.dart';
 import 'bloc/connectivity_bloc.dart';
 import 'bloc/forgot_password_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
+import 'bloc/team_modules_bloc.dart';
 import 'data/datasources/announcements_remote_data_source.dart';
 import 'data/datasources/auth_remote_data_source.dart';
 import 'data/datasources/ess_remote_data_source.dart';
@@ -15,6 +16,7 @@ import 'data/datasources/hod_remote_data_source.dart';
 import 'data/datasources/me_remote_data_source.dart';
 import 'data/datasources/my_attendance_remote_data_source.dart';
 import 'data/datasources/priority_tasks_remote_data_source.dart';
+import 'data/datasources/team_modules_remote_data_source.dart';
 import 'data/datasources/work_remote_data_source.dart';
 import 'data/location_service.dart';
 import 'data/repositories/announcements_repository.dart';
@@ -25,6 +27,7 @@ import 'data/repositories/leave_repository.dart';
 import 'data/repositories/me_repository.dart';
 import 'data/repositories/my_attendance_repository.dart';
 import 'data/repositories/priority_tasks_repository.dart';
+import 'data/repositories/team_modules_repository.dart';
 import 'data/repositories/work_repository.dart';
 import 'domain/ess_models.dart';
 import 'domain/models.dart';
@@ -160,6 +163,9 @@ void configureDependencies(AuthSession session) {
         () => EssRemoteDataSource(getIt<Dio>(instanceName: 'ess')))
     ..registerLazySingleton<MyAttendanceRemoteDataSource>(
         () => MyAttendanceRemoteDataSource(getIt<Dio>()))
+    // The modules open to the person (#50 item 5), on the Scheduler client.
+    ..registerLazySingleton<TeamModulesRemoteDataSource>(
+        () => TeamModulesRemoteDataSource(getIt<Dio>()))
     ..registerLazySingleton<LocationService>(LocationService.new)
     // Dialer hand-off for module calls (#50 item 1). No screen uses it yet: a
     // module wires it when its start-call route exists.
@@ -194,13 +200,19 @@ void configureDependencies(AuthSession session) {
     // Casual leave / leave without pay on the Scheduler (#43). The Scheduler
     // client renews the kept sign-in itself now (#50).
     ..registerLazySingleton<LeaveRepository>(
-        () => LeaveRepository(remote: getIt(), connectivity: getIt()));
+        () => LeaveRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<TeamModulesRepository>(
+        () => TeamModulesRepository(remote: getIt(), connectivity: getIt()));
 
   // Session-wide blocs.
   getIt
     ..registerLazySingleton<TeamAuthBloc>(
         () => TeamAuthBloc(repository: getIt(), session: getIt(), ess: getIt()))
-    ..registerLazySingleton<ConnectivityBloc>(() => ConnectivityBloc(getIt()));
+    ..registerLazySingleton<ConnectivityBloc>(() => ConnectivityBloc(getIt()))
+    // The router's module guard reads it (#50 items 5 and 7b); the shell
+    // loads it, main.dart clears it on sign-out.
+    ..registerLazySingleton<TeamModulesBloc>(
+        () => TeamModulesBloc(getIt<TeamModulesRepository>().modules));
 
   // Feature blocs.
   getIt
