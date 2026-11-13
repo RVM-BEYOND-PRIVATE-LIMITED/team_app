@@ -11,9 +11,9 @@
 -- ('2026-10-16') for a job that runs daily. The pair is the primary key, so the database itself
 -- refuses the second claim however many processes race for it.
 --
--- status is running while the work is in flight, done when it finished and failed when it threw.
--- The row stays either way, on purpose: a restart after a failure must not send the week's
--- reminders a second time.
+-- status is running while the work is in flight and done when it finished. When every reminder
+-- of a run failed (nothing was sent), the job deletes its claim so the next start in the same
+-- period can try again (src/jobs/documents.js); a run that sent anything keeps its row.
 --
 -- Safe to run twice.
 --
@@ -42,7 +42,7 @@ BEGIN
     REVOKE ALL ON TABLE public.hr_ess_job_runs FROM authenticated;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-    GRANT SELECT, INSERT, UPDATE ON TABLE public.hr_ess_job_runs TO service_role;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.hr_ess_job_runs TO service_role;
   END IF;
 END
 $$;
