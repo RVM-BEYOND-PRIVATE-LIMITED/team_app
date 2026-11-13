@@ -44,6 +44,15 @@ void main() {
     expect(doc, contains('KEYCODE_APP_SWITCH'));
   });
 
+  test('says flutter run reinstalls over another key, and where it runs', () {
+    // flutter run uninstalls a build signed with another key itself.
+    expect(doc, contains('("Uninstalling old version...")'));
+    // Step 10 runs flutter run again: it names the folder that works in.
+    final step10 = doc.substring(doc.indexOf('\n10. '));
+    expect(step10.substring(0, step10.indexOf('```bash')),
+        contains('`flutter_app/rvm_team_app`'));
+  });
+
   test('is linked from the README', () {
     expect(File('README.md').readAsStringSync(),
         contains('(docs/device-checks.md)'));

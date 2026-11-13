@@ -20,9 +20,20 @@ import 'support/source_scan.dart';
 ///   `TeamModule.moderation` (`/moderation`), and each string with a `/`,
 ///   e.g. '/moderation/compose', '/moderation/messages', '/messages',
 ///   '/chat', a group's posts ('/v1/community/groups/:id/posts') and a post's
-///   comments ('/posts/:id/comments');
-/// * labels: 'Write a post', 'New post', 'Post', 'Comment', 'Add a comment',
-///   'Reply', 'Message', 'Send message'.
+///   comments ('/posts/:id/comments'). Under /moderation a path that ends in
+///   posts, comments or replies lists reported ones, read only
+///   ('/moderation/posts/:id/comments'), unless the app POSTs, PUTs or
+///   PATCHes it. A file's name is never read as a path: hidden_comments.dart
+///   is a list of hidden comments;
+/// * labels: 'Write a post', 'New post', 'Add a comment', 'Reply', 'Message',
+///   'Send message', 'Contact the author', 'Email the poster', a composer's
+///   'Say something to the group', and 'Post' or 'Comment' on a button, a
+///   FAB, a menu item or an action. On a pill, a chip or a filter (a
+///   segmented button, a dropdown) 'Post' and 'Comment' name a report's
+///   kind, and pass;
+/// * icons: a composer's send button (`Icons.send_rounded`,
+///   `CupertinoIcons.paperplane`, `Icons.add_comment`, `Icons.reply`) and a
+///   mail icon (`Icons.mail_outline`, `Icons.email`).
 ///
 /// The module's files are every Dart file under lib/features/moderation/,
 /// the file that declares each /moderation route's screen, and the files only
@@ -32,7 +43,9 @@ import 'support/source_scan.dart';
 /// the two queues").
 ///
 /// Allowed on purpose: 'Restore', 'Keep hidden', 'Hide', 'Warn',
-/// 'Moderation log', and a reported post's or comment's own text, read only.
+/// 'Moderation log', a report's kind ('Post', 'Comment') on a pill, a chip
+/// or a filter, and a reported post's or comment's own text and thread,
+/// read only.
 ///
 /// No moderation file or route exists yet, so today this passes, and it
 /// catches the first compose or message control #58 adds.
@@ -66,7 +79,7 @@ const groupPosts = '/v1/community/groups/:id/posts';
 const postComments = '/posts/:id/comments';
 final add = TextButton(onPressed: null, child: Text('Add a comment'));
 final reply = Text('Reply');
-final comment = Text('Comment');
+final comment = IconButton(tooltip: 'Comment', icon: x, onPressed: null);
 Future<void> f() => repository.addComment(postId, text);
 """),
         {
@@ -105,6 +118,47 @@ void open() => sendMessage(authorId);
           'label Message (private message)',
           'label Message the author (private message)',
           'name sendMessage (private message)',
+        },
+      );
+    });
+
+    test("a composer's field, its send icon, and contact or email labels", () {
+      expect(
+        _flagged(r"""
+final input = TextField(
+    decoration: InputDecoration(hintText: 'Say something to the group'));
+final send = IconButton(icon: const Icon(Icons.send_rounded), onPressed: null);
+final plane = Icon(CupertinoIcons.paperplane_fill);
+final contact = TextButton(onPressed: null, child: Text('Contact the author'));
+final email = IconButton(
+    tooltip: 'Email the poster',
+    icon: const Icon(Icons.mail_outline),
+    onPressed: null);
+"""),
+        {
+          'label Say something to the group (post or comment)',
+          'icon Icons.send_rounded (post or comment)',
+          'icon Icons.paperplane_fill (post or comment)',
+          'label Contact the author (private message)',
+          'label Email the poster (private message)',
+          'icon Icons.mail_outline (private message)',
+        },
+      );
+    });
+
+    test("a write to a reported thread's comments", () {
+      // Sample paths for the self-test only; the module's real paths come
+      // from Scheduler_Backend#186 when it is built.
+      expect(
+        _flagged(r"""
+Future<void> f(String id, String text) =>
+    _dio.post('/moderation/posts/$id/comments', data: {'text': text});
+Future<void> g(String id) =>
+    _dio.postUri(Uri.parse('/moderation/posts/$id/replies'));
+"""),
+        {
+          r'path /moderation/posts/$id/comments (post or comment)',
+          r'path /moderation/posts/$id/replies (post or comment)',
         },
       );
     });
@@ -165,6 +219,45 @@ const moderators = '/moderation/moderators';
 """, file: 'lib/features/moderation/moderation_queue_screen.dart'),
         isEmpty,
       );
+    });
+
+    test("a report's kind on a pill, a chip or a filter", () {
+      expect(
+        _flagged(r"""
+final kind = TeamPill(label: report.isComment ? 'Comment' : 'Post');
+final chips = [
+  ChoiceChip(label: Text('Post'), selected: true, onSelected: null),
+  FilterChip(label: Text('Comment'), selected: false, onSelected: null),
+];
+final filter = SegmentedButton<String>(
+  segments: const [
+    ButtonSegment(value: 'post', label: Text('Post')),
+    ButtonSegment(value: 'comment', label: Text('Comment')),
+  ],
+  selected: const {'post'},
+);
+final menu = DropdownMenuItem<String>(value: 'post', child: Text('Post'));
+final icon = Icon(Icons.comment_outlined);
+"""),
+        isEmpty,
+      );
+    });
+
+    test("a reported thread, read only, and a file that lists hidden ones", () {
+      // Sample paths for the self-test only; the module's real paths come
+      // from Scheduler_Backend#186 when it is built.
+      expect(
+        _flagged(r"""
+const thread = '/moderation/posts/:id/comments';
+Future<void> read(String id) => _dio.get('/moderation/posts/$id/comments');
+"""),
+        isEmpty,
+      );
+      expect(_routeHits('/moderation/posts/:id/comments'), isEmpty);
+      expect(_flagged('', file: 'lib/features/moderation/hidden_comments.dart'),
+          isEmpty);
+      expect(_flagged('', file: 'lib/features/moderation/posts/list.dart'),
+          isEmpty);
     });
 
     test("a reported post's text and its states, read only", () {
@@ -252,7 +345,7 @@ class _Hit {
 
   final String file;
   final int line; // 0 for the file's own name, or a route
-  final String kind; // file, route, name, path or label
+  final String kind; // file, route, name, path, icon or label
   final String text;
   final String rule;
 
@@ -286,26 +379,72 @@ final _typeRules = <String, RegExp>{
   _message: RegExp(r'^messages?\b'),
 };
 
-/// Rules for the words of a route or API path.
+/// Rules for the words of a route, an API path, or a file's path.
 final _pathRules = <String, RegExp>{
-  _post: RegExp(r'\b(compose|composer)\b|\b(posts|comments|replies|reply)$|'
+  _post: RegExp(r'\b(compose|composer)\b|'
       r'\b(new|create) (posts?|comments?)\b|\b(posts?|comments?) (new|create)\b'),
   _message: RegExp(
       r'\b(messages?|chats?|dms?|conversations?)\b|\bdirect messages?\b'),
 };
 
+/// A route or API path (never a file's) that ends where a new post, comment
+/// or reply is sent: a group's posts, a post's comments, a reply.
+final _postingEnd = RegExp(r'\b(posts|comments|replies|reply)$');
+
+/// Under /moderation, a path that ends in a list of reported posts,
+/// comments or replies is read only, unless the app writes to it.
+final _reportedListEnd = RegExp(r'\bmoderation\b.*\b(posts|comments|replies)$');
+
+/// A dio write whose path is the string that follows (`_dio.post(`,
+/// `_dio.postUri(Uri.parse(`).
+final _writeBefore =
+    RegExp(r'\.(post|put|patch)(?:Uri)?\s*(?:<[^()]*?>)?\s*\(\s*'
+        r'(?:Uri\.parse\s*\(\s*)?$');
+
+/// The rule a route or API [path] breaks, or null. [written] is whether the
+/// app POSTs, PUTs or PATCHes it.
+String? _pathRule(String path, {bool written = false}) {
+  final words = nameWords(path);
+  if (_rule(_pathRules, words) case final rule?) return rule;
+  if (!_postingEnd.hasMatch(words)) return null;
+  return _reportedListEnd.hasMatch(words) && !written ? null : _post;
+}
+
 /// Rules for a label's words.
 final _labelRules = <String, RegExp>{
-  _post: RegExp(r'^(post|comment|reply|compose|publish)$|'
+  _post: RegExp(r'^(reply|compose|publish)$|'
       r'\b(write|new|create|add|compose|publish|start|leave|send|post) '
       r'(a |an |the |new |your )?(posts?|comments?|repl(y|ies))\b|'
-      r'\breply to\b'),
+      r'\breply to\b|\b(say|share) something\b|\bwhat s on your mind\b'),
   _message: RegExp(r'^(message|messages|chat|chats)$|'
       r'\b(write|new|send|start|compose) (a |an |the |new |your )?'
       r'(messages?|chats?|dms?)\b|'
       r'\b(direct|private) messages?\b|'
-      r'\bmessage (the )?(author|poster|reporter|student|member|user|them)\b|'
+      r'\b(message|contact|email|e mail|mail|dm|text) (the )?'
+      r'(author|poster|reporter|commenter|student|member|user|them)\b|'
       r'\bchats?\b|\bdms?\b'),
+};
+
+/// 'Post' or 'Comment' alone: a report's kind on a pill, a chip or a
+/// filter, but a posting action on a button ([_isAction]).
+final _bareKind = RegExp(r'^(post|comment)$');
+
+/// Whether [control] does something when tapped: a button, a FAB, a menu
+/// item, an action, an action chip. A segmented button, a dropdown and its
+/// items, and a checked menu item choose a filter, so they are not.
+bool _isAction(String? control) =>
+    control != null &&
+    RegExp(r'(Button|MenuItem|Action|ActionChip)$').hasMatch(control) &&
+    !RegExp(r'^(SegmentedButton|DropdownButton|DropdownMenuItem|'
+            r'CheckedPopupMenuItem)$')
+        .hasMatch(control);
+
+/// Icons of a composer (send, add a comment, reply) and of a message
+/// (mail), Material or Cupertino.
+final _iconRules = <String, RegExp>{
+  _post: RegExp(r'Icons\.(send|paperplane|add_comment|post_add|reply)\w*'),
+  _message:
+      RegExp(r'Icons\.(mail|email|mark_email|forward_to_inbox|envelope)\w*'),
 };
 
 String? _rule(Map<String, RegExp> rules, String words) {
@@ -317,8 +456,7 @@ String? _rule(Map<String, RegExp> rules, String words) {
 
 /// A route under /moderation.
 List<_Hit> _routeHits(String path) => [
-      if (_rule(_pathRules, nameWords(path)) case final rule?)
-        _Hit(path, 0, 'route', path, rule),
+      if (_pathRule(path) case final rule?) _Hit(path, 0, 'route', path, rule),
     ];
 
 /// Every hit in one file: its own name, the names in its code and its strings.
@@ -332,6 +470,7 @@ List<_Hit> _scan(String file, String source) {
   }
 
   final lexed = lex(source);
+  final controls = controlsIn(lexed);
   final seen = <String>{};
   for (final (:at, :name) in namesIn(lexed)) {
     final line = lineOf(lexed.code, at);
@@ -344,15 +483,26 @@ List<_Hit> _scan(String file, String source) {
     }
   }
 
+  for (final MapEntry(key: rule, value: re) in _iconRules.entries) {
+    for (final m in re.allMatches(lexed.masked)) {
+      hits.add(_Hit(file, lineOf(lexed.code, m.start), 'icon', m[0]!, rule));
+    }
+  }
+
   for (final (:at, :text) in lexed.strings) {
     final line = lineOf(lexed.code, at);
     if (text.trim().isEmpty || text.startsWith('package:')) continue;
     if (isLabel(text)) {
-      if (_rule(_labelRules, labelWords(text)) case final rule?) {
-        hits.add(_Hit(file, line, 'label', text, rule));
-      }
+      final words = labelWords(text);
+      final rule = _rule(_labelRules, words) ??
+          (_bareKind.hasMatch(words) && _isAction(controlAround(controls, at))
+              ? _post
+              : null);
+      if (rule != null) hits.add(_Hit(file, line, 'label', text, rule));
     } else if (text.contains('/')) {
-      if (_rule(_pathRules, nameWords(text)) case final rule?) {
+      final before = lexed.masked.substring(at < 80 ? 0 : at - 80, at);
+      if (_pathRule(text, written: _writeBefore.hasMatch(before))
+          case final rule?) {
         hits.add(_Hit(file, line, 'path', text, rule));
       }
     }

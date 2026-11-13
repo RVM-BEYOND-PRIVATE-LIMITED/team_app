@@ -21,20 +21,34 @@ import 'support/source_scan.dart';
 /// * (a) an upload, capture or posting package (file_picker, image_picker,
 ///   camera, video_player, share_plus) or a multipart body (MultipartFile,
 ///   MultipartRequest, FormData), in the module's files or anything they
-///   import;
-/// * (b) a field, name or JSON key for a performance number (views, reach,
-///   likes, impressions, engagement, followers, plays, watch_time, saves,
-///   shares, ctr, and 'view count', 'like rate' and the like);
+///   import, and a name in the module's own files that uploads
+///   (`uploadPhoto`, `UploadSheet`);
+/// * (b) a field, name or JSON key for a performance number: one that is
+///   the word alone (`views`, `likes`, 'reach'), one that pairs it with a
+///   count, rate or total (`likesCount`, 'view_rate', `totalPlays`), and
+///   impressions, engagement, followers, watch_time and ctr wherever they
+///   stand. A private name of the word alone (`_views`, an IndexedStack's
+///   pages) and a word with another in front (`pendingSaves`) are something
+///   else: a number from the server comes in through a JSON key and a
+///   model's field, which are still caught;
 /// * (c) an approval, chat or scorecard screen, route or control: a type
 ///   named for one (`ApprovalQueueScreen`, `ChatBloc`, `EditorScorecardTab`),
 ///   a route or API path (`/social/chat`, `/tasks/approvals`), a chat or
-///   approval icon, a control labelled 'Approve' or 'Open chat', or a label
-///   of its own that starts with one of those words.
+///   approval icon, a control labelled 'Open chat' or one that asks for or
+///   gives an approval ('Approve', 'Send for approval', 'Request approval'),
+///   or a label of its own that starts with one of those words. A state the
+///   server reports on a row, even a list tile's ('Waiting for approval',
+///   'Approved'), is not a control.
 ///
 /// Neither module has a route or a file yet, so today this passes on nothing
 /// and pins the rule for when they land. Shared files (the team kit, the ESS
 /// models, whose staff profile has its own 'likes') are not the module's and
-/// are scanned for (a) only.
+/// are scanned for (a) only. One shared file holds a multipart body that is
+/// not the modules': the staff member's own profile photo upload in
+/// lib/data/datasources/me_remote_data_source.dart, which a task or social
+/// screen reaches when it reads the viewer's profile through MeRepository.
+/// It is allowed for (a), with that reason ([_reachedUploadAllowed]); the
+/// module still may not call it (`uploadPhoto` is a name that uploads).
 void main() {
   group('the guard catches', () {
     test('(a) upload, capture and posting packages', () {
@@ -69,6 +83,19 @@ Future<void> send(Dio dio, String path) => dio.post('/x',
       );
     });
 
+    test("(a) a module's own file that uploads", () {
+      expect(
+        _flagged('''
+final done = me.uploadPhoto(bytes, name);
+class UploadSheet extends StatelessWidget {}
+'''),
+        {
+          'name uploadPhoto (upload or capture)',
+          'name UploadSheet (upload or capture)',
+        },
+      );
+    });
+
     test('(b) performance-number fields and JSON keys', () {
       expect(
         _flagged(r'''
@@ -83,6 +110,8 @@ class PostStats {
 final watch = json['watch_time'];
 const keys = ['followers', 'engagement_rate', 'impressions'];
 final text = Text('$playCount plays');
+final int totalShares = 0;
+final int followersGained = 0;
 '''),
         {
           'name views (performance number)',
@@ -96,11 +125,15 @@ final text = Text('$playCount plays');
           'key engagement_rate (performance number)',
           'key impressions (performance number)',
           'name playCount (performance number)',
+          'name totalShares (performance number)',
+          'name followersGained (performance number)',
         },
       );
     });
 
     test('(c) approval, chat and scorecard screens and routes', () {
+      // Sample paths for the self-test only; the modules' real paths come
+      // from their server when they are built.
       expect(
         _flagged('''
 class ApprovalQueueScreen extends StatelessWidget {}
@@ -130,6 +163,7 @@ final icon = Icon(Icons.chat_bubble_outline);
         _flagged('''
 final approve = FilledButton(onPressed: null, child: Text('Approve'));
 final send = TextButton(onPressed: null, child: Text('Send for approval'));
+final ask = ListTile(title: Text('Request approval'), onTap: null);
 final chat = ListTile(title: Text('Open chat'), onTap: null);
 final card = ListTile(title: Text('Open the editor scorecard'), onTap: null);
 const _label = 'Chat with the editor';
@@ -138,6 +172,7 @@ const _tab = 'Scorecard';
         {
           'label Approve (approval)',
           'label Send for approval (approval)',
+          'label Request approval (approval)',
           'label Open chat (chat)',
           'label Open the editor scorecard (scorecard)',
           'label Chat with the editor (chat)',
@@ -173,6 +208,10 @@ class TaskListScreen extends StatelessWidget {}
 class TaskTile extends StatelessWidget {}
 final route = GoRoute(path: '/tasks/:id', builder: (_, __) => const SizedBox());
 final title = Text('Due today');
+final row = ListTile(
+    title: Text(task.title), subtitle: Text('Waiting for approval'), onTap: null);
+final sent = ListTile(title: Text('Sent for approval on 3 Nov'), onTap: null);
+final waiting = TeamPill(label: 'Pending approval', tone: TeamPillTone.warning);
 final pill = TeamPill(label: 'Approved', tone: TeamPillTone.success);
 final done = FilledButton(onPressed: null, child: Text('Mark done'));
 final due = json['due_date'];
@@ -184,6 +223,42 @@ final prefs = SharedPreferences.getInstance();
 ''', file: 'lib/features/tasks/task_list_screen.dart'),
         isEmpty,
       );
+    });
+
+    test('names that are not a performance number', () {
+      expect(
+        _flagged('''
+class TasksHome extends StatefulWidget {}
+class _TasksHomeState extends State<TasksHome> {
+  final _views = <Widget>[const TaskListView(), const TaskBoardView()];
+  int pendingSaves = 0;
+  Widget build(BuildContext context) =>
+      IndexedStack(index: _tab, children: _views);
+}
+final queued = json['pending_saves'];
+''', file: 'lib/features/tasks/tasks_home.dart'),
+        isEmpty,
+      );
+    });
+
+    test("the profile photo upload a module reaches through MeRepository", () {
+      const upload = '''
+Future<void> uploadPhoto(List<int> bytes) => _dio.post('/me/photo',
+    data: FormData.fromMap({'photo': MultipartFile.fromBytes(bytes)}));
+''';
+      expect(
+          _reachedHits(
+              'lib/data/datasources/me_remote_data_source.dart', upload),
+          isEmpty);
+      // Anywhere else the same body is caught.
+      expect(
+          _reachedHits(
+                  'lib/data/datasources/ess_remote_data_source.dart', upload)
+              .map((h) => h.short),
+          [
+            'name FormData (upload or capture)',
+            'name MultipartFile (upload or capture)'
+          ]);
     });
 
     test('comments', () {
@@ -234,6 +309,15 @@ final a = 1;
           containsAll(['/home', '/approvals', '/me/profile']));
       expect(TeamModule.tasks.routePrefix, '/tasks');
       expect(TeamModule.social.routePrefix, '/social');
+    });
+
+    test('each shared file allowed an upload still holds one', () {
+      for (final file in _reachedUploadAllowed.keys) {
+        final source = libSources()[file];
+        expect(source, isNotNull, reason: 'stale entry: $file');
+        expect(_multipart.hasMatch(lex(source!).masked), isTrue,
+            reason: '$file no longer uploads: drop its entry');
+      }
     });
 
     test("the app's shared files are not owned by a screen that imports them",
@@ -304,11 +388,42 @@ const _uploadPackages = [
 /// (a) A multipart body.
 final _multipart = RegExp(r'\b(MultipartFile|MultipartRequest|FormData)\b');
 
-/// (b) The words of a performance number, in a name or a key.
-final _performance = RegExp(
-    r'\b(views|reach|likes|impressions|engagements?|followers|plays|saves|'
-    r'shares|ctr)\b|\bwatch (time|hours|minutes|seconds)\b|'
-    r'\b(view|like|play|share|save|follower|impression) (counts?|rates?|totals?)\b');
+/// (a) Shared files a module may reach although they hold a multipart body,
+/// each with why. Their upload is not the module's: a module's own file that
+/// calls it is still caught ([_uploadName]).
+const _reachedUploadAllowed = {
+  'lib/data/datasources/me_remote_data_source.dart':
+      "The staff member's own profile photo (POST /api/me/photo), sent from "
+          'the Me screen. A task or social screen reaches it when it reads '
+          "the viewer's profile through MeRepository.",
+};
+
+/// (a) The words of a name that uploads, in a module's own file.
+final _uploadName = RegExp(r'\b(upload|uploads|uploading|uploader)\b');
+
+/// (b) Performance words that are one wherever they stand in a name or key.
+final _performanceAnywhere =
+    RegExp(r'\b(impressions|engagements?|followers|ctr)\b|'
+        r'\bwatch (time|hours|minutes|seconds)\b');
+
+/// (b) Performance words that are one alone ('views', 'likes')...
+final _performanceAlone = RegExp(r'^(views|reach|likes|plays|saves|shares)$');
+
+/// ...or with a count, rate or total ('likes count', 'view rate', 'total
+/// plays'), but not after another word ('pending saves').
+final _performanceCounted =
+    RegExp(r'\b(views?|reach|likes?|plays?|saves?|shares?|follower|impression) '
+        r'(counts?|rates?|totals?)\b|'
+        r'\b(total|average|avg) (views|reach|likes|plays|saves|shares)\b');
+
+/// (b) Whether [words], a name's or a key's, are a performance number. A
+/// [private] name of the word alone (`_views`) is not: a screen keeps it
+/// for itself, and a number from the server comes in through a key and a
+/// public field, which are caught.
+bool _isPerformance(String words, {bool private = false}) =>
+    _performanceAnywhere.hasMatch(words) ||
+    _performanceCounted.hasMatch(words) ||
+    (!private && _performanceAlone.hasMatch(words));
 
 /// (c) Approval, chat and scorecard words: in a type, a path or a file name,
 /// and on a control's label. 'Approved', a state the server reports, is not
@@ -335,6 +450,14 @@ String? _offScopeRule(String words) {
 final _offScopeStart = RegExp(
     r'^(approve|approval|approvals|chat|chats|scorecards?|score cards?)\b');
 
+/// (c) A control's label that gives or asks for an approval: 'Approve',
+/// 'Approve all', 'Send for approval', 'Submit to your manager for
+/// approval', 'Request approval'. On a control, an approval word is caught
+/// only so: a row's state ('Waiting for approval') is not an action.
+final _approvalAction = RegExp(r'^(approve|approves|approving)\b|'
+    r'^(re)?(send|submit|request|ask|seek|get|forward)\b(\s\w+){0,4}\s'
+    r'(approval|approvals|approver|approvers)\b');
+
 /// (c) for a route path under the modules.
 List<_Hit> _routeHits(String path) => [
       if (_offScopeRule(nameWords(path)) case final rule?)
@@ -351,9 +474,10 @@ List<_Hit> _reachedHits(String file, String source) {
             .allMatches(lexed.code))
           _Hit(file, lineOf(lexed.code, m.start), 'import', 'package:$package',
               'upload or capture'),
-    for (final m in _multipart.allMatches(lexed.masked))
-      _Hit(file, lineOf(lexed.code, m.start), 'name', m[0]!,
-          'upload or capture'),
+    if (!_reachedUploadAllowed.containsKey(file))
+      for (final m in _multipart.allMatches(lexed.masked))
+        _Hit(file, lineOf(lexed.code, m.start), 'name', m[0]!,
+            'upload or capture'),
   ];
 }
 
@@ -370,8 +494,11 @@ List<_Hit> _ownHits(String file, String source) {
     final line = lineOf(lexed.code, at);
     if (!seen.add('$line $name')) continue;
     final words = nameWords(name);
-    if (_performance.hasMatch(words)) {
+    if (_isPerformance(words, private: name.startsWith('_'))) {
       hits.add(_Hit(file, line, 'name', name, 'performance number'));
+    }
+    if (_uploadName.hasMatch(words)) {
+      hits.add(_Hit(file, line, 'name', name, 'upload or capture'));
     }
     if (RegExp(r'^_?[A-Z]').hasMatch(name) && !_multipart.hasMatch(name)) {
       if (_offScopeRule(words) case final rule?) {
@@ -389,16 +516,16 @@ List<_Hit> _ownHits(String file, String source) {
     if (isLabel(text)) {
       final words = labelWords(text);
       final rule = _offScopeRule(words);
-      if (rule != null &&
-          (controlAround(controls, at) != null ||
-              _offScopeStart.hasMatch(words))) {
+      final onControl = controlAround(controls, at) != null &&
+          (rule != 'approval' || _approvalAction.hasMatch(words));
+      if (rule != null && (onControl || _offScopeStart.hasMatch(words))) {
         hits.add(_Hit(file, line, 'label', text, rule));
       }
     } else if (text.contains('/')) {
       if (_offScopeRule(nameWords(text)) case final rule?) {
         hits.add(_Hit(file, line, 'path', text, rule));
       }
-    } else if (_performance.hasMatch(nameWords(text))) {
+    } else if (_isPerformance(nameWords(text))) {
       hits.add(_Hit(file, line, 'key', text, 'performance number'));
     }
   }

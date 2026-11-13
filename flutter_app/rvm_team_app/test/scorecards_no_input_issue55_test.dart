@@ -16,11 +16,20 @@ import 'support/source_scan.dart';
 /// (`moduleOwnedFiles`). Comments and strings never count. It fails on:
 /// * an input: TextField, TextFormField, CupertinoTextField,
 ///   CupertinoTextFormFieldRow, EditableText, Slider, RangeSlider,
-///   CupertinoSlider, DropdownButtonFormField, `Form(` or `keyboardType:`;
+///   CupertinoSlider, DropdownButtonFormField, DropdownButton, DropdownMenu
+///   (which holds an editable field), CupertinoPicker, Autocomplete,
+///   RawAutocomplete, SearchBar, SearchAnchor, FormField, a
+///   TextInputFormatter, `Form(` or `keyboardType:`. A period or branch
+///   filter is a chip or a segmented button, which are not inputs;
 /// * a POST, PUT or PATCH from a scorecards data source: those files, and any
 ///   file under lib/ named for scorecards (a data source the HoO and CEO
 ///   screens share is still one), by a dio call (`.post(`, `.put(`,
-///   `.patch(`) or a request whose `method:` is one of them.
+///   `.patch(`) or a request whose `method:` is one of them or is not a
+///   literal (`Options(method: _m)`);
+/// * in any file under lib/, whatever its name (a HoO dashboard's data
+///   source), a POST, PUT or PATCH whose call mentions a scorecard: in its
+///   path, in a name it passes, or in a string constant of the same file it
+///   passes (`const _targets = '/scorecards/targets'`).
 ///
 /// Today lib/features/scorecards/ holds the state badge alone, with no
 /// input and no request, and no /scorecards route exists. The check is ticked
@@ -56,7 +65,40 @@ final f = TextFormField(
           ['Form( on line 1']);
     });
 
+    test('dropdowns, pickers, search and formatters', () {
+      expect(
+          _inputs(
+              'final d = DropdownButton<int>(items: const [], onChanged: null);'),
+          ['DropdownButton on line 1']);
+      expect(_inputs('final d = DropdownMenu<int>(dropdownMenuEntries: e);'),
+          ['DropdownMenu on line 1']);
+      expect(
+          _inputs('final p = CupertinoPicker(itemExtent: 32, '
+              'onSelectedItemChanged: null, children: rows);'),
+          ['CupertinoPicker on line 1']);
+      expect(
+          _inputs('final a = Autocomplete<String>(optionsBuilder: options);'),
+          ['Autocomplete on line 1']);
+      expect(_inputs('final a = RawAutocomplete<String>(optionsBuilder: o);'),
+          ['RawAutocomplete on line 1']);
+      expect(_inputs('final b = SearchBar(onChanged: null);'),
+          ['SearchBar on line 1']);
+      expect(_inputs('final b = SearchAnchor.bar(suggestionsBuilder: s);'),
+          ['SearchAnchor on line 1']);
+      expect(_inputs('final f = FormField<int>(builder: (state) => w);'),
+          ['FormField on line 1']);
+      expect(
+          _inputs(
+              'final i = [FilteringTextInputFormatter.digitsOnly, TextInputFormatter.withFunction(f)];'),
+          [
+            'FilteringTextInputFormatter on line 1',
+            'TextInputFormatter on line 1',
+          ]);
+    });
+
     test('a POST, PUT or PATCH', () {
+      // Sample paths and key for the self-test only; the module's real paths
+      // come from its server (Scheduler_Backend#177) when it is built.
       expect(
           _writes("Future<void> f() => _dio.post('/scorecards/targets', "
               "data: {'target_paise': 100});"),
@@ -71,10 +113,49 @@ final r = _dio.request<void>('/x/1',
       expect(_writes("final r = _dio.postUri(Uri.parse('/x'));"),
           ['POST on line 1']);
     });
+
+    test('a request whose method is held in a constant', () {
+      expect(_writes('''
+const _m = 'PATCH';
+final r = _dio.request<void>('/x/1', options: Options(method: _m));'''),
+          ['method: _m on line 2']);
+      expect(
+          _writes('final r = _dio.request<void>(path, '
+              'options: Options(method: HttpMethod.patch.name));'),
+          ['method: HttpMethod.patch.name on line 1']);
+    });
+
+    test('a scorecard write from a file not named for scorecards', () {
+      // Sample paths and key for the self-test only; the module's real paths
+      // come from its server (Scheduler_Backend#177) when it is built.
+      const source = r'''
+class HooDashboardRemoteDataSource {
+  Future<void> note(String t) => _dio.post('/hoo/notes', data: {'text': t});
+  Future<void> target(int p) =>
+      _dio.patch('/scorecards/targets', data: {'target_paise': p});
+  Future<void> again(int p) => _dio.put(_targets, data: p);
+  Future<void> viaName(int p) => _dio.post(_scorecardTargetsPath, data: p);
+  Future<void> viaRequest() => _dio.request('/v1/score-cards/1',
+      options: Options(method: 'POST'));
+  Future<void> viaBase(int p) => _dio.patch('$_base/2', data: p);
+}
+const _targets = '/scorecards/targets/1';
+const _base = '/v1/scorecards';
+''';
+      expect(_scorecardWrites(source), [
+        'PATCH on line 4',
+        'PUT on line 5',
+        'POST on line 6',
+        'POST on line 7',
+        'PATCH on line 9',
+      ]);
+    });
   });
 
   group('the guard allows', () {
     test('a read-only scorecard', () {
+      // Sample paths for the self-test only; the module's real paths come
+      // from its server (Scheduler_Backend#177) when it is built.
       const source = '''
 import 'package:flutter/material.dart';
 
@@ -87,9 +168,25 @@ final key = GlobalKey<FormState>();
 final read = _dio.get('/scorecards/me', options: TeamModule.scorecards.requestOptions);
 final sliderTheme = SliderTheme.of(context);
 const method = 'POST is never sent from here';
+final period = ChoiceChip(label: Text('This month'), selected: true);
+final hide = DropdownButtonHideUnderline(child: chips);
+final state = FormFieldState<int>;
+final read2 = _dio.request('/scorecards/me', options: Options(method: 'GET'));
 ''';
       expect(_inputs(source), isEmpty);
       expect(_writes(source), isEmpty);
+      expect(_scorecardWrites(source), isEmpty);
+    });
+
+    test("another file's writes that do not touch a scorecard", () {
+      // Sample paths for the self-test only, as above.
+      const source = '''
+const _notes = '/hoo/notes';
+Future<void> note(String t) => _dio.post(_notes, data: {'text': t});
+Future<void> read() => _dio.get('/scorecards/me');
+Future<void> list() => _dio.request('/scorecards/me');
+''';
+      expect(_scorecardWrites(source), isEmpty);
     });
   });
 
@@ -113,8 +210,9 @@ const method = 'POST is never sent from here';
         ...appFilesUnder('lib/features/scorecards'),
         ...routes.values,
       });
+      final sources = libSources();
       final named = {
-        for (final file in libSources().keys)
+        for (final file in sources.keys)
           if (file.contains('scorecard')) file,
       };
       String read(String file) => File(file).readAsStringSync();
@@ -123,6 +221,9 @@ const method = 'POST is never sent from here';
           for (final input in _inputs(read(file))) '$file: $input',
         for (final file in {...own, ...named})
           for (final write in _writes(read(file))) '$file: $write',
+        for (final MapEntry(key: file, value: source) in sources.entries)
+          for (final write in _scorecardWrites(source))
+            '$file: $write (a scorecard)',
       ];
       expect(
         found,
@@ -136,10 +237,13 @@ const method = 'POST is never sent from here';
   });
 }
 
-/// An input widget, by name (Material and Cupertino).
+/// An input widget, by name (Material and Cupertino), and a formatter,
+/// which only a field has.
 final _inputWidget = RegExp(r'\b(TextField|TextFormField|CupertinoTextField|'
     r'CupertinoTextFormFieldRow|EditableText|Slider|RangeSlider|'
-    r'CupertinoSlider|DropdownButtonFormField)\b');
+    r'CupertinoSlider|DropdownButtonFormField|DropdownButton|DropdownMenu|'
+    r'CupertinoPicker|Autocomplete|RawAutocomplete|SearchBar|SearchAnchor|'
+    r'FormField|\w*TextInputFormatter)\b');
 
 /// A form, which only exists to collect input.
 final _form = RegExp(r'\bForm\s*(?:<[^()]*?>)?\s*\(');
@@ -169,10 +273,16 @@ List<String> _inputs(String source) {
 final _writeCall = RegExp(r'\.(post|put|patch)(?:Uri)?\s*(?:<[^()]*?>)?\s*\(');
 
 /// A request whose method is a write.
-final _writeMethod = RegExp(r'''\bmethod\s*:\s*['"](post|put|patch)['"]''',
+final _writeMethod = RegExp(r'''\bmethod\s*:\s*r?['"](post|put|patch)['"]''',
     caseSensitive: false);
 
-/// Each POST, PUT or PATCH [source] sends, as 'POST on line n'.
+/// A request whose method is not a literal (`method: _m`), so may be a
+/// write: what it holds is not checked here.
+final _methodNotLiteral =
+    RegExp(r'''\bmethod\s*:\s*(?!r?['"])([^,)\s][^,)]*?)\s*[,)]''');
+
+/// Each POST, PUT or PATCH [source] sends, as 'POST on line n', and each
+/// method that is not a literal, as 'method: _m on line n'.
 List<String> _writes(String source) {
   final lexed = lex(source);
   final found = <({int at, String method})>[
@@ -180,7 +290,71 @@ List<String> _writes(String source) {
       (at: m.start, method: m[1]!.toUpperCase()),
     for (final m in _writeMethod.allMatches(lexed.code))
       (at: m.start, method: m[1]!.toUpperCase()),
+    for (final m in _methodNotLiteral.allMatches(lexed.masked))
+      (at: m.start, method: 'method: ${m[1]}'),
   ]..sort((a, b) => a.at.compareTo(b.at));
+  return [
+    for (final f in found) '${f.method} on line ${lineOf(lexed.code, f.at)}',
+  ];
+}
+
+/// 'scorecard', 'score card', 'score-card', 'score_card', 'ScoreCards'.
+final _scorecard = RegExp(r'score[\s_-]?cards?', caseSensitive: false);
+
+/// A dio request that names its method in its options.
+final _requestCall = RegExp(r'\.(request|requestUri)\s*(?:<[^()]*?>)?\s*\(');
+
+/// A string constant's name, just before its literal (`const _t = '…'`).
+final _constantName = RegExp(r'([A-Za-z_$][\w$]*)\s*=\s*$');
+
+/// Each POST, PUT or PATCH in [source] whose call mentions a scorecard, as
+/// 'PATCH on line n': in its path or another string it passes, in a name it
+/// passes (`_scorecardTargets`), or in a string constant of the same file
+/// that it passes (`_dio.put(_targets)`, `'$_base/2'`).
+List<String> _scorecardWrites(String source) {
+  final lexed = lex(source);
+  final constants = <String, String>{
+    for (final s in lexed.strings)
+      if (_constantName.firstMatch(
+              lexed.masked.substring(s.at < 80 ? 0 : s.at - 80, s.at))
+          case final m?)
+        m[1]!: s.text,
+  };
+  bool mentions(int open, int close) {
+    // The code keeps strings and their interpolations, so this reads the
+    // path, the names passed and the names a string interpolates.
+    final args = lexed.code.substring(open, close);
+    if (_scorecard.hasMatch(args)) return true;
+    for (final m in RegExp(r'[A-Za-z_$][\w$]*').allMatches(args)) {
+      // `$_base` in a string is the constant `_base`.
+      final name = m[0]!;
+      final value = constants[name] ??
+          (name.startsWith(r'$') ? constants[name.substring(1)] : null);
+      if (value != null && _scorecard.hasMatch(value)) return true;
+    }
+    return false;
+  }
+
+  final found = <({int at, String method})>[];
+  for (final m in _writeCall.allMatches(lexed.masked)) {
+    final open = m.end - 1;
+    if (mentions(open, closingBracket(lexed.masked, open))) {
+      found.add((at: m.start, method: m[1]!.toUpperCase()));
+    }
+  }
+  for (final m in _requestCall.allMatches(lexed.masked)) {
+    final open = m.end - 1;
+    final close = closingBracket(lexed.masked, open);
+    if (!mentions(open, close)) continue;
+    final args = lexed.code.substring(open, close);
+    if (_writeMethod.firstMatch(args) case final w?) {
+      found.add((at: m.start, method: w[1]!.toUpperCase()));
+    } else if (_methodNotLiteral.firstMatch(lexed.masked.substring(open, close))
+        case final w?) {
+      found.add((at: m.start, method: 'method: ${w[1]}'));
+    }
+  }
+  found.sort((a, b) => a.at.compareTo(b.at));
   return [
     for (final f in found) '${f.method} on line ${lineOf(lexed.code, f.at)}',
   ];

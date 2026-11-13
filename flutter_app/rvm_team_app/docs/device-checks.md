@@ -55,8 +55,10 @@ A debug build is the one to use: the block is the same in every build mode
 step 10 stops it.
 
 If the phone already has a Team RVM build signed with another key,
-`flutter run` cannot install over it. Remove it first, which also removes
-its sign-in: `adb uninstall com.rvm.rvmteam`.
+`flutter run` cannot install over it, so it uninstalls that build and
+installs again ("Uninstalling old version..."); that build's data, its
+sign-in included, goes with it. To remove it yourself first:
+`adb uninstall com.rvm.rvmteam`.
 
 With no `SCHEDULER_BASE_URL` or `ESS_BASE_URL` define, a debug build talks
 to the live servers, so use a faculty **test** account: a portal sign-in
@@ -66,8 +68,9 @@ that batch's students.
 
 ### Steps
 
-Run the `adb` commands from any folder on the computer. Each file lands in
-that folder.
+Run the `adb` commands from any folder on the computer, in a second
+terminal while `flutter run` keeps the first. Each file lands in that
+folder.
 
 1. On the phone, sign in as the faculty test account. Home opens.
 2. Before: Home can be captured.
@@ -140,12 +143,17 @@ that folder.
 
    Open `7-roster-again.png`: the app's area is black again.
 10. The switch is off by default: stop the app (press `q` where
-    `flutter run` is running), then install the same build without the
+    `flutter run` is running), then, in that same terminal, which is still
+    in `flutter_app/rvm_team_app`, install the same build without the
     define:
 
     ```bash
     flutter run
     ```
+
+    `flutter run` works only in `flutter_app/rvm_team_app`: from any other
+    terminal, `cd` there first (from the repository's root,
+    `cd flutter_app/rvm_team_app`, as in Build).
 
     Open the roster (step 3) and capture it:
 

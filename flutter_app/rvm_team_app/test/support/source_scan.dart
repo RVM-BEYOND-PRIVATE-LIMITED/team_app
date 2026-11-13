@@ -298,7 +298,10 @@ Map<String, String> classFiles() {
 
 /// The files that wire the whole app together, and so import every screen.
 /// A screen's own imports go through them only for set-up, never for a
-/// control, so a walk stops there.
+/// control, so a walk stops there. What they draw around every screen (a
+/// `SelectionArea` in main.dart's `MaterialApp.router` builder, say) is in
+/// no screen's files, so a guard that needs it scans the whole app for it
+/// (no_copy_guard_issue52_test.dart).
 bool isWiring(String path) =>
     path == 'lib/injection.dart' ||
     path == 'lib/main.dart' ||
