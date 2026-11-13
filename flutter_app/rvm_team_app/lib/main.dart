@@ -6,18 +6,18 @@ import 'package:core_network/core_network.dart' show ApiEnvironment;
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 
 import 'app_bloc_observer.dart';
 import 'app_crash.dart';
 import 'app_feedback.dart';
 import 'bloc/connectivity_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
+import 'bloc/team_modules_bloc.dart';
 import 'data/notification_permission.dart';
 import 'features/startup/version_gate.dart';
 import 'injection.dart';
 import 'push/push_service.dart';
-import 'router/app_router.dart';
+import 'router/team_router_host.dart';
 import 'widgets/env_ribbon.dart';
 
 void main() {
@@ -137,8 +137,11 @@ class TeamApp extends StatefulWidget {
 
 class _TeamAppState extends State<TeamApp> {
   final TeamAuthBloc _auth = getIt<TeamAuthBloc>();
-  late final GoRouter _router =
-      createRouter(_auth, navigatorKey: rootNavigatorKey);
+
+  /// The staff modules open to the person (team_app #50 item 5). The router's
+  /// module guard reads it ([TeamRouterHost], item 7b): nothing is open before
+  /// its first answer, so every module route falls back to /home, as before.
+  final TeamModulesBloc _modules = getIt<TeamModulesBloc>();
 
   static const _notificationPermission = NotificationPermission();
   bool _askedNotifications = false;
@@ -168,34 +171,42 @@ class _TeamAppState extends State<TeamApp> {
       providers: [
         BlocProvider.value(value: _auth),
         BlocProvider.value(value: getIt<ConnectivityBloc>()),
+        BlocProvider.value(value: _modules),
       ],
       child: BlocListener<TeamAuthBloc, TeamAuthState>(
         listenWhen: (p, c) => p.status != c.status,
         listener: (_, state) {
-          _router.refresh();
           if (state.status == TeamAuthStatus.authenticated) {
             _askNotificationPermission();
             unawaited(PushService.instance.onSignedIn());
           }
         },
-        child: MaterialApp.router(
-          title: 'Team RVM',
-          scaffoldMessengerKey: rootScaffoldMessengerKey,
-          debugShowCheckedModeBanner: false,
-          // The whole design system (ivory scaffolds, white cards, clay
-          // surfaces) is authored for the light palette: following the system
-          // into dark mode mixes white cards with dark fills and washed-out
-          // text (OnePlus 12R, issue14). Locked to light so every device shows
-          // the same colors. Revisit only with a full dark-mode audit.
-          theme: RvmTheme.light(seed: RvmColors.clay),
-          themeMode: ThemeMode.light,
-          // The TEST SERVER ribbon (#60) is off unless SHOW_ENV_RIBBON=true,
-          // and never shows against the live servers.
-          builder: (context, child) => EnvRibbon(
-            environment: getIt<ApiEnvironment>(),
-            child: VersionGate(child: child ?? const SizedBox.shrink()),
+        // The router: its guards run again on every session change, and its
+        // module guard follows the modules bloc (#50 items 5 and 7b).
+        child: TeamRouterHost(
+          auth: _auth,
+          modules: _modules,
+          navigatorKey: rootNavigatorKey,
+          builder: (context, router) => MaterialApp.router(
+            title: 'Team RVM',
+            scaffoldMessengerKey: rootScaffoldMessengerKey,
+            debugShowCheckedModeBanner: false,
+            // The whole design system (ivory scaffolds, white cards, clay
+            // surfaces) is authored for the light palette: following the
+            // system into dark mode mixes white cards with dark fills and
+            // washed-out text (OnePlus 12R, issue14). Locked to light so every
+            // device shows the same colors. Revisit only with a full dark-mode
+            // audit.
+            theme: RvmTheme.light(seed: RvmColors.clay),
+            themeMode: ThemeMode.light,
+            // The TEST SERVER ribbon (#60) is off unless SHOW_ENV_RIBBON=true,
+            // and never shows against the live servers.
+            builder: (context, child) => EnvRibbon(
+              environment: getIt<ApiEnvironment>(),
+              child: VersionGate(child: child ?? const SizedBox.shrink()),
+            ),
+            routerConfig: router,
           ),
-          routerConfig: _router,
         ),
       ),
     );

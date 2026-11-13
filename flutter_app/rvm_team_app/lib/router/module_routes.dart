@@ -4,9 +4,12 @@
 /// out of `/work` and `/hr`, which `attendanceBlockedLocation` (app_router.dart)
 /// closes to them.
 ///
-/// Which modules a person has will come from the Scheduler's modules reply
-/// (Scheduler_Backend#157 / #175; team_app #50 items 5 and 7b). Until that
-/// exists nobody has a module, so every module route falls back to `/home`.
+/// Which modules a person has comes from the Scheduler's modules reply,
+/// `GET /api/me/features` (Scheduler_Backend#157; team_app #50 items 5 and
+/// 7b), read by `TeamModulesBloc`. Each module's switch key is its [key]
+/// (`crm`, `fees`, …). Until a reply of the sign-in opens one, nobody has a
+/// module, so every module route falls back to `/home`. A later ask that gets
+/// no reply keeps the last one (`TeamModulesBloc`).
 enum TeamModule {
   crm('/crm', sensitive: true),
   fees('/fees', sensitive: true),
@@ -28,9 +31,23 @@ enum TeamModule {
   /// (team_app #52, item 1). Marked here once, for the modules the issue names
   /// (CRM, fees follow-up, student desk, placement checks, complaints).
   final bool sensitive;
+
+  /// The module's feature-switch key: the `key` of its row in the Scheduler's
+  /// `feature_switches` table and of its entry in `GET /api/me/features`.
+  /// It is the enum value's name, which is also its route prefix without the
+  /// slash (`crm` → `/crm`), so the three never disagree.
+  String get key => name;
 }
 
-/// No modules: what everybody has until the modules reply exists.
+/// The module whose switch [key] is, or null for any key the app does not
+/// know. Keys are compared exactly, as the server's own guard
+/// (`requireFeature('crm')`) compares them: a row named `CRM` opens nothing
+/// there, so it opens nothing here either.
+TeamModule? teamModuleForKey(Object? key) =>
+    key is String ? TeamModule.values.asNameMap()[key] : null;
+
+/// No modules: what everybody has before the first modules reply of a sign-in,
+/// when that first ask fails, and when the reply opens nothing.
 Set<TeamModule> noTeamModules() => const {};
 
 /// The module whose prefix [location] sits at or under, or null for every

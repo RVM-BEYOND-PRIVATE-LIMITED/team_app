@@ -9,6 +9,7 @@ library core_network;
 
 export 'src/api_environment.dart';
 export 'src/failure.dart';
+export 'src/module_request.dart';
 export 'src/redact.dart';
 export 'src/token_store.dart';
 export 'src/ess_token_store.dart';

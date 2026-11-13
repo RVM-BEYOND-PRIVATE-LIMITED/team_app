@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:equatable/equatable.dart';
 
+import 'module_request.dart';
+
 /// Typed failure surfaced to repositories → blocs → UI. Every variant carries a
 /// [message] that states the REAL cause, so centered error states never fall
 /// back to a generic "something went wrong" when the cause is known.
@@ -49,9 +51,26 @@ sealed class Failure extends Equatable implements Exception {
         return const UnknownFailure();
       case DioExceptionType.badResponse:
         final data = e.response?.data;
-        return Failure.fromStatus(e.response?.statusCode, _extract(data),
-            _extractCode(data), _extractRequestId(data));
+        return Failure.forModule(
+            Failure.fromStatus(e.response?.statusCode, _extract(data),
+                _extractCode(data), _extractRequestId(data)),
+            ModuleRequest.of(e.requestOptions));
     }
+  }
+
+  /// [failure] as the reply to a request for [module]'s API ([ModuleRequest]):
+  /// a 404 `NOT_FOUND` there means the module is not open to this person, so
+  /// it becomes a [ModuleUnavailableFailure] (team_app #50, item 12). Any
+  /// other failure, and every failure of a request with no module, comes back
+  /// unchanged.
+  static Failure forModule(Failure failure, String? module) {
+    if (module == null ||
+        failure is ModuleUnavailableFailure ||
+        failure is! NotFoundFailure ||
+        failure.code != ModuleUnavailableFailure.serverCode) {
+      return failure;
+    }
+    return ModuleUnavailableFailure(module, requestId: failure.requestId);
   }
 
   /// Map an HTTP status to a typed failure, preferring a server-supplied message.
@@ -169,6 +188,30 @@ class NotFoundFailure extends Failure {
   const NotFoundFailure([String? message, String? code, String? requestId])
       : super(message ?? 'No data found.',
             statusCode: 404, code: code, requestId: requestId);
+}
+
+/// A staff module's route answered 404 `NOT_FOUND`: its feature switch is
+/// off, or on for a pilot this person is not in (Scheduler_Backend
+/// middleware/requireFeature.js sends the same body for both, on purpose), or
+/// the module is not on this server yet (team_app #50, item 12). Made only by
+/// [Failure.forModule], for a request tagged with [ModuleRequest].
+///
+/// It is a [NotFoundFailure], so code that already handles "not found" keeps
+/// working; a screen that knows modules shows its "module off" state instead.
+class ModuleUnavailableFailure extends NotFoundFailure {
+  const ModuleUnavailableFailure(this.module, {String? requestId})
+      : super(defaultMessage, serverCode, requestId);
+
+  /// The module the refused request was for, as tagged, e.g. `crm`.
+  final String module;
+
+  /// The code a closed module's route answers with.
+  static const serverCode = 'NOT_FOUND';
+
+  static const defaultMessage = 'This part of Team RVM is switched off for now.';
+
+  @override
+  List<Object?> get props => [...super.props, module];
 }
 
 class TooManyRequestsFailure extends Failure {

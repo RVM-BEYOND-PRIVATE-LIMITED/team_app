@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../app_crash.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
+import '../../bloc/team_modules_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
@@ -22,6 +23,11 @@ import 'tab_registry.dart';
 /// record yet) gets one clear explanation, not a Home screen whose five cards
 /// each throw the same 403. The check itself is non-throwing, so it cannot stop
 /// the debugger on an expected `NOT_LINKED`.
+///
+/// Once the capabilities are in, the shell asks which staff modules are open
+/// ([TeamModulesBloc], team_app #50 item 5), and asks again when the app comes
+/// back to the foreground. The answer only opens module routes; the shell
+/// itself looks the same with or without it.
 class TeamShell extends StatefulWidget {
   const TeamShell({super.key});
 
@@ -41,16 +47,43 @@ class _TeamShellState extends State<TeamShell> {
   bool _loading = true;
   Failure? _failure;
 
+  /// Back in the foreground: ask for the modules again.
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(
+        onShow: () => _askModules(const TeamModulesRefreshRequested()));
     _load();
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _caps.close();
     super.dispose();
+  }
+
+  /// Sends [event] to the modules bloc. It is asked only after the
+  /// capabilities check has succeeded, so a sign-in the ESS refuses (a login
+  /// with no employee record, which gets the access error instead of the
+  /// tabs) never asks at all. Asking at the same moment would be safe: both
+  /// clients share one `SessionRotator`, whose renewal runs once at a time
+  /// for every request that needs it.
+  ///
+  /// Nothing is asked for an attendance-only sign-in (the Scheduler refuses
+  /// its punch token on every route but the punch path, so nothing could
+  /// open), nor where no modules bloc is registered: then nothing is open,
+  /// which is how the app was before modules.
+  void _askModules(TeamModulesEvent event) {
+    if (!mounted || !getIt.isRegistered<TeamModulesBloc>()) return;
+    final auth = context.read<TeamAuthBloc>().state;
+    if (auth.status != TeamAuthStatus.authenticated ||
+        auth.identity?.attendance == true) {
+      return;
+    }
+    getIt<TeamModulesBloc>().add(event);
   }
 
   Future<void> _load() async {
@@ -66,6 +99,7 @@ class _TeamShellState extends State<TeamShell> {
       if (result.data != null) {
         _caps.add(LoadSucceeded(result.data!));
         setState(() => _loading = false);
+        _askModules(const TeamModulesLoadRequested());
         return;
       }
       setState(() {
