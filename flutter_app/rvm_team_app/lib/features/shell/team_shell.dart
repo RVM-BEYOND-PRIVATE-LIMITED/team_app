@@ -11,6 +11,7 @@ import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
+import '../../widgets/secure_scope.dart';
 import 'tab_registry.dart';
 
 /// The five Keka-style tabs: Home · Inbox · Wall · My Team · Me, from the tab
@@ -128,8 +129,10 @@ class _TeamShellState extends State<TeamShell> {
       body: IndexedStack(
         index: index,
         children: [
-          for (final t in tabs)
-            open.contains(t.id) ? t.body : const SizedBox.shrink(),
+          for (var i = 0; i < tabs.length; i++)
+            open.contains(tabs[i].id)
+                ? shellTabBody(tabs[i], selected: i == index)
+                : const SizedBox.shrink(),
         ],
       ),
       bottomNavigationBar: _TeamBottomNav(
@@ -143,6 +146,14 @@ class _TeamShellState extends State<TeamShell> {
     );
   }
 }
+
+/// A tab's body as the shell's IndexedStack holds it. A sensitive tab blocks
+/// screenshots only while it is the [selected] one: the stack keeps every
+/// opened tab built, and the block covers the whole window (team_app #52,
+/// item 1). Every other tab is its body as it is.
+Widget shellTabBody(TeamTab tab, {required bool selected}) => tab.sensitive
+    ? SecureScope(enabled: selected, child: tab.body)
+    : tab.body;
 
 /// Shown instead of the tabs when the ESS refuses the capabilities call. The
 /// usual case is `NOT_LINKED`: the login exists but no employee record points

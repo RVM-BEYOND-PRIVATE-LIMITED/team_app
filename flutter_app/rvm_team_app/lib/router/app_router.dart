@@ -41,7 +41,9 @@ import '../features/work/faculty_indicators_screen.dart';
 import '../features/work/interviews_screen.dart';
 import '../features/work/mark_attendance_screen.dart';
 import '../features/work/my_batches_screen.dart';
+import '../widgets/secure_scope.dart';
 import 'module_routes.dart';
+import 'sensitive_routes.dart';
 
 /// Locations that only a portal sign-in can use (issue #13).
 ///
@@ -65,6 +67,16 @@ bool attendanceBlockedLocation(String location) {
       location.startsWith('/hr/');
 }
 
+/// [screen] under a [SecureScope] when its location is sensitive
+/// ([isSensitiveLocation], team_app #52 item 1), so screenshots of it come out
+/// black. [roster] is the class roster's switch ([secureRosterOn]). A module's
+/// screens must go through here too when they are added: the router test
+/// (sensitive_registry_issue52_test.dart) fails for one that does not.
+Widget _screen(GoRouterState state, Widget screen, {required bool roster}) =>
+    isSensitiveLocation(state.matchedLocation, roster: roster)
+        ? SecureScope(child: screen)
+        : screen;
+
 /// Auth-gated router. Redirect reads [TeamAuthBloc] state; the app calls
 /// `router.refresh()` when that state changes: splash → login → five-tab shell.
 ///
@@ -72,9 +84,13 @@ bool attendanceBlockedLocation(String location) {
 /// route (one prefix per module, [TeamModule]) that is not among them falls
 /// back to `/home` (team_app #50, item 7). The default is none, because the
 /// modules reply does not exist yet (Scheduler_Backend#157 / #175).
+///
+/// [secureRoster] blocks screenshots of the class roster (team_app #52 item
+/// 1). It is off unless the build turns it on ([secureRosterOn]).
 GoRouter createRouter(TeamAuthBloc authBloc,
     {GlobalKey<NavigatorState>? navigatorKey,
-    Set<TeamModule> Function() modules = noTeamModules}) {
+    Set<TeamModule> Function() modules = noTeamModules,
+    bool secureRoster = secureRosterOn}) {
   const authOnly = {'/login', '/forgot'};
   return GoRouter(
     navigatorKey: navigatorKey,
@@ -112,9 +128,13 @@ GoRouter createRouter(TeamAuthBloc authBloc,
           builder: (_, __) => const InterviewsScreen()),
       GoRoute(
         path: '/work/batch/:id/mark',
-        builder: (_, state) => MarkAttendanceScreen(
-          batchId: state.pathParameters['id']!,
-          batchName: state.extra is String ? state.extra as String : null,
+        builder: (_, state) => _screen(
+          state,
+          MarkAttendanceScreen(
+            batchId: state.pathParameters['id']!,
+            batchName: state.extra is String ? state.extra as String : null,
+          ),
+          roster: secureRoster,
         ),
       ),
       GoRoute(

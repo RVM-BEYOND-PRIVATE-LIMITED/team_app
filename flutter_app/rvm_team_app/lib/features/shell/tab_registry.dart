@@ -15,6 +15,7 @@ class TeamTab {
     required this.icon,
     required this.selectedIcon,
     required this.body,
+    this.sensitive = false,
   });
 
   /// The ESS tab id (`GET /me/capabilities` → `tabs`).
@@ -23,6 +24,11 @@ class TeamTab {
   final IconData icon;
   final IconData selectedIcon;
   final Widget body;
+
+  /// The tab shows student or lead data, so the shell blocks screenshots while
+  /// it is the selected tab (team_app #52, item 1). None of today's tabs is:
+  /// screenshots of Home, Inbox, the Wall, My Team and Me work as before.
+  final bool sensitive;
 }
 
 /// A tab the shell can show: when it is shown, and how it looks to a viewer.

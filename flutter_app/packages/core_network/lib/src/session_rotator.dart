@@ -82,8 +82,37 @@ class SessionRotator {
   /// staffOnly.js) send with no `code` when they refuse a token.
   static const _codelessRejections = {'No token provided', 'Please authenticate'};
 
+  /// Codes that say the person's access has ended, not only this token's
+  /// (team_app #52 item 8, which names these two): 401 `ACCOUNT_EXITED` and
+  /// 401 `PASSWORD_CHANGED`, from the Scheduler's middleware/auth.js, for an
+  /// exited account and for a token issued before the password last changed.
+  /// The reply's message is shown on the sign-in screen.
+  ///
+  /// A 403 `NOT_ACTIVE` is not one of them: it reaches the screen that asked
+  /// (the shell's access screen, the punch card's refusal), as before.
+  static const accessEndedCodes = {'ACCOUNT_EXITED', 'PASSWORD_CHANGED'};
+
+  /// The ESS's reasons for refusing a refresh that mean the same: the
+  /// employee has left, or the password changed since the sign-in (apps/ess-api
+  /// src/routes/sessions.js, the `reason` of a 401 from `/session/refresh`).
+  static const accessEndedReasons = {'left', 'password_changed'};
+
   /// One in-flight renewal is shared by everybody who asks while it runs.
   Future<bool>? _rotating;
+
+  /// Why the last renewal was refused, when the ESS said access has ended.
+  ///
+  /// It outlives the refused refresh. A renewal before sending
+  /// ([tokenForRequest]) still sends the old token, and the 401 that token
+  /// draws asks for a renewal again, which now has no refresh token to send.
+  /// That 401 is the one that ends the session, so the reason must still be
+  /// here then. It goes when a refresh is sent again, when the session ends,
+  /// and when the access token is no longer [_refusedToken] (somebody signed
+  /// in again), so it never reaches a later sign-in.
+  String? _refusal;
+
+  /// The access token in use when the refresh was refused.
+  String? _refusedToken;
 
   /// The access token to send. When it is about to expire and a kept sign-in
   /// can renew it, it is renewed first: waiting for the server's 401 would
@@ -101,11 +130,35 @@ class SessionRotator {
   Future<bool> renew() =>
       _rotating ??= _rotate().whenComplete(() => _rotating = null);
 
+  /// The server's message when a renewal of this sign-in was refused because
+  /// the person's access has ended ([accessEndedReasons]), else null. Read it
+  /// right after a [renew] that answered false: it stays until the session
+  /// ends, including through a renewal that had no refresh token left to
+  /// send.
+  String? get refusalMessage => _refusal;
+
   /// Ends both halves of the session, the kept sign-in and the access token,
   /// so the app returns to sign-in instead of a screen that keeps drawing 401s.
-  Future<void> endSession() async {
+  /// [message] is the server's reason when access has ended, for the sign-in
+  /// screen ([accessEndedMessage]).
+  Future<void> endSession({String? message}) async {
+    _clearRefusal();
     await _ess.clearEssSession();
-    await _tokens.onUnauthorized();
+    await _tokens.onUnauthorized(message: message);
+  }
+
+  /// The server's own message when [body] says the person's access has ended
+  /// ([accessEndedCodes], or a refused refresh's [accessEndedReasons]), else
+  /// null. Every other refusal keeps today's silent return to sign-in.
+  static String? accessEndedMessage(Object? body) {
+    if (body is! Map) return null;
+    if (!accessEndedCodes.contains(body['code']) &&
+        !accessEndedReasons.contains(body['reason'])) {
+      return null;
+    }
+    final error = body['error'];
+    final text = error is String ? error.trim() : '';
+    return text.isEmpty ? null : text;
   }
 
   /// True when [token] expires within [leeway] of now. A token with no
@@ -181,9 +234,23 @@ class SessionRotator {
     }
   }
 
+  void _clearRefusal() {
+    _refusal = null;
+    _refusedToken = null;
+  }
+
   Future<bool> _rotate() async {
     final refreshToken = await _ess.readEssRefreshToken();
-    if (refreshToken == null) return false;
+    if (refreshToken == null) {
+      // Nothing to send. A refusal of this same sign-in still stands: the 401
+      // this renewal answers ends the session, and shows the reason.
+      if (_refusal != null &&
+          await _tokens.readSchedulerToken() != _refusedToken) {
+        _clearRefusal();
+      }
+      return false;
+    }
+    _clearRefusal();
     final installId = await _ess.installId();
     try {
       final res = await _refreshDio.post<Map<String, dynamic>>(
@@ -208,7 +275,14 @@ class SessionRotator {
       // changed…). A timeout or a 5xx is the network/server having a bad
       // moment; keep the refresh token so the next attempt can still restore.
       final status = e.response?.statusCode;
-      if (status == 401 || status == 403) await _ess.clearEssSession();
+      if (status == 401 || status == 403) {
+        final refusal = accessEndedMessage(e.response?.data);
+        if (refusal != null) {
+          _refusal = refusal;
+          _refusedToken = await _tokens.readSchedulerToken();
+        }
+        await _ess.clearEssSession();
+      }
       return false;
     }
   }

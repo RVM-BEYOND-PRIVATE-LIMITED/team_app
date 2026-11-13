@@ -8,21 +8,26 @@
 /// (Scheduler_Backend#157 / #175; team_app #50 items 5 and 7b). Until that
 /// exists nobody has a module, so every module route falls back to `/home`.
 enum TeamModule {
-  crm('/crm'),
-  fees('/fees'),
+  crm('/crm', sensitive: true),
+  fees('/fees', sensitive: true),
   ops('/ops'),
-  desk('/desk'),
-  placement('/placement'),
+  desk('/desk', sensitive: true),
+  placement('/placement', sensitive: true),
   scorecards('/scorecards'),
   tasks('/tasks'),
   social('/social'),
-  complaints('/complaints'),
+  complaints('/complaints', sensitive: true),
   moderation('/moderation');
 
-  const TeamModule(this.routePrefix);
+  const TeamModule(this.routePrefix, {this.sensitive = false});
 
   /// The module's own route prefix; its screens live at or under it.
   final String routePrefix;
+
+  /// The module shows student or lead data: its screens block screenshots
+  /// (team_app #52, item 1). Marked here once, for the modules the issue names
+  /// (CRM, fees follow-up, student desk, placement checks, complaints).
+  final bool sensitive;
 }
 
 /// No modules: what everybody has until the modules reply exists.

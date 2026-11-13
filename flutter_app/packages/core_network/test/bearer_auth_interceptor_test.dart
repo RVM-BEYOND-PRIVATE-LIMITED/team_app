@@ -9,12 +9,16 @@ class _FakeTokens implements TokenStore {
   _FakeTokens(this.token);
   final String? token;
   int unauthorizedCalls = 0;
+  final List<String?> messages = [];
 
   @override
   Future<String?> readSchedulerToken() async => token;
 
   @override
-  Future<void> onUnauthorized() async => unauthorizedCalls++;
+  Future<void> onUnauthorized({String? message}) async {
+    unauthorizedCalls++;
+    messages.add(message);
+  }
 }
 
 /// Answers every request with a fixed status + body.

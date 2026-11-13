@@ -14,6 +14,11 @@ import '../token_store.dart';
 /// [SessionRotator] the Scheduler client shares (team_app #50), so both clients
 /// renew in one flight. The replay goes through a bare [refreshDio] (no
 /// interceptors), which is how a 401 on it ends the family without recursion.
+///
+/// A refresh refused because the person left or changed their password ends
+/// the session with the ESS's message for the sign-in screen (team_app #52
+/// item 8, [SessionRotator.accessEndedMessage]). A 403 never ends it: a 403
+/// `NOT_ACTIVE` reaches the screen that asked, as before.
 class EssAuthInterceptor extends Interceptor {
   EssAuthInterceptor({
     required TokenStore tokens,
@@ -73,8 +78,10 @@ class EssAuthInterceptor extends Interceptor {
     }
 
     // No kept sign-in, or a rotation that did not succeed, ends the session.
+    // A refresh refused because the person left or changed their password
+    // says so, and the sign-in screen shows it.
     if (!await _sessions.renew()) {
-      await _endSession(options);
+      await _endSession(options, message: _sessions.refusalMessage);
       handler.next(err);
       return;
     }
@@ -114,8 +121,8 @@ class EssAuthInterceptor extends Interceptor {
   /// of the session so the app returns to login, not to a screen that keeps
   /// drawing 401s. The kept-sign-in exchange is exempt: its 401 only says the
   /// Scheduler sign-in is too old to keep, and the session itself is fine.
-  Future<void> _endSession(RequestOptions options) async {
+  Future<void> _endSession(RequestOptions options, {String? message}) async {
     if (options.path == _exchangePath) return;
-    await _sessions.endSession();
+    await _sessions.endSession(message: message);
   }
 }

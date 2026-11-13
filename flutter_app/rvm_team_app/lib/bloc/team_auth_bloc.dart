@@ -81,7 +81,12 @@ class TeamSignedOut extends TeamAuthEvent {
 }
 
 class TeamSessionExpired extends TeamAuthEvent {
-  const TeamSessionExpired();
+  const TeamSessionExpired([this.message]);
+
+  /// The server's message when the person's access has ended (an exited
+  /// account, a changed password; team_app #52 item 8). The sign-in screen
+  /// shows it. Null for an ordinary expiry, which says nothing, as before.
+  final String? message;
 }
 
 // ── state ───────────────────────────────────────────────────────────────
@@ -186,18 +191,17 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
     on<TeamAttendanceBack>((e, emit) =>
         emit(state.copyWith(clearAttendanceCode: true, clearError: true)));
     on<TeamSignedOut>(_onSignedOut);
-    on<TeamSessionExpired>((e, emit) =>
-        emit(const TeamAuthState(status: TeamAuthStatus.unauthenticated)));
+    on<TeamSessionExpired>(_onSessionExpired);
 
     // React to a 401 anywhere (BearerAuthInterceptor → session.onUnauthorized).
-    _expirySub =
-        _session.sessionExpired.listen((_) => add(const TeamSessionExpired()));
+    _expirySub = _session.sessionExpired
+        .listen((message) => add(TeamSessionExpired(message)));
   }
 
   final AuthRepository _repo;
   final AuthSession _session;
   final EssRepository _ess;
-  late final StreamSubscription<void> _expirySub;
+  late final StreamSubscription<String?> _expirySub;
 
   /// Credentials of an in-flight 2FA login, kept in memory only (never in state).
   TeamLoginSubmitted? _pending;
@@ -229,6 +233,10 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
               .then<String?>((value) => value)
               .timeout(const Duration(seconds: 5), onTimeout: () => null) !=
           null;
+      // The ESS's words when it refused the kept sign-in because the person
+      // left or changed their password while the app was closed (team_app #52
+      // item 8). The login form shows them, as it does while the app runs.
+      String? ended;
       if (stale && hasKeptSignIn) {
         // Rotate the kept sign-in directly. This is the one launch call that is
         // EXPECTED to answer 401 when the sign-in has ended; it must come back
@@ -239,13 +247,16 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
         if (restored) {
           token = await _session.readSchedulerToken();
           identity = StaffIdentity.fromToken(token);
+        } else {
+          ended = _ess.restoreRefusal;
         }
       }
       if (identity == null || !identity.isTeamMember || Jwt.isExpired(token)) {
         // A dead token would only draw 401s; drop it so the next screen is the
         // login form, not the shell's error state.
         if (token != null) await _session.signOutScheduler();
-        emit(const TeamAuthState(status: TeamAuthStatus.unauthenticated));
+        emit(TeamAuthState(
+            status: TeamAuthStatus.unauthenticated, errorMessage: ended));
         return;
       }
       emit(TeamAuthState(
@@ -254,6 +265,19 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
       // A restore that throws for any reason must not crash the first frame.
       emit(const TeamAuthState(status: TeamAuthStatus.unauthenticated));
     }
+  }
+
+  /// Back to sign-in. When the server said why access ended, the sign-in
+  /// screen shows its words (team_app #52 item 8). The requests already in
+  /// flight are refused after that with no reason of their own, because the
+  /// token is gone; they must not wipe the reason the server gave first.
+  void _onSessionExpired(TeamSessionExpired e, Emitter<TeamAuthState> emit) {
+    final kept = state.status == TeamAuthStatus.unauthenticated
+        ? state.errorMessage
+        : null;
+    emit(TeamAuthState(
+        status: TeamAuthStatus.unauthenticated,
+        errorMessage: e.message ?? kept));
   }
 
   // ── Attendance-only sign-in (A2) ────────────────────────────────────────

@@ -148,7 +148,7 @@ void main() {
       final session = _MockAuthSession();
       final ess = _MockEssRepository();
       when(() => session.sessionExpired)
-          .thenAnswer((_) => const Stream<void>.empty());
+          .thenAnswer((_) => const Stream<String?>.empty());
       when(() => session.clearEssSession()).thenAnswer((_) async {});
       when(() => session.saveSchedulerSession(
           token: any(named: 'token'),
