@@ -2,7 +2,6 @@ import 'package:core_auth/core_auth.dart';
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_network/core_network.dart';
 import 'package:dio/dio.dart';
-import 'package:domain/domain.dart' show Jwt;
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 
@@ -90,12 +89,21 @@ void configureDependencies(AuthSession session) {
     ..registerSingleton<AuthSession>(session)
     ..registerLazySingleton<ConnectivityService>(ConnectivityService.new)
     ..registerLazySingleton<ApiEnvironment>(ApiEnvironment.fromDefines)
+    // One renewal of the kept sign-in for both clients (#50): the one-hour
+    // access token serves the Scheduler and the ESS, and the two renew it in
+    // one flight, so a Scheduler-only screen keeps working past the hour.
+    ..registerLazySingleton<SessionRotator>(() => DioFactory.sessionRotator(
+          env: getIt<ApiEnvironment>(),
+          tokens: getIt<AuthSession>(),
+          essTokens: getIt<AuthSession>(),
+        ))
     // Scheduler client: bearer JWT + the persistent punch device cookie (B8/B13).
     ..registerLazySingleton<Dio>(() {
       final dio = DioFactory.scheduler(
         env: getIt<ApiEnvironment>(),
         tokens: getIt<AuthSession>(),
         cookieJar: getIt<AuthSession>().schedulerCookieJar,
+        sessions: getIt<SessionRotator>(),
         logging: kDebugMode,
       );
       // Refused responses are values, not exceptions (the same rule the ESS
@@ -114,6 +122,7 @@ void configureDependencies(AuthSession session) {
           env: getIt<ApiEnvironment>(),
           tokens: getIt<AuthSession>(),
           essTokens: getIt<AuthSession>(),
+          sessions: getIt<SessionRotator>(),
           logging: kDebugMode,
         );
         // Let refused responses reach the data source as a typed Failure instead
@@ -178,12 +187,10 @@ void configureDependencies(AuthSession session) {
               location: getIt(),
               connectivity: getIt(),
             ))
-    // Casual leave / leave without pay on the Scheduler (#43).
-    ..registerLazySingleton<LeaveRepository>(() => LeaveRepository(
-          remote: getIt(),
-          connectivity: getIt(),
-          freshenSession: _freshenSchedulerSession,
-        ));
+    // Casual leave / leave without pay on the Scheduler (#43). The Scheduler
+    // client renews the kept sign-in itself now (#50).
+    ..registerLazySingleton<LeaveRepository>(
+        () => LeaveRepository(remote: getIt(), connectivity: getIt()));
 
   // Session-wide blocs.
   getIt
@@ -320,24 +327,3 @@ String _monthStart() {
   final d = DateTime.now();
   return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-01';
 }
-
-/// One shared freshen for every Scheduler-only call (#43). The kept sign-in's
-/// 1-hour access token is rotated only by the ESS client's interceptor, which
-/// has its own single-flight; a cheap ESS read lets that interceptor rotate an
-/// expiring token, so concurrent leave calls never race two rotations of the
-/// same refresh token.
-Future<void>? _freshening;
-
-Future<void> _freshenSchedulerSession() => _freshening ??= () async {
-      try {
-        final session = getIt<AuthSession>();
-        final token = await session.readSchedulerToken();
-        final soon = DateTime.now().add(const Duration(seconds: 30));
-        if (!Jwt.isExpired(token, now: soon)) return;
-        if (await session.readEssRefreshToken() == null) return;
-        await getIt<EssRepository>().capabilitiesSafe();
-      } catch (_) {
-        // Best effort: the Scheduler call still decides what the token is worth.
-      }
-    }()
-        .whenComplete(() => _freshening = null);

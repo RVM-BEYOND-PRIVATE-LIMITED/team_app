@@ -144,4 +144,47 @@ void main() {
       expect(nested.message, 'Bad input');
     });
   });
+
+  group('Failure.requestId', () {
+    test('is read from the error body\'s request_id for every refusal', () {
+      for (final status in [400, 401, 403, 404, 409, 429, 500, 503]) {
+        final f = Failure.fromDio(_dio(DioExceptionType.badResponse,
+            status: status,
+            data: {
+              'code': 'SOME_CODE',
+              'message': 'Refused.',
+              'details': <String, Object?>{},
+              'request_id': 'req-test-1',
+            }));
+        expect(f.requestId, 'req-test-1', reason: 'status $status');
+      }
+    });
+
+    test('stays null when the reply has none, as every reply has today', () {
+      final f = Failure.fromDio(_dio(DioExceptionType.badResponse,
+          status: 400,
+          data: {'error': 'That code is not right.', 'code': 'WRONG_CODE'}));
+      expect(f.requestId, isNull);
+      expect(f, const BadResponseFailure('That code is not right.',
+          statusCode: 400, code: 'WRONG_CODE'));
+      expect(f.toString(), isNot(contains('request')));
+      expect(Failure.fromDio(_dio(DioExceptionType.connectionError)).requestId,
+          isNull);
+    });
+
+    test('ignores a blank or non-text request_id', () {
+      for (final id in ['', '  ', <String, Object?>{}, true]) {
+        final f = Failure.fromDio(_dio(DioExceptionType.badResponse,
+            status: 404, data: {'error': 'Gone.', 'request_id': id}));
+        expect(f.requestId, isNull, reason: '$id');
+      }
+    });
+
+    test('is part of equality and of the text', () {
+      const a = NotFoundFailure('Gone.', null, 'req-a');
+      const b = NotFoundFailure('Gone.', null, 'req-b');
+      expect(a, isNot(b));
+      expect(a.toString(), contains('[request req-a]'));
+    });
+  });
 }

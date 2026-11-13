@@ -8,28 +8,20 @@ import '../datasources/my_attendance_remote_data_source.dart';
 /// `/api/hr/my-attendance/leave*`, on the same session the punch path uses.
 /// Work from home stays on the ESS ([EssRepository]).
 class LeaveRepository with ConnectivityGuard {
+  // The kept sign-in's 1-hour access token is renewed by the Scheduler
+  // client itself (core_network SessionRotator, #50), so a leave screen that
+  // calls the Scheduler alone no longer needs an ESS call to freshen it.
   LeaveRepository({
     required MyAttendanceRemoteDataSource remote,
     required this.connectivity,
-    Future<void> Function()? freshenSession,
-  })  : _remote = remote,
-        _freshen = freshenSession;
+  }) : _remote = remote;
 
   final MyAttendanceRemoteDataSource _remote;
-
-  /// The kept sign-in's 1-hour access token is only rotated by the ESS client.
-  /// A leave screen that calls the Scheduler alone must get it rotated first,
-  /// or an expired token reads as "session over" and signs the person out.
-  final Future<void> Function()? _freshen;
 
   @override
   final ConnectivityService connectivity;
 
-  Future<void> _ready() async {
-    await ensureOnline();
-    final freshen = _freshen;
-    if (freshen != null) await freshen();
-  }
+  Future<void> _ready() => ensureOnline();
 
   Future<LeaveOverview> overview({String? month}) async {
     await _ready();
