@@ -29,7 +29,8 @@ import 'support/app_routes.dart';
 
 /// team_app #52, item 1: each module is marked sensitive once, in the module
 /// registry from #50, for the modules the issue names (CRM, fees follow-up,
-/// student desk, placement checks, complaints; question 3's default). The
+/// student desk, placement checks, complaints; question 3's default), and ops
+/// (pending counts and branch health, team_app #53 item 11). The
 /// class roster is screenshot-blocked too, behind its own switch, which is off
 /// unless a build passes `--dart-define=SECURE_ROSTER=true`. Home, the Wall and
 /// every other screen, tab and tile are not, so their screenshots work as
@@ -41,9 +42,12 @@ class _MockAuthBloc extends MockBloc<TeamAuthEvent, TeamAuthState>
 
 class _MockEssRepository extends Mock implements EssRepository {}
 
+/// #52's five, and ops (team_app #53, item 11: pending counts and branch
+/// health are marked sensitive like the fees dialer).
 const _sensitive = {
   TeamModule.crm,
   TeamModule.fees,
+  TeamModule.ops,
   TeamModule.desk,
   TeamModule.placement,
   TeamModule.complaints,
@@ -115,7 +119,6 @@ void main() {
         '/me/sessions',
         '/hr/tools',
         '/notifications',
-        '/ops',
         '/scorecards/1',
         '/tasks',
         '/social',
@@ -250,7 +253,7 @@ void main() {
     });
   });
 
-  // So a future /crm, /fees, /desk, /placement or /complaints route, or a
+  // So a future /crm, /fees, /ops, /desk, /placement or /complaints route, or a
   // sensitive tab, cannot skip the block: the router's own routes are walked
   // and built, and every sensitive one must come back under a SecureScope.
   group('every sensitive route is wrapped in SecureScope', () {
@@ -331,7 +334,8 @@ void main() {
           GoRoute(path: '/complaints/open', builder: plain),
           GoRoute(path: '/placement', builder: wrapped),
         ]),
-        GoRoute(path: '/ops', builder: plain),
+        // Not sensitive, so not caught for being plain.
+        GoRoute(path: '/moderation', builder: plain),
         GoRoute(path: '/work/batch/:id/mark', builder: plain),
       ]);
 
