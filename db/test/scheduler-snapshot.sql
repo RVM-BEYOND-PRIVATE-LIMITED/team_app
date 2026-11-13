@@ -40,11 +40,8 @@ CREATE TABLE public.hr_employees (
   employee_code text,
   manager_id uuid,
   is_archived boolean NOT NULL DEFAULT false,
-  -- 20261022000000_hr_attendance_shifts.sql:83. hr_ess_leave_working_days reads it. The test
-  -- inserts employees with only an id, name and branch, and the request flow's last-month check
-  -- lands on the 4th; the snapshot keeps every calendar day a working day so that check does not
-  -- depend on the weekday the test runs.
-  week_off_days smallint[] NOT NULL DEFAULT '{}',
+  -- 20261022000000_hr_attendance_shifts.sql:83. hr_ess_leave_working_days reads it.
+  week_off_days smallint[] NOT NULL DEFAULT '{0}',
   -- Read only when an attendance-only faculty member has no portal login.
   email text
 );
