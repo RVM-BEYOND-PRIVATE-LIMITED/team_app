@@ -7,9 +7,9 @@ const D = require('./helpers/documentsFixtures');
 
 const NOW = new Date('2026-10-16T06:30:00.000Z');
 
-const job = (world) => startDocumentsJob({
+const job = (world, now = NOW) => startDocumentsJob({
   store: world.store,
-  now: () => NOW,
+  now: () => now,
   log: { log: () => {}, error: () => {} },
   immediate: false,
   intervalMs: 7 * 24 * 60 * 60 * 1000,
@@ -62,17 +62,64 @@ describe('the documents job: the weekly reminder', () => {
     expect(ids).toContain(world2.people.hr.employee.id);
   });
 
-  it('does not remind the same person twice in one run, and a second run reminds them again', async () => {
+  it('does not remind the same person twice in one run, and a restart in the same week sends nothing', async () => {
     const world2 = world();
     const first = await job(world2).runOnce();
     const afterFirst = world2.db.tables.hr_ess_notifications.length;
     expect(first.reminded).toBe(afterFirst);
-    // A second run inside the same process is the same walk: the job has no memory on purpose
-    // (a weekly timer never runs twice), so a run is one reminder per person, always.
+    expect(afterFirst).toBeGreaterThan(1);
+    // The job now remembers each week (team_app #49): the boot run a deploy adds finds the
+    // week's row and sends nothing, however many times the process starts.
     const second = await job(world2).runOnce();
-    expect(second.reminded).toBe(world2.db.tables.hr_ess_notifications.length - afterFirst);
+    expect(second.reminded).toBe(0);
+    expect(world2.db.tables.hr_ess_notifications).toHaveLength(afterFirst);
     expect(world2.db.tables.hr_ess_notifications.filter((n) => n.employee_id === world2.people.faculty.employee.id))
-      .toHaveLength(2);
+      .toHaveLength(1);
+    expect(world2.db.tables.hr_ess_job_runs).toHaveLength(1);
+    expect(world2.db.tables.hr_ess_job_runs[0]).toMatchObject({ job: 'documents_weekly', period_key: '2026-W42', status: 'done' });
+  });
+
+  it('a start in the next week sends the reminders again', async () => {
+    const world2 = world();
+    await job(world2).runOnce();
+    const afterFirst = world2.db.tables.hr_ess_notifications.length;
+    // The Friday after: the following ISO week, so the claim no longer holds this one.
+    const nextWeek = new Date('2026-10-23T06:30:00.000Z');
+    const second = await job(world2, nextWeek).runOnce();
+    expect(second.reminded).toBe(afterFirst);
+    expect(world2.db.tables.hr_ess_notifications).toHaveLength(afterFirst * 2);
+    expect(world2.db.tables.hr_ess_job_runs).toHaveLength(2);
+    expect(world2.db.tables.hr_ess_job_runs.map((r) => r.period_key)).toEqual(['2026-W42', '2026-W43']);
+  });
+
+  it('releases the week when the send fails, so the next start in the same week sends', async () => {
+    // Everybody holds all three mandatory types except the faculty, so one send is the whole
+    // week's work and its failure is the run's.
+    const world2 = world({ setup: (w) => {
+      const missing = w.people.faculty.employee.id;
+      w.tables.hr_ess_documents = w.tables.hr_employees
+        .filter((e) => e.id !== missing)
+        .flatMap((e, i) => ['identity', 'offer', 'joining'].map((doc_type, j) => (
+          D.documentRow(e.id, i * 3 + j + 1, { doc_type }))));
+    } });
+    const send = world2.store.createNotification;
+    let first = true;
+    world2.store.createNotification = async (row) => {
+      if (first) {
+        first = false;
+        throw new Error('TEST database away');
+      }
+      return send(row);
+    };
+    const failed = await job(world2).runOnce();
+    expect(failed.reminded).toBe(0);
+    expect(world2.db.tables.hr_ess_notifications ?? []).toHaveLength(0);
+    // No row is left behind, not even a failed one: the next start in the week may try again.
+    expect(world2.db.tables.hr_ess_job_runs ?? []).toHaveLength(0);
+    const again = await job(world2).runOnce();
+    expect(again.reminded).toBe(1);
+    expect(world2.db.tables.hr_ess_notifications).toHaveLength(1);
+    expect(world2.db.tables.hr_ess_job_runs[0]).toMatchObject({ period_key: '2026-W42', status: 'done' });
   });
 
   it('follows the database flag: a type marked not mandatory stops being asked for', async () => {

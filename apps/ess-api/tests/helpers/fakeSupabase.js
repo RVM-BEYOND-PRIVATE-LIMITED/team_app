@@ -188,6 +188,8 @@ const SCHEMA = {
     'location', 'description', 'is_visible', 'created_at', 'updated_at'],
   hr_ess_profile_details: ['employee_id', 'about', 'likes', 'dislikes', 'anniversary_date', 'updated_at',
     'updated_by_user_id'],
+  // 20261211000000_hr_ess_job_runs.sql (team_app #49, F-51)
+  hr_ess_job_runs: ['job', 'period_key', 'started_at', 'finished_at', 'status'],
   // The Scheduler's priority tasks, read for push only (20260814000001:30-53)
   priority_tasks: ['id', 'location_id', 'task_date', 'title', 'notes', 'priority', 'due_date', 'assigned_to', 'assigned_by',
     'assigned_by_name', 'assigned_by_role', 'status', 'progress_note', 'completed_by', 'completed_at', 'cancelled_by',
@@ -355,6 +357,10 @@ const CHECKS = {
   hr_ess_approval_escalations: {
     hr_ess_approval_escalations_family_chk: (r) => ['attendance', 'leave'].includes(r.family),
   },
+  // F-51: how a run may end (20261211000000).
+  hr_ess_job_runs: {
+    hr_ess_job_runs_status_chk: (r) => ['running', 'done', 'failed'].includes(r.status),
+  },
 };
 
 /** The first CHECK of CHECKS this row breaks, as Postgres words it, or null. */
@@ -452,6 +458,8 @@ const KEYS = {
   hr_ess_wfh_allowances: ['employee_id'],
   // Issue #31's social fields: one row per employee (20261115000001).
   hr_ess_profile_details: ['employee_id'],
+  // F-51: one run per job per period is the table's primary key (20261211000000).
+  hr_ess_job_runs: ['job', 'period_key'],
 };
 
 /** What the database fills in on insert: the hr_ess_* DEFAULTs in db/migrations. */
@@ -511,6 +519,8 @@ const DEFAULTS = {
   // Issue #31 (20261115000001): a past, visible role unless the caller says otherwise.
   hr_ess_work_experience: (at) => ({ is_current: false, is_visible: true, created_at: at, updated_at: at }),
   hr_ess_profile_details: (at) => ({ updated_at: at }),
+  // F-51: the row starts running, timed by the database (20261211000000).
+  hr_ess_job_runs: (at) => ({ started_at: at, finished_at: null, status: 'running' }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
