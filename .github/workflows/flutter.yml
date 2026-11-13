@@ -143,7 +143,7 @@ jobs:
       - name: Build the release App Bundle
         run: flutter build appbundle --release
 
-      - name: Signed, with no call or phone permission
+      - name: Signed, with no call, phone or microphone permission
         run: |
           tools=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)
           status=0
@@ -157,6 +157,13 @@ jobs:
             # checks the source manifests).
             if echo "$permissions" | grep -E "android\.permission\.(CALL_PHONE|CALL_PRIVILEGED|READ_CALL_LOG|WRITE_CALL_LOG|PROCESS_OUTGOING_CALLS|ANSWER_PHONE_CALLS|READ_PHONE_STATE|READ_PHONE_NUMBERS)'"; then
               echo "::error::$apk asks for a call, call-log or phone-state permission."
+              status=1
+            fi
+            # team_app #51, item 10: voice typing uses the phone's speech prompt, so
+            # no library may add the microphone permission either
+            # (test/speech_input_manifest_issue51_test.dart checks the source manifests).
+            if echo "$permissions" | grep -E "android\.permission\.RECORD_AUDIO'"; then
+              echo "::error::$apk asks for the microphone (RECORD_AUDIO)."
               status=1
             fi
             echo "::endgroup::"

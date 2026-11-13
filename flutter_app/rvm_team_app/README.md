@@ -72,4 +72,5 @@ production Firebase project.
 `packages/*`, then the split-per-ABI release APKs and the App Bundle, signed
 with a key made for that run only. It prints each file's size and fails when the
 largest APK or the App Bundle is 100 MB (104857600 bytes) or more, or when the
-built APK asks for a call, call-log or phone-state permission.
+built APK asks for a call, call-log or phone-state permission, or for the
+microphone (RECORD_AUDIO).

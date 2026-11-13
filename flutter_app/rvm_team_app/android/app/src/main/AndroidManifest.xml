@@ -69,5 +69,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Voice typing for a remark (team_app #51, item 10): lets MainActivity
+             find the phone's speech prompt (RecognizerIntent) on Android 11+.
+             The speech service holds the microphone, so the app declares no
+             RECORD_AUDIO permission (test/speech_input_manifest_issue51_test.dart). -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
+        </intent>
     </queries>
 </manifest>
