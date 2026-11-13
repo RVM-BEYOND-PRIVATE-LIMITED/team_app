@@ -23,16 +23,30 @@ sealed class Failure extends Equatable implements Exception {
   /// The error body's top-level `details`, exactly as decoded from JSON: a
   /// map, a list or a scalar (the error shape student_app #1 names). It is not
   /// read or typed here: student_app #10 defines its inner shape. Null when the
-  /// reply carries none; Scheduler utils/apiError.js can send it, and no route
-  /// passes one today.
+  /// reply carries none.
   ///
-  /// It may hold personal data (e.g. the values a form sent), so it is left
-  /// out of [toString], and with it out of every log line and crash report
-  /// made from a failure. Do not print it, log it or report it.
+  /// Who sends it today: Scheduler utils/apiError.js can, though no caller
+  /// passes it one yet; and a few Scheduler routes send it directly, outside
+  /// that helper. routes/students.js answers a 404 whose details is a sentence
+  /// naming the student ID that was asked for, and
+  /// controllers/suggestionController.js answers a 500 whose details is the
+  /// raw internal error text (`error.message`).
+  ///
+  /// So it may hold personal data (e.g. the values a form sent, an ID that was
+  /// asked for), and a 5xx's details may name internals: the very text a
+  /// [ServerFailure] keeps out of [message]. Never show it on screen, print
+  /// it, log it or report it. It is left out of [toString], and with it out of
+  /// every log line and crash report made from a failure.
   ///
   /// It is part of equality, as [requestId] is: two refusals whose details
   /// differ (e.g. different fields refused) are different failures, so a bloc
   /// shows the newer one. A failure without details compares as before.
+  ///
+  /// It is the decoded body's own object, not a copy, so never change it (add,
+  /// remove or set an entry) once the failure exists, and neither may anything
+  /// that still holds that body (e.g. an interceptor). Equality and [hashCode]
+  /// read it on every call: a changed details changes the failure's hash, and
+  /// a failure kept in a Set or as a Map key is then lost.
   final Object? details;
 
   @override

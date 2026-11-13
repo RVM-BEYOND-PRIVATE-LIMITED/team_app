@@ -145,8 +145,10 @@ Any 429 is a `TooManyRequestsFailure`, whatever its code: the Scheduler's
 `RATE_LIMITED` (middleware/punchCodeLimiter.js) and `INTAKE_RATE_LIMITED`
 (controllers/intakeController.js), the ESS's `RATE_LIMITED`, and the lock-outs
 `LOCKED` and `TOO_MANY_CODES`. `blockedReasonFor(failure)` turns it into
-`BlockedReason.rateLimited`, "wait and try again"; a screen can pass the
-failure's own message to `BlockedState`, which names the real wait. A module
+`BlockedReason.rateLimited`, "wait a while, then try again". That default
+names no length of wait, because the waits differ (an hour for the intake's
+`INTAKE_ATTEMPTS`, a lock-out's own time for `LOCKED`), so a screen passes
+the failure's own message to `BlockedState`, which names the real wait. A module
 request's 429 is a rate limit, never "module off". "Not punched in" has no
 server code yet (Scheduler_Backend#175), so nothing maps to it.
 

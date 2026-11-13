@@ -224,5 +224,47 @@ void main() {
         }
       }
     });
+
+    // details is the decoded body's own object (see [Failure.details]), so the
+    // client must leave that body as it was: equality and the hash read it.
+    test('the client leaves the body as decoded, so the hash holds', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://scheduler.test/api'))
+        ..httpClientAdapter = ScriptedAdapter((_) => jsonReply(422, {
+              'error': 'Check the form.',
+              'code': 'VALIDATION',
+              'details': _personal(),
+              'request_id': 'req-9',
+            }))
+        ..interceptors.addAll([
+          LoggingInterceptor(),
+          const ErrorMappingInterceptor(),
+        ]);
+
+      late DioException thrown;
+      await runZoned(() async {
+        try {
+          await dio.post<Object?>('/x', data: const {'a': 1});
+          fail('expected a refusal');
+        } on DioException catch (e) {
+          thrown = e;
+        }
+      }, zoneSpecification: ZoneSpecification(print: (_, __, ___, ____) {}));
+
+      final failure = thrown.asFailure;
+      final hash = failure.hashCode;
+      final kept = {failure};
+
+      // The body the failure came from is still exactly what the server sent.
+      expect(failure.details, _personal());
+      expect((thrown.response?.data as Map)['details'], _personal());
+      expect(failure.details, same((thrown.response?.data as Map)['details']));
+
+      // Read again, it is the same failure with the same hash, still found.
+      final again = thrown.asFailure;
+      expect(again, failure);
+      expect(again.hashCode, hash);
+      expect(failure.hashCode, hash);
+      expect(kept.contains(again), isTrue);
+    });
   });
 }

@@ -29,6 +29,13 @@ const _intakeLimit = {
   'code': 'INTAKE_RATE_LIMITED',
 };
 
+/// A longer wait: the intake's per-number limit (controllers/intakeController.js).
+const _intakeAttempts = {
+  'error': 'Too many attempts for this mobile number. Try again in an hour, '
+      'or contact the admissions office.',
+  'code': 'INTAKE_ATTEMPTS',
+};
+
 void main() {
   group('a 429 is the rate-limit blocked state (item 12)', () {
     test('any TooManyRequestsFailure, whatever its code', () {
@@ -99,6 +106,18 @@ void main() {
         expect(blockedReasonFor(failure), BlockedReason.rateLimited);
       });
 
+      test('the intake\'s hour-long 429 INTAKE_ATTEMPTS keeps its wait',
+          () async {
+        final source = _Source(client(429, _intakeAttempts));
+        final failure = await failureOf(source.raw('/intake'));
+        expect(failure, isA<TooManyRequestsFailure>());
+        failure as TooManyRequestsFailure;
+        expect(failure.code, 'INTAKE_ATTEMPTS');
+        expect(failure.message, _intakeAttempts['error']);
+        expect(failure.message, contains('an hour'));
+        expect(blockedReasonFor(failure), BlockedReason.rateLimited);
+      });
+
       test('a module request\'s 429 is a rate limit, not module off',
           () async {
         final source = _Source(client(429, _punchLimit));
@@ -125,6 +144,13 @@ void main() {
       expect(reason.message, contains('try again'));
       expect(reason.title, isNot(contains('!')));
       expect(reason.message, isNot(contains('!')));
+      // Waits differ (fifteen minutes, an hour, a lock-out's own time), so
+      // the default names no length of wait: only the server's message does.
+      for (final length in ['second', 'minute', 'hour', 'day', 'few']) {
+        expect(reason.message.toLowerCase(), isNot(contains(length)),
+            reason: reason.message);
+      }
+      expect(reason.message, isNot(matches(RegExp(r'\d'))));
 
       await tester.pumpWidget(host(const BlockedState(reason: reason)));
       expect(find.byIcon(reason.icon), findsOneWidget);
@@ -154,6 +180,29 @@ void main() {
       expect(tester.getSize(button).height, greaterThanOrEqualTo(44));
       await tester.tap(find.text('Try again'));
       expect(taps, 1);
+    });
+
+    testWidgets('a longer wait from the server is shown, not the default',
+        (tester) async {
+      for (final failure in [
+        Failure.fromStatus(
+            429, _intakeAttempts['error'], _intakeAttempts['code']),
+        Failure.fromStatus(
+            429,
+            'Too many wrong passwords. Try again in 30 minutes, '
+            'or use "Get a code".',
+            'LOCKED'),
+      ]) {
+        await tester.pumpWidget(host(BlockedState(
+          key: ValueKey(failure.code),
+          reason: blockedReasonFor(failure)!,
+          message: failure.message,
+        )));
+        expect(find.text(failure.message), findsOneWidget,
+            reason: failure.message);
+        expect(find.text(BlockedReason.rateLimited.message), findsNothing);
+        expect(tester.takeException(), isNull);
+      }
     });
 
     for (final size in const [
