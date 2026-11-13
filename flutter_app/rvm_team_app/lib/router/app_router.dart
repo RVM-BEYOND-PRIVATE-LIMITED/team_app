@@ -69,9 +69,11 @@ bool attendanceBlockedLocation(String location) {
 
 /// [screen] under a [SecureScope] when its location is sensitive
 /// ([isSensitiveLocation], team_app #52 item 1), so screenshots of it come out
-/// black. A module's screens go through here too when they are added.
-Widget _screen(GoRouterState state, Widget screen) =>
-    isSensitiveLocation(state.matchedLocation)
+/// black. [roster] is the class roster's switch ([secureRosterOn]). A module's
+/// screens must go through here too when they are added: the router test
+/// (sensitive_registry_issue52_test.dart) fails for one that does not.
+Widget _screen(GoRouterState state, Widget screen, {required bool roster}) =>
+    isSensitiveLocation(state.matchedLocation, roster: roster)
         ? SecureScope(child: screen)
         : screen;
 
@@ -82,9 +84,13 @@ Widget _screen(GoRouterState state, Widget screen) =>
 /// route (one prefix per module, [TeamModule]) that is not among them falls
 /// back to `/home` (team_app #50, item 7). The default is none, because the
 /// modules reply does not exist yet (Scheduler_Backend#157 / #175).
+///
+/// [secureRoster] blocks screenshots of the class roster (team_app #52 item
+/// 1). It is off unless the build turns it on ([secureRosterOn]).
 GoRouter createRouter(TeamAuthBloc authBloc,
     {GlobalKey<NavigatorState>? navigatorKey,
-    Set<TeamModule> Function() modules = noTeamModules}) {
+    Set<TeamModule> Function() modules = noTeamModules,
+    bool secureRoster = secureRosterOn}) {
   const authOnly = {'/login', '/forgot'};
   return GoRouter(
     navigatorKey: navigatorKey,
@@ -128,6 +134,7 @@ GoRouter createRouter(TeamAuthBloc authBloc,
             batchId: state.pathParameters['id']!,
             batchName: state.extra is String ? state.extra as String : null,
           ),
+          roster: secureRoster,
         ),
       ),
       GoRoute(
