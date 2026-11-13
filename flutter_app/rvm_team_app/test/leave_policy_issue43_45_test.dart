@@ -111,7 +111,7 @@ void main() {
       expect(overview.canApprove, isTrue);
       expect(overview.earliestSelfDay, isNotNull);
       expect(overview.shortNoticeMessage,
-          'Leave starting within 2 days: speak to your approver. They will inform HR.');
+          'Leave in the next 3 days cannot be applied for here. Contact HR, who will enter it, and tell your approver. Leave can be applied for from the 4th day.');
     });
 
     test('an approved leave says what it was written as', () {
@@ -200,7 +200,7 @@ void main() {
             type: 'cl', day: '2026-11-13', reason: 'Fever', spokeToApprover: true),
         throwsA(isA<Failure>()
             .having((f) => f.code, 'code', 'LEAVE_SHORT_NOTICE')
-            .having((f) => f.message, 'message', contains('speak to your approver'))),
+            .having((f) => f.message, 'message', contains('Contact HR'))),
       );
     });
 
@@ -419,7 +419,7 @@ void main() {
 
       expect(find.text('Leave (CL if available, else LWP)'), findsOneWidget);
       expect(
-          find.text('Leave starting within 2 days: speak to your approver. They will inform HR.'),
+          find.text('Leave in the next 3 days cannot be applied for here. Contact HR, who will enter it, and tell your approver. Leave can be applied for from the 4th day.'),
           findsOneWidget);
       expect(find.text('Goes to Shallu Chandra, then Bhupender Singh'), findsOneWidget);
       expect(find.text('I have spoken to my approver about this leave.'), findsOneWidget);
@@ -441,7 +441,7 @@ void main() {
       final sent = bloc.added.whereType<RequestCreateRequested>().single;
       expect(sent.family, 'leave');
       expect(sent.spokeToApprover, isTrue);
-      // The day picker starts at earliest_self_day (today + 3), never sooner.
+      // The day picker starts at earliest_self_day (today + 4), never sooner.
       expect(sent.day.compareTo(LeaveOverview.fromJson(overviewFacultyAfter).earliestSelfDay!),
           greaterThanOrEqualTo(0));
     });
