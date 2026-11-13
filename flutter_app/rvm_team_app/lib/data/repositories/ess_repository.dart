@@ -80,11 +80,24 @@ class EssRepository with ConnectivityGuard {
     }
   }
 
+  /// Why the last [restoreKeptSignIn] was refused, in the ESS's own words,
+  /// when the person's access has ended: they left, or their password changed
+  /// (the refresh `reason`s `left` and `password_changed`). Null otherwise,
+  /// including after a restore that worked or failed for any other reason.
+  ///
+  /// It is how a change made while the app was closed reaches the sign-in
+  /// form on the next launch (team_app #52 item 8): the launch restore does
+  /// not go through the network layer's [SessionRotator], which says it while
+  /// the app is running.
+  String? get restoreRefusal => _restoreRefusal;
+  String? _restoreRefusal;
+
   /// Trade the fresh Scheduler sign-in for a kept, rotating one (task A3).
   /// Safe to call right after login; a failure must not block sign-in.
   /// Restore the launch session from the kept sign-in without throwing a 401.
   /// Returns true when a fresh access token is in the Scheduler slot.
   Future<bool> restoreKeptSignIn() async {
+    _restoreRefusal = null;
     final refresh = await _tokens.readEssRefreshToken();
     if (refresh == null || refresh.isEmpty) return false;
     // Do not race the OS resolver on a cold start: offline is simply "no
@@ -100,6 +113,7 @@ class EssRepository with ConnectivityGuard {
       if (status == 401 || status == 403) {
         // The family has ended; keeping the refresh token only makes the next
         // launch try a dead token again.
+        _restoreRefusal = result.accessEnded;
         await _tokens.clearEssSession();
       }
       return false;

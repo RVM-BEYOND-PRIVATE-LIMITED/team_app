@@ -233,6 +233,10 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
               .then<String?>((value) => value)
               .timeout(const Duration(seconds: 5), onTimeout: () => null) !=
           null;
+      // The ESS's words when it refused the kept sign-in because the person
+      // left or changed their password while the app was closed (team_app #52
+      // item 8). The login form shows them, as it does while the app runs.
+      String? ended;
       if (stale && hasKeptSignIn) {
         // Rotate the kept sign-in directly. This is the one launch call that is
         // EXPECTED to answer 401 when the sign-in has ended; it must come back
@@ -243,13 +247,16 @@ class TeamAuthBloc extends Bloc<TeamAuthEvent, TeamAuthState> {
         if (restored) {
           token = await _session.readSchedulerToken();
           identity = StaffIdentity.fromToken(token);
+        } else {
+          ended = _ess.restoreRefusal;
         }
       }
       if (identity == null || !identity.isTeamMember || Jwt.isExpired(token)) {
         // A dead token would only draw 401s; drop it so the next screen is the
         // login form, not the shell's error state.
         if (token != null) await _session.signOutScheduler();
-        emit(const TeamAuthState(status: TeamAuthStatus.unauthenticated));
+        emit(TeamAuthState(
+            status: TeamAuthStatus.unauthenticated, errorMessage: ended));
         return;
       }
       emit(TeamAuthState(
