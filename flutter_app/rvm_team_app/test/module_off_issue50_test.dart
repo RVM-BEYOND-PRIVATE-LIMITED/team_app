@@ -21,11 +21,14 @@ void main() {
     test('only a module request\'s 404 NOT_FOUND is module off', () {
       expect(blockedReasonFor(const ModuleUnavailableFailure('crm')),
           BlockedReason.moduleOff);
+      // A 429 is no longer an error to show: it is the rate-limit blocked
+      // state (test/rate_limited_issue50_test.dart), never "module off".
+      expect(blockedReasonFor(const TooManyRequestsFailure()),
+          isNot(BlockedReason.moduleOff));
       for (final failure in <Object?>[
         const NotFoundFailure('Not found', 'NOT_FOUND'),
         const ForbiddenFailure(),
         const ServerFailure(),
-        const TooManyRequestsFailure(),
         const UnauthorizedFailure(),
         null,
       ]) {

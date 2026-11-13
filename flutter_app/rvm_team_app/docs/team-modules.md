@@ -139,6 +139,17 @@ and "not in the pilot", on purpose.
 - A 404 `NOT_FOUND` on any request without the tag stays a plain
   `NotFoundFailure`, as before.
 
+## A request refused for going too fast (item 12)
+
+Any 429 is a `TooManyRequestsFailure`, whatever its code: the Scheduler's
+`RATE_LIMITED` (middleware/punchCodeLimiter.js) and `INTAKE_RATE_LIMITED`
+(controllers/intakeController.js), the ESS's `RATE_LIMITED`, and the lock-outs
+`LOCKED` and `TOO_MANY_CODES`. `blockedReasonFor(failure)` turns it into
+`BlockedReason.rateLimited`, "wait and try again"; a screen can pass the
+failure's own message to `BlockedState`, which names the real wait. A module
+request's 429 is a rate limit, never "module off". "Not punched in" has no
+server code yet (Scheduler_Backend#175), so nothing maps to it.
+
 ## Gaps (backend)
 
 - **No level.** The reply has no level field. Any decision by level uses the
@@ -175,6 +186,10 @@ and "not in the pilot", on purpose.
   foreground refresh, and no ask for attendance-only sign-ins.
 - `test/module_off_issue50_test.dart`: "module off" through the app's
   Scheduler client and `BlockedState`; untagged 404s unchanged.
+- `test/rate_limited_issue50_test.dart`: every 429 is the rate-limit state,
+  through the app's Scheduler client too; other failures stay errors; the
+  screen on small phones, landscape and tablets, at text x1 to x3, light and
+  dark, with a 44 px action.
 - `packages/core_network/test/keep_session_issue50_test.dart` and
   `module_unavailable_issue50_test.dart`: the 401 rule and the module-off
   mapping in the shared client.

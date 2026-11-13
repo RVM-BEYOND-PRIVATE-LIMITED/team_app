@@ -31,6 +31,17 @@ enum BlockedReason {
     title: 'Update required',
     message: 'This version of Team RVM is no longer supported. '
         'Please update to continue.',
+  ),
+
+  /// The server refused because too many requests came too quickly: any 429
+  /// ([TooManyRequestsFailure]), e.g. the Scheduler's `RATE_LIMITED`
+  /// (middleware/punchCodeLimiter.js) and `INTAKE_RATE_LIMITED`
+  /// (controllers/intakeController.js), or the ESS's `RATE_LIMITED`.
+  rateLimited(
+    icon: Icons.hourglass_top_outlined,
+    title: 'Please wait a little',
+    message: 'There were too many tries in a short time. '
+        'Wait a few minutes, then try again.',
   );
 
   const BlockedReason({
@@ -50,10 +61,16 @@ enum BlockedReason {
 /// A module route's 404 `NOT_FOUND` ([ModuleUnavailableFailure]) is
 /// [BlockedReason.moduleOff]. The server sends one body for "switched off"
 /// and "not in the pilot" on purpose, so [BlockedReason.pilotOnly] is never
-/// inferred from a reply. Not punched in and rate limits wait for their
-/// server codes (Scheduler_Backend#175).
-BlockedReason? blockedReasonFor(Object? failure) =>
-    failure is ModuleUnavailableFailure ? BlockedReason.moduleOff : null;
+/// inferred from a reply. Any 429 ([TooManyRequestsFailure]), whatever its
+/// code, is [BlockedReason.rateLimited]; the server's own message names the
+/// real wait, so a screen that has the failure can pass it as
+/// [BlockedState.message]. Not punched in waits for its server code
+/// (Scheduler_Backend#175).
+BlockedReason? blockedReasonFor(Object? failure) => switch (failure) {
+      ModuleUnavailableFailure() => BlockedReason.moduleOff,
+      TooManyRequestsFailure() => BlockedReason.rateLimited,
+      _ => null,
+    };
 
 /// The one blocked screen, whatever the reason (team_app #50, item 12):
 /// an icon, a title, what to do, and at most one action. It fills the space
