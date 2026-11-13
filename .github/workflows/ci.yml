@@ -90,3 +90,20 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/work:ro" "nginx:${{ matrix.nginx }}-alpine" sh -c \
             "apk add --no-cache bash openssl curl > /dev/null && bash /work/apps/ess-api/deploy/test-nginx.sh"
+
+  # The migration test (ADR-0021): the migrations and their rollbacks run twice against a
+  # throwaway Postgres in the runner's own Docker.
+  migrations:
+    name: Migrations and rollbacks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: npm run test:migrations

@@ -37,6 +37,12 @@ const START_TIMEOUT_MS = 90 * 1000;
 // <14 digits>_hr_ess_<module>.sql (ADR-0021).
 const MIGRATION_NAME = /^\d{14}_hr_ess_[a-z0-9_]+\.sql$/;
 
+// Migrations whose second pass is skipped, each with the reason. Keep this list short.
+const REAPPLY_EXEMPT = {
+  '20261114000004_hr_ess_leave_admin_manager_flow.sql':
+    'superseded by 20261114000005, which changes the return type of hr_ess_leave_route; re-running 000004 after it fails loudly, which is safer than silently restoring the old function. The leave tables have been owned by the Scheduler since its migration 20261206000000, so these files are never re-run in production.',
+};
+
 const failures = [];
 const ok = (message) => console.log(`ok      ${message}`);
 const notOk = (message) => {
@@ -89,11 +95,13 @@ const sqlFiles = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) =
 
 /** The hr_ess_* tables each migration says it creates, in the order they are created. */
 function tablesCreatedBy(files) {
-  const out = [];
+  // A later migration may repeat an earlier CREATE TABLE IF NOT EXISTS (the hoo_final file
+  // reasserts 000004's table); the census counts each name once.
+  const out = new Set();
   for (const file of files) {
-    for (const m of read(path.join(MIGRATIONS_DIR, file)).matchAll(/CREATE TABLE IF NOT EXISTS public\.(hr_ess_[a-z0-9_]+)/g)) out.push(m[1]);
+    for (const m of read(path.join(MIGRATIONS_DIR, file)).matchAll(/CREATE TABLE IF NOT EXISTS public\.(hr_ess_[a-z0-9_]+)/g)) out.add(m[1]);
   }
-  return out;
+  return [...out];
 }
 
 const hrEssTables = () => rows("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' AND left(c.relname, 7) = 'hr_ess_' ORDER BY 1");
@@ -386,7 +394,8 @@ DECLARE
   v_sl_day date;
   v_wfh_day date;
 BEGIN
-  INSERT INTO public.hr_employees (id, full_name, branch_id) VALUES (e, 'Test Requester', b);
+  -- The check must not depend on which weekday the 4th of last month falls on: no week-off days.
+  INSERT INTO public.hr_employees (id, full_name, branch_id, week_off_days) VALUES (e, 'Test Requester', b, '{}');
   INSERT INTO public.hr_employees (id, full_name) VALUES (m, 'Test Manager');
   INSERT INTO public.users (id) VALUES (u);
   INSERT INTO public.hr_branches (id) VALUES (b);
@@ -903,6 +912,10 @@ function main() {
 
     for (const pass of [1, 2]) {
       for (const file of migrations) {
+        if (pass === 2 && REAPPLY_EXEMPT[file]) {
+          console.log(`skip    apply ${file} again (exempt: ${REAPPLY_EXEMPT[file]})`);
+          continue;
+        }
         check(`apply ${file}${pass === 2 ? ' again' : ''}`, () => runSql(file, read(path.join(MIGRATIONS_DIR, file))));
       }
     }

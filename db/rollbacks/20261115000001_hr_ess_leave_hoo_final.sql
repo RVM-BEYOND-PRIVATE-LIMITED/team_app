@@ -1,0 +1,9 @@
+-- Rollback: 20261115000001_hr_ess_leave_hoo_final.sql
+--
+-- This migration created no object of its own. The hr_ess_leave_final_approvers table it names
+-- is 20261114000005's (created there, and only reasserted here with IF NOT EXISTS), and the
+-- final_approver_* columns it fills are that migration's too; 20261114000005's rollback drops
+-- both. Its other change is an upsert of the four centre mappings that 20261114000005 had just
+-- seeded, so deleting the rows here would take away rows the earlier rollback must leave in
+-- place. Kept as a comment-only rollback so every migration has its pair
+-- (db/test/run-migrations.js).
