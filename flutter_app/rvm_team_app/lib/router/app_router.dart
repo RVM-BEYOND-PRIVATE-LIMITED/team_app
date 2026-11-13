@@ -41,7 +41,9 @@ import '../features/work/faculty_indicators_screen.dart';
 import '../features/work/interviews_screen.dart';
 import '../features/work/mark_attendance_screen.dart';
 import '../features/work/my_batches_screen.dart';
+import '../widgets/secure_scope.dart';
 import 'module_routes.dart';
+import 'sensitive_routes.dart';
 
 /// Locations that only a portal sign-in can use (issue #13).
 ///
@@ -64,6 +66,14 @@ bool attendanceBlockedLocation(String location) {
       location == '/hr' ||
       location.startsWith('/hr/');
 }
+
+/// [screen] under a [SecureScope] when its location is sensitive
+/// ([isSensitiveLocation], team_app #52 item 1), so screenshots of it come out
+/// black. A module's screens go through here too when they are added.
+Widget _screen(GoRouterState state, Widget screen) =>
+    isSensitiveLocation(state.matchedLocation)
+        ? SecureScope(child: screen)
+        : screen;
 
 /// Auth-gated router. Redirect reads [TeamAuthBloc] state; the app calls
 /// `router.refresh()` when that state changes: splash → login → five-tab shell.
@@ -112,9 +122,12 @@ GoRouter createRouter(TeamAuthBloc authBloc,
           builder: (_, __) => const InterviewsScreen()),
       GoRoute(
         path: '/work/batch/:id/mark',
-        builder: (_, state) => MarkAttendanceScreen(
-          batchId: state.pathParameters['id']!,
-          batchName: state.extra is String ? state.extra as String : null,
+        builder: (_, state) => _screen(
+          state,
+          MarkAttendanceScreen(
+            batchId: state.pathParameters['id']!,
+            batchName: state.extra is String ? state.extra as String : null,
+          ),
         ),
       ),
       GoRoute(

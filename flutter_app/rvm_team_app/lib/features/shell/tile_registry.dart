@@ -2,6 +2,7 @@ import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 
 import '../../auth/team_permissions.dart';
+import '../../router/sensitive_routes.dart';
 
 // The Home cards and the Me tiles, each with the rule that decides who sees it
 // (team_app #50, item 6). The screens draw what these lists return, in order.
@@ -82,6 +83,11 @@ class MeTileSpec {
   final String? attendanceSubtitle;
   final String route;
   final bool Function(TeamViewer viewer) visible;
+
+  /// The tile opens a screen that blocks screenshots (team_app #52, item 1).
+  /// It follows the route, so a module is marked sensitive in one place
+  /// ([isSensitiveLocation]); none of today's Me tiles is.
+  bool get sensitive => isSensitiveLocation(route);
 }
 
 class MeSectionSpec {
@@ -106,6 +112,9 @@ class MeTile {
   final String title;
   final String subtitle;
   final String route;
+
+  /// As [MeTileSpec.sensitive].
+  bool get sensitive => isSensitiveLocation(route);
 }
 
 /// One section on Me, holding only the tiles the viewer sees.
