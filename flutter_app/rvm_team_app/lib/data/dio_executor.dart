@@ -22,7 +22,7 @@ mixin DioExecutor {
         if (status < 200 || status >= 300) {
           CrashReporter.note('last_api',
               '${CrashReporter.apiLine(value.requestOptions.method, value.requestOptions.path)} -> $status');
-          throw failureFromResponse(status, value.data);
+          throw responseFailure(value);
         }
       }
       return value;
@@ -45,7 +45,24 @@ mixin DioExecutor {
       throw const UnknownFailure('Could not read the server response.');
     }
   }
+
+  /// The body of [res], or the typed [Failure] its status stands for
+  /// ([responseFailure]). For a data source that parses the reply inside
+  /// [guard] on a client that returns refused replies as values (the
+  /// Scheduler and ESS clients), so a refusal is never parsed as data.
+  Object? bodyOf(Response<Object?> res) {
+    final status = res.statusCode ?? 0;
+    if (status < 200 || status >= 300) throw responseFailure(res);
+    return res.data;
+  }
 }
+
+/// The typed [Failure] a non-2xx [res] stands for. A module's own request
+/// ([ModuleRequest]) reads 404 `NOT_FOUND` as [ModuleUnavailableFailure]
+/// (team_app #50 item 12); every other reply maps as [failureFromResponse].
+Failure responseFailure(Response<Object?> res) => Failure.forModule(
+    failureFromResponse(res.statusCode ?? 0, res.data),
+    ModuleRequest.of(res.requestOptions));
 
 /// Maps a non-2xx [Response] body to the typed [Failure], keeping the ESS's
 /// staff-readable 503 copy (`MODULE_NOT_INSTALLED` / `UNAVAILABLE`).

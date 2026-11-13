@@ -1,3 +1,4 @@
+import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -42,6 +43,17 @@ enum BlockedReason {
   final String title;
   final String message;
 }
+
+/// The blocked reason a failed request stands for, or null when the failure
+/// is an error to show as one (team_app #50, item 12).
+///
+/// A module route's 404 `NOT_FOUND` ([ModuleUnavailableFailure]) is
+/// [BlockedReason.moduleOff]. The server sends one body for "switched off"
+/// and "not in the pilot" on purpose, so [BlockedReason.pilotOnly] is never
+/// inferred from a reply. Not punched in and rate limits wait for their
+/// server codes (Scheduler_Backend#175).
+BlockedReason? blockedReasonFor(Object? failure) =>
+    failure is ModuleUnavailableFailure ? BlockedReason.moduleOff : null;
 
 /// The one blocked screen, whatever the reason (team_app #50, item 12):
 /// an icon, a title, what to do, and at most one action. It fills the space
