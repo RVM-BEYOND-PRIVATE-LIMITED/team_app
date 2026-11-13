@@ -13,11 +13,13 @@ import 'app_crash.dart';
 import 'app_feedback.dart';
 import 'bloc/connectivity_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
+import 'bloc/team_modules_bloc.dart';
 import 'data/notification_permission.dart';
 import 'features/startup/version_gate.dart';
 import 'injection.dart';
 import 'push/push_service.dart';
 import 'router/app_router.dart';
+import 'router/module_guard_listeners.dart';
 import 'widgets/env_ribbon.dart';
 
 void main() {
@@ -137,8 +139,14 @@ class TeamApp extends StatefulWidget {
 
 class _TeamAppState extends State<TeamApp> {
   final TeamAuthBloc _auth = getIt<TeamAuthBloc>();
-  late final GoRouter _router =
-      createRouter(_auth, navigatorKey: rootNavigatorKey);
+
+  /// The staff modules open to the person (team_app #50 item 5). The router's
+  /// module guard reads it (item 7b): nothing is open before its first answer
+  /// or after a failure, so every module route falls back to /home, as before.
+  final TeamModulesBloc _modules = getIt<TeamModulesBloc>();
+  late final GoRouter _router = createRouter(_auth,
+      navigatorKey: rootNavigatorKey,
+      modules: () => _modules.state.modules.open);
 
   static const _notificationPermission = NotificationPermission();
   bool _askedNotifications = false;
@@ -168,16 +176,24 @@ class _TeamAppState extends State<TeamApp> {
       providers: [
         BlocProvider.value(value: _auth),
         BlocProvider.value(value: getIt<ConnectivityBloc>()),
+        BlocProvider.value(value: _modules),
       ],
-      child: BlocListener<TeamAuthBloc, TeamAuthState>(
-        listenWhen: (p, c) => p.status != c.status,
-        listener: (_, state) {
-          _router.refresh();
-          if (state.status == TeamAuthStatus.authenticated) {
-            _askNotificationPermission();
-            unawaited(PushService.instance.onSignedIn());
-          }
-        },
+      child: MultiBlocListener(
+        listeners: [
+          BlocListener<TeamAuthBloc, TeamAuthState>(
+            listenWhen: (p, c) => p.status != c.status,
+            listener: (_, state) {
+              _router.refresh();
+              if (state.status == TeamAuthStatus.authenticated) {
+                _askNotificationPermission();
+                unawaited(PushService.instance.onSignedIn());
+              }
+            },
+          ),
+          // Sign-out clears the modules; a change in the open modules runs
+          // the module guard again (#50 items 5 and 7b).
+          ...moduleGuardListeners(router: _router, modules: _modules),
+        ],
         child: MaterialApp.router(
           title: 'Team RVM',
           scaffoldMessengerKey: rootScaffoldMessengerKey,

@@ -82,8 +82,10 @@ Widget _screen(GoRouterState state, Widget screen, {required bool roster}) =>
 ///
 /// [modules] answers which staff modules the signed-in person has. A module
 /// route (one prefix per module, [TeamModule]) that is not among them falls
-/// back to `/home` (team_app #50, item 7). The default is none, because the
-/// modules reply does not exist yet (Scheduler_Backend#157 / #175).
+/// back to `/home` (team_app #50, item 7). The app reads it from
+/// `TeamModulesBloc` (item 7b), which opens nothing before its first answer
+/// or after a failure, and runs the guards again when the open modules change
+/// (`moduleGuardListeners`). The default here is none.
 ///
 /// [secureRoster] blocks screenshots of the class roster (team_app #52 item
 /// 1). It is off unless the build turns it on ([secureRosterOn]).
