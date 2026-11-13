@@ -82,7 +82,7 @@ class _World {
   late final SessionRotator sessions;
 
   /// The reason the ESS refuses every refresh with, or null to renew.
-  final String? refreshRefusal;
+  String? refreshRefusal;
 
   late final ScriptedAdapter refresh = ScriptedAdapter((_) {
     final reason = refreshRefusal;
@@ -247,6 +247,61 @@ void main() {
         expect(world.tokens.messages, [null]);
       });
     }
+
+    // The everyday path: the hourly token is spent, so it is renewed before
+    // the request is sent. The refused renewal leaves the old token to send,
+    // and the 401 it draws is what ends the session, with the ESS's reason.
+    for (final (reason, message) in [
+      ('left', _essNotActive),
+      ('password_changed', _passwordChanged),
+      ('expired', null),
+      ('signed_out', null),
+    ]) {
+      test(
+          'a spent token whose renewal is refused because "$reason" ends '
+          'with ${message == null ? 'no message' : 'the ESS\'s message'}',
+          () async {
+        final world =
+            _World(live: false, keptSignIn: true, refreshRefusal: reason);
+
+        await _get(world.scheduler(401, {
+          'error': 'Your session has expired. Please sign in again.',
+          'code': 'TOKEN_EXPIRED',
+        }));
+
+        expect(world.refresh.seen, hasLength(1),
+            reason: 'renewed once, before sending');
+        expect(world.tokens.messages, [message]);
+        expect(world.tokens.refreshToken, isNull);
+        expect(world.sessions.refusalMessage, isNull,
+            reason: 'the reason is used once, by the session it ended');
+      });
+    }
+
+    test('a refusal in a token\'s last seconds shows on the 401 that follows',
+        () async {
+      final world =
+          _World(keptSignIn: true, refreshRefusal: 'password_changed');
+      // Inside the renewal leeway, so renewed before sending, but the server
+      // still takes it.
+      world.tokens.schedulerToken =
+          _token(_now.add(const Duration(seconds: 20)));
+      var calls = 0;
+      final dio = world.scheduler(200, const {})
+        ..httpClientAdapter = ScriptedAdapter((_) => ++calls == 1
+            ? jsonReply(200, {'ok': true})
+            : jsonReply(401, {
+                'error': 'Your session has expired. Please sign in again.',
+                'code': 'TOKEN_EXPIRED',
+              }));
+
+      await _get(dio);
+      expect(world.tokens.unauthorized, 0);
+
+      await _get(dio);
+      expect(world.refresh.seen, hasLength(1));
+      expect(world.tokens.messages, [_passwordChanged]);
+    });
   });
 
   group('ESS client', () {
@@ -282,6 +337,29 @@ void main() {
 
       expect(world.tokens.messages, [null]);
     });
+
+    for (final (reason, message) in [
+      ('left', _essNotActive),
+      ('password_changed', _passwordChanged),
+      ('expired', null),
+      ('signed_out', null),
+    ]) {
+      test(
+          'a spent token whose renewal is refused because "$reason" ends '
+          'with ${message == null ? 'no message' : 'the ESS\'s message'}',
+          () async {
+        final world =
+            _World(live: false, keptSignIn: true, refreshRefusal: reason);
+
+        await _get(world.ess(401,
+            {'error': 'Please sign in again.', 'code': 'NOT_AUTHENTICATED'}));
+
+        expect(world.refresh.seen, hasLength(1),
+            reason: 'renewed once, before sending');
+        expect(world.tokens.messages, [message]);
+        expect(world.tokens.refreshToken, isNull);
+      });
+    }
 
     test('403 NOT_LINKED keeps the session', () async {
       final world = _World();
@@ -357,16 +435,63 @@ void main() {
       expect(SessionRotator.endsSessionOn403(null), isFalse);
     });
 
-    test('a refusal message lasts only until the next renewal', () async {
+    test('a refusal stands through a renewal with nothing left to send',
+        () async {
       final world = _World(keptSignIn: true, refreshRefusal: 'left');
 
       expect(await world.sessions.renew(), isFalse);
       expect(world.sessions.refusalMessage, _essNotActive);
 
-      // The kept sign-in is gone, so the next renewal has nothing to send.
+      // The kept sign-in is gone, so the next renewal has nothing to send. It
+      // is still the refused sign-in, so the reason still stands.
+      expect(await world.sessions.renew(), isFalse);
+      expect(world.sessions.refusalMessage, _essNotActive);
+      expect(world.refresh.seen, hasLength(1));
+    });
+
+    test('a refusal ends with the session', () async {
+      final world = _World(keptSignIn: true, refreshRefusal: 'left');
+
+      expect(await world.sessions.renew(), isFalse);
+      await world.sessions.endSession(message: world.sessions.refusalMessage);
+
+      expect(world.sessions.refusalMessage, isNull);
+      expect(world.tokens.messages, [_essNotActive]);
+    });
+
+    test('a refusal never reaches a later sign-in', () async {
+      final world =
+          _World(keptSignIn: true, refreshRefusal: 'password_changed');
+
+      expect(await world.sessions.renew(), isFalse);
+      expect(world.sessions.refusalMessage, _passwordChanged);
+
+      // Signed out some other way, then signed in again with no kept sign-in.
+      world.tokens.schedulerToken =
+          _token(_now.add(const Duration(minutes: 5)));
+
       expect(await world.sessions.renew(), isFalse);
       expect(world.sessions.refusalMessage, isNull);
     });
+
+    for (final (next, renewed) in [(null, true), ('expired', false)]) {
+      test(
+          'a refresh sent again clears an earlier refusal '
+          '(${next ?? 'renewed'})', () async {
+        final world = _World(keptSignIn: true, refreshRefusal: 'left');
+
+        expect(await world.sessions.renew(), isFalse);
+        expect(world.sessions.refusalMessage, _essNotActive);
+
+        // A new kept sign-in on the same token, and the ESS's next answer.
+        world.tokens.refreshToken = 'refresh-new';
+        world.refreshRefusal = next;
+
+        expect(await world.sessions.renew(), renewed);
+        expect(world.refresh.seen, hasLength(2));
+        expect(world.sessions.refusalMessage, isNull);
+      });
+    }
 
     test('a refresh that succeeds leaves no refusal', () async {
       final world = _World(keptSignIn: true);

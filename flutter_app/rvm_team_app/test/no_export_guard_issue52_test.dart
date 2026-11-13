@@ -34,9 +34,11 @@ const _sensitiveFiles = ['lib/features/work/mark_attendance_screen.dart'];
 const _shareAllowed = {'lib/features/me/id_card_screen.dart'};
 
 /// Why [source] exports, one line each; empty when it does not. Line comments
-/// are skipped, so a comment that names a package is not an import.
+/// are skipped, so a comment that names a package is not an import. The `//`
+/// of a URL (`https://`) does not start a comment, so a URL in a string never
+/// hides the code after it.
 List<String> exportFindings(String source) {
-  final code = source.replaceAll(RegExp(r'//.*$', multiLine: true), '');
+  final code = source.replaceAll(RegExp(r'(?<!:)//.*$', multiLine: true), '');
   return [
     for (final package in _exportPackages)
       if (code.contains("'package:$package/") ||
@@ -85,6 +87,20 @@ final save = IconButton(icon: const Icon(Icons.file_download), onPressed: null);
           ['imports package:csv']);
       expect(exportFindings('const i = Icons.print_outlined;'),
           ['draws Icons.print_outlined']);
+    });
+
+    test('catches the Cupertino share and print icons', () {
+      expect(exportFindings('const i = CupertinoIcons.share;'),
+          ['draws Icons.share']);
+      expect(exportFindings('const i = CupertinoIcons.printer;'),
+          ['draws Icons.printer']);
+    });
+
+    test('a URL in a string does not hide the code after it', () {
+      expect(
+          exportFindings(
+              "final u = 'https://example.test'; final i = Icons.share;"),
+          ['draws Icons.share']);
     });
 
     test('passes a list with no export and ignores comments', () {
