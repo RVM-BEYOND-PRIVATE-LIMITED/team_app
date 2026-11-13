@@ -324,6 +324,8 @@ const REFUSALS = Object.freeze({
   CHANGE_REQUEST_KEPT: { code: '23505', name: 'hr_ess_change_requests_open_field_key' },
   // D4: the escalation job racing itself -- the same person already escalated for this request.
   ESCALATION_KEPT: { code: '23505', name: 'hr_ess_approval_escalations_family_request_id_to_employee_id_key' },
+  // F-51: the job already claimed this period, so the process started by a deploy sends nothing.
+  JOB_RUN_KEPT: { code: '23505', name: 'hr_ess_job_runs_pkey' },
 });
 
 const isRefusal = (error, { code, name }) =>
@@ -1071,6 +1073,20 @@ function createSupabaseStore(config, { client } = {}) {
       const created = await write('hr_ess_approval_escalations', (q) => q.insert([row]), REFUSALS.ESCALATION_KEPT);
       return created !== REFUSED;
     },
+
+    /* ── F-51: the job run record (src/jobs/runRecord.js) ── */
+
+    /** The claim: one row per job and period, and the primary key answers a second process. */
+    createJobRun: async (row) => {
+      const created = await write('hr_ess_job_runs', (q) => q.insert([row]), REFUSALS.JOB_RUN_KEPT);
+      return created !== REFUSED;
+    },
+    /** How the run ended, on both key columns. */
+    finishJobRun: (job, periodKey, patch) =>
+      write('hr_ess_job_runs', (q) => q.update(patch).eq('job', job).eq('period_key', periodKey)),
+    /** Drops a claim whose work failed, so the next start in the period may try again. */
+    releaseJobRun: (job, periodKey) =>
+      write('hr_ess_job_runs', (q) => q.delete().eq('job', job).eq('period_key', periodKey)),
 
     /* ── the day's shift snapshot, and the month's recompute (policy/attendance.js) ── */
 
