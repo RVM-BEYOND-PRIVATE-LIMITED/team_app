@@ -7,8 +7,9 @@
 /// Which modules a person has comes from the Scheduler's modules reply,
 /// `GET /api/me/features` (Scheduler_Backend#157; team_app #50 items 5 and
 /// 7b), read by `TeamModulesBloc`. Each module's switch key is its [key]
-/// (`crm`, `fees`, …). Until that reply opens one, and whenever it fails,
-/// nobody has a module, so every module route falls back to `/home`.
+/// (`crm`, `fees`, …). Until a reply of the sign-in opens one, nobody has a
+/// module, so every module route falls back to `/home`. A later ask that gets
+/// no reply keeps the last one (`TeamModulesBloc`).
 enum TeamModule {
   crm('/crm', sensitive: true),
   fees('/fees', sensitive: true),
@@ -45,8 +46,8 @@ enum TeamModule {
 TeamModule? teamModuleForKey(Object? key) =>
     key is String ? TeamModule.values.asNameMap()[key] : null;
 
-/// No modules: what everybody has before the modules reply answers, when it
-/// fails, and when it opens nothing.
+/// No modules: what everybody has before the first modules reply of a sign-in,
+/// when that first ask fails, and when the reply opens nothing.
 Set<TeamModule> noTeamModules() => const {};
 
 /// The module whose prefix [location] sits at or under, or null for every

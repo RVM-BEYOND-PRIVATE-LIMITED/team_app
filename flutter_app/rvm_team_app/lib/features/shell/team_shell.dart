@@ -66,9 +66,11 @@ class _TeamShellState extends State<TeamShell> {
   }
 
   /// Sends [event] to the modules bloc. It is asked only after the
-  /// capabilities check has answered: that check may renew the kept sign-in
-  /// through its own client, and a modules request sent at the same moment
-  /// could renew it a second time with the same refresh token.
+  /// capabilities check has succeeded, so a sign-in the ESS refuses (a login
+  /// with no employee record, which gets the access error instead of the
+  /// tabs) never asks at all. Asking at the same moment would be safe: both
+  /// clients share one `SessionRotator`, whose renewal runs once at a time
+  /// for every request that needs it.
   ///
   /// Nothing is asked for an attendance-only sign-in (the Scheduler refuses
   /// its punch token on every route but the punch path, so nothing could
