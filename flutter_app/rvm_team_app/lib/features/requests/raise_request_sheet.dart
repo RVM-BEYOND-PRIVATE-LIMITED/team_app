@@ -74,8 +74,10 @@ class _RaiseSheetState extends State<_RaiseSheet> {
   /// that half could not load.
   LeaveOverview? get _leave => context.read<RequestsBloc>().state.leave;
 
-  /// The first day a person may apply for themselves: today + 3 (IST). A
-  /// leave starting sooner goes through the approver and HR instead.
+  /// The first day a person may apply for themselves: today + 4 (IST; RVM,
+  /// 13 Nov 2026 -- the next 3 days are blocked for everybody). Leave sooner
+  /// than that is entered by HR: the person contacts HR. The server sends the
+  /// day (`earliest_self_day`), so the rule lives in one place.
   DateTime? get _earliestLeaveDay {
     final raw = _leave?.earliestSelfDay;
     return raw == null ? null : DateTime.tryParse(raw);
@@ -274,7 +276,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
       final earliest = _earliestLeaveDay;
       if (earliest != null && _day.isBefore(earliest)) {
         _showError(leave.shortNoticeMessage ??
-            'Leave starting within 2 days: speak to your approver. They will inform HR.');
+            'Leave in the next 3 days cannot be applied for here. Contact HR, who will enter it, and tell your approver. Leave can be applied for from the 4th day.');
         return;
       }
       if (!_spoke) {
@@ -474,11 +476,11 @@ class _RaiseSheetState extends State<_RaiseSheet> {
               ),
               if (_family == 'leave') ...[
                 const SizedBox(height: 6),
-                // Talk first (#43): leave starting within 2 days is not applied
-                // for here; the approver tells HR, who records it.
+                // Talk first (#43): leave in the next 3 days is not applied for
+                // here; the person contacts HR, who records it (13 Nov 2026).
                 Text(
                   leave?.shortNoticeMessage ??
-                      'Leave starting within 2 days: speak to your approver. They will inform HR.',
+                      'Leave in the next 3 days cannot be applied for here. Contact HR, who will enter it, and tell your approver. Leave can be applied for from the 4th day.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontSize: 10.5,
                         color: RvmColors.subtle,

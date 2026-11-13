@@ -1818,7 +1818,7 @@ class LeaveOverview extends Equatable {
   /// The viewer's own employee id: nobody approves their own leave.
   final String? employeeId;
 
-  /// The first day the person may apply for themselves (today + 3, IST).
+  /// The first day the person may apply for themselves (today + 4, IST; RVM, 13 Nov 2026).
   final String? earliestSelfDay;
   final String? shortNoticeMessage;
   final LeaveRoute? myRoute;
