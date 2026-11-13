@@ -324,10 +324,14 @@ class _OutcomeOption extends StatelessWidget {
           RvmColors.warningSoft
         ),
     };
+    // A checked state in a mutually exclusive group, as Flutter's own Radio
+    // has, so TalkBack reads a radio button, checked or not checked, and
+    // VoiceOver reads the chosen one as selected. `selected` is not set as
+    // well, so the chosen one is not read as both checked and selected.
     return MergeSemantics(
       child: Semantics(
         button: true,
-        selected: selected,
+        checked: selected,
         inMutuallyExclusiveGroup: true,
         child: TeamCard(
           onTap: onTap,

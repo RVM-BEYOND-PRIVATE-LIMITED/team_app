@@ -28,6 +28,30 @@ final _midday = DateTime.utc(2026, 11, 13, 10);
 /// A rupee sign, "Rs" before a figure, INR or the word rupee.
 final _money = RegExp(r'₹|\bRs\.?\s*\d|\bINR\b|rupee', caseSensitive: false);
 
+/// An `import`, `export` or `part` directive at the start of a line, up to its
+/// `;` (a conditional import names more than one URI). `part of` names the
+/// library the file belongs to, not one it uses, so it is left out.
+final _directive = RegExp(
+    r'''^[ \t]*(?:import|export|part)\b(?![ \t]+of\b)([^;]*);''',
+    multiLine: true);
+
+/// A quoted URI, in single or double quotes.
+final _quoted = RegExp(r'''['"]([^'"]+)['"]''');
+
+/// Every URI that [source] imports, exports or includes as a part, in order.
+List<String> _directiveUris(String source) => [
+      for (final d in _directive.allMatches(source))
+        for (final q in _quoted.allMatches(d[1]!)) q[1]!,
+    ];
+
+/// Names that would mean the form is wired to a save, a route or the wire.
+final _wiring = RegExp(
+    r'fromJson|toJson|jsonEncode|jsonDecode|\bDio\b|GoRoute|getIt|'
+    r'FollowUpTask|FollowUpsRemoteDataSource|RemoteDataSource|Repository');
+
+/// A money field: no rupees on this form.
+final _moneyField = RegExp(r'₹|paise|amount|rupee', caseSensitive: false);
+
 /// What the sheets opened from the test screen handed back, in order.
 class _Opened {
   final results = <FollowupOutcomeDraft?>[];
@@ -132,10 +156,39 @@ void main() {
       expect(istTomorrow(DateTime.utc(2026, 12, 31, 18, 29)), DateTime(2027));
       expect(istTomorrow(DateTime.utc(2026, 11, 13, 18, 30)),
           DateTime(2026, 11, 15));
-      // The same instant as a local time gives the same day.
-      expect(istToday(DateTime.utc(2026, 11, 13, 18, 30).toLocal()),
+      // A timestamp with an offset, as a server writes it, is its instant.
+      expect(istToday(DateTime.parse('2026-11-14T00:00:00+05:30')),
+          DateTime(2026, 11, 14));
+      expect(istToday(DateTime.parse('2026-11-13T23:59:00+05:30')),
+          DateTime(2026, 11, 13));
+      expect(istToday(DateTime.parse('2026-11-13T13:00:00-05:00')),
+          DateTime(2026, 11, 13));
+      expect(istToday(DateTime.parse('2026-11-13T13:00:00-05:30')),
           DateTime(2026, 11, 14));
     });
+
+    // Dart has no DateTime in a fixed zone other than UTC: a local one is in
+    // the machine's zone, so this only tests something off UTC. On a UTC
+    // machine it is skipped, and says so, rather than passing for nothing.
+    final machineOnUtc = DateTime(2026, 11, 13).timeZoneOffset == Duration.zero;
+    test('a local time is read as the same instant', () {
+      for (final instant in [
+        DateTime.utc(2026, 11, 13, 18, 29),
+        DateTime.utc(2026, 11, 13, 18, 30),
+        DateTime.utc(2026, 11, 13, 1),
+        DateTime.utc(2026, 11, 13, 13),
+        DateTime.utc(2026, 11, 13, 22),
+      ]) {
+        final local = instant.toLocal();
+        expect(local.isUtc, isFalse);
+        expect(istToday(local), istToday(instant), reason: '$local');
+        expect(istTomorrow(local), istTomorrow(instant), reason: '$local');
+      }
+    },
+        skip: machineOnUtc
+            ? 'the machine is on UTC; run with TZ=Asia/Kolkata or '
+                'TZ=America/New_York to test it'
+            : false);
 
     test('IST today and earlier are refused; tomorrow and no date pass', () {
       for (final refused in [
@@ -209,21 +262,40 @@ void main() {
         expect(find.text(label), findsOneWidget, reason: label);
       }
 
+      // A checked state in a mutually exclusive group, as Flutter's Radio:
+      // Android reads a radio button, checked or not checked.
       final semantics = tester.ensureSemantics();
+      for (final label in ['Answered', 'No Answer']) {
+        expect(
+            tester.getSemantics(find.text(label)),
+            containsSemantics(
+              label: label,
+              isButton: true,
+              hasCheckedState: true,
+              isChecked: false,
+              isSelected: false,
+              isInMutuallyExclusiveGroup: true,
+              hasTapAction: true,
+            ),
+            reason: '$label before a choice');
+      }
       await _tapText(tester, 'No Answer');
       expect(
           tester.getSemantics(find.text('No Answer')),
           containsSemantics(
             label: 'No Answer',
             isButton: true,
-            isSelected: true,
+            hasCheckedState: true,
+            isChecked: true,
+            isSelected: false,
             isInMutuallyExclusiveGroup: true,
           ));
       expect(
           tester.getSemantics(find.text('Answered')),
           containsSemantics(
             label: 'Answered',
-            isSelected: false,
+            hasCheckedState: true,
+            isChecked: false,
             isInMutuallyExclusiveGroup: true,
           ));
       semantics.dispose();
@@ -410,11 +482,12 @@ void main() {
 
     test('is not wired: no route, data source, JSON or money field', () {
       final files = Directory('lib/features/fees/outcome')
-          .listSync()
+          .listSync(recursive: true)
           .whereType<File>()
           .where((f) => f.path.endsWith('.dart'))
           .toList();
-      expect(files, isNotEmpty);
+      expect(files.map((f) => f.uri.pathSegments.last),
+          containsAll(['outcome_sheet.dart', 'outcome_rules.dart']));
       const allowed = {
         'package:core_network/core_network.dart', // IdempotencyInterceptor
         'package:core_ui/core_ui.dart',
@@ -422,22 +495,47 @@ void main() {
         'followup_outcome.dart',
         'outcome_rules.dart',
       };
-      final import = RegExp(r'''^import\s+'([^']+)'.*;''', multiLine: true);
-      final wiring = RegExp(
-          r'fromJson|toJson|jsonEncode|jsonDecode|\bDio\b|GoRoute|getIt|'
-          r'FollowUpTask|FollowUpsRemoteDataSource|RemoteDataSource|Repository');
-      final money = RegExp(r'₹|paise|amount|rupee', caseSensitive: false);
+      final seen = <String>{};
       for (final file in files) {
         final source = file.readAsStringSync();
-        for (final m in import.allMatches(source)) {
-          final uri = m[1]!;
+        for (final uri in _directiveUris(source)) {
+          seen.add(uri);
           expect(uri.startsWith('package:flutter/') || allowed.contains(uri),
               isTrue,
-              reason: '${file.path} imports $uri');
+              reason: '${file.path} imports, exports or parts $uri');
         }
-        expect(wiring.hasMatch(source), isFalse, reason: file.path);
-        expect(money.hasMatch(source), isFalse, reason: file.path);
+        expect(_wiring.hasMatch(source), isFalse, reason: file.path);
+        expect(_moneyField.hasMatch(source), isFalse, reason: file.path);
       }
+      // The directives were read at all.
+      expect(seen,
+          containsAll(['package:flutter/material.dart', 'outcome_rules.dart']));
+    });
+
+    test('the not-wired guard reads every directive form', () {
+      // Each of these must be caught; the old guard missed the double-quoted
+      // import, the export and the part.
+      expect(
+          _directiveUris('''
+import "package:dio/dio.dart";
+import 'package:core_ui/core_ui.dart' show RvmSpacing;
+export 'package:go_router/go_router.dart';
+part "outcome_wire.dart";
+part of 'outcome_sheet.dart';
+import 'package:flutter/material.dart'
+    if (dart.library.io) 'package:get_it/get_it.dart';
+/// import 'package:not_a_directive/x.dart';
+'''),
+          [
+            'package:dio/dio.dart',
+            'package:core_ui/core_ui.dart',
+            'package:go_router/go_router.dart',
+            'outcome_wire.dart',
+            'package:flutter/material.dart',
+            'package:get_it/get_it.dart',
+          ]);
+      expect(_wiring.hasMatch('final d = Dio();'), isTrue);
+      expect(_moneyField.hasMatch('const amount = 1;'), isTrue);
     });
   });
 
@@ -470,12 +568,14 @@ void main() {
                       .scale(10),
                   10 * scale);
 
+              // The keyboard takes the bottom 45% of the screen.
+              final keyboardHeight = keyboard ? size.height * 0.45 : 0.0;
               if (keyboard) {
                 await _tapOn(tester, find.byType(TextField));
                 await tester.enterText(find.byType(TextField),
                     'Asked for a call back on Monday after lunch');
                 tester.view.viewInsets =
-                    FakeViewPadding(bottom: size.height * 0.45);
+                    FakeViewPadding(bottom: keyboardHeight);
                 await tester.pumpAndSettle();
                 expect(tester.testTextInput.isVisible, isTrue);
                 expect(tester.takeException(), isNull, reason: 'keyboard up');
@@ -484,21 +584,34 @@ void main() {
               await _tapText(tester, 'No Answer');
               expect(tester.takeException(), isNull, reason: 'outcome chosen');
 
-              // Every control can be scrolled to, is at least 44 px tall and
-              // stays inside the screen's width.
+              final answered = find.ancestor(
+                  of: find.text('Answered'), matching: find.byType(TeamCard));
+              final noAnswer = find.ancestor(
+                  of: find.text('No Answer'), matching: find.byType(TeamCard));
+
+              // Side by side only on the tablet below text x3; one above the
+              // other on a narrow phone or with large text.
+              final sideBySide = size.width >= 800 && scale < 3;
+              final a = tester.getRect(answered);
+              final b = tester.getRect(noAnswer);
+              if (sideBySide) {
+                expect(b.top, a.top, reason: 'side by side');
+                expect(b.left, greaterThan(a.right), reason: 'side by side');
+              } else {
+                expect(b.top, greaterThan(a.bottom), reason: 'stacked');
+                expect(b.left, a.left, reason: 'stacked');
+                expect(b.width, a.width, reason: 'stacked');
+              }
+
+              // Every control can be scrolled to where it can be seen: above
+              // the keyboard when it is open, inside the screen's width, and
+              // at least 44 px tall. The remark field is left out: at 320x568
+              // and text x3 it is taller than the space above the keyboard,
+              // and it scrolls itself to keep the caret in view.
+              final visibleBottom = size.height - keyboardHeight;
               for (final (name, control) in [
-                (
-                  'Answered',
-                  find.ancestor(
-                      of: find.text('Answered'),
-                      matching: find.byType(TeamCard))
-                ),
-                (
-                  'No Answer',
-                  find.ancestor(
-                      of: find.text('No Answer'),
-                      matching: find.byType(TeamCard))
-                ),
+                ('Answered', answered),
+                ('No Answer', noAnswer),
                 ('date', _dateButton),
                 ('clear date', find.byTooltip('Clear date')),
                 ('close', find.byTooltip('Close')),
@@ -511,6 +624,9 @@ void main() {
                 expect(rect.left, greaterThanOrEqualTo(0), reason: name);
                 expect(rect.right, lessThanOrEqualTo(size.width),
                     reason: name);
+                expect(rect.top, greaterThanOrEqualTo(0), reason: name);
+                expect(rect.bottom, lessThanOrEqualTo(visibleBottom),
+                    reason: '$name is above the keyboard');
               }
 
               await tester.tap(find.text('Save'));
