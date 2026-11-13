@@ -12,6 +12,9 @@ enum AppRole {
   hr,
   hrExecutive,
   hodPlacement,
+  // Owns the sales dialer only; the Scheduler fences it to a few path prefixes
+  // (SALES_WORKSPACE_PATHS in middleware/auth.js).
+  salesExecutive,
   // Legacy role strings (no longer in config/roles.js); kept so old tokens parse.
   adminExecutive,
   placementHead,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:core_auth/core_auth.dart';
+import 'package:core_network/core_network.dart' show ApiEnvironment;
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -17,6 +18,7 @@ import 'features/startup/version_gate.dart';
 import 'injection.dart';
 import 'push/push_service.dart';
 import 'router/app_router.dart';
+import 'widgets/env_ribbon.dart';
 
 void main() {
   // Every async gap is guarded. A missed API refusal, a plugin failure or a
@@ -187,8 +189,12 @@ class _TeamAppState extends State<TeamApp> {
           // the same colors. Revisit only with a full dark-mode audit.
           theme: RvmTheme.light(seed: RvmColors.clay),
           themeMode: ThemeMode.light,
-          builder: (context, child) =>
-              VersionGate(child: child ?? const SizedBox.shrink()),
+          // The TEST SERVER ribbon (#60) is off unless SHOW_ENV_RIBBON=true,
+          // and never shows against the live servers.
+          builder: (context, child) => EnvRibbon(
+            environment: getIt<ApiEnvironment>(),
+            child: VersionGate(child: child ?? const SizedBox.shrink()),
+          ),
           routerConfig: _router,
         ),
       ),

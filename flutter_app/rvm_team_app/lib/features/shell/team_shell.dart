@@ -11,13 +11,10 @@ import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
-import '../home/home_screen.dart';
-import '../inbox/inbox_screen.dart';
-import '../me/me_screen.dart';
-import '../my_team/my_team_screen.dart';
-import '../wall/wall_screen.dart';
+import 'tab_registry.dart';
 
-/// The five Keka-style tabs: Home · Inbox · Wall · My Team · Me.
+/// The five Keka-style tabs: Home · Inbox · Wall · My Team · Me, from the tab
+/// registry ([teamTabRegistry], team_app #50).
 ///
 /// The shell checks the ESS capabilities BEFORE it builds any tab. A login that
 /// is not linked to an `hr_employees` record (an HR account that has no employee
@@ -38,8 +35,6 @@ class _TeamShellState extends State<TeamShell> {
   /// [IndexedStack] is built, so opening all five at launch would fire every
   /// tab's network calls before the person ever sees them.
   final Set<String> _opened = {'home'};
-
-  static const _allTabs = ['home', 'inbox', 'wall', 'team', 'me'];
 
   late final CapabilitiesBloc _caps = getIt<CapabilitiesBloc>();
   bool _loading = true;
@@ -121,56 +116,28 @@ class _TeamShellState extends State<TeamShell> {
 
   Widget _tabs(BuildContext context, EssCapabilities caps) {
     final identity = context.watch<TeamAuthBloc>().state.identity;
-    final attendance = identity?.attendance == true;
-    final teaching = TeamPermissions.forRole(identity?.role ?? AppRole.unknown)
-        .canSeeFacultyWork;
-    final allowed = caps.tabs.isEmpty ? _allTabs : caps.tabs;
-    final entries = <_ShellTab>[
-      if (allowed.contains('home'))
-        const _ShellTab(
-            'Home', Icons.home_outlined, Icons.home_rounded, HomeScreen()),
-      // Priority tasks are a Scheduler read; an attendance-only punch token is
-      // refused there. The Inbox tab is for portal sign-ins. Teaching roles use
-      // it to mark their batches instead (KP, 27 Oct).
-      if (!attendance && allowed.contains('inbox'))
-        _ShellTab(
-            teaching ? 'Attendance' : 'Inbox',
-            teaching ? Icons.fact_check_outlined : Icons.inbox_outlined,
-            teaching ? Icons.fact_check_rounded : Icons.inbox_rounded,
-            const InboxScreen()),
-      if (allowed.contains('wall'))
-        const _ShellTab(
-            'Wall', Icons.forum_outlined, Icons.forum_rounded, WallScreen()),
-      if (allowed.contains('team'))
-        const _ShellTab('My Team', Icons.groups_outlined, Icons.groups_rounded,
-            MyTeamScreen()),
-      if (allowed.contains('me'))
-        const _ShellTab('Me', Icons.person_outline_rounded,
-            Icons.person_rounded, MeScreen()),
-    ];
-    final safe = entries.isEmpty
-        ? const [
-            _ShellTab(
-                'Home', Icons.home_outlined, Icons.home_rounded, HomeScreen())
-          ]
-        : entries;
-    final index = _index.clamp(0, safe.length - 1);
-    final open = {..._opened, safe[index].label};
+    final tabs = teamTabsFor(TeamViewer(
+      role: identity?.role ?? AppRole.unknown,
+      attendance: identity?.attendance == true,
+      caps: caps,
+    ));
+    final index = _index.clamp(0, tabs.length - 1);
+    final open = {..._opened, tabs[index].id};
     return Scaffold(
       backgroundColor: RvmColors.ivory,
       body: IndexedStack(
         index: index,
         children: [
-          for (final t in safe)
-            open.contains(t.label) ? t.body : const SizedBox.shrink(),
+          for (final t in tabs)
+            open.contains(t.id) ? t.body : const SizedBox.shrink(),
         ],
       ),
       bottomNavigationBar: _TeamBottomNav(
         index: index,
-        tabs: safe,
+        tabs: tabs,
         onSelected: (i) => setState(() {
           _index = i;
-          _opened.add(safe[i].label);
+          _opened.add(tabs[i].id);
         }),
       ),
     );
@@ -250,7 +217,7 @@ class _TeamBottomNav extends StatelessWidget {
       {required this.index, required this.tabs, required this.onSelected});
 
   final int index;
-  final List<_ShellTab> tabs;
+  final List<TeamTab> tabs;
   final ValueChanged<int> onSelected;
 
   @override
@@ -303,12 +270,4 @@ class _TeamBottomNav extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ShellTab {
-  const _ShellTab(this.label, this.icon, this.selectedIcon, this.body);
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-  final Widget body;
 }

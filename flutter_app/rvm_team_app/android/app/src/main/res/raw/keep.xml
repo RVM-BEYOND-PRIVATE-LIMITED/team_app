@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resources that only Dart names, so the release build's resource shrinker
+     cannot see them used (team_app #50, items 8 and 9): the urgent channel's
+     sound, and the large icon PushService puts on every notification it draws.
+     Without this file a shrunk release build drops both. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/team_rvm_urgent,@drawable/ic_notification_large" />

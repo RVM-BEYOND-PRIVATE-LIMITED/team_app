@@ -22,6 +22,44 @@ const notificationChannelId = 'team_rvm_alerts';
 const _channelName = 'Team RVM alerts';
 const _channelDescription = 'Tasks, approvals, announcements and reminders';
 
+/// The urgent lane (team_app #50, item 8). Created at start-up, before the
+/// first urgent push can arrive: with the app closed, Android draws a push on
+/// the channel the message names, and a channel that does not exist yet falls
+/// back to the default one. The server names it in urgent pushes (#59).
+///
+/// Android 8+ never lets an app change a channel's sound or importance after
+/// it is created, so these settings are final for every phone that has run a
+/// build with them. The sound is `res/raw/team_rvm_urgent.wav`
+/// (`tool/urgent_sound.dart` makes it), kept from resource shrinking by
+/// `res/raw/keep.xml`.
+const urgentChannelId = 'team_rvm_urgent';
+const urgentChannelName = 'Team RVM urgent';
+const urgentChannelDescription =
+    'Time-critical alerts, with their own sound';
+const urgentSoundResource = 'team_rvm_urgent';
+
+/// The two channels Team RVM owns: the alerts one and the urgent one.
+@visibleForTesting
+const teamNotificationChannels = [
+  AndroidNotificationChannel(
+    notificationChannelId,
+    _channelName,
+    description: _channelDescription,
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  ),
+  AndroidNotificationChannel(
+    urgentChannelId,
+    urgentChannelName,
+    description: urgentChannelDescription,
+    importance: Importance.max,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound(urgentSoundResource),
+    enableVibration: true,
+  ),
+];
+
 /// Every push debug line goes through here, so a number or a name that rides
 /// in an error or a route never reaches the device log (team_app #61).
 @visibleForTesting
@@ -117,7 +155,7 @@ class PushService {
         // iOS only; Android ignores it.
       }
 
-      await _createAndroidChannel();
+      await _createAndroidChannels();
       // Ask once the first frame is drawn: Android 13 shows the runtime dialog
       // and iOS needs a live view controller for the system prompt.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -195,25 +233,12 @@ class PushService {
     }
   }
 
-  Future<void> _createAndroidChannel() async {
+  Future<void> _createAndroidChannels() async {
     if (!_isAndroid) return;
-    try {
-      await _local
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(
-            const AndroidNotificationChannel(
-              notificationChannelId,
-              _channelName,
-              description: _channelDescription,
-              importance: Importance.max,
-              playSound: true,
-              enableVibration: true,
-            ),
-          );
-    } catch (error) {
-      pushLog('RVM notification channel could not be created: $error');
-    }
+    final android = _local.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+    await createTeamNotificationChannels(android);
   }
 
   Future<String?> _safeToken(FirebaseMessaging messaging) async {
@@ -244,6 +269,7 @@ class PushService {
       body: body,
       imagePath: imagePath,
       payload: jsonEncode({'route': _routeFrom(data), 'data': data}),
+      urgent: isUrgentChannel(notification?.android?.channelId),
     );
   }
 
@@ -324,17 +350,56 @@ String? _imageUrlOf(RemoteMessage message) {
   return url.isEmpty ? null : url;
 }
 
-String _routeFrom(Map<String, dynamic> data) {
-  for (final key in const ['route', 'link', 'url', 'deep_link', 'screen']) {
-    final value = _text(data[key]);
-    if (value.isEmpty) continue;
-    if (value.startsWith('/')) return value;
-    final uri = Uri.tryParse(value);
-    if (uri != null && uri.path.isNotEmpty && uri.path.startsWith('/')) {
-      return uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
+/// Creates both Team RVM channels; one that fails never stops the other.
+@visibleForTesting
+Future<void> createTeamNotificationChannels(
+    AndroidFlutterLocalNotificationsPlugin android) async {
+  for (final channel in teamNotificationChannels) {
+    try {
+      await android.createNotificationChannel(channel);
+    } catch (error) {
+      pushLog('RVM notification channel ${channel.id} could not be created: '
+          '$error');
     }
   }
+}
+
+/// Whether a message names the urgent channel, the FCM `channel_id` that the
+/// server sets on urgent pushes (#59). A foreground push is drawn by the app,
+/// so it must pick the same channel Android would have used.
+@visibleForTesting
+bool isUrgentChannel(String? channelId) => channelId?.trim() == urgentChannelId;
+
+String _routeFrom(Map<String, dynamic> data) {
+  for (final key in const ['route', 'link', 'url', 'deep_link', 'screen']) {
+    final route = _inAppRoute(_text(data[key]));
+    if (route != null) return route;
+  }
   return requestRouteFor(data) ?? '/notifications';
+}
+
+/// An in-app location from a route value: a path, or the path (and query) of
+/// a link. Null when there is none.
+String? _inAppRoute(String value) {
+  if (value.isEmpty) return null;
+  if (value.startsWith('/')) return value;
+  final uri = Uri.tryParse(value);
+  if (uri != null && uri.path.isNotEmpty && uri.path.startsWith('/')) {
+    return uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
+  }
+  return null;
+}
+
+/// Where a tap on a row of the notifications list goes (team_app #50, item 8):
+/// the row's own `data.route` when the server named one, otherwise the
+/// request screens [requestRouteFor] knows. The row is read the way the push
+/// worker sends it, `{category, ...data}` (apps/ess-api `src/jobs/push.js`).
+/// Null when neither applies, or when the route is this list itself: the tap
+/// then only marks the row read, as before.
+String? notificationRowRoute(String category, Map<String, dynamic> data) {
+  final route = _inAppRoute(_text(data['route'])) ??
+      requestRouteFor({'category': category, ...data});
+  return route == '/notifications' ? null : route;
 }
 
 /// A request notification's screen (team_app #45). The Scheduler's leave rows
@@ -360,6 +425,7 @@ Future<void> _showNotification(
   required String body,
   required String? imagePath,
   required String payload,
+  bool urgent = false,
 }) async {
   StyleInformation? style;
   // Without a push image, show the Team RVM launcher icon on the right so the
@@ -379,9 +445,13 @@ Future<void> _showNotification(
 
   final details = NotificationDetails(
     android: AndroidNotificationDetails(
-      notificationChannelId,
-      _channelName,
-      channelDescription: _channelDescription,
+      urgent ? urgentChannelId : notificationChannelId,
+      urgent ? urgentChannelName : _channelName,
+      channelDescription:
+          urgent ? urgentChannelDescription : _channelDescription,
+      sound: urgent
+          ? const RawResourceAndroidNotificationSound(urgentSoundResource)
+          : null,
       importance: Importance.max,
       priority: Priority.high,
       icon: 'ic_notification',

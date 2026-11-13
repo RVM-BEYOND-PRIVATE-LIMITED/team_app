@@ -1,4 +1,3 @@
-import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -6,6 +5,7 @@ import '../../app_version.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../injection.dart';
+import '../../widgets/blocked_state.dart';
 
 /// Advisory version gate (task K2). The ESS `/health` reports the minimum and
 /// latest app versions; below the minimum, an update is forced (a phone that is
@@ -58,35 +58,13 @@ class _VersionGateState extends State<VersionGate> {
     }
 
     if (!_mustUpdate) return widget.child;
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(RvmSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.system_update_alt, size: 48),
-              const SizedBox(height: RvmSpacing.md),
-              Text('Update required',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: RvmSpacing.sm),
-              Text(
-                'This version of Team RVM is no longer supported. Please update to '
-                'continue (v$_minVersion or newer).',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: RvmSpacing.lg),
-              FilledButton.icon(
-                onPressed: _checking ? null : _check,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Check again'),
-              ),
-            ],
-          ),
-        ),
-      ),
+    // The shared blocked screen (#50, item 12), with the version to reach.
+    return BlockedState(
+      reason: BlockedReason.updateRequired,
+      message: 'This version of Team RVM is no longer supported. Please update to '
+          'continue (v$_minVersion or newer).',
+      actionLabel: 'Check again',
+      onAction: _checking ? null : _check,
     );
   }
 
