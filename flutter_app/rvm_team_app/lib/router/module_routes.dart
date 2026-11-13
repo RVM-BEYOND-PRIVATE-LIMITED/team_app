@@ -13,7 +13,7 @@
 enum TeamModule {
   crm('/crm', sensitive: true),
   fees('/fees', sensitive: true),
-  ops('/ops'),
+  ops('/ops', sensitive: true),
   desk('/desk', sensitive: true),
   placement('/placement', sensitive: true),
   scorecards('/scorecards'),
@@ -28,8 +28,10 @@ enum TeamModule {
   final String routePrefix;
 
   /// The module shows student or lead data: its screens block screenshots
-  /// (team_app #52, item 1). Marked here once, for the modules the issue names
-  /// (CRM, fees follow-up, student desk, placement checks, complaints).
+  /// (team_app #52, item 1). Marked here once, for the modules the issues name:
+  /// CRM, fees follow-up, student desk, placement checks and complaints
+  /// (#52), and ops, the pending counts and branch health (#53, item 11:
+  /// "Both modules are marked sensitive").
   final bool sensitive;
 
   /// The module's feature-switch key: the `key` of its row in the Scheduler's
