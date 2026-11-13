@@ -14,7 +14,7 @@ import 'package:rvm_team_app/widgets/secure_scope.dart';
 
 import 'app_routes.dart';
 
-// What the source guards share (team_app #52 items 9 and 10): a Dart lexer
+// What the source guards share (team_app #52, #54, #55, #58): a Dart lexer
 // that tells code from comments and strings, the app's files and the imports
 // between them, and the files behind each screen the router or the shell's
 // tabs draw. Every guard that scans lib/ for a banned package, widget, label
@@ -180,6 +180,37 @@ int closingBracket(String masked, int open) {
   return masked.length;
 }
 
+/// The lower-case words of a name, a path or a file: 'CampusDrivesTab' gives
+/// 'campus drives tab', '/social/new-post' gives 'social new post'.
+String nameWords(String s) => s
+    .replaceAllMapped(RegExp(r'([a-z0-9])([A-Z])'), (m) => '${m[1]} ${m[2]}')
+    .replaceAllMapped(RegExp(r'([A-Z])([A-Z][a-z])'), (m) => '${m[1]} ${m[2]}')
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+    .trim();
+
+/// A label as lower-case words: 'Add a comment…' gives 'add a comment'.
+String labelWords(String s) =>
+    s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+
+/// A string that reads as a label: it has a space, or it is one capitalised
+/// word ('Approve'). Anything else is a route, a path, an import or a key.
+bool isLabel(String text) =>
+    text.contains(RegExp(r'\s')) || RegExp(r'^[A-Z][a-z]*$').hasMatch(text);
+
+/// Every name in [lexed]'s code (an identifier, a keyword, a type), with its
+/// offset, and the names in each string's simple interpolations (`$count`).
+List<({int at, String name})> namesIn(Lexed lexed) {
+  final identifier = RegExp(r'[A-Za-z_$][A-Za-z0-9_$]*');
+  return [
+    for (final m in identifier.allMatches(lexed.masked))
+      (at: m.start, name: m[0]!),
+    for (final s in lexed.strings)
+      for (final m in RegExp(r'\$([A-Za-z_][A-Za-z0-9_]*)').allMatches(s.text))
+        (at: s.at, name: m[1]!),
+  ]..sort((a, b) => a.at.compareTo(b.at));
+}
+
 // ── Controls ────────────────────────────────────────────────────────────────
 
 /// Something a person taps: a button, a menu item (`PopupMenuItem`,
@@ -238,6 +269,12 @@ List<File> dartFilesUnder(String path) {
   ]..sort((a, b) => a.path.compareTo(b.path));
 }
 
+/// The app paths of the Dart files under [path] (`lib/features/x/…`).
+Set<String> appFilesUnder(String path) {
+  requireAppFolder();
+  return {for (final f in dartFilesUnder(path)) slashes(f.path)};
+}
+
 /// Every Dart file under lib/, by path, with its source.
 Map<String, String> libSources() {
   requireAppFolder();
@@ -287,6 +324,12 @@ Set<String> appImportsOf(String path, String source) {
   return found;
 }
 
+/// Every file under lib/, with the app files it imports directly.
+Map<String, Set<String>> importGraph() => {
+      for (final MapEntry(key: file, value: source) in libSources().entries)
+        file: appImportsOf(file, source),
+    };
+
 /// [file] and every app file it imports, directly or not, stopping at the
 /// wiring files ([isWiring]).
 Set<String> withImports(String file) {
@@ -300,6 +343,38 @@ Set<String> withImports(String file) {
     }
   }
   return seen;
+}
+
+/// The files that belong to a module: [seeds] (its folder and its screens'
+/// files), and every file they import that nothing outside the module
+/// imports, as far as that goes: its blocs, repositories, data sources and
+/// models, wherever they live. A file another part of the app imports too
+/// is shared (the team kit, the ESS models), not the module's own, and stays
+/// out. The wiring files ([isWiring]) import everything, so they do not count
+/// as importers. [graph] is [importGraph] unless a self-test passes its own.
+Set<String> moduleOwnedFiles(Set<String> seeds,
+    {Map<String, Set<String>>? graph}) {
+  final imports = graph ?? importGraph();
+  final importers = <String, Set<String>>{};
+  for (final MapEntry(key: file, value: targets) in imports.entries) {
+    if (isWiring(file)) continue;
+    for (final target in targets) {
+      (importers[target] ??= {}).add(file);
+    }
+  }
+  final owned = {...seeds};
+  for (var grew = true; grew;) {
+    grew = false;
+    for (final file in [...owned]) {
+      for (final target in imports[file] ?? const <String>{}) {
+        if (owned.contains(target) || isWiring(target)) continue;
+        if ((importers[target] ?? const {}).every(owned.contains)) {
+          grew = owned.add(target) || grew;
+        }
+      }
+    }
+  }
+  return owned;
 }
 
 // ── The screens ─────────────────────────────────────────────────────────────
@@ -390,3 +465,10 @@ Future<Map<String, Set<String>>> moduleAndSensitiveScreens(
       tab: withImports(file),
   };
 }
+
+/// The routes at or under the prefixes of [modules], each with the file that
+/// declares its screen.
+Future<Map<String, String>> moduleRouteFiles(
+        WidgetTester tester, Set<TeamModule> modules) =>
+    routeScreenFiles(
+        tester, (location) => modules.contains(moduleForLocation(location)));
