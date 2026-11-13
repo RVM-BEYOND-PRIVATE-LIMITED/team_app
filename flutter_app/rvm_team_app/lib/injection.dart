@@ -49,6 +49,7 @@ import 'features/requests/bloc/requests_bloc.dart';
 import 'features/work/bloc/absent_remark_bloc.dart';
 import 'features/work/bloc/interview_action_bloc.dart';
 import 'features/work/bloc/mark_attendance_bloc.dart';
+import 'platform/call_launcher.dart';
 
 /// Service locator — same provided stack as staff_app / student_app:
 /// get_it + dio behind the data layer + bloc. Blocs get deps by constructor;
@@ -159,7 +160,10 @@ void configureDependencies(AuthSession session) {
         () => EssRemoteDataSource(getIt<Dio>(instanceName: 'ess')))
     ..registerLazySingleton<MyAttendanceRemoteDataSource>(
         () => MyAttendanceRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<LocationService>(LocationService.new);
+    ..registerLazySingleton<LocationService>(LocationService.new)
+    // Dialer hand-off for module calls (#50 item 1). No screen uses it yet: a
+    // module wires it when its start-call route exists.
+    ..registerLazySingleton<CallLauncher>(CallLauncher.new);
 
   // Repositories.
   getIt
