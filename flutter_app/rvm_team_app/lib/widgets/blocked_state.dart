@@ -31,6 +31,23 @@ enum BlockedReason {
     title: 'Update required',
     message: 'This version of Team RVM is no longer supported. '
         'Please update to continue.',
+  ),
+
+  /// The server refused because too many requests came too quickly: any 429
+  /// ([TooManyRequestsFailure]), e.g. the Scheduler's `RATE_LIMITED`
+  /// (middleware/punchCodeLimiter.js) and `INTAKE_RATE_LIMITED`
+  /// (controllers/intakeController.js), or the ESS's `RATE_LIMITED`.
+  ///
+  /// Its own message names no length of wait: the waits differ (fifteen
+  /// minutes for `INTAKE_RATE_LIMITED`, an hour for `INTAKE_ATTEMPTS`, a
+  /// lock-out's own time for `LOCKED`), and only the server's message knows
+  /// which. A screen that has the failure passes its message as
+  /// [BlockedState.message].
+  rateLimited(
+    icon: Icons.hourglass_top_outlined,
+    title: 'Please wait a little',
+    message: 'There were too many tries in a short time. '
+        'Wait a while, then try again.',
   );
 
   const BlockedReason({
@@ -50,10 +67,17 @@ enum BlockedReason {
 /// A module route's 404 `NOT_FOUND` ([ModuleUnavailableFailure]) is
 /// [BlockedReason.moduleOff]. The server sends one body for "switched off"
 /// and "not in the pilot" on purpose, so [BlockedReason.pilotOnly] is never
-/// inferred from a reply. Not punched in and rate limits wait for their
-/// server codes (Scheduler_Backend#175).
-BlockedReason? blockedReasonFor(Object? failure) =>
-    failure is ModuleUnavailableFailure ? BlockedReason.moduleOff : null;
+/// inferred from a reply. Any 429 ([TooManyRequestsFailure]), whatever its
+/// code, is [BlockedReason.rateLimited]. Only the server's own message names
+/// the real wait (it may be an hour), so a screen that has the failure passes
+/// `failure.message` as [BlockedState.message]; the reason's own message
+/// names no length of wait. Not punched in waits for its server code
+/// (Scheduler_Backend#175).
+BlockedReason? blockedReasonFor(Object? failure) => switch (failure) {
+      ModuleUnavailableFailure() => BlockedReason.moduleOff,
+      TooManyRequestsFailure() => BlockedReason.rateLimited,
+      _ => null,
+    };
 
 /// The one blocked screen, whatever the reason (team_app #50, item 12):
 /// an icon, a title, what to do, and at most one action. It fills the space
