@@ -82,16 +82,19 @@ Widget _screen(GoRouterState state, Widget screen, {required bool roster}) =>
 ///
 /// [modules] answers which staff modules the signed-in person has. A module
 /// route (one prefix per module, [TeamModule]) that is not among them falls
-/// back to `/home` (team_app #50, item 7). The app reads it from
-/// `TeamModulesBloc` (item 7b), which opens nothing before its first answer
-/// or after a failure, and runs the guards again when the open modules change
-/// (`moduleGuardListeners`). The default here is none.
+/// back to `/home` (team_app #50, item 7), and [onModuleBlocked] is told the
+/// full location it refused. The app builds its router in `TeamRouterHost`
+/// (team_router_host.dart), which reads [modules] from `TeamModulesBloc`
+/// (item 7b), runs the guards again when the open modules change, and opens a
+/// refused location once the first answer opens its module. The default here
+/// is none.
 ///
 /// [secureRoster] blocks screenshots of the class roster (team_app #52 item
 /// 1). It is off unless the build turns it on ([secureRosterOn]).
 GoRouter createRouter(TeamAuthBloc authBloc,
     {GlobalKey<NavigatorState>? navigatorKey,
     Set<TeamModule> Function() modules = noTeamModules,
+    void Function(String location)? onModuleBlocked,
     bool secureRoster = secureRosterOn}) {
   const authOnly = {'/login', '/forgot'};
   return GoRouter(
@@ -109,7 +112,10 @@ GoRouter createRouter(TeamAuthBloc authBloc,
               attendanceBlockedLocation(loc)) {
             return '/home';
           }
-          if (moduleBlockedLocation(loc, modules())) return '/home';
+          if (moduleBlockedLocation(loc, modules())) {
+            onModuleBlocked?.call(state.uri.toString());
+            return '/home';
+          }
           return (loc == '/splash' || authOnly.contains(loc)) ? '/home' : null;
       }
     },

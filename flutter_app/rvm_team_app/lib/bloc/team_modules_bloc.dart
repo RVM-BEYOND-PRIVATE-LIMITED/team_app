@@ -34,7 +34,8 @@ enum TeamModulesStatus {
   /// A request is on its way. What was open stays open until it answers.
   loading,
 
-  /// Answered. A failed request answers [TeamModules.none].
+  /// Asked. The modules are the last answer of this session, or nothing when
+  /// no ask of it has been answered yet.
   ready,
 }
 
@@ -55,12 +56,20 @@ class TeamModulesState extends Equatable {
 
 /// The staff modules open to the signed-in person (team_app #50, items 5 and
 /// 7b). The router's module guard reads [TeamModulesState.modules]: before
-/// the first answer, after any failure and after sign-out nothing is open,
-/// which is how the app behaved before modules existed.
+/// the first answer and after sign-out nothing is open, which is how the app
+/// behaved before modules existed.
+///
+/// An answer replaces what is open; it may close modules. An ask that gets
+/// no answer (`load` gives null: offline, a timeout, a 5xx, a reply that
+/// cannot be read) keeps what is open. Before the first answer of a sign-in
+/// that is nothing. After it, it is the last answer, so a slow network on the
+/// foreground refresh (after every call the dialer hand-off makes, say) never
+/// closes the module on screen. The server still guards every module route:
+/// a closed switch answers 404 `NOT_FOUND`, shown as "module off".
 ///
 /// [load] never throws (`TeamModulesRepository.modules`); a throw here is
-/// still read as nothing open. One request at a time: an ask while one is on
-/// its way is dropped, so a foreground burst cannot become a request storm.
+/// read as no answer. One request at a time: an ask while one is on its way
+/// is dropped, so a foreground burst cannot become a request storm.
 class TeamModulesBloc extends Bloc<TeamModulesEvent, TeamModulesState> {
   TeamModulesBloc(this._load) : super(const TeamModulesState()) {
     on<TeamModulesLoadRequested>((_, emit) => _ask(emit));
@@ -75,7 +84,8 @@ class TeamModulesBloc extends Bloc<TeamModulesEvent, TeamModulesState> {
     });
   }
 
-  final Future<TeamModules> Function() _load;
+  /// The answer, or null when there was none.
+  final Future<TeamModules?> Function() _load;
 
   /// Bumped on every sign-out, so an answer for an earlier session is dropped.
   int _session = 0;
@@ -87,14 +97,15 @@ class TeamModulesBloc extends Bloc<TeamModulesEvent, TeamModulesState> {
     final session = _session;
     emit(TeamModulesState(
         status: TeamModulesStatus.loading, modules: state.modules));
-    TeamModules modules;
+    TeamModules? answer;
     try {
-      modules = await _load();
+      answer = await _load();
     } catch (_) {
-      modules = TeamModules.none;
+      answer = null;
     }
     if (session != _session) return;
     _asking = false;
-    emit(TeamModulesState(status: TeamModulesStatus.ready, modules: modules));
+    emit(TeamModulesState(
+        status: TeamModulesStatus.ready, modules: answer ?? state.modules));
   }
 }

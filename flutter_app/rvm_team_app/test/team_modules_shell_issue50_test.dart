@@ -21,15 +21,17 @@ import 'package:rvm_team_app/domain/team_modules.dart';
 import 'package:rvm_team_app/features/attendance/bloc/punch_bloc.dart';
 import 'package:rvm_team_app/features/shell/team_shell.dart';
 import 'package:rvm_team_app/injection.dart';
-import 'package:rvm_team_app/router/app_router.dart';
-import 'package:rvm_team_app/router/module_guard_listeners.dart';
+import 'package:rvm_team_app/router/team_router_host.dart';
 import 'package:rvm_team_app/router/module_routes.dart';
 
-/// team_app #50 items 5, 7b and check 7: the router's module guard follows
-/// the modules bloc and runs again by itself when the open modules change,
-/// sign-out clears them, the shell asks beside the ESS capabilities and again
-/// on foreground, and with no modules (or any failed reply) the app looks
-/// exactly as it does today.
+/// team_app #50 items 5, 7b and check 7: the router's module guard, built as
+/// TeamApp builds it ([TeamRouterHost]), follows the modules bloc and runs
+/// again by itself when an answer changes the open modules; a refresh with no
+/// answer keeps the module on screen; a module route sent before the first
+/// answer (a push tap that opened the app) opens once the answer opens it;
+/// sign-out clears the modules; the shell asks after the ESS capabilities and
+/// again on foreground; and with no modules (or any failed reply) the app
+/// looks exactly as it does today.
 
 class _MockTeamAuthBloc extends MockBloc<TeamAuthEvent, TeamAuthState>
     implements TeamAuthBloc {}
@@ -87,7 +89,8 @@ TeamAuthState _signedIn({bool attendance = false}) => TeamAuthState(
       ),
     );
 
-final _open = TeamModules({TeamModule.crm: false, TeamModule.tasks: true});
+const _openMap = {TeamModule.crm: false, TeamModule.tasks: true};
+final _open = TeamModules(_openMap);
 
 /// The app going to the background or coming back, as the platform says it.
 Future<void> _lifecycle(WidgetTester tester, AppLifecycleState state) async {
@@ -117,40 +120,55 @@ void main() {
     });
     tearDown(getIt.reset);
 
+    Future<void> settle(WidgetTester tester) async {
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+    }
+
+    String here(GoRouter router) =>
+        router.routerDelegate.currentConfiguration.uri.toString();
+
     Future<String> open(
         WidgetTester tester, GoRouter router, String location) async {
       router.go(location);
-      await tester.pump();
-      await tester.pump();
-      return router.routerDelegate.currentConfiguration.uri.toString();
+      await settle(tester);
+      return here(router);
     }
 
-    /// The router as main.dart builds it: the guard reads the bloc's state,
-    /// and [moduleGuardListeners] sit above it.
-    Future<GoRouter> pumpRouter(
-        WidgetTester tester, TeamModulesBloc modules) async {
-      final router =
-          createRouter(auth, modules: () => modules.state.modules.open);
-      await tester.pumpWidget(BlocProvider<TeamAuthBloc>.value(
-        value: auth,
-        child: MultiBlocListener(
-          listeners: moduleGuardListeners(router: router, modules: modules),
-          child: MaterialApp.router(routerConfig: router),
+    /// The router exactly as TeamApp (main.dart) builds it: through
+    /// [TeamRouterHost], whose guard reads the bloc and whose listeners keep
+    /// the two in step, under the blocs TeamApp provides.
+    Future<GoRouter> pumpRouter(WidgetTester tester, TeamModulesBloc modules,
+        {GlobalKey<NavigatorState>? navigatorKey}) async {
+      final connectivity = _MockConnectivityBloc();
+      when(() => connectivity.state)
+          .thenReturn(const ConnectivityState(online: true));
+      late GoRouter router;
+      await tester.pumpWidget(MultiBlocProvider(
+        providers: [
+          BlocProvider<TeamAuthBloc>.value(value: auth),
+          BlocProvider<ConnectivityBloc>.value(value: connectivity),
+          BlocProvider<TeamModulesBloc>.value(value: modules),
+        ],
+        child: TeamRouterHost(
+          auth: auth,
+          modules: modules,
+          navigatorKey: navigatorKey,
+          builder: (_, r) {
+            router = r;
+            return MaterialApp.router(routerConfig: r);
+          },
         ),
       ));
       await tester.pump();
       return router;
     }
 
-    String here(GoRouter router) =>
-        router.routerDelegate.currentConfiguration.uri.toString();
-
     Future<void> answer(WidgetTester tester, TeamModulesBloc bloc,
         TeamModulesEvent event) async {
       bloc.add(event);
-      for (var i = 0; i < 3; i++) {
-        await tester.pump();
-      }
+      await settle(tester);
       expect(bloc.state.status, TeamModulesStatus.ready);
     }
 
@@ -191,7 +209,7 @@ void main() {
       }
     });
 
-    testWidgets('a reply that fails opens nothing', (tester) async {
+    testWidgets('a first ask with no answer opens nothing', (tester) async {
       final bloc = TeamModulesBloc(() async => throw const ServerFailure());
       addTearDown(bloc.close);
       final router = await pumpRouter(tester, bloc);
@@ -203,12 +221,38 @@ void main() {
       }
     });
 
+    // A call sends the app to the background; a slow network on the refresh
+    // that follows must not throw the person off the module screen.
+    for (final failed in <String, Future<TeamModules?> Function()>{
+      'no answer (offline, timeout, 5xx)': () async => null,
+      'a load that throws anyway': () async => throw const TimeoutFailure(),
+    }.entries) {
+      testWidgets(
+          'a refresh with ${failed.key}: the module on screen stays open',
+          (tester) async {
+        final answers = <Future<TeamModules?> Function()>[
+          () async => _open,
+          failed.value,
+        ];
+        final bloc = TeamModulesBloc(() => answers.removeAt(0)());
+        addTearDown(bloc.close);
+        final router = await pumpRouter(tester, bloc);
+        await answer(tester, bloc, const TeamModulesLoadRequested());
+        expect(await open(tester, router, '/crm/leads/7'), '/crm/leads/7');
+
+        await answer(tester, bloc, const TeamModulesRefreshRequested());
+        expect(bloc.state.modules, _open);
+        expect(here(router), '/crm/leads/7');
+        expect(find.text('Route not found: /crm/leads/7'), findsOneWidget);
+      });
+    }
+
     testWidgets(
-        'a module closed by a failed refresh: the open route on screen goes '
-        'home by itself', (tester) async {
-      final answers = <Future<TeamModules> Function()>[
+        'a module an answer closes: the open route on screen goes home by '
+        'itself', (tester) async {
+      final answers = <Future<TeamModules?> Function()>[
         () async => _open,
-        () async => throw const TimeoutFailure(),
+        () async => TeamModules({TeamModule.tasks: true}),
       ];
       final bloc = TeamModulesBloc(() => answers.removeAt(0)());
       addTearDown(bloc.close);
@@ -216,15 +260,14 @@ void main() {
       await answer(tester, bloc, const TeamModulesLoadRequested());
       expect(await open(tester, router, '/crm'), '/crm');
 
-      // No router.refresh() here: moduleGuardListeners runs the guard.
+      // No router.refresh() here: TeamRouterHost runs the guard.
       await answer(tester, bloc, const TeamModulesRefreshRequested());
-      await tester.pump();
       expect(here(router), '/home');
     });
 
     testWidgets('a module opened by a refresh can be reached at once',
         (tester) async {
-      final answers = <Future<TeamModules> Function()>[
+      final answers = <Future<TeamModules?> Function()>[
         () async => TeamModules.none,
         () async => _open,
       ];
@@ -235,7 +278,98 @@ void main() {
       expect(await open(tester, router, '/tasks'), '/home');
 
       await answer(tester, bloc, const TeamModulesRefreshRequested());
+      expect(here(router), '/home');
       expect(await open(tester, router, '/tasks'), '/tasks');
+    });
+
+    // A push tap that opens the app: PushService sends its route with go()
+    // as soon as the sign-in is restored, before the shell has asked for the
+    // modules (its capabilities check comes first) or while it is asking.
+    // Every check is made after the reply is in: a bloc still waiting on one
+    // never finishes closing in a widget test's tear-down.
+    for (final asked in [false, true]) {
+      testWidgets(
+          'a module route sent ${asked ? 'while the first ask is on its way' : 'before the first ask'}'
+          ' opens once the answer opens it', (tester) async {
+        final reply = Completer<TeamModules?>();
+        final bloc = TeamModulesBloc(() => reply.future);
+        addTearDown(bloc.close);
+        final key = GlobalKey<NavigatorState>();
+        final router = await pumpRouter(tester, bloc, navigatorKey: key);
+        final start = here(router);
+        if (asked) bloc.add(const TeamModulesLoadRequested());
+        await settle(tester);
+
+        // What PushService._flushPendingRoute does with the tapped route.
+        GoRouter.of(key.currentContext!).go('/crm/leads/7?tab=calls');
+        await settle(tester);
+        final beforeAsk = here(router);
+
+        if (!asked) bloc.add(const TeamModulesLoadRequested());
+        await settle(tester);
+        final whileAsking = (bloc.state.status, here(router));
+
+        reply.complete(_open);
+        await settle(tester);
+
+        expect(start, '/home');
+        expect(beforeAsk, '/home');
+        expect(whileAsking, (TeamModulesStatus.loading, '/home'));
+        expect(here(router), '/crm/leads/7?tab=calls');
+        expect(find.text('Route not found: /crm/leads/7?tab=calls'),
+            findsOneWidget);
+      });
+    }
+
+    for (final reply in <String, TeamModules?>{
+      'an answer that does not open it': TeamModules({TeamModule.tasks: true}),
+      'no answer': null,
+    }.entries) {
+      testWidgets('a held module route is dropped by ${reply.key}',
+          (tester) async {
+        final answers = <TeamModules?>[reply.value, _open];
+        final bloc = TeamModulesBloc(() async => answers.removeAt(0));
+        addTearDown(bloc.close);
+        final router = await pumpRouter(tester, bloc);
+        expect(await open(tester, router, '/crm/leads/7'), '/home');
+
+        await answer(tester, bloc, const TeamModulesLoadRequested());
+        expect(here(router), '/home');
+
+        // A later answer that opens it does not jump there.
+        await answer(tester, bloc, const TeamModulesRefreshRequested());
+        expect(bloc.state.modules, _open);
+        expect(here(router), '/home');
+      });
+    }
+
+    testWidgets('once answered, a closed module route goes home and stays',
+        (tester) async {
+      final answers = <TeamModules?>[
+        _open,
+        TeamModules({TeamModule.fees: false, ..._openMap}),
+      ];
+      final bloc = TeamModulesBloc(() async => answers.removeAt(0));
+      addTearDown(bloc.close);
+      final router = await pumpRouter(tester, bloc);
+      await answer(tester, bloc, const TeamModulesLoadRequested());
+      expect(await open(tester, router, '/fees/1'), '/home');
+
+      await answer(tester, bloc, const TeamModulesRefreshRequested());
+      expect(bloc.state.modules.has(TeamModule.fees), isTrue);
+      expect(here(router), '/home');
+    });
+
+    testWidgets('an attendance-only sign-in holds nothing', (tester) async {
+      when(() => auth.state).thenReturn(_signedIn(attendance: true));
+      final bloc = TeamModulesBloc(() async => _open);
+      addTearDown(bloc.close);
+      final router = await pumpRouter(tester, bloc);
+      expect(await open(tester, router, '/crm/leads/7'), '/home');
+
+      // The shell never asks for it; even an answer would not jump there.
+      await answer(tester, bloc, const TeamModulesLoadRequested());
+      expect(here(router), '/home');
     });
 
     testWidgets('after sign-out nothing is open', (tester) async {
@@ -251,36 +385,43 @@ void main() {
       expect(await open(tester, router, '/crm'), '/home');
     });
 
-    testWidgets('signing out clears the modules (main.dart\'s listeners)',
-        (tester) async {
+    testWidgets(
+        'signing out clears the modules and drops a held route '
+        '(TeamRouterHost\'s listeners)', (tester) async {
       final states = StreamController<TeamAuthState>();
       addTearDown(states.close);
       whenListen(auth, states.stream, initialState: _signedIn());
-      final bloc = TeamModulesBloc(() async => _open);
+      final reply = Completer<TeamModules?>();
+      final answers = [reply.future, Future<TeamModules?>.value(_open)];
+      final bloc = TeamModulesBloc(() => answers.removeAt(0));
       addTearDown(bloc.close);
-      // A bare router: this checks the listeners, not the sign-in screen.
-      final router = GoRouter(routes: [
-        GoRoute(path: '/', builder: (_, __) => const SizedBox()),
-      ]);
-      await tester.pumpWidget(BlocProvider<TeamAuthBloc>.value(
-        value: auth,
-        child: MultiBlocListener(
-          listeners: moduleGuardListeners(router: router, modules: bloc),
-          child: MaterialApp.router(routerConfig: router),
-        ),
-      ));
-      await answer(tester, bloc, const TeamModulesLoadRequested());
-      expect(bloc.state.modules, _open);
+      final router = await pumpRouter(tester, bloc);
+      final held = await open(tester, router, '/crm/leads/7');
+      bloc.add(const TeamModulesLoadRequested());
+      await settle(tester);
 
       states.add(const TeamAuthState(status: TeamAuthStatus.unauthenticated));
-      await tester.pump();
-      await tester.pump();
+      await settle(tester);
+      final signedOut = (here(router), bloc.state);
+      // The old session's answer arrives late and is dropped. Every check
+      // waits until it is in: a bloc still waiting on a reply never finishes
+      // closing in a widget test's tear-down.
+      reply.complete(_open);
+      await settle(tester);
+
+      expect(held, '/home');
+      expect(signedOut, ('/login', const TeamModulesState()));
       expect(bloc.state, const TeamModulesState());
 
-      // The next sign-in starts from nothing open, until its own answer.
+      // The next sign-in starts from nothing open, until its own answer, and
+      // the old session's tapped route is not opened for it.
       states.add(_signedIn());
-      await tester.pump();
+      await settle(tester);
+      expect(here(router), '/home');
       expect(bloc.state, const TeamModulesState());
+      await answer(tester, bloc, const TeamModulesLoadRequested());
+      expect(bloc.state.modules, _open);
+      expect(here(router), '/home');
     });
   });
 

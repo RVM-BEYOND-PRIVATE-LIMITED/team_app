@@ -22,12 +22,15 @@ class TeamModulesRemoteDataSource with DioExecutor {
   static const path = '/me/features';
 
   /// The open modules. Throws the typed [Failure] of a refused or failed
-  /// request; a 200 body of the wrong shape opens nothing.
+  /// request, and [ParseFailure] for a 200 whose body is not
+  /// `{ features: [...] }` (a proxy's page is no answer). A bad entry inside
+  /// the list is only skipped ([TeamModules.tryParse]).
   Future<TeamModules> features() => guard(() async {
         final res = await _dio.get<Object?>(
           path,
           options: Options(extra: {BearerAuthInterceptor.keepSessionKey: true}),
         );
-        return TeamModules.fromJson(bodyOf(res));
+        return TeamModules.tryParse(bodyOf(res)) ??
+            (throw const ParseFailure());
       });
 }

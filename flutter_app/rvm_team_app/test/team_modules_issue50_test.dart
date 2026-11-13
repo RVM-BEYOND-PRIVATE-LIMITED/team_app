@@ -15,7 +15,10 @@ import 'package:rvm_team_app/router/module_routes.dart';
 
 /// team_app #50 item 5: which staff modules are open, from the Scheduler's
 /// `GET /api/me/features` (Scheduler_Backend routes/meFeatures.js, develop).
-/// Any failure is "no modules", and the request can never end the session.
+/// Nothing ever throws and the request can never end the session. A refusal
+/// (403, the Scheduler's 404) is an answer: nothing open. Every other failure
+/// is no answer, which opens nothing before the first answer and keeps the
+/// last answer after it.
 
 class _MockConnectivity extends Mock implements ConnectivityService {}
 
@@ -270,6 +273,41 @@ void main() {
       expect(modules.open, {TeamModule.social});
     });
 
+    test('tryParse tells "no answer" from "an answer that opens nothing"',
+        () {
+      for (final body in <Object?>[
+        null,
+        '',
+        '<html>Bad gateway</html>',
+        42,
+        const [],
+        const <String, Object?>{},
+        {'features': null},
+        {'features': 'crm'},
+        {
+          'modules': const ['crm']
+        },
+      ]) {
+        expect(TeamModules.tryParse(body), isNull, reason: '$body');
+      }
+      expect(TeamModules.tryParse({'features': const []}), TeamModules.none);
+      expect(
+          TeamModules.tryParse({
+            'features': [
+              'crm',
+              {'key': 'unknown_module', 'dry_run': false},
+            ]
+          }),
+          TeamModules.none);
+      expect(
+          TeamModules.tryParse({
+            'features': [
+              {'key': 'crm', 'dry_run': true}
+            ]
+          }),
+          TeamModules({TeamModule.crm: true}));
+    });
+
     test('equal replies are equal, whatever the order', () {
       final a = TeamModules.fromJson({
         'features': [
@@ -297,8 +335,7 @@ void main() {
 
       final modules = await rig.repository.modules();
 
-      expect(modules.open, {TeamModule.crm});
-      expect(modules.isDryRun(TeamModule.crm), isTrue);
+      expect(modules, TeamModules({TeamModule.crm: true}));
       final sent = rig.host.seen.single;
       expect(sent.method, 'GET');
       expect(sent.uri.toString(), 'https://scheduler.test/api/me/features');
@@ -306,7 +343,7 @@ void main() {
       expect(sent.extra[BearerAuthInterceptor.keepSessionKey], isTrue);
     });
 
-    test('200 with nothing open: no modules', () async {
+    test('200 with nothing open: an answer, no modules', () async {
       final rig = _Rig((_) => _json(200, {'features': const []}));
       expect(await rig.repository.modules(), TeamModules.none);
     });
@@ -337,11 +374,11 @@ void main() {
       'staffOnly, no code': {'error': 'Please authenticate'},
     };
     for (final entry in unauthorized.entries) {
-      test('401 ${entry.key}: no modules, and the session is not ended',
+      test('401 ${entry.key}: no answer, and the session is not ended',
           () async {
         final rig = _Rig((_) => _json(401, entry.value));
 
-        expect(await rig.repository.modules(), TeamModules.none);
+        expect(await rig.repository.modules(), isNull);
         expect(rig.session.signedOut, 0);
         expect(rig.session.token, isNotNull);
         // At most one renewal and one replay: never a loop.
@@ -360,7 +397,7 @@ void main() {
         }),
       );
 
-      expect(await rig.repository.modules(), TeamModules.none);
+      expect(await rig.repository.modules(), isNull);
       expect(rig.session.signedOut, 0);
       expect(rig.session.keptSignInCleared, 0);
       expect(rig.refreshHost.seen, hasLength(1));
@@ -388,11 +425,11 @@ void main() {
 
       final modules = await rig.repository.modules();
 
-      expect(modules.open, {TeamModule.tasks});
+      expect(modules, TeamModules({TeamModule.tasks: false}));
       expect(rig.session.signedOut, 0);
     });
 
-    test('403 for a student token: no modules', () async {
+    test('403 for a student token: an answer, no modules', () async {
       final rig = _Rig((_) => _json(403, _staffOnly));
       expect(await rig.repository.modules(), TeamModules.none);
       expect(rig.session.signedOut, 0);
@@ -406,7 +443,7 @@ void main() {
       _productionUnknownPath,
       {'error': 'Not found', 'code': 'NOT_FOUND'},
     ]) {
-      test('404 "${body['error']}" (no such route yet): no modules',
+      test('404 "${body['error']}" (no such route yet): an answer, no modules',
           () async {
         final rig = _Rig((_) => _json(404, body));
         expect(await rig.repository.modules(), TeamModules.none);
@@ -415,6 +452,19 @@ void main() {
         expect(rig.host.seen, hasLength(1));
       });
     }
+
+    test('a 404 that is not the Scheduler\'s (a proxy page): no answer',
+        () async {
+      final rig = _Rig((_) => ResponseBody.fromString(
+            '<html>404 Not Found</html>',
+            404,
+            headers: {
+              Headers.contentTypeHeader: ['text/html'],
+            },
+          ));
+      expect(await rig.repository.modules(), isNull);
+      expect(rig.session.signedOut, 0);
+    });
 
     test('the data source itself reports what failed', () async {
       final notFound = _Rig((_) => _json(404, _productionUnknownPath));
@@ -426,6 +476,17 @@ void main() {
       final student = _Rig((_) => _json(403, _staffOnly));
       await expectLater(student.remote.features(),
           throwsA(const ForbiddenFailure('Access denied. Staff only.')));
+
+      // A 200 that is not the documented reply is no answer, not "nothing".
+      final page = _Rig((_) => ResponseBody.fromString(
+            '<html>Sign in to this Wi-Fi</html>',
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['text/html'],
+            },
+          ));
+      await expectLater(
+          page.remote.features(), throwsA(const ParseFailure()));
     });
 
     for (final reply in [
@@ -439,42 +500,54 @@ void main() {
       ),
       (502, '<html>Bad gateway</html>'),
     ]) {
-      test('${reply.$1}: no modules', () async {
+      test('${reply.$1}: no answer', () async {
         final rig = _Rig((_) => _json(reply.$1, reply.$2));
-        expect(await rig.repository.modules(), TeamModules.none);
+        expect(await rig.repository.modules(), isNull);
         expect(rig.session.signedOut, 0);
         expect(rig.host.seen, hasLength(1));
       });
     }
 
-    test('a timeout: no modules, and it is not retried', () async {
+    test('a timeout: no answer, and it is not retried', () async {
       final rig = _Rig((o) => throw DioException(
           requestOptions: o, type: DioExceptionType.receiveTimeout));
-      expect(await rig.repository.modules(), TeamModules.none);
+      expect(await rig.repository.modules(), isNull);
       expect(rig.host.seen, hasLength(1));
       expect(rig.session.signedOut, 0);
     });
 
-    test('a reply that cannot be read: no modules', () async {
+    test('a reply that cannot be read: no answer', () async {
       final rig =
           _Rig((_) => ResponseBody.fromString('{not json', 200, headers: {
                 Headers.contentTypeHeader: [Headers.jsonContentType],
               }));
-      expect(await rig.repository.modules(), TeamModules.none);
+      expect(await rig.repository.modules(), isNull);
     });
 
-    test('offline: no modules, and nothing is sent', () async {
+    test('a 200 page that is not the reply (a Wi-Fi sign-in page): no answer',
+        () async {
+      final rig = _Rig((_) => ResponseBody.fromString(
+            '<html>Sign in to this Wi-Fi</html>',
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['text/html'],
+            },
+          ));
+      expect(await rig.repository.modules(), isNull);
+    });
+
+    test('offline: no answer, and nothing is sent', () async {
       final rig =
           _Rig((_) => _json(200, {'features': const []}), online: false);
-      expect(await rig.repository.modules(), TeamModules.none);
+      expect(await rig.repository.modules(), isNull);
       expect(rig.host.seen, isEmpty);
     });
 
-    test('a connection that never opens: no modules after the usual retries',
+    test('a connection that never opens: no answer after the usual retries',
         () async {
       final rig = _Rig((o) => throw DioException.connectionError(
           requestOptions: o, reason: 'Connection refused'));
-      expect(await rig.repository.modules(), TeamModules.none);
+      expect(await rig.repository.modules(), isNull);
       // RetryInterceptor's three tries for a request that never left, as for
       // every Scheduler call; nothing more.
       expect(rig.host.seen, hasLength(3));
@@ -502,6 +575,16 @@ void main() {
       expect: () => [
         const TeamModulesState(status: TeamModulesStatus.loading),
         TeamModulesState(status: TeamModulesStatus.ready, modules: crm),
+      ],
+    );
+
+    blocTest<TeamModulesBloc, TeamModulesState>(
+      'a first load with no answer: nothing open',
+      build: () => TeamModulesBloc(() async => null),
+      act: (b) => b.add(const TeamModulesLoadRequested()),
+      expect: () => const [
+        TeamModulesState(status: TeamModulesStatus.loading),
+        TeamModulesState(status: TeamModulesStatus.ready),
       ],
     );
 
@@ -547,17 +630,43 @@ void main() {
       ],
     );
 
+    // A slow network on the foreground refresh after a call must not throw
+    // the person off the module screen: no answer keeps the last answer.
+    for (final failed in <String, Future<TeamModules?> Function()>{
+      'gets no answer': () async => null,
+      'throws anyway': () async => throw const TimeoutFailure(),
+    }.entries) {
+      blocTest<TeamModulesBloc, TeamModulesState>(
+        'a refresh that ${failed.key} keeps what is open',
+        build: () {
+          var first = true;
+          return TeamModulesBloc(() {
+            if (first) {
+              first = false;
+              return Future.value(crm);
+            }
+            return failed.value();
+          });
+        },
+        act: (b) async {
+          b.add(const TeamModulesLoadRequested());
+          await Future<void>.delayed(Duration.zero);
+          b.add(const TeamModulesRefreshRequested());
+        },
+        expect: () => [
+          const TeamModulesState(status: TeamModulesStatus.loading),
+          TeamModulesState(status: TeamModulesStatus.ready, modules: crm),
+          TeamModulesState(status: TeamModulesStatus.loading, modules: crm),
+          TeamModulesState(status: TeamModulesStatus.ready, modules: crm),
+        ],
+      );
+    }
+
     blocTest<TeamModulesBloc, TeamModulesState>(
-      'a refresh that fails closes everything (fail closed)',
+      'a refresh answered with nothing open closes everything',
       build: () {
-        var first = true;
-        return TeamModulesBloc(() async {
-          if (first) {
-            first = false;
-            return crm;
-          }
-          throw const TimeoutFailure();
-        });
+        final answers = [crm, TeamModules.none];
+        return TeamModulesBloc(() async => answers.removeAt(0));
       },
       act: (b) async {
         b.add(const TeamModulesLoadRequested());
@@ -566,6 +675,26 @@ void main() {
       },
       skip: 3,
       expect: () => const [TeamModulesState(status: TeamModulesStatus.ready)],
+    );
+
+    blocTest<TeamModulesBloc, TeamModulesState>(
+      'the next answer after a failed refresh still applies',
+      build: () {
+        final answers = <TeamModules?>[crmAndTasks, null, crm];
+        return TeamModulesBloc(() async => answers.removeAt(0));
+      },
+      act: (b) async {
+        b.add(const TeamModulesLoadRequested());
+        await Future<void>.delayed(Duration.zero);
+        b.add(const TeamModulesRefreshRequested());
+        await Future<void>.delayed(Duration.zero);
+        b.add(const TeamModulesRefreshRequested());
+      },
+      skip: 4,
+      expect: () => [
+        TeamModulesState(status: TeamModulesStatus.loading, modules: crmAndTasks),
+        TeamModulesState(status: TeamModulesStatus.ready, modules: crm),
+      ],
     );
 
     var stormCalls = 0;
