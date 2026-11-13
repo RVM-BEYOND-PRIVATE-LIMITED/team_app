@@ -204,6 +204,7 @@ falls back to Home. Fill a module's row once its screen exists.
 | Class roster (`SECURE_ROSTER=true`) | `/work/batch/:id/mark` | _to fill in_ | _to fill in_ | _to fill in_ | _pass / fail_ |
 | CRM | `/crm` | | | | when the module screen exists |
 | Fees follow-up | `/fees` | | | | when the module screen exists |
+| Ops (pending counts, branch health) | `/ops` | | | | when the module screen exists |
 | Student desk | `/desk` | | | | when the module screen exists |
 | Placement checks | `/placement` | | | | when the module screen exists |
 | Complaints | `/complaints` | | | | when the module screen exists |
