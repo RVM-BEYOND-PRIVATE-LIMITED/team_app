@@ -21,6 +21,9 @@ import '../token_store.dart';
 /// password: [SessionRotator.accessEndedCodes]), the session ends with the
 /// server's message for the sign-in screen (team_app #52 item 8). A 403 never
 /// ends it: a 403 `NOT_ACTIVE` reaches the screen that asked, as before.
+///
+/// A request sent with [keepSessionKey] never ends the session, whatever its
+/// 401 says (team_app #50 item 5).
 class BearerAuthInterceptor extends Interceptor {
   BearerAuthInterceptor(
     this._tokens, {
@@ -37,6 +40,15 @@ class BearerAuthInterceptor extends Interceptor {
   final Dio? _dio;
 
   static const _retriedKey = 'rvm.auth.retried';
+
+  /// Set to true in a request's `extra` when its 401 must never end the
+  /// session (team_app #50 item 5): an optional read, such as the modules list
+  /// (`GET /api/me/features`), whose refusal means "nothing extra", not "sign
+  /// in again". The token is still renewed and the request sent once more, as
+  /// for any request, through the one shared renewal. If the 401 stands, it
+  /// reaches the caller as an error and nobody is signed out: the next
+  /// ordinary request still decides that, as before.
+  static const keepSessionKey = 'rvm.auth.keepSession';
 
   @override
   Future<void> onRequest(
@@ -102,16 +114,18 @@ class BearerAuthInterceptor extends Interceptor {
     }
   }
 
-  /// The 401 stands: the session is over unless [verdict] keeps it. Its
-  /// message for the sign-in screen is the reply's own when access has ended,
-  /// else the refused renewal's ([refusal]).
+  /// The 401 stands: the session is over unless [verdict] keeps it or the
+  /// request asked to keep it ([keepSessionKey]). Its message for the sign-in
+  /// screen is the reply's own when access has ended, else the refused
+  /// renewal's ([refusal]).
   Future<void> _refused(
     DioException err,
     ErrorInterceptorHandler handler,
     SessionVerdict verdict, {
     String? refusal,
   }) async {
-    if (verdict != SessionVerdict.renewOrKeep) {
+    if (verdict != SessionVerdict.renewOrKeep &&
+        err.requestOptions.extra[keepSessionKey] != true) {
       await _endSession(
           message:
               SessionRotator.accessEndedMessage(err.response?.data) ?? refusal);
