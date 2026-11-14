@@ -1,6 +1,6 @@
 /**
- * The Scheduler's role names and inheritance, copied from Scheduler_Backend config/roles.js at
- * commit c28b9ca (lines 4-103 and 135-136).
+ * The Scheduler's role names and inheritance, copied from Scheduler_Backend config/roles.js
+ * (main, 14 Nov 2026; first copied at commit c28b9ca).
  *
  * A copy, not a shared package, because the ESS runs as a separate process from a separate
  * repository (ADR-0005). tests/roles.test.js compares this file with the Scheduler's whenever
@@ -22,6 +22,7 @@ const ROLES = {
   HR: 'hr',
   // HR without the attendance controls (RVM, 2026-10-14). See config/hrPolicy.js.
   HR_EXECUTIVE: 'hr_executive',
+  SALES_EXECUTIVE: 'sales_executive',
   FACULTY: 'faculty',
   STUDENT: 'student',
   // The connector identity (control-room-bot). Inherits nothing and grants
@@ -55,6 +56,9 @@ const INHERITS = {
   // listed by name in each config/hrPolicy.js set it belongs to, and left out of the
   // attendance ones.
   [ROLES.HR_EXECUTIVE]: [],
+  // Sales owns the dropout dialer only. It inherits nothing: a sales executive must not
+  // inherit branch-admin access to admissions, fees or attendance.
+  [ROLES.SALES_EXECUTIVE]: [],
   // HOD Placement owns the interview calendar only — no admin duties, no teaching record.
   // Like HR, it inherits nothing and nothing inherits from it.
   [ROLES.HOD_PLACEMENT]: [],

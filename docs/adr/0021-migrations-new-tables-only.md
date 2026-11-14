@@ -25,3 +25,7 @@
 
 - The shared database's history is split across two folders. The handover lists every team_app migration in run order.
 - The ESS reads Scheduler tables. It writes them only through the paths named in [ADR-0020](0020-approvals-through-the-override-function.md).
+
+## Amendment (13 Nov 2026)
+
+New tables for new modules live in the Scheduler database and are created by the Scheduler's own migrations, with their own prefixes: `crm_`, `sm_`, `metrics_` and the `lms` schema. The `hr_ess_` rule still holds for this backend's own tables, and this repository still adds nothing else.
