@@ -1,7 +1,7 @@
 const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
 const { bodyWith, idParam, invalid } = require('../lib/validate');
 const { LIST_LIMITS } = require('../lib/store');
-const { CATEGORIES, notificationView, settingsView } = require('../policy/notifications');
+const { CATEGORIES, URGENT_CATEGORIES, notificationView, settingsView } = require('../policy/notifications');
 
 /**
  * Tasks D6 and D8: the notifications Inbox and the categories a person turns off.
@@ -58,6 +58,10 @@ function putSettings({ store, now }) {
     const list = body.disabled_categories;
     if (!Array.isArray(list) || list.some((c) => !CATEGORIES.includes(c))) {
       throw invalid(MESSAGES.NOTIFICATION_SETTINGS);
+    }
+    // The urgent CRM categories are the phone's promise to a person: always on.
+    if (list.some((c) => URGENT_CATEGORIES.includes(c))) {
+      throw new HttpError(400, 'CATEGORY_LOCKED', MESSAGES.CATEGORY_LOCKED);
     }
     const disabled = [...new Set(list)];
     const saved = await store.saveNotificationSettings(req.auth.employee.id, {

@@ -131,7 +131,7 @@ const SCHEMA = {
   // 20261107000000_hr_ess_push_devices.sql
   hr_ess_push_devices: ['id', 'employee_id', 'token', 'platform', 'device_label', 'install_id', 'created_at', 'updated_at', 'last_seen_at', 'revoked_at'],
   // 20261107000001_hr_ess_notifications.sql
-  hr_ess_notifications: ['id', 'employee_id', 'category', 'title', 'body', 'data', 'read_at', 'pushed_at', 'push_mode', 'push_attempts', 'push_error', 'created_at'],
+  hr_ess_notifications: ['id', 'employee_id', 'category', 'title', 'body', 'data', 'read_at', 'pushed_at', 'push_mode', 'push_attempts', 'push_error', 'priority', 'created_at'],
   hr_ess_notification_settings: ['employee_id', 'disabled_categories', 'updated_at'],
   // 20261108000001_hr_ess_wall_posts.sql
   hr_ess_wall_posts: ['id', 'employee_id', 'kind', 'scope', 'branch_id', 'body', 'attachments', 'mentions', 'badge',
@@ -271,6 +271,13 @@ const UNIQUE = {
  * each answers whether a row as written keeps the rule.
  */
 const CHECKS = {
+  // The notification lane (20261211000001): a priority of the two, and only the CRM call
+  // categories may be urgent.
+  hr_ess_notifications: {
+    hr_ess_notifications_priority_chk: (r) => ['normal', 'urgent'].includes(r.priority ?? 'normal'),
+    hr_ess_notifications_urgent_category_chk: (r) => (r.priority ?? 'normal') !== 'urgent'
+      || ['crm_callback', 'crm_call'].includes(r.category),
+  },
   hr_ess_personal_details: {
     hr_ess_personal_details_emergency_chk: (r) => ((r.emergency_name ?? null) === null) === ((r.emergency_phone ?? null) === null)
       && ((r.emergency_relation ?? null) === null || (r.emergency_name ?? null) !== null),
@@ -481,7 +488,7 @@ const DEFAULTS = {
   hr_ess_leave_request_history: (at) => ({ at, details: {} }),
   hr_ess_request_archives: (at) => ({ archived_at: at }),
   hr_ess_push_devices: (at) => ({ platform: 'android', created_at: at, updated_at: at, last_seen_at: at }),
-  hr_ess_notifications: (at) => ({ data: {}, push_attempts: 0, created_at: at }),
+  hr_ess_notifications: (at) => ({ data: {}, push_attempts: 0, priority: 'normal', created_at: at }),
   hr_ess_notification_settings: (at) => ({ disabled_categories: [], updated_at: at }),
   hr_attendance_overrides: (at) => ({ overridden_at: at }),
   // db/migrations/20261108000001_hr_ess_wall_posts.sql and the two after it.

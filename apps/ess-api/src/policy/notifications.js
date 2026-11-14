@@ -21,7 +21,26 @@ const CATEGORIES = Object.freeze([
   // My Documents' (Phase 2C, KP 1): a document HR has looked at, and the weekly reminder that
   // my mandatory documents are still missing.
   'documents',
+  // The CRM's (team_app #59, TA-P-01): a callback the sales team promised, a call placed from
+  // the web, a lead assigned to me, a follow-up due, and a sales alert.
+  'crm_callback', 'crm_call', 'crm_lead_assigned', 'crm_followup', 'crm_alert',
 ]);
+
+/**
+ * The categories whose phone push cannot wait: a callback or a call placed from the web is the
+ * sales team's promise to somebody, and it cannot sit until 08:00. They are always on, so
+ * settingsView marks them locked and putSettings refuses to switch them off.
+ */
+const URGENT_CATEGORIES = Object.freeze(['crm_callback', 'crm_call']);
+
+/** How each CRM category is named on screen. */
+const CATEGORY_LABELS = Object.freeze({
+  crm_callback: 'Callback',
+  crm_call: 'Call from the web',
+  crm_lead_assigned: 'Lead assigned',
+  crm_followup: 'Follow-up due',
+  crm_alert: 'Sales alert',
+});
 
 const QUIET_FROM = '21:00';
 const QUIET_TO = '08:00';
@@ -55,6 +74,7 @@ const dmy = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-IN', { 
 const notificationView = (r) => ({
   id: r.id,
   category: r.category,
+  priority: r.priority === 'urgent' ? 'urgent' : 'normal',
   title: r.title,
   body: r.body,
   data: r.data ?? {},
@@ -66,13 +86,19 @@ const notificationView = (r) => ({
 function settingsView(row) {
   const disabled = new Set((row && row.disabled_categories) || []);
   return {
-    categories: CATEGORIES.map((category) => ({ category, enabled: !disabled.has(category) })),
+    categories: CATEGORIES.map((category) => {
+      const locked = URGENT_CATEGORIES.includes(category);
+      // A locked category is always on, whatever an older row may say.
+      return { category, enabled: locked || !disabled.has(category), locked };
+    }),
     quiet_hours: { from: QUIET_FROM, to: QUIET_TO },
   };
 }
 
 module.exports = {
   CATEGORIES,
+  URGENT_CATEGORIES,
+  CATEGORY_LABELS,
   QUIET_FROM,
   QUIET_TO,
   isQuietHours,

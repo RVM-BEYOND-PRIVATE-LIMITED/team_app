@@ -3687,7 +3687,7 @@ paths:
       description: |
         Either token kind. Newest first, at most 100; `unread` counts every unread one, whether or not the list was cut.
 
-        Categories in this phase: `approvals` (a request waits for me), `decisions` (my request was decided) and `priority_tasks` (a task assigned to me). The Wall's categories arrive with Phase 2. Nothing is pushed between 21:00 and 08:00 IST; the row is here at once regardless.
+        Categories: `approvals` (a request waits for me), `decisions` (my request was decided), `priority_tasks` (a task assigned to me), the Wall's, the Helpdesk's, `documents`, and the CRM's five. `priority` is `urgent` only for a callback or a call placed from the web, which the phone receives even during the quiet hours; everything else is `normal` and waits. Nothing is pushed between 21:00 and 08:00 IST unless it is urgent; the row is here at once regardless.
       responses:
         '200':
           description: My notifications.
@@ -3703,6 +3703,7 @@ paths:
                     notifications:
                       - id: 6d5c4b3a-2918-407f-8e6d-5c4b3a291807
                         category: decisions
+                        priority: normal
                         title: Request approved
                         body: Your request for on duty on 15 Oct was approved by Priya Sharma.
                         data: { request_id: 3f2e1d0c-9b8a-4f7e-8d6c-5b4a3f2e1d0c, request_family: attendance }
@@ -3710,6 +3711,7 @@ paths:
                         created_at: '2026-10-16T06:30:00+00:00'
                       - id: 7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918
                         category: priority_tasks
+                        priority: normal
                         title: New priority task
                         body: Check the lab PCs Due 20 Oct.
                         data: { task_id: 84000000-0000-4000-8000-000000000001 }
@@ -3818,7 +3820,7 @@ paths:
       tags: [ESS]
       x-owner: ess
       summary: Which notification categories reach my phone (D8)
-      description: Either token kind. Every category, on or off, and the quiet hours (21:00 to 08:00 IST, when nothing is pushed).
+      description: 'Either token kind. Every category, on or off, and the quiet hours (21:00 to 08:00 IST, when nothing normal is pushed). The urgent CRM categories are always on, and say so with `locked: true`.'
       responses:
         '200':
           description: The settings; everything on until the person turns something off.
@@ -3830,17 +3832,22 @@ paths:
                 defaults:
                   value:
                     categories:
-                      - { category: approvals, enabled: true }
-                      - { category: decisions, enabled: true }
-                      - { category: priority_tasks, enabled: true }
-                      - { category: mentions, enabled: true }
-                      - { category: replies, enabled: true }
-                      - { category: praise, enabled: true }
-                      - { category: announcements, enabled: true }
-                      - { category: acknowledgements, enabled: true }
-                      - { category: polls, enabled: true }
-                      - { category: helpdesk, enabled: true }
-                      - { category: documents, enabled: true }
+                      - { category: approvals, enabled: true, locked: false }
+                      - { category: decisions, enabled: true, locked: false }
+                      - { category: priority_tasks, enabled: true, locked: false }
+                      - { category: mentions, enabled: true, locked: false }
+                      - { category: replies, enabled: true, locked: false }
+                      - { category: praise, enabled: true, locked: false }
+                      - { category: announcements, enabled: true, locked: false }
+                      - { category: acknowledgements, enabled: true, locked: false }
+                      - { category: polls, enabled: true, locked: false }
+                      - { category: helpdesk, enabled: true, locked: false }
+                      - { category: documents, enabled: true, locked: false }
+                      - { category: crm_callback, enabled: true, locked: true }
+                      - { category: crm_call, enabled: true, locked: true }
+                      - { category: crm_lead_assigned, enabled: true, locked: false }
+                      - { category: crm_followup, enabled: true, locked: false }
+                      - { category: crm_alert, enabled: true, locked: false }
                     quiet_hours: { from: '21:00', to: '08:00' }
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
@@ -3857,7 +3864,7 @@ paths:
       tags: [ESS]
       x-owner: ess
       summary: Turn notification categories off or on (D8)
-      description: Either token kind. A turned-off category stays in the Inbox and stops the phone push.
+      description: 'Either token kind. A turned-off category stays in the Inbox and stops the phone push. The urgent CRM categories (`crm_callback`, `crm_call`) are always on: asking to switch one off is 400 `CATEGORY_LOCKED`.'
       requestBody:
         required: true
         content:
@@ -3878,17 +3885,22 @@ paths:
                 saved:
                   value:
                     categories:
-                      - { category: approvals, enabled: false }
-                      - { category: decisions, enabled: true }
-                      - { category: priority_tasks, enabled: true }
-                      - { category: mentions, enabled: true }
-                      - { category: replies, enabled: true }
-                      - { category: praise, enabled: true }
-                      - { category: announcements, enabled: true }
-                      - { category: acknowledgements, enabled: true }
-                      - { category: polls, enabled: true }
-                      - { category: helpdesk, enabled: true }
-                      - { category: documents, enabled: true }
+                      - { category: approvals, enabled: false, locked: false }
+                      - { category: decisions, enabled: true, locked: false }
+                      - { category: priority_tasks, enabled: true, locked: false }
+                      - { category: mentions, enabled: true, locked: false }
+                      - { category: replies, enabled: true, locked: false }
+                      - { category: praise, enabled: true, locked: false }
+                      - { category: announcements, enabled: true, locked: false }
+                      - { category: acknowledgements, enabled: true, locked: false }
+                      - { category: polls, enabled: true, locked: false }
+                      - { category: helpdesk, enabled: true, locked: false }
+                      - { category: documents, enabled: true, locked: false }
+                      - { category: crm_callback, enabled: true, locked: true }
+                      - { category: crm_call, enabled: true, locked: true }
+                      - { category: crm_lead_assigned, enabled: true, locked: false }
+                      - { category: crm_followup, enabled: true, locked: false }
+                      - { category: crm_alert, enabled: true, locked: false }
                     quiet_hours: { from: '21:00', to: '08:00' }
         '400':
           $ref: '#/components/responses/EssRequestBad'
@@ -13668,14 +13680,18 @@ components:
     Notification:
       type: object
       description: One in-app notification. `data` carries the ids a tap needs, never personal data.
-      required: [id, category, title, body, data, read_at, created_at]
+      required: [id, category, priority, title, body, data, read_at, created_at]
       properties:
         id:
           type: string
           format: uuid
         category:
           type: string
-          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents]
+          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert]
+        priority:
+          type: string
+          enum: [normal, urgent]
+          description: '`urgent` is the phone lane that ignores the quiet hours; only the CRM call categories may be urgent.'
         title:
           type: string
           minLength: 1
@@ -13716,13 +13732,16 @@ components:
           type: array
           items:
             type: object
-            required: [category, enabled]
+            required: [category, enabled, locked]
             properties:
               category:
                 type: string
-                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents]
+                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert]
               enabled:
                 type: boolean
+              locked:
+                type: boolean
+                description: True for the urgent CRM categories, which are always on.
         quiet_hours:
           type: object
           required: [from, to]
@@ -13743,7 +13762,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents]
+            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert]
 
     PersonCard:
       type: object
@@ -17529,8 +17548,13 @@ components:
 
     EssNotificationCategories:
       value:
-        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk or documents.'
+        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup or crm_alert.'
         code: VALIDATION_FAILED
+
+    EssNotificationCategoryLocked:
+      value:
+        error: Callback and call-from-the-web alerts are always on, so they cannot be turned off.
+        code: CATEGORY_LOCKED
 
     EssNotificationNotFound:
       value:
@@ -18443,7 +18467,7 @@ components:
 
     EssRequestBad:
       description: |
-        `VALIDATION_FAILED`: the message says which rule — a type, a day, a reason, a place, a time, a minutes, a body the ESS cannot read. `INVALID_JSON`, `BAD_REQUEST`: a body it cannot read. `DAY_OUT_OF_RANGE`: a month other than this one and the last.
+        `VALIDATION_FAILED`: the message says which rule — a type, a day, a reason, a place, a time, a minutes, a body the ESS cannot read. `INVALID_JSON`, `BAD_REQUEST`: a body it cannot read. `DAY_OUT_OF_RANGE`: a month other than this one and the last. `CATEGORY_LOCKED`: an urgent CRM category cannot be switched off.
       content:
         application/json:
           schema:
@@ -18459,6 +18483,8 @@ components:
               $ref: '#/components/examples/EssPushToken'
             notificationCategories:
               $ref: '#/components/examples/EssNotificationCategories'
+            notificationCategoryLocked:
+              $ref: '#/components/examples/EssNotificationCategoryLocked'
             unknownField:
               $ref: '#/components/examples/EssUnknownField'
             requestMinutes:
