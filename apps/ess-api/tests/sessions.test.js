@@ -646,3 +646,58 @@ describe('POST /api/ess/session/sign-out', () => {
     expectRefusal(await H.signOut(app, { refreshToken: 'A'.repeat(43) }), 429, 'RATE_LIMITED');
   });
 });
+
+describe('one live sign-in, while the Scheduler switch team_security is open (Scheduler #175)', () => {
+  const ON = (w) => { w.tables.team_security_on = [{ employee_id: w.people.hr.employee.id }]; };
+  const live = (db) => db.tables.hr_ess_sessions.filter((r) => r.revoked_at == null);
+
+  it('ends the other live sign-ins as superseded, and says what this phone is', async () => {
+    const { app, db, people } = buildApp({
+      setup: (w) => {
+        ON(w);
+        w.tables.team_device_answers = [{ employee_id: w.people.hr.employee.id, install_id: OTHER_INSTALL_ID, status: 'pending' }];
+      },
+    });
+    const first = await H.keep(app, tokens.portal(people.hr));
+    expect(first.status).toBe(201);
+    expect(first.body.device).toEqual({ status: 'first' });
+    const second = await H.keep(app, tokens.portal(people.hr, new Date(SIGNED_AT.getTime() + 1000)), { install_id: OTHER_INSTALL_ID });
+    expect(second.status).toBe(201);
+    expect(second.body.device).toEqual({ status: 'pending' });
+    expect(db.tables.team_device_checks.map((c) => c.install_id)).toEqual([INSTALL_ID, OTHER_INSTALL_ID]);
+    expect(db.tables.team_device_checks[0].label).toBe('Test phone');
+
+    // The first phone: its next request is refused, and its refresh says why.
+    expectRefusal(await H.me(app, first.body.access_token), 401, 'NOT_AUTHENTICATED');
+    const refused = await H.refresh(app, first.body.refresh_token);
+    expect(refused.status).toBe(401);
+    expect(refused.body.reason).toBe('superseded');
+    expect(refused.body.error).toMatch(/another phone/);
+    // The second goes on working.
+    expect((await H.me(app, second.body.access_token)).status).toBe(200);
+    expect(live(db).map((r) => r.install_id)).toEqual([OTHER_INSTALL_ID]);
+  });
+
+  it('ends them as signed out where the database does not know the new reason yet', async () => {
+    const { app, db, people } = buildApp({ setup: ON });
+    const first = await H.keep(app, tokens.portal(people.hr));
+    db.failWhen = (q) => (q.op === 'rpc' && q.fn === 'hr_ess_session_revoke' && q.args.p_reason === 'superseded' ? 'error' : null);
+    const second = await H.keep(app, tokens.portal(people.hr, new Date(SIGNED_AT.getTime() + 1000)), { install_id: OTHER_INSTALL_ID });
+    expect(second.status).toBe(201);
+    const ended = db.tables.hr_ess_sessions.find((r) => r.family_id === first.body.session.id);
+    expect(ended.revoked_reason).toBe('signed_out');
+  });
+
+  it('changes nothing while the switch is closed or cannot be read', async () => {
+    for (const unreadable of [false, true]) {
+      const { app, db, people } = buildApp(unreadable ? { setup: ON } : undefined);
+      if (unreadable) db.failWhen = (q) => (q.op === 'rpc' && q.fn === 'team_security_on' ? 'error' : null);
+      const first = await H.keep(app, tokens.portal(people.hr));
+      const second = await H.keep(app, tokens.portal(people.hr, new Date(SIGNED_AT.getTime() + 1000)), { install_id: OTHER_INSTALL_ID });
+      expect([first.status, second.status]).toEqual([201, 201]);
+      expect(first.body.device).toBeUndefined();
+      expect(live(db)).toHaveLength(2);
+      expect(db.tables.team_device_checks).toBeUndefined();
+    }
+  });
+});

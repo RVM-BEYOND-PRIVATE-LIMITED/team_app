@@ -614,6 +614,27 @@ function createSupabaseStore(config, { client } = {}) {
         return error ? null : data;
       } catch { return null; }
     },
+    /**
+     * The Scheduler's switch team_security for this employee (Scheduler #175): one live Team-app sign-in and
+     * the bound phone. A missing function (its migration not applied) or any failure reads as off.
+     */
+    teamSecurityOn: async (employeeId) => {
+      try {
+        const { data, error } = await db.rpc('team_security_on', { p_employee: employeeId });
+        return !error && data === true;
+      } catch { return false; }
+    },
+    /**
+     * What this install is to the employee (Scheduler team_device_check): bound, unclaimed, first, approved or
+     * pending (a request is recorded and HR is told). null when it cannot be read: the sign-in still goes ahead,
+     * and the Scheduler's gate decides what the phone may open.
+     */
+    deviceCheck: async (employeeId, installId, label) => {
+      try {
+        const { data, error } = await db.rpc('team_device_check', { p_employee: employeeId, p_install: installId, p_user_agent: label });
+        return error || typeof data !== 'string' ? null : data;
+      } catch { return null; }
+    },
     /** The batch's marks for one day: what the roster shows and the lock is decided from. */
     listClassAttendance: (batchId, day) =>
       list('student_attendance', (q) => q.select(COLUMNS.classAttendance).eq('batch_id', batchId).eq('date', day)),

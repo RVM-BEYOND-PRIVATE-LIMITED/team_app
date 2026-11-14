@@ -948,6 +948,25 @@ const FUNCTIONS = {
    * and fee_hold_students [{ student_id }]. No fixture: mode off, nobody held. Calls are kept in fee_hold_calls, so
    * a test can tell a counted read (the save) from an uncounted one (the roster flag).
    */
+  /*
+   * The Scheduler's Team-app security functions (#175), read at sign-in. Fixtures: team_security_on
+   * [{ employee_id }] (the switch is open for them) and team_device_answers [{ employee_id, install_id, status }]
+   * (no row: 'first'). Calls to team_device_check are kept in team_device_checks.
+   */
+  team_security_on: {
+    table: 'hr_ess_sessions',
+    run(fake, { p_employee }) {
+      return { data: (fake.tables.team_security_on || []).some((r) => r.employee_id === p_employee), error: null };
+    },
+  },
+  team_device_check: {
+    table: 'hr_ess_sessions',
+    run(fake, { p_employee, p_install, p_user_agent }) {
+      (fake.tables.team_device_checks = fake.tables.team_device_checks || []).push({ employee_id: p_employee, install_id: p_install, label: p_user_agent ?? null });
+      const hit = (fake.tables.team_device_answers || []).find((r) => r.employee_id === p_employee && r.install_id === p_install);
+      return { data: hit ? hit.status : 'first', error: null };
+    },
+  },
   lms_fee_hold_attendance: {
     table: 'student_attendance',
     run(fake, { p_student_ids, p_batch, p_count }) {
@@ -993,7 +1012,8 @@ const FUNCTIONS = {
   hr_ess_session_revoke: {
     table: 'hr_ess_sessions',
     run(fake, { p_family_id, p_reason, p_now, p_employee_id }) {
-      if (!['signed_out', 'reuse', 'password_changed', 'login_off', 'left', 'unlinked', 'expired'].includes(p_reason)) {
+      // 'superseded' arrives with 20261231000017; a test of the database before it fails the call itself.
+      if (!['signed_out', 'reuse', 'password_changed', 'login_off', 'left', 'unlinked', 'expired', 'superseded'].includes(p_reason)) {
         return { data: null, error: { code: 'P0001', message: `hr_ess_session_revoke: ${p_reason} is not a reason to end a sign-in` } };
       }
       let n = 0;
