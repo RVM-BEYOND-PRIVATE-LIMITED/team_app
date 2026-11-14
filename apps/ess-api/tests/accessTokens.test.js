@@ -4,6 +4,9 @@ const { readToken } = require('../src/lib/tokens');
 const { ACCESS_TOKEN_SECONDS } = require('../src/policy/sessions');
 const S = require('./helpers/schedulerTokens');
 const G = require('./helpers/schedulerGuards');
+// The Scheduler's own guard is loaded from SCHEDULER_BACKEND_DIR, never copied here: these run
+// only where it is set (the Scheduler's CI checks this repository out beside it).
+const itWithScheduler = G.hasSchedulerAuth ? it : it.skip;
 const Rules = require('./helpers/schedulerRules');
 const { company, PORTAL_PEOPLE } = require('./helpers/fixtures');
 const { TEST_JWT_SECRET } = require('./helpers/constants');
@@ -69,7 +72,7 @@ describe('a minted portal token', () => {
     expect(jwt.decode(token)).not.toHaveProperty('iss');
   });
 
-  it.each(PORTAL_PEOPLE.map(([key]) => [key]))('for %s is let in by auth.js as the same account a real sign-in gives', async (key) => {
+  itWithScheduler.each(PORTAL_PEOPLE.map(([key]) => [key]))('for %s is let in by auth.js as the same account a real sign-in gives', async (key) => {
     const { user } = people[key];
     const view = (r) => ({
       passed: r.passed,
@@ -86,14 +89,14 @@ describe('a minted portal token', () => {
     expect(view(await G.runAuth(mintPortal(user)))).toEqual(real);
   });
 
-  it('for a teaching role is found by its faculty id, as auth.js finds a teacher', async () => {
+  itWithScheduler('for a teaching role is found by its faculty id, as auth.js finds a teacher', async () => {
     const r = await G.runAuth(mintPortal(people.hod.user));
     expect(r.passed).toBe(true);
     expect(r.req.user.id).toBe(people.hod.user.id);
     expect(jwt.decode(mintPortal(people.hod.user)).id).toBe(people.hod.user.faculty_id);
   });
 
-  it('is refused by auth.js once its hour is over, whenever the sign-in was', async () => {
+  itWithScheduler('is refused by auth.js once its hour is over, whenever the sign-in was', async () => {
     const r = await G.runAuth(mintPortal(people.hr.user, { mintedAgo: HOUR + MINUTE }));
     // The Scheduler now says why (its task J8): an expired token is still a 401, with its own code.
     expect(r).toMatchObject({
@@ -131,7 +134,7 @@ describe('a minted attendance session', () => {
     expect(jwt.decode(minted, { complete: true }).header).toEqual({ alg: 'HS256', typ: 'JWT' });
   });
 
-  it('is taken by punchAuth as an attendance session, with no portal account', async () => {
+  itWithScheduler('is taken by punchAuth as an attendance session, with no portal account', async () => {
     const signedInAtMs = Date.now() - 20 * MINUTE;
     const token = T.mintAttendanceToken({ employeeId: EMPLOYEE, method: 'otp', sessionId: SID, signedInAtMs, nowMs: Date.now(), jwtSecret });
     const r = await G.runPunchAuth(token);
@@ -141,12 +144,12 @@ describe('a minted attendance session', () => {
     expect(r.req.punchSession).toEqual({ employeeId: EMPLOYEE, method: 'otp', issuedAt: Math.floor(signedInAtMs / 1000) * 1000 });
   });
 
-  it('is refused everywhere else on the Scheduler, as its own attendance sessions are', async () => {
+  itWithScheduler('is refused everywhere else on the Scheduler, as its own attendance sessions are', async () => {
     const r = await G.runAuth(mintAttendance('otp'));
     expect(r).toMatchObject({ passed: false, status: 401, body: { error: 'Please authenticate' } });
   });
 
-  it('is over once its hour is', () => {
+  itWithScheduler('is over once its hour is', () => {
     expect(S.readPunchSession(mintAttendance('otp', { mintedAgo: HOUR + MINUTE }))).toBeNull();
     expect(S.readPunchSession(mintAttendance('otp', { mintedAgo: HOUR - MINUTE }))).not.toBeNull();
   });

@@ -4,6 +4,9 @@ const { NOW, SIGNED_AT, TEST_JWT_SECRET, TEST_ENV } = require('./helpers/constan
 const { INSTALL_ID, OTHER_INSTALL_ID } = require('./helpers/fixtures');
 const H = require('./helpers/sessions');
 const G = require('./helpers/schedulerGuards');
+// The Scheduler's own guard is loaded from SCHEDULER_BACKEND_DIR, never copied here: these run
+// only where it is set (the Scheduler's CI checks this repository out beside it).
+const itWithScheduler = G.hasSchedulerAuth ? it : it.skip;
 const { refreshTokenHash } = require('../src/lib/accessTokens');
 const { createApp } = require('../src/app');
 const { loadConfig } = require('../src/config');
@@ -298,7 +301,7 @@ describe('ends the sign-in when employeeAuth would no longer let the person in',
   describe('a portal password changed by a Scheduler path that does not stamp password_changed_at', () => {
     // Scheduler_Backend c28b9ca: updateUser (userController.js:1022-1031), resetPassword
     // (:1231-1236) and changeOwnPassword (:1313-1318) write password_hash only.
-    it.each([
+    itWithScheduler.each([
       ['an admin resets it in User Management (PATCH /api/users/update/:id)'],
       ['the public legacy reset (POST /api/users/reset-password)'],
       ['the person changes it (POST /api/users/change-password)'],
