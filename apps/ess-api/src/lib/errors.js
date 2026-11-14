@@ -188,7 +188,8 @@ const MESSAGES = Object.freeze({
   PUSH_DEVICE_LABEL: 'Keep the phone name to 80 characters.',
   PUSH_DEVICE_NOT_FOUND: 'That phone was not found.',
   NOTIFICATION_NOT_FOUND: 'That notification was not found.',
-  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk or documents.',
+  NOTIFICATION_SETTINGS: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup or crm_alert.',
+  CATEGORY_LOCKED: 'Callback and call-from-the-web alerts are always on, so they cannot be turned off.',
 
   // E1-E12: Me and My Team.
   PHOTO_FORMAT: 'Send the photo as base64 image data (JPEG, PNG or WebP).',

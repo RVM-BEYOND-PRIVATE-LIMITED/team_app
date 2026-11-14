@@ -207,6 +207,8 @@ const REFUSALS = [
       VALUES (e, 'priority_tasks', 'Task', 'Do the task.', '{"task_id": "7f000000-0000-4000-8000-000000000001"}'::jsonb),
              (e, 'priority_tasks', 'Task', 'Do the task.', '{"task_id": "7f000000-0000-4000-8000-000000000001"}'::jsonb)`, 'unique_violation'),
   refusal('a notification setting for an unknown category', "INSERT INTO public.hr_ess_notification_settings (employee_id, disabled_categories) VALUES (e, ARRAY['wall'])"),
+  // TA-P-01 (20261211000001): only the CRM call categories may use the urgent lane.
+  refusal('an urgent notification of a category that is not urgent', "INSERT INTO public.hr_ess_notifications (employee_id, category, title, body, priority) VALUES (e, 'decisions', 'Hello', 'Hello there.', 'urgent')"),
   // F1-F7: the Wall's own tables and rules (db/migrations/20261108000001-3).
   refusal('a wall post of a kind it does not take', "INSERT INTO public.hr_ess_wall_posts (employee_id, kind, body) VALUES (e, 'notice', 'Hello there.')"),
   refusal('a branch post with no branch', "INSERT INTO public.hr_ess_wall_posts (employee_id, scope, body) VALUES (e, 'branch', 'Branch note.')"),

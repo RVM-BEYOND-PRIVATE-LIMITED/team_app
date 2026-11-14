@@ -15,6 +15,10 @@ const crypto = require('crypto');
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 
+/** The Android channel the urgent lane delivers on, and how long FCM keeps trying. */
+const URGENT_CHANNEL_ID = 'team_rvm_urgent';
+const URGENT_TTL_SECONDS = 60;
+
 const base64url = (value) => Buffer.from(value).toString('base64')
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -77,8 +81,12 @@ function createFcm({ projectId, clientEmail, privateKeyB64, fetchImpl = fetch, n
   /**
    * Send one message. Answers { ok: true }, or { ok: false, invalidToken, error }: invalidToken
    * is true when the token belongs to no install, which is the caller's signal to revoke it.
+   *
+   * `urgent` puts the message on the urgent channel with a 60-second TTL: a callback that cannot
+   * be delivered in a minute is better dropped than rung at somebody hours late. Normal messages
+   * are unchanged.
    */
-  async function send({ token, title, body, data = {} }) {
+  async function send({ token, title, body, data = {}, urgent = false }) {
     const auth = await accessToken();
     if (auth.error) return { ok: false, invalidToken: false, error: auth.error };
     const message = {
@@ -87,7 +95,13 @@ function createFcm({ projectId, clientEmail, privateKeyB64, fetchImpl = fetch, n
         notification: { title, body },
         // FCM wants strings; the ids a tap needs are strings already.
         data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
-        android: { priority: 'high' },
+        android: urgent
+          ? {
+            priority: 'high',
+            ttl: `${URGENT_TTL_SECONDS}s`,
+            notification: { channel_id: URGENT_CHANNEL_ID },
+          }
+          : { priority: 'high' },
       },
     };
     let res;
@@ -114,4 +128,4 @@ function createFcm({ projectId, clientEmail, privateKeyB64, fetchImpl = fetch, n
   return { send, accessToken };
 }
 
-module.exports = { createFcm, TOKEN_URL, SCOPE };
+module.exports = { createFcm, TOKEN_URL, SCOPE, URGENT_CHANNEL_ID, URGENT_TTL_SECONDS };

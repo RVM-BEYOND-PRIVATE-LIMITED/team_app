@@ -11,13 +11,22 @@ const { isQuietHours, dmy } = require('../policy/notifications');
  *      nothing; the unique key (and the check here) means a re-run notifies nobody twice.
  *      Broadcast tasks (`assigned_to` NULL) are not pushed: their recipients are the Scheduler's
  *      own admin set, resolved in its code (docs/06-backend-phases.md, D2).
- *   2. delivery: every notification not yet pushed, oldest first. A category the person turned
- *      off, or no registered phone, marks it skipped. With the FIREBASE_* settings present, FCM
- *      sends it; without them it is written to the log (ADR-0016). A token FCM says belongs to no
- *      install is revoked. A send that fails is retried, up to 3 attempts.
+ *   2. delivery: every normal notification not yet pushed, oldest first. A category the person
+ *      turned off, or no registered phone, marks it skipped. With the FIREBASE_* settings
+ *      present, FCM sends it; without them it is written to the log (ADR-0016). A token FCM says
+ *      belongs to no install is revoked. A send that fails is retried, up to 3 attempts.
  *
- * Nothing is pushed between 21:00 and 08:00 IST; the rows wait for the morning. Failures are
+ * Every five seconds, on its own guard (team_app #59, TA-P-01):
+ *   3. the urgent lane: unpushed rows with priority 'urgent', oldest first, up to 50. It ignores
+ *      the quiet hours -- a CRM callback cannot wait until morning -- and a row older than its
+ *      60-second TTL is marked skipped rather than rung hours late. The minute loop never sends
+ *      an urgent row, so a backlog of 200 normal notifications cannot delay one.
+ *
+ * Nothing else is pushed between 21:00 and 08:00 IST; the rows wait for the morning. Failures are
  * logged and never stop the next notification.
+ *
+ * Before the priority migration, the urgent lane sends nothing and says so once per process; the
+ * minute loop keeps its old queue, so notifications work exactly as they did.
  *
  * One process only (ecosystem.config.cjs, fork mode), as for the on-duty job.
  */
@@ -26,6 +35,12 @@ const MINUTE_MS = 60 * 1000;
 const PRIORITY_WINDOW_MS = 48 * 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
 const BATCH = 50;
+const URGENT_INTERVAL_MS = 5 * 1000;
+const URGENT_TTL_MS = 60 * 1000;
+const URGENT_BATCH = 50;
+
+/** A missing column is the priority migration not applied yet, not a broken row. */
+const isMissingPriority = (e) => Boolean(e && e.code === 'MODULE_NOT_INSTALLED');
 
 /**
  * @param {object} deps
@@ -34,11 +49,20 @@ const BATCH = 50;
  * @param {() => Date} [deps.now]
  * @param {object} [deps.log]
  * @param {number} [deps.intervalMs]
+ * @param {number} [deps.urgentIntervalMs]
  * @param {Function} [deps.fetchImpl]  the tests pass a stub, so nothing leaves the machine
  * @param {boolean} [deps.immediate]
  */
-function startPushJob({ store, config, now = () => new Date(), log = console, intervalMs = MINUTE_MS, fetchImpl, immediate = true }) {
+function startPushJob({
+  store, config, now = () => new Date(), log = console,
+  intervalMs = MINUTE_MS, urgentIntervalMs = URGENT_INTERVAL_MS, fetchImpl, immediate = true,
+}) {
   let running = false;
+  let urgentRunning = false;
+  // 'unknown' until the first query that needs the priority column answers; then 'present' or
+  // 'missing'. Shared by both loops, so the migration is probed once per process.
+  let priorityState = 'unknown';
+  let missingPriorityLogged = false;
   const fcm = config && config.push && config.push.enabled
     ? createFcm({ ...config.firebase, fetchImpl, now })
     : null;
@@ -74,7 +98,7 @@ function startPushJob({ store, config, now = () => new Date(), log = console, in
   }
 
   /** One notification across the person's live phones. Answers how it ended. */
-  async function deliverOne(row, devices, disabled, at) {
+  async function deliverOne(row, devices, disabled, at, urgent = false) {
     if (disabled.has(row.category) || !devices.length) {
       await store.markNotificationPushed(row.id, { pushed_at: at, push_mode: 'skipped', push_error: null });
       return 'skipped';
@@ -91,6 +115,7 @@ function startPushJob({ store, config, now = () => new Date(), log = console, in
         title: row.title,
         body: row.body,
         data: { category: row.category, ...(row.data || {}) },
+        urgent,
       });
       if (out.ok) {
         await store.markNotificationPushed(row.id, { pushed_at: at, push_mode: 'fcm', push_error: null });
@@ -110,10 +135,8 @@ function startPushJob({ store, config, now = () => new Date(), log = console, in
     return 'failed';
   }
 
-  async function deliver() {
-    if (isQuietHours(now())) return { held: true };
-    const rows = await store.listUndeliveredNotifications(BATCH);
-    if (!rows.length) return { sent: 0, logged: 0, skipped: 0, failed: 0 };
+  /** The settings and live phones of everybody a batch of rows is for. */
+  async function recipients(rows) {
     const employeeIds = [...new Set(rows.map((r) => r.employee_id))];
     const [settings, devices] = await Promise.all([
       store.notificationSettingsFor(employeeIds),
@@ -125,6 +148,49 @@ function startPushJob({ store, config, now = () => new Date(), log = console, in
       if (!devicesBy.has(d.employee_id)) devicesBy.set(d.employee_id, []);
       devicesBy.get(d.employee_id).push(d);
     }
+    return { disabledBy, devicesBy };
+  }
+
+  /**
+   * The minute loop's queue. Once the priority column exists, the urgent rows are left to their
+   * own loop; before it does, this is exactly the query the worker always ran.
+   */
+  async function normalRows() {
+    if (priorityState === 'missing') return store.listUndeliveredNotifications(BATCH);
+    try {
+      const rows = await store.listNormalNotifications(BATCH);
+      priorityState = 'present';
+      return rows;
+    } catch (e) {
+      if (!isMissingPriority(e)) throw e;
+      priorityState = 'missing';
+      return store.listUndeliveredNotifications(BATCH);
+    }
+  }
+
+  /** The urgent loop's queue, or null when the priority migration has not been applied. */
+  async function urgentRows() {
+    if (priorityState === 'missing') return null;
+    try {
+      const rows = await store.listUrgentNotifications(URGENT_BATCH);
+      priorityState = 'present';
+      return rows;
+    } catch (e) {
+      if (!isMissingPriority(e)) throw e;
+      priorityState = 'missing';
+      if (!missingPriorityLogged) {
+        missingPriorityLogged = true;
+        log.error('[ess] push job: urgent notifications are off until the priority migration is applied.');
+      }
+      return null;
+    }
+  }
+
+  async function deliver() {
+    if (isQuietHours(now())) return { held: true };
+    const rows = await normalRows();
+    if (!rows.length) return { sent: 0, logged: 0, skipped: 0, failed: 0 };
+    const { disabledBy, devicesBy } = await recipients(rows);
     const counts = { sent: 0, logged: 0, skipped: 0, failed: 0 };
     for (const row of rows) {
       const at = now().toISOString();
@@ -133,6 +199,36 @@ function startPushJob({ store, config, now = () => new Date(), log = console, in
         counts[outcome] += 1;
       } catch (e) {
         log.error(`[ess] push job: notification ${row.id} failed: ${e && e.message ? e.message : e}`);
+        counts.failed += 1;
+      }
+    }
+    return counts;
+  }
+
+  /** The urgent lane: the same delivery, ignoring the quiet hours, with a 60-second TTL. */
+  async function deliverUrgent() {
+    const rows = await urgentRows();
+    if (!rows) return { missing: true };
+    if (!rows.length) return { sent: 0, logged: 0, skipped: 0, failed: 0 };
+    const { disabledBy, devicesBy } = await recipients(rows);
+    const counts = { sent: 0, logged: 0, skipped: 0, failed: 0 };
+    for (const row of rows) {
+      const at = now();
+      const atIso = at.toISOString();
+      try {
+        const age = at.getTime() - Date.parse(row.created_at);
+        if (Number.isFinite(age) && age > URGENT_TTL_MS) {
+          // Too old to be useful: a callback rung an hour late is worse than one not rung.
+          await store.markNotificationPushed(row.id, { pushed_at: atIso, push_mode: 'skipped', push_error: null });
+          counts.skipped += 1;
+          continue;
+        }
+        const outcome = await deliverOne(
+          row, devicesBy.get(row.employee_id) || [], disabledBy.get(row.employee_id) || new Set(), atIso, true,
+        );
+        counts[outcome] += 1;
+      } catch (e) {
+        log.error(`[ess] push job: urgent notification ${row.id} failed: ${e && e.message ? e.message : e}`);
         counts.failed += 1;
       }
     }
@@ -161,11 +257,37 @@ function startPushJob({ store, config, now = () => new Date(), log = console, in
     }
   }
 
+  async function runUrgentOnce() {
+    if (urgentRunning) return null;
+    urgentRunning = true;
+    try {
+      return await deliverUrgent();
+    } catch (e) {
+      log.error(`[ess] push job: urgent delivery: ${e && e.message ? e.message : e}`);
+      return null;
+    } finally {
+      urgentRunning = false;
+    }
+  }
+
   const timer = setInterval(runOnce, intervalMs);
   if (typeof timer.unref === 'function') timer.unref();
-  if (immediate) runOnce();
+  const urgentTimer = setInterval(runUrgentOnce, urgentIntervalMs);
+  if (typeof urgentTimer.unref === 'function') urgentTimer.unref();
+  if (immediate) {
+    // The urgent lane probes the priority column first, so the minute loop's first run already
+    // knows whether to filter urgent rows out.
+    runUrgentOnce().finally(() => runOnce());
+  }
 
-  return { runOnce, stop: () => clearInterval(timer) };
+  return {
+    runOnce,
+    runUrgentOnce,
+    stop: () => {
+      clearInterval(timer);
+      clearInterval(urgentTimer);
+    },
+  };
 }
 
-module.exports = { startPushJob, MAX_ATTEMPTS, PRIORITY_WINDOW_MS };
+module.exports = { startPushJob, MAX_ATTEMPTS, PRIORITY_WINDOW_MS, URGENT_INTERVAL_MS, URGENT_TTL_MS };

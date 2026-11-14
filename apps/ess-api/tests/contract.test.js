@@ -1168,6 +1168,7 @@ const WAVE_4 = {
   'PUT /api/ess/notifications/settings': [
     ['200, one turned off', call('attendance', put(NOTIF_SETTINGS, { disabled_categories: ['approvals'] }))],
     ['400 VALIDATION_FAILED, a category it does not know', call('attendance', put(NOTIF_SETTINGS, { disabled_categories: ['wall'] }))],
+    ['400 CATEGORY_LOCKED, an urgent category', call('attendance', put(NOTIF_SETTINGS, { disabled_categories: ['crm_callback'] }))],
     ['401, no token', call('attendance', (app) => request(app).put(NOTIF_SETTINGS).send({ disabled_categories: [] }))],
     ['403 NOT_LINKED', call('desk', put(NOTIF_SETTINGS, { disabled_categories: [] }))],
     ['429 RATE_LIMITED', async () => {

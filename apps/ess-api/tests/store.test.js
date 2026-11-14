@@ -326,6 +326,19 @@ describe('a failed read', () => {
     expect(storeError('users', new TypeError('fetch failed'))).toMatchObject({ status: 503, code: 'UNAVAILABLE' });
   });
 
+  // team_app #59: the CRM categories before migration 20261211000002.
+  it('answers "database update pending" when a CRM notification category meets the old CHECK', () => {
+    for (const name of ['hr_ess_notification_settings_disabled_categories_check', 'hr_ess_notifications_category_check']) {
+      const e = storeError('hr_ess_notification_settings', {
+        code: '23514', message: `new row for relation violates check constraint "${name}"`,
+      });
+      expect(e).toMatchObject({ status: 503, code: 'MODULE_NOT_INSTALLED' });
+    }
+    // Any other CHECK is still the server's own fault.
+    expect(storeError('hr_ess_notifications', { code: '23514', message: 'violates check constraint "hr_ess_notifications_priority_chk"' }))
+      .toMatchObject({ status: 500, code: 'INTERNAL_ERROR' });
+  });
+
   it('reaches the caller as those refusals, never as a raw database error', async () => {
     const { db, store, people } = setup();
     db.dropTable('hr_departments');

@@ -45,6 +45,7 @@ describe('GET /api/ess/notifications', () => {
     expect(res.body.notifications[0]).toEqual({
       id: NID(2),
       category: 'approvals',
+      priority: 'normal',
       title: 'New leave request',
       body: 'Test CAD Faculty asked for casual leave on 20 Oct.',
       data: { request_id: '7a000000-0000-4000-8000-000000000001', request_family: 'attendance' },
@@ -101,20 +102,26 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
     const res = await request(app).get(SETTINGS).set(bearer(tokens.attendance(people.attendance)));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
-      // Phase 2A added the Wall's six (tasks F1-F8); Phase 2B added the Helpdesk's (G2). The
-      // order is policy/notifications.js's.
+      // Phase 2A added the Wall's six (tasks F1-F8); Phase 2B added the Helpdesk's (G2), and
+      // TA-P-01 the CRM's five. The order is policy/notifications.js's. The two call categories
+      // are locked on: a callback cannot be switched off.
       categories: [
-        { category: 'approvals', enabled: true },
-        { category: 'decisions', enabled: true },
-        { category: 'priority_tasks', enabled: true },
-        { category: 'mentions', enabled: true },
-        { category: 'replies', enabled: true },
-        { category: 'praise', enabled: true },
-        { category: 'announcements', enabled: true },
-        { category: 'acknowledgements', enabled: true },
-        { category: 'polls', enabled: true },
-        { category: 'helpdesk', enabled: true },
-        { category: 'documents', enabled: true },
+        { category: 'approvals', enabled: true, locked: false },
+        { category: 'decisions', enabled: true, locked: false },
+        { category: 'priority_tasks', enabled: true, locked: false },
+        { category: 'mentions', enabled: true, locked: false },
+        { category: 'replies', enabled: true, locked: false },
+        { category: 'praise', enabled: true, locked: false },
+        { category: 'announcements', enabled: true, locked: false },
+        { category: 'acknowledgements', enabled: true, locked: false },
+        { category: 'polls', enabled: true, locked: false },
+        { category: 'helpdesk', enabled: true, locked: false },
+        { category: 'documents', enabled: true, locked: false },
+        { category: 'crm_callback', enabled: true, locked: true },
+        { category: 'crm_call', enabled: true, locked: true },
+        { category: 'crm_lead_assigned', enabled: true, locked: false },
+        { category: 'crm_followup', enabled: true, locked: false },
+        { category: 'crm_alert', enabled: true, locked: false },
       ],
       quiet_hours: { from: '21:00', to: '08:00' },
     });
@@ -126,22 +133,57 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
     const res = await request(app).put(SETTINGS).set(bearer(token)).send({ disabled_categories: ['approvals', 'approvals'] });
     expect(res.status).toBe(200);
     expect(res.body.categories).toEqual([
-      { category: 'approvals', enabled: false },
-      { category: 'decisions', enabled: true },
-      { category: 'priority_tasks', enabled: true },
-      { category: 'mentions', enabled: true },
-      { category: 'replies', enabled: true },
-      { category: 'praise', enabled: true },
-      { category: 'announcements', enabled: true },
-      { category: 'acknowledgements', enabled: true },
-      { category: 'polls', enabled: true },
-      { category: 'helpdesk', enabled: true },
-      { category: 'documents', enabled: true },
+      { category: 'approvals', enabled: false, locked: false },
+      { category: 'decisions', enabled: true, locked: false },
+      { category: 'priority_tasks', enabled: true, locked: false },
+      { category: 'mentions', enabled: true, locked: false },
+      { category: 'replies', enabled: true, locked: false },
+      { category: 'praise', enabled: true, locked: false },
+      { category: 'announcements', enabled: true, locked: false },
+      { category: 'acknowledgements', enabled: true, locked: false },
+      { category: 'polls', enabled: true, locked: false },
+      { category: 'helpdesk', enabled: true, locked: false },
+      { category: 'documents', enabled: true, locked: false },
+      { category: 'crm_callback', enabled: true, locked: true },
+      { category: 'crm_call', enabled: true, locked: true },
+      { category: 'crm_lead_assigned', enabled: true, locked: false },
+      { category: 'crm_followup', enabled: true, locked: false },
+      { category: 'crm_alert', enabled: true, locked: false },
     ]);
     expect(db.tables.hr_ess_notification_settings).toEqual([
       expect.objectContaining({ employee_id: people.attendance.employee.id, disabled_categories: ['approvals'] }),
     ]);
     expect((await request(app).get(SETTINGS).set(bearer(token))).body.categories[0].enabled).toBe(false);
+  });
+
+  it('shows the urgent CRM categories locked on, even when an old row says otherwise', async () => {
+    const { app, db, people } = buildApp({
+      setup: (w) => {
+        w.tables.hr_ess_notification_settings = [{
+          employee_id: w.people.attendance.employee.id,
+          disabled_categories: ['crm_callback', 'crm_call'],
+          updated_at: '2026-10-16T05:00:00+00:00',
+        }];
+      },
+    });
+    const res = await request(app).get(SETTINGS).set(bearer(tokens.attendance(people.attendance)));
+    expect(res.status).toBe(200);
+    const byName = Object.fromEntries(res.body.categories.map((c) => [c.category, c]));
+    expect(byName.crm_callback).toEqual({ category: 'crm_callback', enabled: true, locked: true });
+    expect(byName.crm_call).toEqual({ category: 'crm_call', enabled: true, locked: true });
+    expect(db.tables.hr_ess_notification_settings[0].disabled_categories).toEqual(['crm_callback', 'crm_call']);
+  });
+
+  it('refuses to switch off a locked category, with CATEGORY_LOCKED', async () => {
+    const { app, db, people } = buildApp();
+    const token = tokens.attendance(people.attendance);
+    const put = (body) => request(app).put(SETTINGS).set(bearer(token)).send(body);
+    expectRefusal(await put({ disabled_categories: ['crm_callback'] }), 400, 'CATEGORY_LOCKED');
+    expectRefusal(await put({ disabled_categories: ['crm_call'] }), 400, 'CATEGORY_LOCKED');
+    expectRefusal(await put({ disabled_categories: ['approvals', 'crm_callback'] }), 400, 'CATEGORY_LOCKED');
+    // Nothing was saved, and a normal category still can be.
+    expect(db.tables.hr_ess_notification_settings || []).toEqual([]);
+    expect((await put({ disabled_categories: ['approvals'] })).status).toBe(200);
   });
 
   it('refuses a category it does not know, a value that is not a list, and an unknown field', async () => {

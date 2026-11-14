@@ -159,6 +159,8 @@ const COLUMNS = Object.freeze({
   // D6: one notification as the Inbox reads it; the push bookkeeping stays server-side.
   notification: 'id, category, title, body, data, read_at, created_at',
   notificationWorker: 'id, employee_id, category, title, body, data, push_attempts',
+  // The urgent lane reads the priority and the time the row was written, for its 60-second TTL.
+  notificationWorkerPriority: 'id, employee_id, category, title, body, data, push_attempts, priority, created_at',
   notificationSetting: 'employee_id, disabled_categories, updated_at',
   taskNotification: 'id, data',
   // D2: the Scheduler's priority tasks, read for push only (its own columns).
@@ -421,6 +423,17 @@ function storeError(table, error) {
   // The Wall's `occasion` CHECK before migration 30: a promotion wish is not a bad row, it is
   // the database update KP has not applied yet. Answer 503, as every other pending module does.
   if (error && error.code === '23514' && /hr_ess_wall_(posts|wishes)_occasion_check/.test(String(error.message || ''))) {
+    return new HttpError(
+      503,
+      'MODULE_NOT_INSTALLED',
+      `Team RVM needs a database update that has not been applied yet (it cannot read ${table}). Ask the tech team.`,
+    );
+  }
+  // The CRM notification categories before migration 20261211000002 (team_app #59): a person
+  // switching one off, or a writer filing one, meets the old CHECK. That is a pending database
+  // update, not a bad row, so it answers 503 like every other pending module.
+  if (error && error.code === '23514'
+    && /hr_ess_notification(s_category|_settings_disabled_categories)_check/.test(String(error.message || ''))) {
     return new HttpError(
       503,
       'MODULE_NOT_INSTALLED',
@@ -1154,6 +1167,16 @@ function createSupabaseStore(config, { client } = {}) {
     listUndeliveredNotifications: async (limit) =>
       (await read('hr_ess_notifications', (q) => q.select(COLUMNS.notificationWorker)
         .is('pushed_at', null).order('created_at', { ascending: true }).limit(limit))) || [],
+    /** The urgent loop's queue: unpushed urgent rows, oldest first. */
+    listUrgentNotifications: async (limit) =>
+      (await read('hr_ess_notifications', (q) => q.select(COLUMNS.notificationWorkerPriority)
+        .eq('priority', 'urgent').is('pushed_at', null)
+        .order('created_at', { ascending: true }).limit(limit))) || [],
+    /** The minute loop's queue once the priority column exists: everything except the urgent rows. */
+    listNormalNotifications: async (limit) =>
+      (await read('hr_ess_notifications', (q) => q.select(COLUMNS.notificationWorkerPriority)
+        .neq('priority', 'urgent').is('pushed_at', null)
+        .order('created_at', { ascending: true }).limit(limit))) || [],
     markNotificationPushed: (id, patch) => write('hr_ess_notifications',
       (q) => q.update(patch).eq('id', id).select('id').maybeSingle()),
     notificationSettingsFor: async (employeeIds) =>
