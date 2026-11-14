@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.15.0
+  version: 0.16.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -724,6 +724,7 @@ paths:
           - `login_off`: HR switched the attendance login off, or removed it.
           - `left`: the employee has left.
           - `unlinked`: the portal login is no longer linked to this person's HR record, or is no longer a staff account.
+          - `superseded`: the person signed in on another phone while the one-sign-in rule is on (Scheduler #175).
         - **409 `REFRESH_IN_PROGRESS`**: this refresh token was traded in less than a minute ago by this same install, or another refresh with it is running now. Nothing ends: retry with the newest refresh token the app holds.
         - **400 `BAD_INSTALL_ID`**: no install id, or a malformed one. Nothing ends.
         - **503**: the database could not be reached. Nothing ends; try again.
@@ -12418,6 +12419,22 @@ components:
           $ref: '#/components/schemas/RefreshToken'
         login:
           $ref: '#/components/schemas/Login'
+        device:
+          type: object
+          required: [status]
+          description: |
+            Only on a new sign-in (POST /ess/session), and only while the Scheduler's Team-app security rules are on for the person (Scheduler #175). What this phone is to them; the Scheduler decides from it what the phone may open.
+          properties:
+            status:
+              type: [string, 'null']
+              enum: [bound, unclaimed, first, approved, pending, null]
+              description: |
+                - `bound`: the registered phone.
+                - `unclaimed`: the registered phone, which has not sent its install id yet; it does on its next punch.
+                - `first`: the person has no phone yet; this one becomes it on its first punch.
+                - `approved`: HR approved this phone; it becomes the registered one on its first punch.
+                - `pending`: a new phone, waiting for HR. Show that, and keep the rest of the app working.
+                - `null`: it could not be read.
 
     RefreshRefused:
       type: object
@@ -12431,7 +12448,7 @@ components:
           const: NOT_AUTHENTICATED
         reason:
           type: string
-          enum: [unknown, expired, signed_out, reuse, password_changed, login_off, left, unlinked]
+          enum: [unknown, expired, signed_out, reuse, password_changed, login_off, left, unlinked, superseded]
 
     SessionList:
       type: object

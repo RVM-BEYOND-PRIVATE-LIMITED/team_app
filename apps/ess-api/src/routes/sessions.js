@@ -38,6 +38,7 @@ const REFUSED = Object.freeze({
   login_off: MESSAGES.ATTENDANCE_LOGIN_OFF,
   left: MESSAGES.NOT_ACTIVE,
   unlinked: MESSAGES.SESSION_UNLINKED,
+  superseded: MESSAGES.SIGNED_IN_ELSEWHERE,
 });
 
 const refused = (reason) => {
@@ -107,6 +108,22 @@ function sessionRoutes({ config, store, now }) {
   }
 
   /**
+   * One live sign-in (Scheduler #175): the person's other live sign-ins end as 'superseded'. Before this
+   * backend's migration 20261231000017 the database does not know that reason yet, so they end as signed out.
+   * A revoke that fails is a 503 and nothing is kept: the app signs in again.
+   */
+  async function endOtherSignIns(employeeId, at) {
+    const live = await store.listLiveSessions(employeeId);
+    for (const familyId of [...new Set(live.map((s) => s.family_id))]) {
+      try {
+        await store.revokeFamily({ familyId, reason: 'superseded', at, employeeId });
+      } catch {
+        await store.revokeFamily({ familyId, reason: 'signed_out', at, employeeId });
+      }
+    }
+  }
+
+  /**
    * POST /api/ess/session (exchange), behind employeeAuth, so every Wave 1 check has passed:
    * a staff login, linked, on strength, and not on HR's first-time password.
    */
@@ -138,6 +155,14 @@ function sessionRoutes({ config, store, now }) {
       if (changed) throw notAuthenticated(MESSAGES.PASSWORD_CHANGED);
     }
 
+    // Scheduler #175, only while its switch team_security is open for this person: the phone's standing (a new
+    // phone is recorded for HR's approval) and one live sign-in. Closed: exactly as before.
+    let device = null;
+    if (store.teamSecurityOn && await store.teamSecurityOn(auth.employee.id)) {
+      device = { status: await store.deviceCheck(auth.employee.id, installId, label.value) };
+      await endOtherSignIns(auth.employee.id, at.toISOString());
+    }
+
     // The family's id is its first row's, so the sign-in's start is that row's created_at.
     const id = crypto.randomUUID();
     const refreshToken = T.newRefreshToken();
@@ -161,7 +186,7 @@ function sessionRoutes({ config, store, now }) {
     // One Scheduler sign-in is kept once. A second trade of the same token is somebody else with a
     // copy of it, or the app retrying an exchange whose answer it lost; either way it signs in again.
     if (!(await store.createSession(session))) throw new HttpError(409, 'ALREADY_EXCHANGED', MESSAGES.SIGN_IN_ALREADY_KEPT);
-    res.status(201).json(sessionReply(session, refreshToken, user, nowMs));
+    res.status(201).json({ ...sessionReply(session, refreshToken, user, nowMs), ...(device ? { device } : {}) });
   });
 
   /** POST /api/ess/session/refresh { refresh_token, install_id }, with no bearer. */

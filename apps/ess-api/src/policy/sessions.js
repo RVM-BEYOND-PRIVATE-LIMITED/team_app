@@ -40,14 +40,15 @@ const REFRESH_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const DEVICE_LABEL_MAX = 80;
 
 /** Why a sign-in ended: the CHECK on hr_ess_sessions.revoked_reason, in the migration. */
-const REVOKE_REASONS = Object.freeze(['rotated', 'signed_out', 'reuse', 'password_changed', 'login_off', 'left', 'unlinked', 'expired']);
+// 'superseded' (20261231000017): the person signed in on another phone while the one-sign-in rule is on.
+const REVOKE_REASONS = Object.freeze(['rotated', 'signed_out', 'reuse', 'password_changed', 'login_off', 'left', 'unlinked', 'expired', 'superseded']);
 
 /**
  * What a refused refresh tells the app in `reason`: every way a refresh token stops working, and
  * 'unknown' for one the ESS never issued. 'rotated' is never a reason on its own: a traded-in token
  * is either a retry (409) or reuse.
  */
-const REFUSAL_REASONS = Object.freeze(['unknown', 'expired', 'signed_out', 'reuse', 'password_changed', 'login_off', 'left', 'unlinked']);
+const REFUSAL_REASONS = Object.freeze(['unknown', 'expired', 'signed_out', 'reuse', 'password_changed', 'login_off', 'left', 'unlinked', 'superseded']);
 
 const readInstallId = (value) => (typeof value === 'string' && INSTALL_ID_RE.test(value) ? value : null);
 

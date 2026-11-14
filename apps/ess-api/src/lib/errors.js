@@ -42,6 +42,7 @@ const MESSAGES = Object.freeze({
   REFRESH_IN_PROGRESS: 'Your sign-in is being renewed. Try again in a moment.',
   SIGNED_OUT: 'You have signed out. Please sign in again.',
   SIGNED_OUT_FOR_SAFETY: 'For your safety you have been signed out. Please sign in again.',
+  SIGNED_IN_ELSEWHERE: 'You signed in on another phone, so this one was signed out. Sign in again to use it here.',
   SESSION_UNLINKED: 'Your login is no longer linked to your employee record. Ask HR or the tech team.',
   SESSION_NOT_FOUND: 'That sign-in is not one of yours, or it has already ended.',
   BAD_INSTALL_ID: 'The app did not identify this phone correctly. Update the app and try again.',
