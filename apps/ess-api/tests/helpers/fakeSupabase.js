@@ -943,6 +943,20 @@ function windowOutcome(day, today) {
 }
 
 const FUNCTIONS = {
+  /*
+   * The Scheduler's fee-hold function (#178), read by class marking. Fixtures: fee_hold_modes [{ batch_id, mode }]
+   * and fee_hold_students [{ student_id }]. No fixture: mode off, nobody held. Calls are kept in fee_hold_calls, so
+   * a test can tell a counted read (the save) from an uncounted one (the roster flag).
+   */
+  lms_fee_hold_attendance: {
+    table: 'student_attendance',
+    run(fake, { p_student_ids, p_batch, p_count }) {
+      (fake.tables.fee_hold_calls = fake.tables.fee_hold_calls || []).push({ batch_id: p_batch, count: p_count === true });
+      const mode = ((fake.tables.fee_hold_modes || []).find((m) => m.batch_id === p_batch) || {}).mode || 'off';
+      const heldSet = new Set((fake.tables.fee_hold_students || []).map((h) => h.student_id));
+      return { data: { mode, held: mode === 'off' ? [] : (p_student_ids || []).filter((id) => heldSet.has(id)) }, error: null };
+    },
+  },
   hr_ess_session_rotate: {
     table: 'hr_ess_sessions',
     run(fake, { p_session_id, p_new_id, p_refresh_hash, p_now, p_expires_at }) {

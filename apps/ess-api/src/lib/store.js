@@ -602,6 +602,18 @@ function createSupabaseStore(config, { client } = {}) {
     getBatch: (id) => one('batches', COLUMNS.batch, 'id', id),
     /** The roster's own columns and the hold flag, and nothing else from a student's record. */
     listStudentsFor: (studentIds) => readIn('students', COLUMNS.classStudent, 'id', studentIds),
+    /**
+     * Fee hold (Scheduler #178), read from the Scheduler's own function: `{ mode, held }` for the students given,
+     * for that batch's branch and day. `count` true counts would-be refusals (the save); false only reads (the
+     * roster flag). A missing function (its migration not applied) or any failure reads as no hold, so marking
+     * never breaks: `null`.
+     */
+    feeHoldForMarking: async (studentIds, batchId, day, count = true) => {
+      try {
+        const { data, error } = await db.rpc('lms_fee_hold_attendance', { p_student_ids: studentIds, p_batch: batchId, p_date: day, p_count: count });
+        return error ? null : data;
+      } catch { return null; }
+    },
     /** The batch's marks for one day: what the roster shows and the lock is decided from. */
     listClassAttendance: (batchId, day) =>
       list('student_attendance', (q) => q.select(COLUMNS.classAttendance).eq('batch_id', batchId).eq('date', day)),

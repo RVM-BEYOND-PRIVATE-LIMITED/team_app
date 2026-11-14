@@ -35,6 +35,17 @@ const roleDenied = () => new HttpError(403, 'CLASS_ROLE_DENIED', MESSAGES.CLASS_
 const windowRefused = () => new HttpError(403, 'CLASS_WINDOW', MESSAGES.CLASS_WINDOW);
 const batchMissing = () => new HttpError(404, 'BATCH_NOT_FOUND', MESSAGES.BATCH_NOT_FOUND);
 const alreadyMarked = () => new HttpError(409, 'CLASS_ALREADY_MARKED', MESSAGES.CLASS_ALREADY_MARKED);
+const feeHold = (studentIds) => new HttpError(409, 'CLASS_FEE_HOLD', MESSAGES.CLASS_FEE_HOLD, { student_ids: studentIds });
+
+/**
+ * The roster flag (Scheduler #178): the marking rule read without counting, so a student is flagged only where
+ * the branch is in report or enforce and only for today or later. Every branch starts off: nobody is flagged.
+ */
+async function heldOnRoster(store, studentIds, batchId, day) {
+  if (!studentIds.length || !store.feeHoldForMarking) return new Set();
+  const hold = await store.feeHoldForMarking(studentIds, batchId, day, false);
+  return new Set(hold && Array.isArray(hold.held) ? hold.held : []);
+}
 const notAbsent = () => new HttpError(409, 'CLASS_NOT_ABSENT', MESSAGES.CLASS_NOT_ABSENT);
 
 /** The caller's marking role, and the faculty record a teaching role needs (never a student's). */
@@ -117,8 +128,8 @@ async function rosterContext({ store, batch, day }) {
   return { studentBy, eligibleIds };
 }
 
-/** What the roster says about one student: a name, an admission number and the day's mark. */
-function studentView(student, row) {
+/** What the roster says about one student: a name, an admission number, the day's mark and the fee-hold flag. */
+function studentView(student, row, onHold = false) {
   const marked = row ? (row.is_present ? PRESENT : ABSENT) : null;
   return {
     id: student ? student.id : null,
@@ -127,6 +138,8 @@ function studentView(student, row) {
     marked,
     absent_reason: row ? row.absent_reason ?? null : null,
     follow_up_comment: row ? row.follow_up_comment ?? null : null,
+    // A boolean only: no amount, no date (Scheduler #178).
+    fee_hold: onHold === true,
   };
 }
 
@@ -178,8 +191,9 @@ function classRoster({ store, now }) {
       store.listClassAttendance(batch.id, day),
     ]);
     const rowBy = new Map(rows.map((r) => [r.student_id, r]));
+    const held = await heldOnRoster(store, [...ctx.eligibleIds], batch.id, day);
     const students = [...ctx.eligibleIds]
-      .map((id) => studentView(ctx.studentBy.get(id) || { id }, rowBy.get(id) || null))
+      .map((id) => studentView(ctx.studentBy.get(id) || { id }, rowBy.get(id) || null, held.has(id)))
       .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')) || String(a.id).localeCompare(String(b.id)));
 
     const marked = rows.length > 0;
@@ -213,6 +227,13 @@ function saveClassAttendance({ store, now }) {
     const existing = await store.listClassAttendance(batch.id, day);
     // The lock is a teaching role's: the day is marked once. An admin may correct it.
     if (C.isTeaching(viewer.role) && existing.length) throw alreadyMarked();
+
+    // Fee hold (Scheduler #178): a student on hold is not marked present where the branch enforces it.
+    const presentIds = items.filter((i) => i.present).map((i) => i.student_id);
+    if (presentIds.length && store.feeHoldForMarking) {
+      const hold = await store.feeHoldForMarking(presentIds, batch.id, day);
+      if (hold && hold.mode === 'enforce' && Array.isArray(hold.held) && hold.held.length) throw feeHold(hold.held);
+    }
 
     const stamp = at.toISOString();
     const rows = items.map((item) => ({
@@ -315,7 +336,8 @@ function updateClassRemark({ store, now }) {
     res.json({
       batch: { id: batch.id, name: batch.name },
       date: day,
-      student: studentView(ctx.studentBy.get(studentId) || { id: studentId }, saved),
+      student: studentView(ctx.studentBy.get(studentId) || { id: studentId }, saved,
+        (await heldOnRoster(store, [studentId], batch.id, day)).has(studentId)),
     });
   });
 }

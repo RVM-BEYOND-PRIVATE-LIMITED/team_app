@@ -82,6 +82,7 @@ const MESSAGES = Object.freeze({
   CLASS_WINDOW: 'A class can be marked only from the batch\'s start date up to today.',
   BATCH_NOT_FOUND: 'That batch was not found.',
   CLASS_ALREADY_MARKED: 'This class has already been marked for that day. Ask an admin to correct it.',
+  CLASS_FEE_HOLD: 'Some students are on fee hold and cannot be marked present until they pay. Mark them absent.',
   CLASS_NOT_ABSENT: 'That student is not marked absent for this day, so there is no absent remark to change.',
   CLASS_ROSTER: 'Some students are not on this batch\'s roster for that day, or are not eligible to be marked.',
   CLASS_ATTENDANCE: 'Send each student once, with present as true or false, and each absent reason within its limits.',

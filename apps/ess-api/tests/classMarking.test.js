@@ -107,15 +107,17 @@ describe('GET /api/ess/me/batches/{id}/roster', () => {
     expect(res.body.students.map((s) => s.full_name)).toEqual(['Aarav Sharma', 'Diya Patel', 'Sara Khan']);
     expect(res.body.students[0]).toEqual({
       id: SID(1), full_name: 'Aarav Sharma', admission_number: 'ADM-001',
-      marked: 'present', absent_reason: null, follow_up_comment: null,
+      marked: 'present', absent_reason: null, follow_up_comment: null, fee_hold: false,
     });
     expect(res.body.students[1]).toMatchObject({ id: SID(2), marked: 'absent', absent_reason: null });
     // Sara has no mark yet, and no admissions row at all: the Scheduler's legacy add stays eligible.
     expect(res.body.students[2]).toMatchObject({ id: SID(6), marked: null });
     expect(Object.keys(res.body.students[0]).sort()).toEqual([
-      'absent_reason', 'admission_number', 'follow_up_comment', 'full_name', 'id', 'marked',
+      'absent_reason', 'admission_number', 'fee_hold', 'follow_up_comment', 'full_name', 'id', 'marked',
     ]);
-    expect(JSON.stringify(res.body)).not.toMatch(/phone|password|fee|email|date_of_birth|remarks_updated/);
+    // The one fee-related field is the fee-hold flag (Scheduler #178), a boolean: no amount, no date.
+    expect(res.body.students.every((s) => typeof s.fee_hold === 'boolean')).toBe(true);
+    expect(JSON.stringify(res.body).replace(/"fee_hold":(true|false)/g, '')).not.toMatch(/phone|password|fee|email|date_of_birth|remarks_updated/);
   });
 
   it('lets a covering substitute read, and leaves an ended substitution out', async () => {
@@ -281,7 +283,7 @@ describe('POST /api/ess/me/batches/{id}/attendance', () => {
     const audit = db.tables.hr_ess_audit.find((a) => a.action === 'class.attendance.marked');
     expect(audit.details).toEqual({ batch_id: BID(1), date: OPEN_DAY, present: 1, absent: 1 });
     expect(JSON.stringify(audit.details)).not.toContain(SID(1));
-    expect(JSON.stringify(res.body)).not.toMatch(/phone|password|fee|email/);
+    expect(JSON.stringify(res.body).replace(/"fee_hold":(true|false)/g, '')).not.toMatch(/phone|password|fee|email/);
   });
 
   it('refuses an ineligible student: not joined, admissions false, or on hold', async () => {
@@ -417,7 +419,7 @@ describe('PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks', () => {
     expect(res.body.batch).toEqual({ id: BID(1), name: 'CAD Morning Batch' });
     expect(res.body.student).toEqual({
       id: SID(2), full_name: 'Diya Patel', admission_number: 'ADM-002',
-      marked: 'absent', absent_reason: 'Fever, informed the office.', follow_up_comment: 'Call the parent.',
+      marked: 'absent', absent_reason: 'Fever, informed the office.', follow_up_comment: 'Call the parent.', fee_hold: false,
     });
     const row = db.tables.student_attendance.find((r) => r.batch_id === BID(1) && r.student_id === SID(2) && r.date === DAY);
     expect(row).toMatchObject({
@@ -430,7 +432,7 @@ describe('PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks', () => {
     expect(audit.details).toEqual({
       batch_id: BID(1), date: DAY, student_id: SID(2), before: null, after: 'Fever, informed the office.',
     });
-    expect(JSON.stringify(res.body)).not.toMatch(/phone|password|fee|email/);
+    expect(JSON.stringify(res.body).replace(/"fee_hold":(true|false)/g, '')).not.toMatch(/phone|password|fee|email/);
   });
 
   it('lets an admin change a remark a teaching role already filled', async () => {
@@ -516,5 +518,52 @@ describe('PATCH /api/ess/me/batches/{id}/attendance/{date}/remarks', () => {
     const res = await patch(unknown.app, REMARK(BID(1)), tokens.portal(unknown.people.faculty), { ...body, x: 1 });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe(MESSAGES.UNKNOWN_FIELD);
+  });
+});
+
+describe('fee hold (Scheduler #178)', () => {
+  const HOLD = (mode) => (w) => {
+    CLASS(w);
+    w.tables.fee_hold_modes = [{ batch_id: BID(2), mode }];
+    w.tables.fee_hold_students = [{ student_id: SID(8) }];
+  };
+
+  it('flags the held student on the roster, a boolean and nothing else, without counting a refusal', async () => {
+    const { app, people, db } = buildApp({ setup: HOLD('report') });
+    const res = await get(app, ROSTER(BID(2)), tokens.portal(people.faculty));
+    expect(res.status).toBe(200);
+    expect(res.body.students).toEqual([expect.objectContaining({ id: SID(8), fee_hold: true })]);
+    expect(db.tables.fee_hold_calls).toEqual([{ batch_id: BID(2), count: false }]);
+  });
+
+  it('flags nobody while the branch is off, the default', async () => {
+    const { app, people } = buildApp({ setup: HOLD('off') });
+    const res = await get(app, ROSTER(BID(2)), tokens.portal(people.faculty));
+    expect(res.status).toBe(200);
+    expect(res.body.students).toEqual([expect.objectContaining({ id: SID(8), fee_hold: false })]);
+  });
+
+  it('refuses present for a held student where the branch enforces it; absent passes; report and off pass', async () => {
+    const enforced = buildApp({ setup: HOLD('enforce') });
+    const refused = await post(enforced.app, SAVE(BID(2)), tokens.portal(enforced.people.faculty), { date: DAY, attendance: [one(SID(8), true)] });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('CLASS_FEE_HOLD');
+    expect(refused.body.student_ids).toEqual([SID(8)]);
+    expect(enforced.db.tables.student_attendance.some((r) => r.batch_id === BID(2) && r.date === DAY)).toBe(false);
+    const absent = await post(enforced.app, SAVE(BID(2)), tokens.portal(enforced.people.faculty), { date: DAY, attendance: [one(SID(8), false, { absent_reason: 'Fee hold' })] });
+    expect(absent.status).toBe(200);
+
+    for (const mode of ['report', 'off']) {
+      const w = buildApp({ setup: HOLD(mode) });
+      const ok = await post(w.app, SAVE(BID(2)), tokens.portal(w.people.faculty), { date: DAY, attendance: [one(SID(8), true)] });
+      expect(ok.status).toBe(200);
+    }
+  });
+
+  it('marks as before when the Scheduler functions are missing', async () => {
+    const { app, people, db } = buildApp({ setup: HOLD('enforce') });
+    db.failWhen = (q) => (q.op === 'rpc' && q.fn === 'lms_fee_hold_attendance' ? 'error' : null);
+    const ok = await post(app, SAVE(BID(2)), tokens.portal(people.faculty), { date: DAY, attendance: [one(SID(8), true)] });
+    expect(ok.status).toBe(200);
   });
 });

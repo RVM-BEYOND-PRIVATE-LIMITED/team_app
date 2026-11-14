@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.14.0
+  version: 0.15.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -4401,8 +4401,8 @@ paths:
                     already_marked: true
                     can_edit: false
                     students:
-                      - { id: 9e000000-0000-4000-8000-000000000001, full_name: Aarav Sharma, admission_number: ADM-001, marked: present, absent_reason: null, follow_up_comment: null }
-                      - { id: 9e000000-0000-4000-8000-000000000002, full_name: Diya Patel, admission_number: ADM-002, marked: absent, absent_reason: null, follow_up_comment: null }
+                      - { id: 9e000000-0000-4000-8000-000000000001, full_name: Aarav Sharma, admission_number: ADM-001, marked: present, absent_reason: null, follow_up_comment: null, fee_hold: false }
+                      - { id: 9e000000-0000-4000-8000-000000000002, full_name: Diya Patel, admission_number: ADM-002, marked: absent, absent_reason: null, follow_up_comment: null, fee_hold: true }
         '400':
           $ref: '#/components/responses/EssClassBad'
         '401':
@@ -4521,7 +4521,7 @@ paths:
                   value:
                     batch: { id: 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b, name: CAD Morning Batch }
                     date: '2026-10-16'
-                    student: { id: 9e000000-0000-4000-8000-000000000002, full_name: Diya Patel, admission_number: ADM-002, marked: absent, absent_reason: 'Fever, informed the office.', follow_up_comment: Call the parent. }
+                    student: { id: 9e000000-0000-4000-8000-000000000002, full_name: Diya Patel, admission_number: ADM-002, marked: absent, absent_reason: 'Fever, informed the office.', follow_up_comment: 'Call the parent.', fee_hold: false }
         '400':
           $ref: '#/components/responses/EssClassBad'
         '401':
@@ -14118,7 +14118,7 @@ components:
 
     ClassRosterStudent:
       type: object
-      required: [id, full_name, admission_number, marked, absent_reason, follow_up_comment]
+      required: [id, full_name, admission_number, marked, absent_reason, follow_up_comment, fee_hold]
       properties:
         id:
           type: string
@@ -14135,6 +14135,9 @@ components:
           type: [string, 'null']
         follow_up_comment:
           type: [string, 'null']
+        fee_hold:
+          type: boolean
+          description: The student is on fee hold (Scheduler #178) and cannot be marked present. A flag only; no amount or date. Shown only where the branch's fee-hold rule is on (report or enforce) and only for today or later; while it is off, every student reads false.
 
     ClassRoster:
       type: object
@@ -19215,6 +19218,7 @@ components:
         The day cannot move as asked; nothing is changed.
         - `CLASS_ALREADY_MARKED`: a teaching role saving a batch and day that already has rows. An admin role may correct the day instead.
         - `CLASS_NOT_ABSENT`: a remark for a student who is present, or is not marked at all on that day.
+        - `CLASS_FEE_HOLD`: some students sent as present are on fee hold at a branch that enforces it; `student_ids` names them and nothing is saved. Mark them absent.
       content:
         application/json:
           schema:
