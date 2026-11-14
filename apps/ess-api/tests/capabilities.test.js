@@ -164,6 +164,20 @@ describe('powers that come with the portal role', () => {
     expect(res.body.approvals.any_request).toBe(true);
     expect(res.body.approvals.hr_scope).toEqual(HR_ALL);
   });
+
+  // team_app #59: the Scheduler's sales_executive role. The fixture has no such person, so an
+  // account's role is changed, as above; adding one would move every head count in the suite.
+  it('give a sales executive the five tabs, no Work section and no requests of other people', async () => {
+    const { app, db, people } = buildApp();
+    const token = tokens.portal(people.admin);
+    db.tables.users.find((u) => u.id === people.admin.user.id).role = 'sales_executive';
+    const res = await capabilities(app, token);
+    expect(res.status).toBe(200);
+    expect(res.body.tabs).toEqual(['home', 'inbox', 'wall', 'team', 'me']);
+    expect(res.body.sections).toEqual({ time: true, helpdesk: true, documents: true, profile: true, work: false });
+    expect(res.body.approvals).toMatchObject({ any_request: false, hr_scope: [] });
+    expect(res.body.wall).toEqual({ post: true, announce: false, moderate: false });
+  });
 });
 
 describe('push', () => {

@@ -32,7 +32,7 @@ describe('the role copy', () => {
   it('names every role the database enum has', () => {
     expect(Object.values(roles.ROLES).sort()).toEqual([
       'accounts_admin', 'admin', 'admin_manager', 'bot_readonly', 'ceo', 'faculty', 'hod', 'hod_placement',
-      'hoo', 'hr', 'hr_executive', 'student', 'super_admin',
+      'hoo', 'hr', 'hr_executive', 'sales_executive', 'student', 'super_admin',
     ]);
   });
 
@@ -73,8 +73,12 @@ describe('the HR role-set copy', () => {
   describe.skipIf(!dir)('matches config/hrPolicy.js in SCHEDULER_BACKEND_DIR', () => {
     const scheduler = dir ? require(path.join(dir, 'config', 'hrPolicy.js')) : null;
 
+    // The Scheduler renamed HR's day override to ATTENDANCE_DAY_OVERRIDE_ROLES on 2026-10-17 and
+    // narrowed ATTENDANCE_OVERRIDE_ROLES to ceo and super_admin. The ESS's name keeps its old meaning.
+    const SCHEDULER_NAME = { ATTENDANCE_OVERRIDE_ROLES: 'ATTENDANCE_DAY_OVERRIDE_ROLES' };
+
     it.each(HR_SETS)('%s has the same roles', (name) => {
-      expect(sorted(hrPolicy[name])).toEqual(sorted(scheduler[name]));
+      expect(sorted(hrPolicy[name])).toEqual(sorted(scheduler[SCHEDULER_NAME[name] || name]));
     });
   });
 });

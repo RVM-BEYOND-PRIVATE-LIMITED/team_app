@@ -95,7 +95,11 @@ describe('a minted portal token', () => {
 
   it('is refused by auth.js once its hour is over, whenever the sign-in was', async () => {
     const r = await G.runAuth(mintPortal(people.hr.user, { mintedAgo: HOUR + MINUTE }));
-    expect(r).toMatchObject({ passed: false, status: 401, body: { error: 'Please authenticate' } });
+    // The Scheduler now says why (its task J8): an expired token is still a 401, with its own code.
+    expect(r).toMatchObject({
+      passed: false, status: 401,
+      body: { error: 'Your session has expired. Please sign in again.', code: 'TOKEN_EXPIRED' },
+    });
   });
 
   it('is not an attendance session to the Scheduler', () => {

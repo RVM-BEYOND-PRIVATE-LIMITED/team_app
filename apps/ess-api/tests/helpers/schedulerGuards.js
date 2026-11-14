@@ -3,7 +3,7 @@ const { ROLES, expandRoles, SEES_ALL_LOCATIONS, TEACHING_ROLES } = require('../.
 const { readPunchSession } = require('./schedulerTokens');
 
 /**
- * The Scheduler's own guards, copied verbatim from Scheduler_Backend at c28b9ca, so the tests can
+ * The Scheduler's own guards, copied verbatim from Scheduler_Backend (main, 14 Nov 2026), so the tests can
  * hand them a token the ESS minted (src/lib/accessTokens.js) and see what the Scheduler does with
  * it: middleware/auth.js on every portal route, middleware/punchAuth.js on /hr/my-attendance, and
  * the gate in front of POST /hr/my-attendance/password.
@@ -17,12 +17,16 @@ const { readPunchSession } = require('./schedulerTokens');
 
 let usersTable = [];
 let studentsTable = [];
+// The HR records linked to a login: auth.js signs an account out when every one shows an exit.
+let hrEmployeesTable = [];
 let attendanceAccount = null;
 
-/** supabase.from(t).select('*').eq(c, v).single(), the only shape auth.js uses. */
+/** supabase.from(t).select(...).eq(c, v), awaited directly or with .single(): the shapes auth.js uses. */
 const supabase = {
   from(table) {
-    const rows = table === 'users' ? usersTable : table === 'students' ? studentsTable : [];
+    const rows = table === 'users' ? usersTable
+      : table === 'students' ? studentsTable
+        : table === 'hr_employees' ? hrEmployeesTable : [];
     const filters = [];
     const query = {
       select: () => query,
@@ -30,6 +34,11 @@ const supabase = {
         filters.push([column, value]);
         return query;
       },
+      // Awaited without .single(): every matching row (the HR-exit check reads it this way).
+      then: (resolve, reject) => Promise.resolve({
+        data: rows.filter((r) => filters.every(([c, v]) => r[c] === v)).map((r) => ({ ...r })),
+        error: null,
+      }).then(resolve, reject),
       single: async () => {
         const hit = rows.filter((r) => filters.every(([c, v]) => r[c] === v));
         return hit.length === 1
@@ -45,16 +54,37 @@ const Accounts = { getAccount: async () => attendanceAccount };
 
 /* ── the copies ── */
 
-// <scheduler file="middleware/auth.js" lines="6-106">
+// <scheduler file="middleware/auth.js" lines="6-219">
 const auth = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
 
     if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
+      return res.status(401).json({ error: 'No token provided', code: 'NO_TOKEN' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    /*
+     * Task J8 (#103): 401 is only for a token that was rejected or is absent. A database
+     * outage is 503, so a bad minute in Supabase cannot sign the whole company out. The
+     * client treats a 401 as "sign in again" and must not do that for a server fault.
+     */
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      const expired = err instanceof jwt.TokenExpiredError;
+      return res.status(401).json({
+        error: expired ? 'Your session has expired. Please sign in again.' : 'Please authenticate',
+        code: expired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+      });
+    }
+
+    // A JWT that verifies but names nobody is not a portal token: it is a look-alike (for
+    // example a punch-session body signed with the portal key). Refuse it as a rejected token
+    // instead of asking Postgres to cast undefined to uuid, which would answer 503.
+    if (!decoded.userId && !decoded.id) {
+      return res.status(401).json({ error: 'Please authenticate', code: 'INVALID_TOKEN' });
+    }
 
     // ---------------------------------------------------------
     // 1. CHECK IF TOKEN BELONGS TO A STUDENT
@@ -66,8 +96,14 @@ const auth = async (req, res, next) => {
         .eq('id', decoded.id)
         .single();
 
-      if (error || !student) {
-        throw new Error('Student not found');
+      // PostgREST's PGRST116 is "no rows", which is a rejected sign-in; anything else is the
+      // database being unreachable, which is not.
+      if (error && error.code !== 'PGRST116') {
+        console.error('Auth Middleware: student lookup failed:', error.message);
+        return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.', code: 'DATABASE_UNAVAILABLE' });
+      }
+      if (!student) {
+        return res.status(401).json({ error: 'Please authenticate', code: 'USER_NOT_FOUND' });
       }
 
       // Students are never super_admins
@@ -110,8 +146,72 @@ const auth = async (req, res, next) => {
 
     const { data: user, error } = await userQuery;
 
-    if (error || !user) {
-      throw new Error('User not found');
+    if (error && error.code !== 'PGRST116') {
+      console.error('Auth Middleware: user lookup failed:', error.message);
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.', code: 'DATABASE_UNAVAILABLE' });
+    }
+    if (!user) {
+      return res.status(401).json({ error: 'Please authenticate', code: 'USER_NOT_FOUND' });
+    }
+
+    /*
+     * A portal exit revokes every open session, not just future logins. 401 is deliberate:
+     * the client already treats it as "sign out", so the exited person cannot keep working
+     * in a tab they left open. A database without 20261119000000 has no is_active column,
+     * which reads as undefined and keeps the old behaviour.
+     */
+    if (user.is_active === false) {
+      return res.status(401).json({
+        error: 'This account has been marked exited. Contact a Super Admin if you need access restored.',
+        code: 'ACCOUNT_EXITED',
+      });
+    }
+
+    /*
+     * An HR exit revokes open sessions too, like a portal exit: when every
+     * hr_employees row linked to this user shows a real exit
+     * (employment_status 'exited' or a past date_of_exit), the account is
+     * signed out everywhere (401), even while its user row is still active.
+     *
+     * is_archived alone is NOT an exit here — archiving a row is also how a
+     * picker drops somebody (e.g. an ex-recruiter), while the linked portal
+     * account must keep working. A live row anywhere means still employed.
+     */
+    try {
+      const { data: hrRows, error: hrErr } = await supabase.from('hr_employees')
+        .select('employment_status, date_of_exit')
+        .eq('user_id', user.id);
+      const rows = hrRows || [];
+      if (!hrErr && rows.length) {
+        const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+        const exited = (r) => r.employment_status === 'exited'
+          || (r.date_of_exit && String(r.date_of_exit).slice(0, 10) < today);
+        if (rows.every(exited)) {
+          return res.status(401).json({
+            error: 'This account has been marked exited. Contact a Super Admin if you need access restored.',
+            code: 'ACCOUNT_EXITED',
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Auth HR-exit check failed:', e.message);
+    }
+
+    /*
+     * Task A7 (#94): a password change ends the tokens issued before it. The Scheduler stamps
+     * users.password_changed_at on every password write; the token's iat is the moment the
+     * person proved who they were, so a token older than the last change is rejected.
+     * Tokens minted before this check existed but after the change still work, because their
+     * iat is later than the stamp. Null means the account has never had a stamped change.
+     */
+    if (user.password_changed_at && decoded.iat) {
+      const changedAt = Date.parse(user.password_changed_at);
+      if (!Number.isNaN(changedAt) && decoded.iat < Math.floor(changedAt / 1000)) {
+        return res.status(401).json({
+          error: 'Your password was changed. Please sign in again.',
+          code: 'PASSWORD_CHANGED',
+        });
+      }
     }
 
     // Attach user to request
@@ -138,13 +238,35 @@ const auth = async (req, res, next) => {
     // admin's permissions and is no longer read-only.
     req.isAccountsAdmin = req.userType === ROLES.ACCOUNTS_ADMIN;
 
+    /*
+     * A sales executive owns the dialer and nothing else. The role inherits nothing, but a
+     * number of older routes require only a valid login, so inheritance alone is not a fence.
+     * Restrict the API surface here rather than trying to remember every unguarded route:
+     * the own profile, the own password, self punch/leave, and the dialer.
+     */
+    const SALES_WORKSPACE_PATHS = [
+      '/api/sales-dialer',
+      '/api/me',
+      '/api/users/change-password',
+      '/api/hr/my-attendance',
+    ];
+    if (req.userType === ROLES.SALES_EXECUTIVE
+        && !SALES_WORKSPACE_PATHS.some((prefix) => String(req.originalUrl || '').startsWith(prefix))) {
+      return res.status(403).json({
+        error: 'Sales executives can only use the sales dialer.',
+        code: 'SALES_WORKSPACE_ONLY',
+      });
+    }
+
     req.locationId = user.location_id;
 
     next();
 
   } catch (error) {
+    // Anything that reaches here is a fault in the guard, not a rejected token. Answering
+    // 401 would sign everybody out on a server bug; 500 lets the client keep the session.
     console.error("Auth Middleware Error:", error.message);
-    res.status(401).json({ error: 'Please authenticate' });
+    res.status(500).json({ error: 'Could not verify your session. Please try again.', code: 'AUTH_UNAVAILABLE' });
   }
 };
 // </scheduler>
@@ -229,7 +351,8 @@ async function run(guard, token) {
 
 module.exports = {
   /** The users and students rows auth.js finds. */
-  useRows({ users = [], students = [] } = {}) {
+  useRows({ users = [], students = [], hrEmployees = [] } = {}) {
+    hrEmployeesTable = hrEmployees.map((e) => ({ ...e }));
     usersTable = users.map((u) => ({ ...u }));
     studentsTable = students.map((s) => ({ ...s }));
   },

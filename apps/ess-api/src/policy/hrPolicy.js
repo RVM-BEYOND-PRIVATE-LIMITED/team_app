@@ -48,6 +48,11 @@ const HR_WRITE_ROLES = new Set([
 const HR_ATTENDANCE_ROLES = new Set([
   ROLES.HR,
   ROLES.ADMIN_MANAGER,
+  // The branch admin reads the same sheet (RVM, 2026-10-20: "for admin in Branch
+  // operation > staff attendance show the attendance of the admins, admin managers,
+  // faculty and HODs of their respective branch"). Read-only: marking stays with the
+  // Admin Manager, the CEO and the super admin (STAFF_ATTENDANCE_MARK_ROLES below).
+  ROLES.ADMIN,
   ROLES.CEO,
   ROLES.SUPER_ADMIN,
 ]);
@@ -63,6 +68,12 @@ const HR_ATTENDANCE_ROLES = new Set([
  *
  * Narrower than HR_ATTENDANCE_ROLES on purpose: the Admin Manager marks the day, but does
  * not get to overrule HR's correction of it.
+ */
+/*
+ * The Scheduler renamed HR's day override to ATTENDANCE_DAY_OVERRIDE_ROLES on 2026-10-17 and
+ * narrowed its own ATTENDANCE_OVERRIDE_ROLES to ceo and super_admin. The ESS's name keeps its
+ * old meaning (hr, ceo, super_admin: "may decide any request", and the phone reset), so nothing
+ * here changes; tests/roles.test.js compares it with the Scheduler's ATTENDANCE_DAY_OVERRIDE_ROLES.
  */
 const ATTENDANCE_OVERRIDE_ROLES = new Set([
   ROLES.HR,

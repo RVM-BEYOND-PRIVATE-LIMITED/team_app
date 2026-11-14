@@ -4817,7 +4817,7 @@ paths:
                       roles: [hr, ceo, super_admin]
                       max_attachments: 5
                       max_pinned: 3
-                      audience: { scopes: [all, branch_ids, department_ids, roles, employee_ids], roles: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, faculty] }
+                      audience: { scopes: [all, branch_ids, department_ids, roles, employee_ids], roles: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, sales_executive, faculty] }
                       acknowledgement: true
                       scheduled: true
                     moderation: { roles: [hr], reasons: true, reports: true }
@@ -12213,7 +12213,7 @@ components:
           description: Which token this request carried.
         role:
           type: [string, 'null']
-          enum: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, faculty, null]
+          enum: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, sales_executive, faculty, null]
           description: The portal login's role (users.role) as it is now. Null for an attendance session.
         user_id:
           type: [string, 'null']
@@ -14417,7 +14417,7 @@ components:
 
     UserRole:
       type: string
-      enum: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, faculty]
+      enum: [ceo, super_admin, hoo, hod, hod_placement, admin_manager, admin, accounts_admin, hr, hr_executive, sales_executive, faculty]
       description: A Scheduler portal role (users.role) that can sign in. Students have their own token, and the connector account cannot sign in.
 
     PortalLoginRequest:

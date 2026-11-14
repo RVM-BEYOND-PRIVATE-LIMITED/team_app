@@ -43,7 +43,7 @@ describe('the verbatim Scheduler copies', () => {
       'services/attendancePunch.js:172',
       'controllers/hr/attendancePunchController.js:88-90',
       // schedulerGuards.js: what the Scheduler does with a token the ESS minted.
-      'middleware/auth.js:6-106',
+      'middleware/auth.js:6-219',
       'middleware/punchAuth.js:22-33',
       'services/attendancePunch.js:241-242',
       'controllers/hr/attendanceOtpController.js:77-78',

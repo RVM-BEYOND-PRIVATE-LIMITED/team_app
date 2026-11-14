@@ -56,3 +56,7 @@ KP stopped all of it. The branches were deleted, and the Scheduler repositories 
 | Short leave | Handled by excusing the late it covers |
 
 **Faculty class attendance needs a decision first.** In the app (Phase 2), it would run on `POST /api/attendance`, which keeps its missing server-side checks (J1). KP decides before Phase 2 whether the app offers it.
+
+## Amendment (13 Nov 2026)
+
+New staff modules (the Sales CRM, the fees dialer, scorecards, the social module, device security) are built in the Scheduler backend, not here. This backend takes only the small changes listed in team_app #59: the urgent push lane and the CRM notification categories, the refreshed role and sign-in copies, and the session and device rules. KP decided this on 12 Nov 2026 ("one backend").
