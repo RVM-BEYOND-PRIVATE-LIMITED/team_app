@@ -1,16 +1,15 @@
-const jwt = require('jsonwebtoken');
-const { ROLES, expandRoles, SEES_ALL_LOCATIONS, TEACHING_ROLES } = require('../../src/policy/roles');
 const { readPunchSession } = require('./schedulerTokens');
 
 /**
- * The Scheduler's own guards, copied verbatim from Scheduler_Backend (main, 14 Nov 2026), so the tests can
+ * The Scheduler's own guards, so the tests can
  * hand them a token the ESS minted (src/lib/accessTokens.js) and see what the Scheduler does with
  * it: middleware/auth.js on every portal route, middleware/punchAuth.js on /hr/my-attendance, and
  * the gate in front of POST /hr/my-attendance/password.
  *
- * Blocks are marked as in schedulerTokens.js and checked by tests/schedulerCopies.test.js
- * whenever SCHEDULER_BACKEND_DIR is set. The copied lines use `supabase`, `Accounts` and
- * `refuse`; the stand-ins below give them the rows a test chooses.
+ * middleware/auth.js is loaded from the Scheduler checkout (see below); the small blocks that are
+ * copied are marked as in schedulerTokens.js and checked by tests/schedulerCopies.test.js whenever
+ * SCHEDULER_BACKEND_DIR is set. They use `supabase`, `Accounts` and `refuse`; the stand-ins below
+ * give them the rows a test chooses.
  */
 
 /* ── stand-ins for what the copied lines reach ── */
@@ -54,222 +53,28 @@ const Accounts = { getAccount: async () => attendanceAccount };
 
 /* ── the copies ── */
 
-// <scheduler file="middleware/auth.js" lines="6-219">
-const auth = async (req, res, next) => {
-  try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+/*
+ * middleware/auth.js is NOT copied here. This repository is public and that file is the
+ * Scheduler's own sign-in guard, so the tests load the real one from the checkout named by
+ * SCHEDULER_BACKEND_DIR, with the stand-in database above in place of its db.js. Without that
+ * variable the tests that need the guard are skipped (`hasSchedulerAuth` below); they run in the
+ * Scheduler's own CI, which checks this repository out beside it.
+ */
+const SCHEDULER_DIR = process.env.SCHEDULER_BACKEND_DIR || null;
 
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided', code: 'NO_TOKEN' });
-    }
+function loadSchedulerAuth() {
+  const path = require('path');
+  const dbPath = require.resolve(path.join(SCHEDULER_DIR, 'db.js'));
+  const authPath = require.resolve(path.join(SCHEDULER_DIR, 'middleware', 'auth.js'));
+  // The guard takes `supabase` from ../db when it loads: hand it the stand-in, never a database.
+  require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: supabase };
+  delete require.cache[authPath];
+  return require(authPath);
+}
 
-    /*
-     * Task J8 (#103): 401 is only for a token that was rejected or is absent. A database
-     * outage is 503, so a bad minute in Supabase cannot sign the whole company out. The
-     * client treats a 401 as "sign in again" and must not do that for a server fault.
-     */
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      const expired = err instanceof jwt.TokenExpiredError;
-      return res.status(401).json({
-        error: expired ? 'Your session has expired. Please sign in again.' : 'Please authenticate',
-        code: expired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
-      });
-    }
-
-    // A JWT that verifies but names nobody is not a portal token: it is a look-alike (for
-    // example a punch-session body signed with the portal key). Refuse it as a rejected token
-    // instead of asking Postgres to cast undefined to uuid, which would answer 503.
-    if (!decoded.userId && !decoded.id) {
-      return res.status(401).json({ error: 'Please authenticate', code: 'INVALID_TOKEN' });
-    }
-
-    // ---------------------------------------------------------
-    // 1. CHECK IF TOKEN BELONGS TO A STUDENT
-    // ---------------------------------------------------------
-    if (decoded.role === 'student') {
-      const { data: student, error } = await supabase
-        .from('students')
-        .select('*')
-        .eq('id', decoded.id)
-        .single();
-
-      // PostgREST's PGRST116 is "no rows", which is a rejected sign-in; anything else is the
-      // database being unreachable, which is not.
-      if (error && error.code !== 'PGRST116') {
-        console.error('Auth Middleware: student lookup failed:', error.message);
-        return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.', code: 'DATABASE_UNAVAILABLE' });
-      }
-      if (!student) {
-        return res.status(401).json({ error: 'Please authenticate', code: 'USER_NOT_FOUND' });
-      }
-
-      // Students are never super_admins
-      student.role = 'student';
-
-      req.user = student;
-      req.userType = 'student';
-      req.roleSet = expandRoles('student');
-      req.hasRole = (role) => req.roleSet.has(role);
-      req.isSuperAdmin = false;
-      req.isCEO = false;
-      req.isAccountsAdmin = false;
-      req.locationId = student.location_id;
-
-      return next();
-    }
-
-    // ---------------------------------------------------------
-    // 2. CHECK IF TOKEN BELONGS TO FACULTY / ADMIN / STAFF / SUPER_ADMIN
-    // ---------------------------------------------------------
-    let userQuery;
-
-    if (TEACHING_ROLES.has(decoded.role) && decoded.id) {
-      // Teaching roles (faculty, hod) carry their faculty_id as `id` in the token.
-      // A HOD is promoted from faculty and keeps teaching, so it resolves the same way.
-      userQuery = supabase
-        .from('users')
-        .select('*')
-        .eq('faculty_id', decoded.id)
-        .single();
-    } else {
-      // Non-teaching, OR a teaching account with no faculty_id linked yet
-      const userId = decoded.userId || decoded.id;
-      userQuery = supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-    }
-
-    const { data: user, error } = await userQuery;
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('Auth Middleware: user lookup failed:', error.message);
-      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.', code: 'DATABASE_UNAVAILABLE' });
-    }
-    if (!user) {
-      return res.status(401).json({ error: 'Please authenticate', code: 'USER_NOT_FOUND' });
-    }
-
-    /*
-     * A portal exit revokes every open session, not just future logins. 401 is deliberate:
-     * the client already treats it as "sign out", so the exited person cannot keep working
-     * in a tab they left open. A database without 20261119000000 has no is_active column,
-     * which reads as undefined and keeps the old behaviour.
-     */
-    if (user.is_active === false) {
-      return res.status(401).json({
-        error: 'This account has been marked exited. Contact a Super Admin if you need access restored.',
-        code: 'ACCOUNT_EXITED',
-      });
-    }
-
-    /*
-     * An HR exit revokes open sessions too, like a portal exit: when every
-     * hr_employees row linked to this user shows a real exit
-     * (employment_status 'exited' or a past date_of_exit), the account is
-     * signed out everywhere (401), even while its user row is still active.
-     *
-     * is_archived alone is NOT an exit here — archiving a row is also how a
-     * picker drops somebody (e.g. an ex-recruiter), while the linked portal
-     * account must keep working. A live row anywhere means still employed.
-     */
-    try {
-      const { data: hrRows, error: hrErr } = await supabase.from('hr_employees')
-        .select('employment_status, date_of_exit')
-        .eq('user_id', user.id);
-      const rows = hrRows || [];
-      if (!hrErr && rows.length) {
-        const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
-        const exited = (r) => r.employment_status === 'exited'
-          || (r.date_of_exit && String(r.date_of_exit).slice(0, 10) < today);
-        if (rows.every(exited)) {
-          return res.status(401).json({
-            error: 'This account has been marked exited. Contact a Super Admin if you need access restored.',
-            code: 'ACCOUNT_EXITED',
-          });
-        }
-      }
-    } catch (e) {
-      console.error('Auth HR-exit check failed:', e.message);
-    }
-
-    /*
-     * Task A7 (#94): a password change ends the tokens issued before it. The Scheduler stamps
-     * users.password_changed_at on every password write; the token's iat is the moment the
-     * person proved who they were, so a token older than the last change is rejected.
-     * Tokens minted before this check existed but after the change still work, because their
-     * iat is later than the stamp. Null means the account has never had a stamped change.
-     */
-    if (user.password_changed_at && decoded.iat) {
-      const changedAt = Date.parse(user.password_changed_at);
-      if (!Number.isNaN(changedAt) && decoded.iat < Math.floor(changedAt / 1000)) {
-        return res.status(401).json({
-          error: 'Your password was changed. Please sign in again.',
-          code: 'PASSWORD_CHANGED',
-        });
-      }
-    }
-
-    // Attach user to request
-    req.user = user;
-
-    // ---------------------------------------------------------
-    // 3. ROLE-BASED ACCESS CONTROL (RBAC) INJECTION
-    // ---------------------------------------------------------
-    // We prioritize the role from the Database over the Token for security
-    req.userType = user.role || decoded.role;
-
-    // Inheritance-aware role checking, e.g. an admin_manager satisfies hasRole('admin').
-    req.roleSet = expandRoles(req.userType);
-    req.hasRole = (role) => req.roleSet.has(role);
-
-    // Unchanged meaning: "bypass the branch/location filter". Roughly 141 call sites
-    // depend on this flag, so its semantics must not drift. Branch-scoped roles
-    // (hoo, hod, admin_manager) are absent from the set, so the existing
-    // .eq('location_id', req.locationId) filtering applies to them untouched.
-    req.isSuperAdmin = SEES_ALL_LOCATIONS.has(req.userType);
-
-    req.isCEO = req.userType === ROLES.CEO;
-    // Finance admin: all-centre visibility, and since the duty merge it also has
-    // admin's permissions and is no longer read-only.
-    req.isAccountsAdmin = req.userType === ROLES.ACCOUNTS_ADMIN;
-
-    /*
-     * A sales executive owns the dialer and nothing else. The role inherits nothing, but a
-     * number of older routes require only a valid login, so inheritance alone is not a fence.
-     * Restrict the API surface here rather than trying to remember every unguarded route:
-     * the own profile, the own password, self punch/leave, and the dialer.
-     */
-    const SALES_WORKSPACE_PATHS = [
-      '/api/sales-dialer',
-      '/api/me',
-      '/api/users/change-password',
-      '/api/hr/my-attendance',
-    ];
-    if (req.userType === ROLES.SALES_EXECUTIVE
-        && !SALES_WORKSPACE_PATHS.some((prefix) => String(req.originalUrl || '').startsWith(prefix))) {
-      return res.status(403).json({
-        error: 'Sales executives can only use the sales dialer.',
-        code: 'SALES_WORKSPACE_ONLY',
-      });
-    }
-
-    req.locationId = user.location_id;
-
-    next();
-
-  } catch (error) {
-    // Anything that reaches here is a fault in the guard, not a rejected token. Answering
-    // 401 would sign everybody out on a server bug; 500 lets the client keep the session.
-    console.error("Auth Middleware Error:", error.message);
-    res.status(500).json({ error: 'Could not verify your session. Please try again.', code: 'AUTH_UNAVAILABLE' });
-  }
-};
-// </scheduler>
+const auth = SCHEDULER_DIR
+  ? loadSchedulerAuth()
+  : async () => { throw new Error('This test needs SCHEDULER_BACKEND_DIR: the Scheduler sign-in guard is not copied into this repository.'); };
 
 /** middleware/punchAuth.js:21-34, whose body is copied as it is. */
 function punchAuth(req, res, next) {
@@ -360,6 +165,8 @@ module.exports = {
   useAttendanceAccount(account) {
     attendanceAccount = account ? { ...account } : null;
   },
+  /** Whether the Scheduler's own guard could be loaded (SCHEDULER_BACKEND_DIR is set). */
+  hasSchedulerAuth: Boolean(SCHEDULER_DIR),
   runAuth: (token) => run(auth, token),
   runPunchAuth: (token) => run(punchAuth, token),
   setPasswordGate,

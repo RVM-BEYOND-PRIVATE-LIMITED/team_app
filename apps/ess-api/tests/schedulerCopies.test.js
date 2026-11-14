@@ -42,8 +42,8 @@ describe('the verbatim Scheduler copies', () => {
       'services/attendanceAccounts.js:39-53',
       'services/attendancePunch.js:172',
       'controllers/hr/attendancePunchController.js:88-90',
-      // schedulerGuards.js: what the Scheduler does with a token the ESS minted.
-      'middleware/auth.js:6-219',
+      // schedulerGuards.js: what the Scheduler does with a token the ESS minted. middleware/auth.js
+      // is not copied: the tests load the real file from SCHEDULER_BACKEND_DIR.
       'middleware/punchAuth.js:22-33',
       'services/attendancePunch.js:241-242',
       'controllers/hr/attendanceOtpController.js:77-78',
