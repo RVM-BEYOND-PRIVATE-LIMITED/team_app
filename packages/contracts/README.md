@@ -78,3 +78,10 @@ The lint checks the file against itself. Whether the ESS really answers as the f
   header instead of the cookie (part of B8), batched pings (B15), and the Scheduler-side 401
   sweep (J8; the ESS already follows the rule). The old public reset (A9) is retired and answers
   410.
+
+## Changes
+
+- **0.17.0 (15 Nov 2026).** `GET` and `PUT /me/preferences` on the Scheduler (`x-owner: scheduler`, Scheduler_Backend
+  #449 and #452): the theme (light, dark or system) and whether the `theme` switch is open, for both sign-in kinds.
+  `light` / `false` while the switch is closed. Picked up by the app's client in team_app #121. The header now says what
+  decision D17 changed about ADR-0018: new app endpoints may be added to the Scheduler, each naming its issue.
