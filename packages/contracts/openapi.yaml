@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.16.0
+  version: 0.17.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -12,7 +12,7 @@ info:
     | Tag | `x-owner` | Served by | Base URL | What this file promises |
     | --- | --- | --- | --- | --- |
     | **ESS** | `ess` | team_app (`apps/ess-api`), its own process on its own host name (ADR-0019) | `https://<ESS host>/api`, so its paths start `/api/ess` | How the new employee self-service API behaves. Changing it is a team_app PR that updates this file in the same PR. |
-    | **Scheduler (existing)** | `scheduler` | Scheduler_Backend, the live system of record | `https://scheduler.rvmcad.org/api` | How the Scheduler's code behaves at commit `c28b9ca` (15 Oct 2026), exactly as it is. Nothing here implies a change: Team RVM changes nothing in the Scheduler (ADR-0018). `POST /users/reset-password` is listed only so the app never calls it. |
+    | **Scheduler (existing)** | `scheduler` | Scheduler_Backend, the live system of record | `https://scheduler.rvmcad.org/api` | How the Scheduler's code behaves at commit `c28b9ca` (15 Oct 2026), exactly as it is. Nothing here implies a change, except where an operation says so: decision D17 (12 Nov 2026) made Scheduler_Backend the one backend for new work, so ADR-0018's "Team RVM changes nothing in the Scheduler" no longer holds for the RVM App Plan build, and such operations name the issue that added them. `POST /users/reset-password` is listed only so the app never calls it. |
 
     The ESS host name is `team-api.rvmcad.org` (KP, 16 Oct 2026; ADR-0019). The server variable `essHost` defaults to it.
 
@@ -68,7 +68,7 @@ tags:
       New employee self-service endpoints, served by team_app (`apps/ess-api`) as its own process on its own host name, under `/api/ess`. Every operation here has `x-owner: ess`.
   - name: Scheduler (existing)
     description: |
-      Endpoints of the live Scheduler (Scheduler_Backend) that the app calls directly, documented exactly as they behave at commit `c28b9ca`, with no change implied. Every operation here has `x-owner: scheduler`. Team RVM changes nothing in the Scheduler (ADR-0018); if the Scheduler ever changes one of these on its own, this file is updated to match.
+      Endpoints of the live Scheduler (Scheduler_Backend) that the app calls directly, documented exactly as they behave at commit `c28b9ca`, with no change implied. Every operation here has `x-owner: scheduler`. Since decision D17 (12 Nov 2026) new endpoints for the app are added to the Scheduler itself (for example `GET` and `PUT /me/preferences`, Scheduler_Backend #449); each such operation names its issue. If the Scheduler changes one of these, this file is updated to match.
 
 paths:
 
@@ -9177,6 +9177,109 @@ paths:
         default:
           $ref: '#/components/responses/EssUnexpected'
 
+  /me/preferences:
+    get:
+      operationId: getMyPreferences
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/mePreferences.js; server.js:157 (Scheduler_Backend #449, #452)'
+      summary: My theme (Light, Dark or System) and whether the theme switch is open to me
+      description: |
+        Either token kind: a portal login's token, or an attendance-only sign-in's punch session. The choice is kept per
+        employee when there is an employee record, so the Scheduler web and the app show one choice.
+
+        While the `theme` switch is closed for the caller the answer is `light` / `theme_open: false`, whatever is
+        stored. A person with no saved choice gets `light`. Added to the Scheduler by Scheduler_Backend #449 (D17); the
+        app's client picks it up in team_app #121.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: The theme to show.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemePreference'
+              examples:
+                closed:
+                  $ref: '#/components/examples/ThemeClosed'
+                pilot:
+                  $ref: '#/components/examples/ThemePilotDark'
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: The caller may not use it (a student token, or an employee who has left).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+    put:
+      operationId: setMyPreferences
+      tags: ['Scheduler (existing)']
+      x-owner: scheduler
+      x-source: 'routes/mePreferences.js; server.js:157 (Scheduler_Backend #449, #452)'
+      summary: Save my theme
+      description: |
+        Only while the `theme` switch is open to the caller; otherwise 404 and nothing is written. The same value again
+        answers 200 and writes nothing; a real change writes one audit row. Send an `Idempotency-Key`: a repeat with the
+        same key replays the first answer.
+      security:
+        - bearer: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new random value per save: 8 to 255 letters, digits, underscores, dots, colons or hyphens.'
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_.:-]{8,255}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeChoice'
+            examples:
+              dark:
+                value:
+                  theme: dark
+      responses:
+        '200':
+          description: The theme as saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemePreference'
+              examples:
+                pilot:
+                  $ref: '#/components/examples/ThemePilotDark'
+        '400':
+          description: '`theme` is not light, dark or system, or the Idempotency-Key is missing or malformed.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+        '401':
+          $ref: '#/components/responses/PunchAuthRejected'
+        '403':
+          description: The caller may not use it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+        '404':
+          description: The theme switch is closed for the caller; nothing was written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+        '409':
+          description: The same Idempotency-Key was used with another body, or is still running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerError'
+
   /users/login:
     post:
       operationId: signInPortal
@@ -11818,6 +11921,29 @@ components:
         type: string
 
   schemas:
+
+    ThemePreference:
+      type: object
+      description: The theme to show, and whether the person may choose (Scheduler_Backend #449).
+      required: [theme, theme_open]
+      additionalProperties: false
+      properties:
+        theme:
+          type: string
+          enum: [light, dark, system]
+          default: light
+        theme_open:
+          type: boolean
+          description: Whether the `theme` switch is open to this person. While false, `theme` is always `light`.
+
+    ThemeChoice:
+      type: object
+      required: [theme]
+      additionalProperties: false
+      properties:
+        theme:
+          type: string
+          enum: [light, dark, system]
 
     LeaveEmployeeRef:
       type: object
@@ -17061,6 +17187,18 @@ components:
           enum: [in_progress, on_hold, resolved]
 
   examples:
+
+    ThemeClosed:
+      summary: The theme switch is closed for this person
+      value:
+        theme: light
+        theme_open: false
+
+    ThemePilotDark:
+      summary: A pilot user who chose Dark
+      value:
+        theme: dark
+        theme_open: true
 
     EssSignIn:
       summary: No token
