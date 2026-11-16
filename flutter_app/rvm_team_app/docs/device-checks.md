@@ -214,3 +214,30 @@ are black or blank, and Home or the Wall captures normally after leaving
 it. A new module marked `sensitive: true` in `module_routes.dart` gets a row
 here in the same pull request: `test/device_checks_doc_issue52_test.dart`
 fails until it has one.
+
+## Dark-mode pass (#122)
+
+Run this on a low-cost Android phone (3–4 GB RAM, Android 11–13, 720p) and,
+if one is at hand, on the OnePlus 12R that showed the issue14 regression.
+
+1. Open Me → Appearance and pick **Dark**. Repeat with **System** while the
+   phone's quick-settings dark toggle is on and off. System must follow the
+   phone without a restart.
+2. Walk Home, the punch screen (each punch state), Inbox, Requests,
+   Approvals, Helpdesk, Wall, My Team, Me, the Work section, sign-in, the
+   biometric lock, the version gate and offline. Record a screenshot of each
+   main screen in Light and Dark.
+3. A cold start and a warm start in both themes must show the Ironwood
+   launch window, never a white flash.
+4. Turn on the phone's own force-dark option (OnePlus, Xiaomi and others):
+   the app must keep the colours it chose.
+5. In Dark, check every text pair against 4.5:1 (body) and 3:1 (large text,
+   icons, control borders). `core_ui/test/palette_contrast_test.dart` covers
+   the palette pairs; this step covers real screens.
+6. The 320 px and 360 px layouts at 1.3x text are covered by
+   `test/theme_dark_widgets_test.dart`. Confirm the same on the phone.
+7. Close the `theme` switch (or sign out) and confirm the next start is
+   Light. Rollback is closing the switch; no deploy is needed.
+
+Write the phone model, Android version and pass/fail for each step here.
+This row cannot pass until someone runs it on a physical phone.
