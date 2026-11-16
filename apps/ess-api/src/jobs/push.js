@@ -294,7 +294,7 @@ function startPushJob({
         olderThanIso: new Date(at.getTime() - URGENT_TTL_MS).toISOString(),
         sinceIso: new Date(at.getTime() - LATE_WINDOW_MS).toISOString(),
       });
-    } catch (e) {
+    } catch {
       return null;
     }
     if (!late || (late.waiting + late.late) === 0) return { late: 0 };

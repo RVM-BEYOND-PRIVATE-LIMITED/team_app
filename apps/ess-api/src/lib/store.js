@@ -1193,7 +1193,8 @@ function createSupabaseStore(config, { client } = {}) {
         return out === REFUSED ? null : out;
       } catch (e) {
         if (!(e instanceof HttpError && e.code === 'MODULE_NOT_INSTALLED')) throw e;
-        const { dedupe_key: _key, ...rest } = row;
+        const rest = { ...row };
+        delete rest.dedupe_key;
         return write('hr_ess_notifications', (q) => q.insert([rest]).select('id, employee_id').single());
       }
     },
