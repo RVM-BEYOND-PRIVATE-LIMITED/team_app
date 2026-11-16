@@ -1,5 +1,8 @@
 package com.rvm.rvmteam
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -27,9 +30,60 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // Voice typing for a CRM remark (team_app #51, item 10). Android's own
+        // recogniser prompt reads the microphone under its own permission, so
+        // the app never declares RECORD_AUDIO. Prefer offline recognition: a
+        // remark is lead data and the speech service is an outside system.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VOICE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "recognize" -> {
+                        if (voiceResult != null) {
+                            result.error("BUSY", "The speech prompt is already open.", null)
+                            return@setMethodCallHandler
+                        }
+                        voiceResult = result
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(
+                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                            )
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak the remark")
+                        }
+                        try {
+                            startActivityForResult(intent, VOICE_REQUEST)
+                        } catch (e: Exception) {
+                            voiceResult = null
+                            result.error("NO_RECOGNIZER", "No speech service is available.", null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private var voiceResult: MethodChannel.Result? = null
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == VOICE_REQUEST) {
+            val pending = voiceResult
+            voiceResult = null
+            if (resultCode == Activity.RESULT_OK) {
+                val matches = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                pending?.success(matches?.firstOrNull())
+            } else {
+                pending?.success(null)
+            }
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     private companion object {
         const val SECURE_WINDOW_CHANNEL = "team_rvm/secure_window"
+        const val VOICE_CHANNEL = "team_rvm/voice"
+        const val VOICE_REQUEST = 7102
     }
 }

@@ -375,7 +375,7 @@ String _routeFrom(Map<String, dynamic> data) {
     final route = _inAppRoute(_text(data[key]));
     if (route != null) return route;
   }
-  return requestRouteFor(data) ?? '/notifications';
+  return crmRouteFor(data) ?? requestRouteFor(data) ?? '/notifications';
 }
 
 /// An in-app location from a route value: a path, or the path (and query) of
@@ -397,9 +397,32 @@ String? _inAppRoute(String value) {
 /// Null when neither applies, or when the route is this list itself: the tap
 /// then only marks the row read, as before.
 String? notificationRowRoute(String category, Map<String, dynamic> data) {
+  final withCategory = {'category': category, ...data};
   final route = _inAppRoute(_text(data['route'])) ??
-      requestRouteFor({'category': category, ...data});
+      crmRouteFor(withCategory) ??
+      requestRouteFor(withCategory);
   return route == '/notifications' ? null : route;
+}
+
+/// A CRM notification's screen (team_app #51, item 14). The CRM's queue rows
+/// carry ids only (`{category, kind, lead_id, call_id}`), never a route, a
+/// name or a number. The five categories open the lead, the phone's call
+/// hand-off, My Leads or the calendar; anything else opens the CRM home.
+@visibleForTesting
+String? crmRouteFor(Map<String, dynamic> data) {
+  final category = _text(data['category']);
+  if (!category.startsWith('crm_')) return null;
+  final leadId = int.tryParse(_text(data['lead_id']));
+  final callId = int.tryParse(_text(data['call_id']));
+  if (category == 'crm_call' && callId != null) {
+    return '/crm/call/$callId?leadId=${leadId ?? 0}';
+  }
+  if (leadId != null && leadId > 0) return '/crm/lead/$leadId';
+  return switch (category) {
+    'crm_followup' => '/crm/calendar',
+    'crm_lead_assigned' => '/crm/leads',
+    _ => '/crm',
+  };
 }
 
 /// A request notification's screen (team_app #45). The Scheduler's leave rows

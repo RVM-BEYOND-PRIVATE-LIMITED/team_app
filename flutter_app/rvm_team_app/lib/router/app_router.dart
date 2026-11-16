@@ -3,6 +3,14 @@ import 'package:go_router/go_router.dart';
 
 import '../bloc/team_auth_bloc.dart';
 import '../features/attendance/punch_screen.dart';
+import '../features/crm/crm_add_lead_screen.dart';
+import '../features/crm/crm_call_screen.dart';
+import '../features/crm/crm_calendar_screen.dart';
+import '../features/crm/crm_disposition_screen.dart';
+import '../features/crm/crm_home_screen.dart';
+import '../features/crm/crm_lead_screen.dart';
+import '../features/crm/crm_leads_screen.dart';
+import '../domain/crm_models.dart';
 import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/splash_screen.dart';
@@ -67,6 +75,16 @@ bool attendanceBlockedLocation(String location) {
       location.startsWith('/hr/');
 }
 
+int? _int(Object? value) => value is String ? int.tryParse(value) : null;
+
+CrmBucket _crmBucket(String? wire) => switch (wire) {
+      'uncontacted' => CrmBucket.uncontacted,
+      'in_progress' => CrmBucket.inProgress,
+      'follow_up' => CrmBucket.followUp,
+      'not_connected' => CrmBucket.notConnected,
+      _ => CrmBucket.all,
+    };
+
 /// [screen] under a [SecureScope] when its location is sensitive
 /// ([isSensitiveLocation], team_app #52 item 1), so screenshots of it come out
 /// black. [roster] is the class roster's switch ([secureRosterOn]). A module's
@@ -125,6 +143,62 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       GoRoute(
           path: '/forgot', builder: (_, __) => const ForgotPasswordScreen()),
       GoRoute(path: '/home', builder: (_, __) => const TeamShell()),
+      // ── Sales CRM (team_app #51) ─────────────────────────────────────────
+      GoRoute(
+          path: '/crm',
+          builder: (_, state) => _screen(state, const CrmHomeScreen(),
+              roster: secureRoster)),
+      GoRoute(
+        path: '/crm/leads',
+        builder: (_, state) => _screen(
+          state,
+          CrmLeadsScreen(
+            initialBucket: _crmBucket(state.uri.queryParameters['bucket']),
+          ),
+          roster: secureRoster,
+        ),
+      ),
+      GoRoute(
+          path: '/crm/calendar',
+          builder: (_, state) => _screen(
+              state, const CrmCalendarScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/crm/add',
+          builder: (_, state) =>
+              _screen(state, const CrmAddLeadScreen(), roster: secureRoster)),
+      GoRoute(
+        path: '/crm/call/:callId',
+        builder: (_, state) => _screen(
+          state,
+          CrmCallScreen(
+            callId: _int(state.pathParameters['callId']) ?? 0,
+            leadId: _int(state.uri.queryParameters['leadId']) ?? 0,
+          ),
+          roster: secureRoster,
+        ),
+      ),
+      GoRoute(
+        path: '/crm/lead/:id/dispose',
+        builder: (_, state) => _screen(
+          state,
+          CrmDispositionScreen(
+            leadId: _int(state.pathParameters['id']) ?? 0,
+            callId: _int(state.uri.queryParameters['callId']) ?? 0,
+            origin: state.uri.queryParameters['origin'] ?? 'dialer',
+            autoDial: state.uri.queryParameters['autoDial'] == '1',
+          ),
+          roster: secureRoster,
+        ),
+      ),
+      GoRoute(
+        path: '/crm/lead/:id',
+        builder: (_, state) => _screen(
+          state,
+          CrmLeadScreen(leadId: _int(state.pathParameters['id']) ?? 0),
+          roster: secureRoster,
+        ),
+      ),
       GoRoute(
           path: '/work/batches', builder: (_, __) => const MyBatchesScreen()),
       GoRoute(

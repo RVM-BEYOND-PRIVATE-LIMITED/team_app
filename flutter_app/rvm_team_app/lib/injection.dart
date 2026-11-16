@@ -10,6 +10,7 @@ import 'bloc/forgot_password_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
 import 'bloc/team_modules_bloc.dart';
 import 'data/datasources/announcements_remote_data_source.dart';
+import 'data/datasources/crm_remote_data_source.dart';
 import 'data/datasources/auth_remote_data_source.dart';
 import 'data/datasources/ess_remote_data_source.dart';
 import 'data/datasources/hod_remote_data_source.dart';
@@ -20,6 +21,7 @@ import 'data/datasources/team_modules_remote_data_source.dart';
 import 'data/datasources/work_remote_data_source.dart';
 import 'data/location_service.dart';
 import 'data/repositories/announcements_repository.dart';
+import 'data/repositories/crm_repository.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/ess_repository.dart';
 import 'data/repositories/hod_repository.dart';
@@ -153,6 +155,9 @@ void configureDependencies(AuthSession session) {
   getIt
     ..registerLazySingleton<AuthRemoteDataSource>(
         () => AuthRemoteDataSource(getIt<Dio>()))
+    // The Sales CRM's own API (#51), on the Scheduler client.
+    ..registerLazySingleton<CrmRemoteDataSource>(
+        () => CrmRemoteDataSource(getIt<Dio>()))
     ..registerLazySingleton<MeRemoteDataSource>(
         () => MeRemoteDataSource(getIt<Dio>()))
     ..registerLazySingleton<PriorityTasksRemoteDataSource>(
@@ -181,6 +186,8 @@ void configureDependencies(AuthSession session) {
   getIt
     ..registerLazySingleton<AuthRepository>(
         () => AuthRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<CrmRepository>(
+        () => CrmRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<MeRepository>(
         () => MeRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<EssRepository>(() => EssRepository(

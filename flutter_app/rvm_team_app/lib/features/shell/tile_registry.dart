@@ -2,6 +2,7 @@ import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 
 import '../../auth/team_permissions.dart';
+import '../../router/module_routes.dart';
 import '../../router/sensitive_routes.dart';
 
 // The Home cards and the Me tiles, each with the rule that decides who sees it
@@ -18,6 +19,7 @@ bool _portal(TeamViewer v) => !v.attendance;
 
 /// The cards Home can show, top to bottom.
 enum HomeCard {
+  crm,
   schedule,
   offThisWeek,
   faculty,
@@ -40,6 +42,7 @@ class HomeCardSpec {
 /// Scheduler reads, so they are for portal sign-ins only; the ESS cards work
 /// for everyone.
 final List<HomeCardSpec> homeCardRegistry = [
+  HomeCardSpec(HomeCard.crm, (v) => v.modules.contains(TeamModule.crm)),
   const HomeCardSpec(HomeCard.schedule, _everyone),
   const HomeCardSpec(HomeCard.offThisWeek, _everyone),
   HomeCardSpec(HomeCard.faculty, (v) => v.perms.canSeeFacultyWork),
@@ -185,6 +188,13 @@ final List<MeSectionSpec> meSectionRegistry = [
         route: '/me/data-requests'),
   ]),
   MeSectionSpec('Work', [
+    MeTileSpec(
+        id: 'crm',
+        icon: Icons.support_agent_outlined,
+        title: 'Sales CRM',
+        subtitle: 'Call leads and follow-ups',
+        route: '/crm',
+        visible: (v) => v.modules.contains(TeamModule.crm)),
     MeTileSpec(
         id: 'batches',
         icon: Icons.menu_book_outlined,

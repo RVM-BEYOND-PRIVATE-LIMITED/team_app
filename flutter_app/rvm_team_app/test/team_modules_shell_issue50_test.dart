@@ -190,10 +190,10 @@ void main() {
       final router = await pumpRouter(tester, bloc);
       await answer(tester, bloc, const TeamModulesLoadRequested());
 
-      // No module screen exists yet, so an open route reaches the router's
-      // not-found page instead of being sent home.
+      // The CRM has a screen now (#51); /tasks still has none, so it reaches
+      // the router's not-found page instead of being sent home.
       expect(await open(tester, router, '/crm'), '/crm');
-      expect(find.text('Route not found: /crm'), findsOneWidget);
+      expect(find.text('Route not found: /crm'), findsNothing);
       expect(await open(tester, router, '/tasks/42'), '/tasks/42');
       for (final prefix
           in _prefixes.where((p) => p != '/crm' && p != '/tasks')) {
@@ -548,7 +548,15 @@ void main() {
         await pumpShell(tester);
 
         expect(tester.takeException(), isNull);
-        expect(looks(tester), today);
+        if (reply.key == 'open modules') {
+          // A module with a screen now shows it: the CRM tab and its Home
+          // card (#51). Every other reply leaves the shell as it was.
+          expect(looks(tester), isNot(today));
+          expect(find.text('CRM'), findsWidgets);
+          expect(find.text('Sales CRM'), findsWidgets);
+        } else {
+          expect(looks(tester), today);
+        }
         // Asked once, beside the capabilities.
         expect(modules.asks, [1]);
 

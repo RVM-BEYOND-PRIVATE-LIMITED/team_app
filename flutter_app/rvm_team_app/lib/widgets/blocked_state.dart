@@ -25,6 +25,21 @@ enum BlockedReason {
     message: 'Punch in for today to use this.',
   ),
 
+  /// The module works only inside the person's shift.
+  outsideShift(
+    icon: Icons.schedule_outlined,
+    title: 'Outside your shift',
+    message: 'The Sales CRM is open only during your shift. '
+        'Tell HR if this is wrong.',
+  ),
+
+  /// The lead belongs to another caller (Scheduler `CRM_NOT_YOUR_LEAD`).
+  notOwner(
+    icon: Icons.person_off_outlined,
+    title: 'Another caller has this lead',
+    message: 'Look it up by its full number to open it, or ask the Team Leader.',
+  ),
+
   /// This build is older than the minimum version the server accepts.
   updateRequired(
     icon: Icons.system_update_alt,
@@ -76,6 +91,14 @@ enum BlockedReason {
 BlockedReason? blockedReasonFor(Object? failure) => switch (failure) {
       ModuleUnavailableFailure() => BlockedReason.moduleOff,
       TooManyRequestsFailure() => BlockedReason.rateLimited,
+      ForbiddenFailure(code: 'CRM_NOT_PUNCHED_IN') =>
+        BlockedReason.notPunchedIn,
+      ForbiddenFailure(code: 'CRM_OUTSIDE_SHIFT') => BlockedReason.outsideShift,
+      ForbiddenFailure(code: 'CRM_NOT_YOUR_LEAD') => BlockedReason.notOwner,
+      ForbiddenFailure(code: 'CRM_NO_ACCESS') ||
+      ForbiddenFailure(code: 'CRM_ACCESS_DENIED') ||
+      ForbiddenFailure(code: 'CRM_LEVEL_REQUIRED') =>
+        BlockedReason.pilotOnly,
       _ => null,
     };
 

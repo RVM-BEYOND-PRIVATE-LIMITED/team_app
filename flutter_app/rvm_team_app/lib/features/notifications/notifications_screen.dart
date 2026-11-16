@@ -176,6 +176,11 @@ class _NotificationTile extends StatelessWidget {
         'acknowledgements' => Icons.mark_email_read_outlined,
         'polls' => Icons.poll_outlined,
         'helpdesk' => Icons.support_agent,
+        'crm_callback' => Icons.phone_callback_outlined,
+        'crm_call' => Icons.phone_in_talk_outlined,
+        'crm_lead_assigned' => Icons.person_add_alt_outlined,
+        'crm_followup' => Icons.event_repeat_outlined,
+        'crm_alert' => Icons.campaign_outlined,
         _ => Icons.notifications_none,
       };
 

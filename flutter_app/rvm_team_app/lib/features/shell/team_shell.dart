@@ -13,6 +13,8 @@ import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/secure_scope.dart';
+import '../../router/module_routes.dart';
+import 'open_modules.dart';
 import 'tab_registry.dart';
 
 /// The five Keka-style tabs: Home · Inbox · Wall · My Team · Me, from the tab
@@ -151,12 +153,25 @@ class _TeamShellState extends State<TeamShell> {
   }
 
   Widget _tabs(BuildContext context, EssCapabilities caps) {
+    if (!getIt.isRegistered<TeamModulesBloc>()) {
+      return _tabsBody(context, caps, openTeamModules());
+    }
+    return BlocBuilder<TeamModulesBloc, TeamModulesState>(
+      bloc: getIt<TeamModulesBloc>(),
+      buildWhen: (a, b) => a.modules != b.modules,
+      builder: (context, _) => _tabsBody(context, caps, openTeamModules()),
+    );
+  }
+
+  Widget _tabsBody(
+      BuildContext context, EssCapabilities caps, Set<TeamModule> modules) {
     final p = context.palette;
     final identity = context.watch<TeamAuthBloc>().state.identity;
     final tabs = teamTabsFor(TeamViewer(
       role: identity?.role ?? AppRole.unknown,
       attendance: identity?.attendance == true,
       caps: caps,
+      modules: modules,
     ));
     final index = _index.clamp(0, tabs.length - 1);
     final open = {..._opened, tabs[index].id};

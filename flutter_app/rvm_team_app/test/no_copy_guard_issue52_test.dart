@@ -412,8 +412,20 @@ final u = Uri(scheme: 'tel', path: number);
         (tester) async {
       final scanned = await sensitiveScreens(tester);
 
-      // Today that is the class roster alone, with its own files.
-      expect(scanned.keys, ['/work/batch/:id/mark']);
+      // The class roster and every CRM screen (#51), each with its files.
+      expect(
+          scanned.keys,
+          containsAll([
+            '/crm',
+            '/crm/leads',
+            '/crm/calendar',
+            '/crm/add',
+            '/crm/call/:callId',
+            '/crm/lead/:id/dispose',
+            '/crm/lead/:id',
+            '/work/batch/:id/mark',
+            'tab crm',
+          ]));
       expect(
           scanned['/work/batch/:id/mark'],
           containsAll([
@@ -421,6 +433,10 @@ final u = Uri(scheme: 'tel', path: number);
             'lib/features/work/bloc/mark_attendance_bloc.dart',
             'lib/widgets/team_kit.dart',
           ]));
+      expect(scanned['/crm'],
+          contains('lib/features/crm/crm_home_screen.dart'));
+      expect(scanned['tab crm'],
+          contains('lib/features/crm/crm_home_screen.dart'));
       for (final files in scanned.values) {
         expect(files.where(isWiring), isEmpty);
       }

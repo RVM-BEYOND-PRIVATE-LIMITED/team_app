@@ -131,7 +131,7 @@ void main() {
       }
     });
 
-    test('no tab or Me tile today, for any role or sign-in', () {
+    test('only the CRM tab and Me tile are sensitive', () {
       for (final role in AppRole.values) {
         for (final attendance in [false, true]) {
           final viewer =
@@ -146,11 +146,25 @@ void main() {
           }
         }
       }
-      for (final section in meSectionRegistry) {
-        for (final tile in section.tiles) {
-          expect(tile.sensitive, isFalse, reason: tile.id);
-        }
-      }
+      // The CRM is the first module with a screen (#51): its tab and Me tile
+      // are sensitive when the module is open, and no other entry is.
+      final withCrm = TeamViewer(
+        role: AppRole.salesExecutive,
+        caps: _caps(),
+        modules: const {TeamModule.crm},
+      );
+      expect(
+          [
+            for (final tab in teamTabsFor(withCrm))
+              if (tab.sensitive) tab.id
+          ],
+          ['crm']);
+      final sensitiveTiles = [
+        for (final section in meSectionRegistry)
+          for (final tile in section.tiles)
+            if (tile.sensitive) tile.id
+      ];
+      expect(sensitiveTiles, ['crm']);
     });
   });
 
