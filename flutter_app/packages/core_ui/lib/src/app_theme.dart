@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'brand_tokens.dart';
+import 'rvm_palette.dart';
 
 /// Builds the shared ThemeData. Team RVM uses the warm "ironwood + ivory"
 /// design language from the 2026 reference; the other apps keep their seeds.
+///
+/// Both brightnesses register [RvmPalette] as a [ThemeExtension]. Components
+/// and screens read `context.palette` so Light and Dark cannot drift apart.
 abstract final class RvmTheme {
   static ThemeData light({Color seed = RvmColors.brand}) =>
       _base(seed, Brightness.light);
@@ -14,17 +18,20 @@ abstract final class RvmTheme {
   static ThemeData _base(Color seed, Brightness brightness) {
     final light = brightness == Brightness.light;
     final base = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
+    final p = light ? RvmPalette.light : RvmPalette.dark;
 
-    final ink = light ? RvmColors.ink : const Color(0xFFF6EFE9);
-    final muted = light ? RvmColors.muted : const Color(0xFFB8A79C);
-    final canvas = light ? RvmColors.ivory : const Color(0xFF1B1310);
-    final card = light ? RvmColors.white : const Color(0xFF241A16);
-    final line = light ? RvmColors.line : const Color(0xFF3A2B24);
-    final sand = light ? RvmColors.sand : const Color(0xFF31241E);
-    final primary = light ? RvmColors.clay : const Color(0xFFD0876A);
-    final onPrimary = light ? RvmColors.white : const Color(0xFF2A120A);
-    final primarySoft = light ? RvmColors.claySoft : const Color(0xFF3B241C);
-    final accent = light ? RvmColors.teamSeed : const Color(0xFFE58A5E);
+    final ink = p.ink;
+    final muted = p.muted;
+    final canvas = p.canvas;
+    final card = p.card;
+    final line = p.line;
+    final sand = p.sand;
+    final primary = p.primary;
+    final onPrimary = p.onPrimary;
+    final primarySoft = p.isDark
+        ? const Color(0xFF3B241C)
+        : const Color(0xFFF6E9E1);
+    final accent = p.secondary;
 
     final scheme = base.copyWith(
       primary: primary,
@@ -32,24 +39,24 @@ abstract final class RvmTheme {
       primaryContainer: primarySoft,
       onPrimaryContainer: light ? RvmColors.clayDark : const Color(0xFFFFDBCB),
       secondary: accent,
-      onSecondary: RvmColors.white,
+      onSecondary: p.onSecondary,
       secondaryContainer:
           light ? RvmColors.warningSoft : const Color(0xFF3C2E16),
       onSecondaryContainer:
           light ? RvmColors.clayDark : const Color(0xFFFFE2A8),
-      tertiary: RvmColors.info,
+      tertiary: p.info,
       surface: canvas,
       onSurface: ink,
       onSurfaceVariant: muted,
       surfaceContainerHighest: sand,
-      surfaceContainerHigh: light ? RvmColors.cream : sand,
+      surfaceContainerHigh: p.cardElevated,
       surfaceContainer: card,
-      outline: light ? RvmColors.line : const Color(0xFF4A382F),
+      outline: p.outline,
       outlineVariant: line,
-      error: RvmColors.danger,
-      onError: RvmColors.white,
-      errorContainer: light ? RvmColors.dangerSoft : const Color(0xFF4A1F1B),
-      onErrorContainer: light ? RvmColors.danger : const Color(0xFFFFC9C4),
+      error: p.danger,
+      onError: p.isDark ? p.brand : RvmColors.white,
+      errorContainer: p.dangerSoft,
+      onErrorContainer: p.isDark ? p.danger : RvmColors.danger,
     );
 
     final text =
@@ -61,8 +68,10 @@ abstract final class RvmTheme {
       fontFamily: RvmType.family,
       colorScheme: scheme,
       textTheme: text,
+      extensions: [p],
       scaffoldBackgroundColor: canvas,
       canvasColor: canvas,
+      cardColor: card,
       splashFactory: InkSparkle.splashFactory,
       visualDensity: VisualDensity.standard,
       appBarTheme: AppBarTheme(
@@ -96,13 +105,13 @@ abstract final class RvmTheme {
         isDense: true,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
-        hintStyle: text.bodyMedium?.copyWith(color: RvmColors.subtle),
+        hintStyle: text.bodyMedium?.copyWith(color: p.subtle),
         labelStyle:
             text.labelMedium?.copyWith(color: muted, letterSpacing: 0.5),
         floatingLabelStyle:
             text.labelMedium?.copyWith(color: primary, letterSpacing: 0.5),
         helperStyle: text.bodySmall,
-        errorStyle: text.bodySmall?.copyWith(color: RvmColors.danger),
+        errorStyle: text.bodySmall?.copyWith(color: p.danger),
         prefixIconColor: muted,
         suffixIconColor: muted,
         border: OutlineInputBorder(
@@ -119,11 +128,11 @@ abstract final class RvmTheme {
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(RvmRadii.md),
-          borderSide: const BorderSide(color: RvmColors.danger, width: 1.2),
+          borderSide: BorderSide(color: p.danger, width: 1.2),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(RvmRadii.md),
-          borderSide: const BorderSide(color: RvmColors.danger, width: 1.4),
+          borderSide: BorderSide(color: p.danger, width: 1.4),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -150,7 +159,7 @@ abstract final class RvmTheme {
           textStyle: text.labelLarge
               ?.copyWith(fontSize: 14, fontWeight: FontWeight.w600),
           side: BorderSide(
-              color: light ? RvmColors.line : const Color(0xFF4A382F)),
+              color: p.outline),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(RvmRadii.md)),
         ),
@@ -212,7 +221,7 @@ abstract final class RvmTheme {
         surfaceTintColor: Colors.transparent,
         modalBackgroundColor: card,
         showDragHandle: true,
-        dragHandleColor: RvmColors.subtle,
+        dragHandleColor: p.subtle,
         shape: const RoundedRectangleBorder(
           borderRadius:
               BorderRadius.vertical(top: Radius.circular(RvmRadii.xl)),
@@ -244,7 +253,7 @@ abstract final class RvmTheme {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-            (s) => s.contains(WidgetState.selected) ? RvmColors.white : muted),
+            (s) => s.contains(WidgetState.selected) ? p.onPrimary : muted),
         trackColor: WidgetStateProperty.resolveWith(
             (s) => s.contains(WidgetState.selected) ? primary : sand),
         trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
@@ -252,7 +261,7 @@ abstract final class RvmTheme {
       checkboxTheme: CheckboxThemeData(
         fillColor: WidgetStateProperty.resolveWith((s) =>
             s.contains(WidgetState.selected) ? primary : Colors.transparent),
-        side: BorderSide(color: light ? RvmColors.subtle : muted),
+        side: BorderSide(color: p.isDark ? p.muted : p.subtle),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
       ),
       radioTheme: RadioThemeData(

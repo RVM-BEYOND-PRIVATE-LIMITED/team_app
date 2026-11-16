@@ -18,6 +18,7 @@ import 'features/startup/version_gate.dart';
 import 'injection.dart';
 import 'push/push_service.dart';
 import 'router/team_router_host.dart';
+import 'theme/theme_cubit.dart';
 import 'widgets/env_ribbon.dart';
 
 void main() {
@@ -142,6 +143,8 @@ class _TeamAppState extends State<TeamApp> {
   /// module guard reads it ([TeamRouterHost], item 7b): nothing is open before
   /// its first answer, so every module route falls back to /home, as before.
   final TeamModulesBloc _modules = getIt<TeamModulesBloc>();
+  final ThemeCubit _theme = getIt<ThemeCubit>();
+  late final AppLifecycleListener _themeLifecycle;
 
   static const _notificationPermission = NotificationPermission();
   bool _askedNotifications = false;
@@ -152,7 +155,21 @@ class _TeamAppState extends State<TeamApp> {
     if (_auth.state.status == TeamAuthStatus.authenticated) {
       _askNotificationPermission();
       unawaited(PushService.instance.onSignedIn());
+      unawaited(_theme.load());
     }
+    _themeLifecycle = AppLifecycleListener(
+      onResume: () {
+        if (_auth.state.status == TeamAuthStatus.authenticated) {
+          unawaited(_theme.resume());
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _themeLifecycle.dispose();
+    super.dispose();
   }
 
   /// Android 13+ hides notification alerts until POST_NOTIFICATIONS is granted.
@@ -172,6 +189,7 @@ class _TeamAppState extends State<TeamApp> {
         BlocProvider.value(value: _auth),
         BlocProvider.value(value: getIt<ConnectivityBloc>()),
         BlocProvider.value(value: _modules),
+        BlocProvider.value(value: _theme),
       ],
       child: BlocListener<TeamAuthBloc, TeamAuthState>(
         listenWhen: (p, c) => p.status != c.status,
@@ -179,33 +197,35 @@ class _TeamAppState extends State<TeamApp> {
           if (state.status == TeamAuthStatus.authenticated) {
             _askNotificationPermission();
             unawaited(PushService.instance.onSignedIn());
+            unawaited(_theme.load());
+          } else if (state.status == TeamAuthStatus.unauthenticated) {
+            unawaited(_theme.signOut());
           }
         },
         // The router: its guards run again on every session change, and its
         // module guard follows the modules bloc (#50 items 5 and 7b).
-        child: TeamRouterHost(
-          auth: _auth,
-          modules: _modules,
-          navigatorKey: rootNavigatorKey,
-          builder: (context, router) => MaterialApp.router(
-            title: 'Team RVM',
-            scaffoldMessengerKey: rootScaffoldMessengerKey,
-            debugShowCheckedModeBanner: false,
-            // The whole design system (ivory scaffolds, white cards, clay
-            // surfaces) is authored for the light palette: following the
-            // system into dark mode mixes white cards with dark fills and
-            // washed-out text (OnePlus 12R, issue14). Locked to light so every
-            // device shows the same colors. Revisit only with a full dark-mode
-            // audit.
-            theme: RvmTheme.light(seed: RvmColors.clay),
-            themeMode: ThemeMode.light,
-            // The TEST SERVER ribbon (#60) is off unless SHOW_ENV_RIBBON=true,
-            // and never shows against the live servers.
-            builder: (context, child) => EnvRibbon(
-              environment: getIt<ApiEnvironment>(),
-              child: VersionGate(child: child ?? const SizedBox.shrink()),
+        child: BlocBuilder<ThemeCubit, ThemeState>(
+          builder: (context, theme) => TeamRouterHost(
+            auth: _auth,
+            modules: _modules,
+            navigatorKey: rootNavigatorKey,
+            builder: (context, router) => MaterialApp.router(
+              title: 'Team RVM',
+              scaffoldMessengerKey: rootScaffoldMessengerKey,
+              debugShowCheckedModeBanner: false,
+              // The switch in Me decides; while the server's theme switch is
+              // closed ThemeCubit keeps themeMode at Light (#115/#121).
+              theme: RvmTheme.light(seed: RvmColors.clay),
+              darkTheme: RvmTheme.dark(seed: RvmColors.clay),
+              themeMode: theme.mode,
+              // The TEST SERVER ribbon (#60) is off unless
+              // SHOW_ENV_RIBBON=true, and never shows against the live servers.
+              builder: (context, child) => EnvRibbon(
+                environment: getIt<ApiEnvironment>(),
+                child: VersionGate(child: child ?? const SizedBox.shrink()),
+              ),
+              routerConfig: router,
             ),
-            routerConfig: router,
           ),
         ),
       ),

@@ -52,6 +52,10 @@ import 'features/requests/bloc/requests_bloc.dart';
 import 'features/work/bloc/absent_remark_bloc.dart';
 import 'features/work/bloc/interview_action_bloc.dart';
 import 'features/work/bloc/mark_attendance_bloc.dart';
+import 'theme/theme_cubit.dart';
+import 'theme/theme_local_store.dart';
+import 'theme/theme_preferences_remote_data_source.dart';
+import 'theme/theme_preferences_repository.dart';
 import 'platform/call_launcher.dart';
 
 /// Service locator — same provided stack as staff_app / student_app:
@@ -169,7 +173,9 @@ void configureDependencies(AuthSession session) {
     ..registerLazySingleton<LocationService>(LocationService.new)
     // Dialer hand-off for module calls (#50 item 1). No screen uses it yet: a
     // module wires it when its start-call route exists.
-    ..registerLazySingleton<CallLauncher>(CallLauncher.new);
+    ..registerLazySingleton<CallLauncher>(CallLauncher.new)
+    ..registerLazySingleton<ThemePreferencesRemoteDataSource>(
+        () => ThemePreferencesRemoteDataSource(getIt<Dio>()));
 
   // Repositories.
   getIt
@@ -202,10 +208,20 @@ void configureDependencies(AuthSession session) {
     ..registerLazySingleton<LeaveRepository>(
         () => LeaveRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<TeamModulesRepository>(
-        () => TeamModulesRepository(remote: getIt(), connectivity: getIt()));
+        () => TeamModulesRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<ThemePreferencesRepository>(
+        () => ThemePreferencesRepository(
+              remote: getIt(),
+              connectivity: getIt(),
+            ));
 
   // Session-wide blocs.
   getIt
+    ..registerLazySingleton<ThemeLocalStore>(() => SharedPreferencesThemeStore())
+    ..registerLazySingleton<ThemeCubit>(() => ThemeCubit(
+          repository: getIt(),
+          localStore: getIt(),
+        ))
     ..registerLazySingleton<TeamAuthBloc>(
         () => TeamAuthBloc(repository: getIt(), session: getIt(), ess: getIt()))
     ..registerLazySingleton<ConnectivityBloc>(() => ConnectivityBloc(getIt()))

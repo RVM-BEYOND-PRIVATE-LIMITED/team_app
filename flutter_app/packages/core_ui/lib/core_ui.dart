@@ -3,5 +3,6 @@
 library core_ui;
 
 export 'src/brand_tokens.dart';
+export 'src/rvm_palette.dart';
 export 'src/app_theme.dart';
 export 'src/money_format.dart';

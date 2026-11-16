@@ -14,6 +14,8 @@ import '../../injection.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_header.dart';
 import '../../widgets/team_kit.dart';
+import '../../theme/theme_cubit.dart';
+import 'appearance_sheet.dart';
 import '../shell/tile_registry.dart';
 
 class MeScreen extends StatelessWidget {
@@ -161,6 +163,7 @@ class _MeBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<TeamAuthBloc>().state;
     final caps = context.watch<CapabilitiesBloc>().state.data;
+    final themeState = context.watch<ThemeCubit>().state;
     // The sections and tiles come from the Me registry (meSectionRegistry),
     // which holds who sees each tile.
     final sections = meSectionsFor(TeamViewer(
@@ -173,6 +176,13 @@ class _MeBody extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         _ProfileHeader(profile: p, employee: attendanceEmployee),
+        if (themeState.open) ...[
+          const SizedBox(height: RvmSpacing.lg),
+          const _Section(
+            title: 'Appearance',
+            children: [_AppearanceTile()],
+          ),
+        ],
         const SizedBox(height: RvmSpacing.lg),
         for (var i = 0; i < sections.length; i++) ...[
           if (i > 0) const SizedBox(height: RvmSpacing.md),
@@ -354,6 +364,23 @@ class _Tile extends StatelessWidget {
       trailing: const Icon(Icons.chevron_right_rounded,
           size: 20, color: RvmColors.subtle),
       onTap: onTap,
+    );
+  }
+}
+
+
+class _AppearanceTile extends StatelessWidget {
+  const _AppearanceTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<ThemeCubit>().state;
+    final suffix = state.pendingSave ? ' · will sync when online' : '';
+    return _Tile(
+      icon: Icons.brightness_6_outlined,
+      title: 'Appearance',
+      subtitle: '${state.choice.label}$suffix',
+      onTap: () => showAppearanceSheet(context),
     );
   }
 }
