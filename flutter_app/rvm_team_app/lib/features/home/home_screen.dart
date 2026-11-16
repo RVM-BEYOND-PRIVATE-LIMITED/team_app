@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../my_team/colleague_profile_sheet.dart';
+import '../shell/open_modules.dart';
 import '../shell/tile_registry.dart';
 import '../work/wfh_sheet.dart';
 import '../../domain/attendance_models.dart';
@@ -33,6 +34,7 @@ class HomeScreen extends StatelessWidget {
         final viewer = TeamViewer(
           role: identity?.role ?? AppRole.unknown,
           attendance: identity?.attendance == true,
+          modules: openTeamModules(),
         );
         final cards = homeCardsFor(viewer);
         return Scaffold(
@@ -95,6 +97,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 Widget _homeCard(HomeCard card, TeamPermissions perms) => switch (card) {
+      HomeCard.crm => const _CrmCard(),
       HomeCard.schedule => const _ScheduleCard(),
       HomeCard.offThisWeek => _OffThisWeekCard(),
       HomeCard.faculty => _FacultyCard(),
@@ -105,6 +108,46 @@ Widget _homeCard(HomeCard card, TeamPermissions perms) => switch (card) {
       HomeCard.workFromHome => _WorkFromHomeCard(),
       HomeCard.announcements => _AnnouncementsSection(),
     };
+
+class _CrmCard extends StatelessWidget {
+  const _CrmCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return TeamCard(
+      onTap: () => context.push('/crm'),
+      child: Row(
+        children: [
+          TeamIconBadge(
+            icon: Icons.support_agent,
+            color: p.primary,
+            background: p.primary.withValues(alpha: 0.12),
+            size: 42,
+          ),
+          const SizedBox(width: RvmSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Sales CRM',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text('Start calling, follow-ups and your leads',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 11.5, color: p.muted)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right),
+        ],
+      ),
+    );
+  }
+}
 
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader({required this.identity});

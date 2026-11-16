@@ -16,6 +16,7 @@ import '../../widgets/team_header.dart';
 import '../../widgets/team_kit.dart';
 import '../../theme/theme_cubit.dart';
 import 'appearance_sheet.dart';
+import '../shell/open_modules.dart';
 import '../shell/tile_registry.dart';
 
 class MeScreen extends StatelessWidget {
@@ -173,6 +174,7 @@ class _MeBody extends StatelessWidget {
       role: auth.identity?.role ?? AppRole.unknown,
       attendance: attendanceOnly,
       caps: caps,
+      modules: openTeamModules(),
     ));
     final profileData = profile;
     return ListView(
