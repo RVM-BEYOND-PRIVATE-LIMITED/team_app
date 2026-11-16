@@ -26,6 +26,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocBuilder<TeamAuthBloc, TeamAuthState>(
       builder: (context, auth) {
         final identity = auth.identity;
@@ -35,7 +36,7 @@ class HomeScreen extends StatelessWidget {
         );
         final cards = homeCardsFor(viewer);
         return Scaffold(
-          backgroundColor: RvmColors.ivory,
+          backgroundColor: p.canvas,
           body: Column(
             children: [
               const OfflineBanner(),
@@ -59,7 +60,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ],
                   body: RefreshIndicator(
-                    color: RvmColors.clay,
+                    color: p.primary,
                     onRefresh: () async {},
                     child: ListView(
                       padding: EdgeInsets.zero,
@@ -111,6 +112,7 @@ class _HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final name = identity?.username ?? 'Welcome';
     final trimmed = name.trim();
     final role = appRoleLabel(identity?.role ?? AppRole.unknown).toUpperCase();
@@ -130,7 +132,7 @@ class _HomeHeader extends StatelessWidget {
               width: 11,
               height: 11,
               decoration: BoxDecoration(
-                color: RvmColors.success,
+                color: p.success,
                 shape: BoxShape.circle,
                 border: Border.all(color: RvmColors.ironwood, width: 2),
               ),
@@ -157,7 +159,7 @@ class _HomeHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.location_on_outlined,
-                      size: 12, color: RvmColors.ivory.withValues(alpha: 0.7)),
+                      size: 12, color: p.canvas.withValues(alpha: 0.7)),
                   const SizedBox(width: 3),
                   Flexible(
                     child: Text(
@@ -166,7 +168,7 @@ class _HomeHeader extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             fontSize: 11,
-                            color: RvmColors.ivory.withValues(alpha: 0.72),
+                            color: p.canvas.withValues(alpha: 0.72),
                           ),
                     ),
                   ),
@@ -193,6 +195,7 @@ class _ScheduleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocProvider(
       create: (_) =>
           getIt<PunchBloc>()..add(const PunchLoadRequested(withDistance: true)),
@@ -225,8 +228,8 @@ class _ScheduleCard extends StatelessWidget {
                   children: [
                     TeamIconBadge(
                       icon: Icons.schedule_rounded,
-                      color: RvmColors.success,
-                      background: RvmColors.successSoft,
+                      color: p.success,
+                      background: p.successSoft,
                       size: 38,
                     ),
                     const SizedBox(width: 10),
@@ -242,7 +245,7 @@ class _ScheduleCard extends StatelessWidget {
                                     fontSize: 9.5,
                                     letterSpacing: 0.8,
                                     fontWeight: FontWeight.w600,
-                                    color: RvmColors.muted,
+                                    color: p.muted,
                                   )),
                           const SizedBox(height: 2),
                           Text(shiftText,
@@ -268,7 +271,7 @@ class _ScheduleCard extends StatelessWidget {
                 Row(
                   children: [
                     Icon(Icons.schedule_outlined,
-                        size: 14, color: RvmColors.subtle),
+                        size: 14, color: p.subtle),
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
@@ -277,7 +280,7 @@ class _ScheduleCard extends StatelessWidget {
                             : 'Logged in at ${TimeOfDay.fromDateTime(logged.toLocal()).format(context)}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               fontSize: 11.5,
-                              color: RvmColors.muted,
+                              color: p.muted,
                             ),
                       ),
                     ),
@@ -287,7 +290,7 @@ class _ScheduleCard extends StatelessWidget {
                           style:
                               Theme.of(context).textTheme.labelMedium?.copyWith(
                                     fontSize: 11.5,
-                                    color: RvmColors.clay,
+                                    color: p.primary,
                                     fontWeight: FontWeight.w600,
                                   )),
                     ),
@@ -387,6 +390,7 @@ class _DistanceNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final data = state.data;
     final branch = data?.branch;
     final radius = state.allowedRadiusMeters ?? branch?.radiusM;
@@ -404,7 +408,7 @@ class _DistanceNote extends StatelessWidget {
 
     if (data == null) {
       final failure = state.failure;
-      color = failure == null ? RvmColors.muted : RvmColors.warning;
+      color = failure == null ? p.muted : p.warning;
       icon = failure == null
           ? Icons.location_searching_rounded
           : Icons.cloud_off_rounded;
@@ -412,29 +416,29 @@ class _DistanceNote extends StatelessWidget {
           failure?.message ?? 'Checking your location after attendance loads…';
       subtitle = failure == null ? null : 'Tap refresh to try again.';
     } else if (!configured) {
-      color = RvmColors.warning;
+      color = p.warning;
       icon = Icons.location_off_rounded;
       title = 'Office geofence is not set up.';
       subtitle = 'Ask HR to set the branch location.';
     } else if (loading) {
-      color = RvmColors.info;
+      color = p.info;
       icon = Icons.my_location_rounded;
       title = 'Checking your distance from ${branch.name}…';
       subtitle = null;
     } else if (state.distanceError != null) {
-      color = RvmColors.warning;
+      color = p.warning;
       icon = Icons.location_disabled_rounded;
       title = state.distanceError!;
       subtitle = 'Tap the refresh button to try again.';
     } else if (state.distanceMeters == null) {
-      color = RvmColors.muted;
+      color = p.muted;
       icon = Icons.location_searching_rounded;
       title = 'Distance not measured yet.';
       subtitle = 'Tap refresh to check.';
     } else {
       final distance = state.distanceMeters!;
       final inside = distance <= radius;
-      color = inside ? RvmColors.success : RvmColors.danger;
+      color = inside ? p.success : p.danger;
       icon = inside ? Icons.check_circle_rounded : Icons.location_off_rounded;
       title =
           '${inside ? 'Inside' : 'Outside'} the office geofence — ${_distanceText(distance)} away';
@@ -473,7 +477,7 @@ class _DistanceNote extends StatelessWidget {
                   Text(subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             fontSize: 9,
-                            color: RvmColors.muted,
+                            color: p.muted,
                           )),
               ],
             ),
@@ -483,7 +487,7 @@ class _DistanceNote extends StatelessWidget {
             onPressed: onRefresh,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.refresh_rounded, size: 16),
-            color: RvmColors.subtle,
+            color: p.subtle,
           ),
         ],
       ),
@@ -612,13 +616,14 @@ class _HomePunchButtonState extends State<HomePunchButton>
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final remaining = _remaining;
     final cooling = remaining > Duration.zero;
     final nextIsOut = widget.onDuty;
     final showDutyClock = widget.onDuty && widget.onDutySince != null;
     final color = cooling
         ? _cooldownGrey
-        : (nextIsOut ? RvmColors.danger : RvmColors.success);
+        : (nextIsOut ? p.danger : p.success);
     final label = cooling
         ? '${nextIsOut ? 'Punch Out' : 'Punch In'} in ${_clock(remaining)}'
         : (nextIsOut ? 'Punch Out' : 'Punch In');
@@ -799,21 +804,22 @@ class _OffThisWeekInner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     if (people.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: BoxDecoration(
-          color: RvmColors.cream,
+          color: p.cardElevated,
           borderRadius: BorderRadius.circular(RvmRadii.md),
-          border: Border.all(color: RvmColors.sand),
+          border: Border.all(color: p.sand),
         ),
         child: Text(
           'Nobody is off this week. Full team present!',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontSize: 11.5,
                 height: 1.35,
-                color: RvmColors.muted,
+                color: p.muted,
               ),
         ),
       );
@@ -825,7 +831,7 @@ class _OffThisWeekInner extends StatelessWidget {
       children: [
         for (var i = 0; i < sorted.length; i++) ...[
           if (i > 0)
-            const Divider(height: 18, thickness: 1, color: RvmColors.line),
+            Divider(height: 18, thickness: 1, color: p.line),
           _OffWeekRow(person: sorted[i]),
         ],
       ],
@@ -839,6 +845,7 @@ class _OffWeekRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final card = person.card;
     final designation = card.designation?.trim() ?? '';
     final employeeCode = card.employeeCode?.trim() ?? '';
@@ -894,7 +901,7 @@ class _OffWeekRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             fontSize: 10.5,
-                            color: RvmColors.muted,
+                            color: p.muted,
                           ),
                     ),
                   ],
@@ -906,15 +913,15 @@ class _OffWeekRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             fontSize: 10,
-                            color: RvmColors.muted,
+                            color: p.muted,
                           ),
                     ),
                   ],
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.event_outlined,
-                          size: 13, color: RvmColors.clay),
+                      Icon(Icons.event_outlined,
+                          size: 13, color: p.primary),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -923,7 +930,7 @@ class _OffWeekRow extends StatelessWidget {
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w600,
-                                    color: RvmColors.clay,
+                                    color: p.primary,
                                   ),
                         ),
                       ),
@@ -933,10 +940,10 @@ class _OffWeekRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
               child: Icon(Icons.chevron_right_rounded,
-                  size: 18, color: RvmColors.subtle),
+                  size: 18, color: p.subtle),
             ),
           ],
         ),
@@ -1047,6 +1054,7 @@ class _HodCard extends StatelessWidget {
 class _PrioritySummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocProvider(
       create: (_) => getIt<InboxBloc>()..add(const LoadRequested()),
       child: BlocBuilder<InboxBloc, LoadState<PriorityInbox>>(
@@ -1057,7 +1065,7 @@ class _PrioritySummaryCard extends StatelessWidget {
               children: [
                 TeamIconBadge(
                   icon: Icons.flag_outlined,
-                  color: RvmColors.teamSeed,
+                  color: p.secondary,
                   background: const Color(0xFFFCEBE2),
                 ),
                 const SizedBox(width: 12),
@@ -1087,8 +1095,8 @@ class _PrioritySummaryCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded,
-                    size: 20, color: RvmColors.subtle),
+                Icon(Icons.chevron_right_rounded,
+                    size: 20, color: p.subtle),
               ],
             ),
           );
@@ -1187,6 +1195,7 @@ class _QuickActionsState extends State<_QuickActions> {
 
   Widget _actions(
       BuildContext context, EssCapabilities? caps, ApprovalsSummary? summary) {
+    final p = context.palette;
     final pending = summary?.pending ?? 0;
     // Leave approvers now come from HR's approver mapping (#43), not only from
     // reporting lines, so the Scheduler can make someone an approver too.
@@ -1198,17 +1207,17 @@ class _QuickActionsState extends State<_QuickActions> {
       // The punch itself lives in the schedule card above, so this row does not
       // send anyone to the full punch screen.
       _QuickAction(Icons.today_outlined, 'My day', 'Tasks & meetings',
-          RvmColors.info, RvmColors.infoSoft, '/me/attendance'),
+          p.info, p.infoSoft, '/me/attendance'),
       _QuickAction(
           Icons.event_note_outlined,
           'Requests & leave',
           'Apply vacation',
-          RvmColors.teamSeed,
+          p.secondary,
           const Color(0xFFFCEBE2),
           '/requests'),
       if (approver)
         _QuickAction(Icons.fact_check_outlined, 'Approvals', 'Pending reviews',
-            RvmColors.warning, RvmColors.warningSoft, '/approvals',
+            p.warning, p.warningSoft, '/approvals',
             badge: pending > 0 ? '$pending pending' : null),
     ];
     return Column(
@@ -1261,6 +1270,7 @@ class _QuickTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return TeamCard(
       padding: const EdgeInsets.all(12),
       radius: RvmRadii.md,
@@ -1307,7 +1317,7 @@ class _QuickTile extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
-                    color: RvmColors.teamSeed,
+                    color: p.secondary,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(action.badge!,
@@ -1328,15 +1338,16 @@ class _QuickTile extends StatelessWidget {
 class _WorkFromHomeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return TeamCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       onTap: () => showWfhSheet(context),
       child: Row(
         children: [
-          const TeamIconBadge(
+          TeamIconBadge(
             icon: Icons.desktop_windows_outlined,
-            color: RvmColors.success,
-            background: RvmColors.successSoft,
+            color: p.success,
+            background: p.successSoft,
             size: 36,
             iconSize: 18,
             radius: 11,
@@ -1360,8 +1371,8 @@ class _WorkFromHomeCard extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(Icons.chevron_right_rounded,
-              size: 20, color: RvmColors.subtle),
+          Icon(Icons.chevron_right_rounded,
+              size: 20, color: p.subtle),
         ],
       ),
     );
@@ -1373,6 +1384,7 @@ class _WorkFromHomeCard extends StatelessWidget {
 class _AnnouncementsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocProvider(
       create: (_) => getIt<HomeAnnouncementsBloc>()..add(const LoadRequested()),
       child:
@@ -1411,16 +1423,16 @@ class _AnnouncementsSection extends StatelessWidget {
                             child: Container(
                               padding: const EdgeInsets.all(11),
                               decoration: BoxDecoration(
-                                color: RvmColors.cream,
+                                color: p.cardElevated,
                                 borderRadius:
                                     BorderRadius.circular(RvmRadii.sm),
-                                border: Border.all(color: RvmColors.sand),
+                                border: Border.all(color: p.sand),
                               ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.campaign_outlined,
-                                      size: 16, color: RvmColors.muted),
+                                  Icon(Icons.campaign_outlined,
+                                      size: 16, color: p.muted),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Column(
@@ -1433,7 +1445,7 @@ class _AnnouncementsSection extends StatelessWidget {
                                                 .bodySmall
                                                 ?.copyWith(
                                                     fontWeight: FontWeight.w600,
-                                                    color: RvmColors.ink)),
+                                                    color: p.ink)),
                                         Text(a.message,
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
@@ -1465,11 +1477,12 @@ class _AnnouncementEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       decoration: BoxDecoration(
-        color: RvmColors.cream,
+        color: p.cardElevated,
         borderRadius: BorderRadius.circular(RvmRadii.md),
       ),
       child: Column(
@@ -1486,7 +1499,7 @@ class _AnnouncementEmpty extends StatelessWidget {
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
-                  ?.copyWith(fontSize: 9.5, color: RvmColors.subtle)),
+                  ?.copyWith(fontSize: 9.5, color: p.subtle)),
         ],
       ),
     );

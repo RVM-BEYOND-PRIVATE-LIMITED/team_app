@@ -9,10 +9,11 @@ import '../../injection.dart';
 import '../../widgets/states.dart';
 
 Color _healthColor(BuildContext context, double? pct) {
+    final p = context.palette;
   if (pct == null) return Theme.of(context).colorScheme.onSurfaceVariant;
-  if (pct >= 80) return RvmColors.success;
-  if (pct >= 65) return RvmColors.warning;
-  return RvmColors.danger;
+  if (pct >= 80) return p.success;
+  if (pct >= 65) return p.warning;
+  return p.danger;
 }
 
 /// The faculty indicators card — month-to-date student attendance across the
@@ -74,6 +75,7 @@ class FacultyIndicatorsScreen extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, FacultyReport? report) {
+    final p = context.palette;
     if (report == null) {
       return const AppEmpty(message: 'No attendance data for this month yet.');
     }
@@ -100,20 +102,20 @@ class FacultyIndicatorsScreen extends StatelessWidget {
                                 color: _healthColor(context, pct),
                                 fontWeight: FontWeight.w800,
                               )),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4),
                   Text('Target 80% · month to date',
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
                           ?.copyWith(color: scheme.onSurfaceVariant)),
-                  const SizedBox(height: RvmSpacing.sm),
+                  SizedBox(height: RvmSpacing.sm),
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
-                    children: const [
-                      _HealthKey(color: RvmColors.success, label: '80%+'),
-                      _HealthKey(color: RvmColors.warning, label: '65–79%'),
-                      _HealthKey(color: RvmColors.danger, label: 'Below 65%'),
+                    children: [
+                      _HealthKey(color: p.success, label: '80%+'),
+                      _HealthKey(color: p.warning, label: '65–79%'),
+                      _HealthKey(color: p.danger, label: 'Below 65%'),
                     ],
                   ),
                   if (report.missingSessions > 0) ...[

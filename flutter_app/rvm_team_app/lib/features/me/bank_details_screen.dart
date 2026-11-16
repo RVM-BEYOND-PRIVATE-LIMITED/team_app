@@ -148,8 +148,9 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
-      backgroundColor: RvmColors.ivory,
+      backgroundColor: p.canvas,
       body: Column(
         children: [
           TeamPageHeader(
@@ -178,6 +179,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
   }
 
   Widget _readOnlyView() {
+    final p = context.palette;
     final bank = _existing;
     if (bank == null) return _editView();
     final text = Theme.of(context).textTheme;
@@ -186,7 +188,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
         ? account
         : '•••• ${account.substring(account.length - 4)}';
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
           RvmSpacing.md, RvmSpacing.md, RvmSpacing.md, RvmSpacing.xl),
       children: [
         TeamCard(
@@ -195,10 +197,10 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
             children: [
               Row(
                 children: [
-                  const TeamIconBadge(
+                  TeamIconBadge(
                     icon: Icons.account_balance_rounded,
-                    color: RvmColors.clay,
-                    background: RvmColors.cream,
+                    color: p.primary,
+                    background: p.cardElevated,
                     size: 42,
                     iconSize: 20,
                     radius: 13,
@@ -219,8 +221,8 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                                       fontWeight: FontWeight.w700)),
                             ),
                             const SizedBox(width: 4),
-                            const Icon(Icons.verified_rounded,
-                                size: 14, color: RvmColors.success),
+                            Icon(Icons.verified_rounded,
+                                size: 14, color: p.success),
                           ],
                         ),
                         Text(bank.branchName ?? 'Branch not set',
@@ -249,7 +251,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
                       size: 17),
-                  color: RvmColors.subtle,
+                  color: p.subtle,
                   visualDensity: VisualDensity.compact,
                 ),
               ),
@@ -273,6 +275,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
   }
 
   Widget _editView() {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     final account = _account.text.replaceAll(' ', '');
     return ListView(
@@ -291,7 +294,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
           hint: 'Faridabad Main Branch',
           trailing: Text('Optional',
               style: text.bodySmall
-                  ?.copyWith(fontSize: 9, color: RvmColors.subtle)),
+                  ?.copyWith(fontSize: 9, color: p.subtle)),
         ),
         const SizedBox(height: 10),
         _FieldCard(
@@ -307,13 +310,13 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
               if (isValidAccountNumber(account))
                 Row(
                   children: [
-                    const Icon(Icons.check_rounded,
-                        size: 11, color: RvmColors.success),
+                    Icon(Icons.check_rounded,
+                        size: 11, color: p.success),
                     const SizedBox(width: 3),
                     Text('Valid format',
                         style: text.labelSmall?.copyWith(
                             fontSize: 8.5,
-                            color: RvmColors.success,
+                            color: p.success,
                             fontWeight: FontWeight.w600)),
                   ],
                 ),
@@ -326,7 +329,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                     ? Icons.visibility_off_outlined
                     : Icons.visibility_outlined,
                 size: 17),
-            color: RvmColors.subtle,
+            color: p.subtle,
             visualDensity: VisualDensity.compact,
           ),
         ),
@@ -349,7 +352,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
             children: [
               Text('Reimbursements',
                   style: text.bodySmall
-                      ?.copyWith(fontSize: 8.5, color: RvmColors.subtle)),
+                      ?.copyWith(fontSize: 8.5, color: p.subtle)),
               const SizedBox(width: 5),
               const TeamPill(
                   label: 'Instant', tone: TeamPillTone.neutral, dense: true),
@@ -366,20 +369,20 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.lock_outline_rounded,
-                size: 14, color: RvmColors.muted),
+            Icon(Icons.lock_outline_rounded,
+                size: 14, color: p.muted),
             const SizedBox(width: 7),
             Expanded(
               child: Text.rich(
                 TextSpan(
                   style: text.bodySmall?.copyWith(
-                      fontSize: 9.5, height: 1.5, color: RvmColors.muted),
-                  children: const [
+                      fontSize: 9.5, height: 1.5, color: p.muted),
+                  children: [
                     TextSpan(text: 'I authorize '),
                     TextSpan(
                       text: 'Team RVM',
                       style: TextStyle(
-                          fontWeight: FontWeight.w700, color: RvmColors.ink),
+                          fontWeight: FontWeight.w700, color: p.ink),
                     ),
                     TextSpan(
                       text:
@@ -423,6 +426,7 @@ class _ReadOnlyField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -437,7 +441,7 @@ class _ReadOnlyField extends StatelessWidget {
                     style: text.labelSmall?.copyWith(
                         fontSize: 8,
                         letterSpacing: 0.7,
-                        color: RvmColors.subtle)),
+                        color: p.subtle)),
                 const SizedBox(height: 3),
                 Text(value,
                     style: text.titleSmall?.copyWith(
@@ -461,6 +465,7 @@ class _HeaderBack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -470,8 +475,8 @@ class _HeaderBack extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.09),
           shape: BoxShape.circle,
         ),
-        child: const Icon(Icons.arrow_back_ios_new_rounded,
-            size: 16, color: RvmColors.ivory),
+        child: Icon(Icons.arrow_back_ios_new_rounded,
+            size: 16, color: p.canvas),
       ),
     );
   }
@@ -506,14 +511,15 @@ class _FieldCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.fromLTRB(13, 10, 10, 4),
       decoration: BoxDecoration(
-        color: RvmColors.white,
+        color: p.card,
         borderRadius: BorderRadius.circular(RvmRadii.md),
         border: Border.all(
-            color: focusedBorder ? RvmColors.clay : RvmColors.line,
+            color: focusedBorder ? p.primary : p.line,
             width: focusedBorder ? 1.2 : 1),
       ),
       child: Column(
@@ -526,7 +532,7 @@ class _FieldCard extends StatelessWidget {
                     style: text.labelSmall?.copyWith(
                         fontSize: 8.5,
                         letterSpacing: 0.7,
-                        color: RvmColors.subtle,
+                        color: p.subtle,
                         fontWeight: FontWeight.w600)),
               ),
               if (trailing != null) trailing!,
@@ -552,7 +558,7 @@ class _FieldCard extends StatelessWidget {
                     hintText: hint,
                     hintStyle: text.titleSmall?.copyWith(
                         fontSize: 13,
-                        color: RvmColors.subtle,
+                        color: p.subtle,
                         fontWeight: FontWeight.w400),
                     isDense: true,
                     filled: false,

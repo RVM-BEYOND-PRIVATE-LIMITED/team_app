@@ -21,6 +21,7 @@ class InboxScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final role =
         context.watch<TeamAuthBloc>().state.identity?.role ?? AppRole.unknown;
     if (TeamPermissions.forRole(role).canSeeFacultyWork) {
@@ -29,7 +30,7 @@ class InboxScreen extends StatelessWidget {
     return BlocProvider(
       create: (_) => getIt<InboxBloc>()..add(const LoadRequested()),
       child: Scaffold(
-        backgroundColor: RvmColors.ivory,
+        backgroundColor: p.canvas,
         body: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) => [
             TeamCollapsingHeader(
@@ -160,6 +161,7 @@ class _TaskTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final done = task.isDone;
     final tone = switch (task.priority) {
       'urgent' => TeamPillTone.danger,
@@ -174,8 +176,8 @@ class _TaskTile extends StatelessWidget {
         children: [
           TeamIconBadge(
             icon: done ? Icons.check_rounded : Icons.flag_outlined,
-            color: done ? RvmColors.success : RvmColors.clay,
-            background: done ? RvmColors.successSoft : RvmColors.claySoft,
+            color: done ? p.success : p.primary,
+            background: done ? p.successSoft : p.cardElevated,
             size: 34,
             iconSize: 16,
             radius: 10,
@@ -230,8 +232,8 @@ class _TaskTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          const Icon(Icons.chevron_right_rounded,
-              size: 18, color: RvmColors.subtle),
+          Icon(Icons.chevron_right_rounded,
+              size: 18, color: p.subtle),
         ],
       ),
     );

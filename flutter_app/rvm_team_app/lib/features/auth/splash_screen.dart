@@ -8,6 +8,7 @@ class SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -30,13 +31,13 @@ class SplashScreen extends StatelessWidget {
               const SizedBox(height: RvmSpacing.lg),
               Text('Team RVM',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: RvmColors.ivory, fontWeight: FontWeight.w700)),
+                      color: p.canvas, fontWeight: FontWeight.w700)),
               const SizedBox(height: RvmSpacing.lg),
-              const SizedBox(
+              SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(
-                    strokeWidth: 2.2, color: RvmColors.ivory),
+                    strokeWidth: 2.2, color: p.canvas),
               ),
             ],
           ),

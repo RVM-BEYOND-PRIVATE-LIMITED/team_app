@@ -241,10 +241,11 @@ class _DocStatus extends StatelessWidget {
   final String status;
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (label, color) = switch (status) {
-      'verified' => ('Verified', RvmColors.success),
-      'rejected' => ('Rejected', RvmColors.danger),
-      _ => ('Pending', RvmColors.warning),
+      'verified' => ('Verified', p.success),
+      'rejected' => ('Rejected', p.danger),
+      _ => ('Pending', p.warning),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

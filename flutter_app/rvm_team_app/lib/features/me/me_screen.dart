@@ -23,6 +23,7 @@ class MeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final auth = context.watch<TeamAuthBloc>().state;
     if (auth.identity?.attendance == true) {
       return _AttendanceMe(auth: auth);
@@ -38,7 +39,7 @@ class MeScreen extends StatelessWidget {
                   ? auth.identity!.username!.trim()
                   : 'Me');
           return Scaffold(
-            backgroundColor: RvmColors.ivory,
+            backgroundColor: p.canvas,
             body: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
                 TeamCollapsingHeader(
@@ -103,6 +104,7 @@ class _AttendanceMe extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     // The Scheduler /me is refused to a punch token, so the header comes from
     // the ESS's own GET /me (full name, code, designation, branch) — issue #13.
     return BlocProvider(
@@ -123,7 +125,7 @@ class _AttendanceMe extends StatelessWidget {
               ? fallback.trim()
               : 'Me';
           return Scaffold(
-            backgroundColor: RvmColors.ivory,
+            backgroundColor: p.canvas,
             body: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
                 TeamCollapsingHeader(
@@ -161,9 +163,10 @@ class _MeBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final auth = context.watch<TeamAuthBloc>().state;
     final caps = context.watch<CapabilitiesBloc>().state.data;
-    final themeState = context.watch<ThemeCubit>().state;
+    final themeState = _maybeThemeState(context);
     // The sections and tiles come from the Me registry (meSectionRegistry),
     // which holds who sees each tile.
     final sections = meSectionsFor(TeamViewer(
@@ -171,12 +174,12 @@ class _MeBody extends StatelessWidget {
       attendance: attendanceOnly,
       caps: caps,
     ));
-    final p = profile;
+    final profileData = profile;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _ProfileHeader(profile: p, employee: attendanceEmployee),
-        if (themeState.open) ...[
+        _ProfileHeader(profile: profileData, employee: attendanceEmployee),
+        if (themeState?.open == true) ...[
           const SizedBox(height: RvmSpacing.lg),
           const _Section(
             title: 'Appearance',
@@ -215,7 +218,7 @@ class _MeBody extends StatelessWidget {
             style: Theme.of(context)
                 .textTheme
                 .labelSmall
-                ?.copyWith(fontSize: 10.5, color: RvmColors.subtle),
+                ?.copyWith(fontSize: 10.5, color: p.subtle),
           ),
         ),
         const SizedBox(height: RvmSpacing.lg),
@@ -314,6 +317,7 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -323,7 +327,7 @@ class _Section extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontSize: 11,
                     letterSpacing: 1,
-                    color: RvmColors.subtle,
+                    color: p.subtle,
                     fontWeight: FontWeight.w600,
                   )),
         ),
@@ -349,6 +353,7 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return ListTile(
       leading: TeamIconBadge(icon: icon, size: 38, iconSize: 18, radius: 11),
       title: Text(title,
@@ -361,13 +366,22 @@ class _Tile extends StatelessWidget {
               .textTheme
               .bodySmall
               ?.copyWith(fontSize: 12, height: 1.3)),
-      trailing: const Icon(Icons.chevron_right_rounded,
-          size: 20, color: RvmColors.subtle),
+      trailing: Icon(Icons.chevron_right_rounded,
+          size: 20, color: p.subtle),
       onTap: onTap,
     );
   }
 }
 
+
+ThemeState? _maybeThemeState(BuildContext context) {
+  try {
+    return context.watch<ThemeCubit>().state;
+  } catch (_) {
+    // Widget tests and embedded previews may not mount the app-level cubit.
+    return null;
+  }
+}
 
 class _AppearanceTile extends StatelessWidget {
   const _AppearanceTile();

@@ -185,10 +185,11 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final scheme = Theme.of(context).colorScheme;
     final (label, color) = switch (status) {
-      'done' => ('Done', RvmColors.success),
-      'rejected' => ('Rejected', RvmColors.danger),
+      'done' => ('Done', p.success),
+      'rejected' => ('Rejected', p.danger),
       _ => ('Open', scheme.primary),
     };
     return Container(

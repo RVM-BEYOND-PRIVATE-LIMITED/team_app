@@ -395,15 +395,16 @@ class _WallSetupPending extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return ListView(
       padding: const EdgeInsets.all(RvmSpacing.lg),
       children: [
         const SizedBox(height: RvmSpacing.xl),
-        const Center(
+        Center(
           child: TeamIconBadge(
             icon: Icons.construction_rounded,
-            color: RvmColors.warning,
-            background: RvmColors.warningSoft,
+            color: p.warning,
+            background: p.warningSoft,
             size: 64,
             iconSize: 30,
             radius: 20,
@@ -420,7 +421,7 @@ class _WallSetupPending extends StatelessWidget {
           style: Theme.of(context)
               .textTheme
               .bodyMedium
-              ?.copyWith(color: RvmColors.muted),
+              ?.copyWith(color: p.muted),
         ),
         const SizedBox(height: RvmSpacing.lg),
         TeamPrimaryButton(

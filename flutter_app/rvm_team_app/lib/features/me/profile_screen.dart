@@ -98,6 +98,7 @@ class _ProfileBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocBuilder<LoadBloc<MyProfile>, LoadState<MyProfile>>(
       builder: (context, state) {
         if (state.status == LoadStatus.initial ||
@@ -144,8 +145,8 @@ class _ProfileBody extends StatelessWidget {
                                 : null,
                             size: 64,
                             background:
-                                RvmColors.teamSeed.withValues(alpha: 0.16),
-                            foreground: RvmColors.ink,
+                                p.secondary.withValues(alpha: 0.16),
+                            foreground: p.ink,
                           ),
                         ),
                         const SizedBox(width: RvmSpacing.md),
@@ -163,8 +164,8 @@ class _ProfileBody extends StatelessWidget {
                                       .join(' · '),
                                   style: Theme.of(context).textTheme.bodySmall),
                               if (e.noticePeriod)
-                                const Text('Notice period',
-                                    style: TextStyle(color: RvmColors.warning)),
+                                Text('Notice period',
+                                    style: TextStyle(color: p.warning)),
                             ],
                           ),
                         ),
@@ -269,6 +270,7 @@ class _TimelineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     if (events.isEmpty) return const SizedBox.shrink();
     return Card(
       child: Padding(
@@ -282,7 +284,7 @@ class _TimelineCard extends StatelessWidget {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(_timelineIcon(t.kind),
-                    size: 18, color: RvmColors.teamSeed),
+                    size: 18, color: p.secondary),
                 title: Text(t.title,
                     style: Theme.of(context)
                         .textTheme
@@ -307,7 +309,7 @@ class _TimelineCard extends StatelessWidget {
                                     .bodySmall
                                     ?.copyWith(
                                       fontSize: 11,
-                                      color: RvmColors.subtle,
+                                      color: p.subtle,
                                     )),
                         ],
                       ),
@@ -367,6 +369,7 @@ class _AboutBodyState extends State<_AboutBody> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     if (_loading || _data == null) return const SizedBox.shrink();
     final data = _data!;
     final hasAny = [
@@ -384,8 +387,8 @@ class _AboutBodyState extends State<_AboutBody> {
           children: [
             Row(
               children: [
-                const Icon(Icons.person_outline_rounded,
-                    size: 19, color: RvmColors.teamSeed),
+                Icon(Icons.person_outline_rounded,
+                    size: 19, color: p.secondary),
                 const SizedBox(width: 7),
                 Expanded(
                   child: Text('About you',
@@ -419,7 +422,7 @@ class _AboutBodyState extends State<_AboutBody> {
                     icon: Icons.thumb_up_outlined,
                     label: 'Likes',
                     value: data.likes!,
-                    color: RvmColors.success),
+                    color: p.success),
               ],
               if (data.dislikes != null &&
                   data.dislikes!.trim().isNotEmpty) ...[
@@ -428,7 +431,7 @@ class _AboutBodyState extends State<_AboutBody> {
                     icon: Icons.thumb_down_outlined,
                     label: 'Dislikes',
                     value: data.dislikes!,
-                    color: RvmColors.warning),
+                    color: p.warning),
               ],
               if (data.bloodGroup != null && data.bloodGroup!.isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -436,7 +439,7 @@ class _AboutBodyState extends State<_AboutBody> {
                     icon: Icons.bloodtype_outlined,
                     label: 'Blood group',
                     value: data.bloodGroup!,
-                    color: RvmColors.danger),
+                    color: p.danger),
               ],
               if (data.anniversaryDate != null &&
                   data.anniversaryDate!.isNotEmpty) ...[
@@ -445,7 +448,7 @@ class _AboutBodyState extends State<_AboutBody> {
                     icon: Icons.celebration_outlined,
                     label: 'Anniversary',
                     value: _prettyDate(data.anniversaryDate!),
-                    color: RvmColors.teamSeed),
+                    color: p.secondary),
               ],
             ],
           ],
@@ -470,6 +473,7 @@ class _SocialLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -488,7 +492,7 @@ class _SocialLine extends StatelessWidget {
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
-                  ?.copyWith(color: RvmColors.ink)),
+                  ?.copyWith(color: p.ink)),
         ),
       ],
     );
@@ -569,6 +573,7 @@ class _AboutSheetState extends State<_AboutSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + bottom),
@@ -613,7 +618,7 @@ class _AboutSheetState extends State<_AboutSheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(_error!,
-                    style: const TextStyle(color: RvmColors.danger)),
+                    style: TextStyle(color: p.danger)),
               ),
             const SizedBox(height: RvmSpacing.md),
             FilledButton.icon(
@@ -686,6 +691,7 @@ class _ExperienceBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocBuilder<WorkExperienceBloc, LoadState<List<WorkExperience>>>(
       builder: (context, state) {
         final entries = state.data ?? const <WorkExperience>[];
@@ -706,8 +712,8 @@ class _ExperienceBody extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.business_center_outlined,
-                          size: 17, color: RvmColors.teamSeed),
+                      Icon(Icons.business_center_outlined,
+                          size: 17, color: p.secondary),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -772,6 +778,7 @@ class _PraiseBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocBuilder<LoadBloc<PraisePage>, LoadState<PraisePage>>(
       builder: (context, state) {
         final page = state.data;
@@ -787,8 +794,8 @@ class _PraiseBody extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.military_tech_rounded,
-                        size: 20, color: RvmColors.teamSeed),
+                    Icon(Icons.military_tech_rounded,
+                        size: 20, color: p.secondary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text('Praise received',
@@ -801,7 +808,7 @@ class _PraiseBody extends StatelessWidget {
                         style: Theme.of(context)
                             .textTheme
                             .labelLarge
-                            ?.copyWith(color: RvmColors.subtle)),
+                            ?.copyWith(color: p.subtle)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -809,7 +816,7 @@ class _PraiseBody extends StatelessWidget {
                   'Tap a medal to read what your colleague wrote.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontSize: 11,
-                        color: RvmColors.muted,
+                        color: p.muted,
                       ),
                 ),
                 const SizedBox(height: 10),
@@ -861,6 +868,7 @@ class _PraiseMedal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final label = post.badgeLabel ?? badge?.label ?? 'Praise';
     final author = post.author?.fullName ?? 'A colleague';
     return Material(
@@ -883,7 +891,7 @@ class _PraiseMedal extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
-                      color: RvmColors.ink,
+                      color: p.ink,
                       height: 1.2,
                     ),
               ),
@@ -895,7 +903,7 @@ class _PraiseMedal extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 10,
-                      color: RvmColors.muted,
+                      color: p.muted,
                     ),
               ),
             ],
@@ -1015,6 +1023,7 @@ class _RibbonClipper extends CustomClipper<Path> {
 
 Future<void> _showPraiseDialog(
     BuildContext context, WallPost post, PraiseBadge? badge) {
+    final p = context.palette;
   final label = post.badgeLabel ?? badge?.label ?? 'Praise';
   final author = post.author?.fullName ?? 'A colleague';
   final message = (post.body ?? '').trim();
@@ -1052,21 +1061,21 @@ Future<void> _showPraiseDialog(
                     style: Theme.of(dialogContext)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(fontSize: 11, color: RvmColors.subtle)),
+                        ?.copyWith(fontSize: 11, color: p.subtle)),
               const SizedBox(height: RvmSpacing.md),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: RvmColors.cream,
+                  color: p.cardElevated,
                   borderRadius: BorderRadius.circular(RvmRadii.md),
-                  border: Border.all(color: RvmColors.line),
+                  border: Border.all(color: p.line),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.format_quote_rounded,
-                        size: 20, color: RvmColors.teamSeed),
+                    Icon(Icons.format_quote_rounded,
+                        size: 20, color: p.secondary),
                     const SizedBox(height: 4),
                     Text(
                       message.isEmpty

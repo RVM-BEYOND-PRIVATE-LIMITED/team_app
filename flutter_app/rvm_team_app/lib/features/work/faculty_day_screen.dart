@@ -92,6 +92,7 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
   }
 
   Widget _body() {
+    final p = context.palette;
     if (_loading) return const AppLoading();
     if (_failure != null) {
       return AppError(message: _failure!.message, onRetry: _load);
@@ -136,7 +137,7 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
               Card(
                 child: ListTile(
                   leading: Icon(s.marked ? Icons.check_circle : Icons.schedule,
-                      color: s.marked ? RvmColors.success : RvmColors.warning),
+                      color: s.marked ? p.success : p.warning),
                   title: Text(s.name),
                   subtitle: Text([
                     if (s.startTime != null)
@@ -148,8 +149,8 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
                   trailing: Text(s.marked ? 'Marked' : 'Not marked',
                       style: TextStyle(
                           color: s.marked
-                              ? RvmColors.success
-                              : RvmColors.warning)),
+                              ? p.success
+                              : p.warning)),
                 ),
               ),
               const SizedBox(height: RvmSpacing.sm),

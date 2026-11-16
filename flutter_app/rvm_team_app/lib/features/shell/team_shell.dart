@@ -121,9 +121,10 @@ class _TeamShellState extends State<TeamShell> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     if (_loading) {
-      return const Scaffold(
-        backgroundColor: RvmColors.ivory,
+      return Scaffold(
+        backgroundColor: p.canvas,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -150,6 +151,7 @@ class _TeamShellState extends State<TeamShell> {
   }
 
   Widget _tabs(BuildContext context, EssCapabilities caps) {
+    final p = context.palette;
     final identity = context.watch<TeamAuthBloc>().state.identity;
     final tabs = teamTabsFor(TeamViewer(
       role: identity?.role ?? AppRole.unknown,
@@ -159,7 +161,7 @@ class _TeamShellState extends State<TeamShell> {
     final index = _index.clamp(0, tabs.length - 1);
     final open = {..._opened, tabs[index].id};
     return Scaffold(
-      backgroundColor: RvmColors.ivory,
+      backgroundColor: p.canvas,
       body: IndexedStack(
         index: index,
         children: [
@@ -199,9 +201,10 @@ class _AccessError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Scaffold(
-      backgroundColor: RvmColors.ivory,
+      backgroundColor: p.canvas,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -216,8 +219,8 @@ class _AccessError extends StatelessWidget {
                     color: RvmColors.ironwood,
                     borderRadius: BorderRadius.circular(RvmRadii.lg),
                   ),
-                  child: const Icon(Icons.link_off_rounded,
-                      color: RvmColors.ivory, size: 32),
+                  child: Icon(Icons.link_off_rounded,
+                      color: p.canvas, size: 32),
                 ),
                 const SizedBox(height: 20),
                 Text('Team RVM',
@@ -227,7 +230,7 @@ class _AccessError extends StatelessWidget {
                 Text(
                   failure.message,
                   textAlign: TextAlign.center,
-                  style: text.bodyMedium?.copyWith(color: RvmColors.muted),
+                  style: text.bodyMedium?.copyWith(color: p.muted),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(
@@ -267,11 +270,12 @@ class _TeamBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Container(
-      decoration: const BoxDecoration(
-        color: RvmColors.white,
-        border: Border(top: BorderSide(color: RvmColors.line)),
+      decoration: BoxDecoration(
+        color: p.card,
+        border: Border(top: BorderSide(color: p.line)),
       ),
       child: SafeArea(
         top: false,
@@ -291,7 +295,7 @@ class _TeamBottomNav extends StatelessWidget {
                         Icon(
                           i == index ? tabs[i].selectedIcon : tabs[i].icon,
                           size: 21,
-                          color: i == index ? RvmColors.clay : RvmColors.subtle,
+                          color: i == index ? p.primary : p.subtle,
                         ),
                         const SizedBox(height: 3),
                         Text(
@@ -302,7 +306,7 @@ class _TeamBottomNav extends StatelessWidget {
                             fontWeight:
                                 i == index ? FontWeight.w700 : FontWeight.w500,
                             color:
-                                i == index ? RvmColors.clay : RvmColors.subtle,
+                                i == index ? p.primary : p.subtle,
                           ),
                         ),
                       ],

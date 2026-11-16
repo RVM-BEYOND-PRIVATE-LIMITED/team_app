@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'brand_tokens.dart';
+
 /// Semantic colours for the Team RVM design system.
 ///
 /// Every theme-dependent surface, text, border and status colour lives here.
@@ -111,23 +113,23 @@ class RvmPalette extends ThemeExtension<RvmPalette> {
     ink: Color(0xFF2D2420),
     inkSecondary: Color(0xFF4A3B33),
     // Was #8B7D73 (3.7:1). Darkened to meet AA on ivory and white.
-    muted: Color(0xFF6E6157),
+    muted: RvmColors.muted,
     // Was #B3A79D (2.4:1). Darkened to meet AA on white.
-    subtle: Color(0xFF7B6E64),
+    subtle: RvmColors.subtle,
     primary: Color(0xFF7D432E),
     onPrimary: Color(0xFFFFFFFF),
     // Was #C0562C (4.2:1). Darkened to meet AA on ivory.
-    secondary: Color(0xFFB04E24),
+    secondary: RvmColors.teamSeed,
     onSecondary: Color(0xFFFFFFFF),
     brand: Color(0xFF2E1712),
     onBrand: Color(0xFFF9F6F1),
-    success: Color(0xFF147A52),
+    success: RvmColors.success,
     successSoft: Color(0xFFE7F6EE),
-    warning: Color(0xFF8A5A00),
+    warning: RvmColors.warning,
     warningSoft: Color(0xFFFDF6E3),
-    danger: Color(0xFFB23A30),
+    danger: RvmColors.danger,
     dangerSoft: Color(0xFFFBECEA),
-    info: Color(0xFF3D5BB5),
+    info: RvmColors.info,
     infoSoft: Color(0xFFEEF2FD),
     line: Color(0xFFEDE4DA),
     outline: Color(0xFFD8CCBF),

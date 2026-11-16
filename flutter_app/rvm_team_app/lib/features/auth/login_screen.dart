@@ -50,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
       body: Column(
         children: [
@@ -79,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Text(
                 'RVM Beyond Pvt Ltd',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: RvmColors.subtle,
+                      color: p.subtle,
                       fontSize: 11,
                       letterSpacing: 0.3,
                     ),
@@ -280,13 +281,14 @@ class _AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Image.asset(
       'assets/branding/team_rvm_logo.png',
       height: 38,
       fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => const Text('rvm',
+      errorBuilder: (_, __, ___) => Text('rvm',
           style: TextStyle(
-              color: RvmColors.clay,
+              color: p.primary,
               fontWeight: FontWeight.w800,
               fontSize: 26)),
     );
@@ -320,6 +322,7 @@ class _TwoFactorStepState extends State<_TwoFactorStep> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final state = widget.state;
@@ -334,11 +337,11 @@ class _TwoFactorStepState extends State<_TwoFactorStep> {
             height: 56,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: RvmColors.claySoft,
+              color: p.cardElevated,
               borderRadius: BorderRadius.circular(RvmRadii.lg),
             ),
-            child: const Icon(Icons.mark_email_read_outlined,
-                size: 26, color: RvmColors.clay),
+            child: Icon(Icons.mark_email_read_outlined,
+                size: 26, color: p.primary),
           ),
           const SizedBox(height: RvmSpacing.lg),
           Text('Check your email', style: theme.textTheme.headlineSmall),
@@ -418,24 +421,25 @@ class _ErrorNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Container(
       padding: const EdgeInsets.all(RvmSpacing.sm + 2),
       decoration: BoxDecoration(
-        color: RvmColors.danger.withValues(alpha: 0.10),
+        color: p.danger.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(RvmRadii.sm),
-        border: Border.all(color: RvmColors.danger.withValues(alpha: 0.35)),
+        border: Border.all(color: p.danger.withValues(alpha: 0.35)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded,
-              size: 18, color: RvmColors.danger),
+          Icon(Icons.error_outline_rounded,
+              size: 18, color: p.danger),
           const SizedBox(width: RvmSpacing.sm),
           Expanded(
             child: Text(message,
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
-                    ?.copyWith(color: RvmColors.danger)),
+                    ?.copyWith(color: p.danger)),
           ),
         ],
       ),

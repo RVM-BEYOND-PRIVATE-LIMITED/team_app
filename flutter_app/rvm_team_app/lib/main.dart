@@ -102,18 +102,19 @@ class _SafeErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Material(
-        color: RvmColors.ivory,
+        color: p.canvas,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline_rounded,
-                    size: 40, color: RvmColors.danger),
+                Icon(Icons.error_outline_rounded,
+                    size: 40, color: p.danger),
                 const SizedBox(height: 12),
                 Text(
                   'Something went wrong. Please reopen the app.',

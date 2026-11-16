@@ -180,6 +180,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final submitting =
         context.select<WallBloc, bool>((b) => b.state.submitting);
     return MultiBlocListener(
@@ -311,11 +312,11 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                 ),
                 if (_attachments.any(
                     (a) => a['content_type'].toString().startsWith('image/')))
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(top: 4),
                     child: Text('Tap an image to crop it.',
                         style:
-                            TextStyle(fontSize: 10.5, color: RvmColors.muted)),
+                            TextStyle(fontSize: 10.5, color: p.muted)),
                   ),
                 if (_attachments.isNotEmpty)
                   Wrap(

@@ -99,6 +99,7 @@ class _DirectoryScreenState extends State<DirectoryScreen> {
   }
 
   Widget _body() {
+    final p = context.palette;
     if (_loading && _people.isEmpty) return const AppLoading();
     if (_failure != null && _people.isEmpty) {
       return AppError(
@@ -132,9 +133,9 @@ class _DirectoryScreenState extends State<DirectoryScreen> {
             title: Text(c.fullName),
             subtitle: Text(c.designation ?? 'Job role not recorded'),
             trailing: c.noticePeriod
-                ? const Icon(Icons.info_outline, color: RvmColors.warning)
-                : const Icon(Icons.chevron_right_rounded,
-                    size: 18, color: RvmColors.subtle),
+                ? Icon(Icons.info_outline, color: p.warning)
+                : Icon(Icons.chevron_right_rounded,
+                    size: 18, color: p.subtle),
           ),
         );
       },

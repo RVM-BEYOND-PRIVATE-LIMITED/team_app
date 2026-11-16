@@ -208,18 +208,19 @@ class _Error extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Container(
       padding: const EdgeInsets.all(RvmSpacing.sm + 2),
       decoration: BoxDecoration(
-        color: RvmColors.danger.withValues(alpha: 0.10),
+        color: p.danger.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(RvmRadii.sm),
-        border: Border.all(color: RvmColors.danger.withValues(alpha: 0.35)),
+        border: Border.all(color: p.danger.withValues(alpha: 0.35)),
       ),
       child: Text(message,
           style: Theme.of(context)
               .textTheme
               .bodySmall
-              ?.copyWith(color: RvmColors.danger)),
+              ?.copyWith(color: p.danger)),
     );
   }
 }

@@ -210,6 +210,7 @@ class _AttendancePasswordCardState extends State<_AttendancePasswordCard> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return TeamCard(
       child: Column(
@@ -241,7 +242,7 @@ class _AttendancePasswordCardState extends State<_AttendancePasswordCard> {
           if (_error != null) ...[
             const SizedBox(height: 10),
             Text(_error!,
-                style: text.bodySmall?.copyWith(color: RvmColors.danger)),
+                style: text.bodySmall?.copyWith(color: p.danger)),
           ],
           const SizedBox(height: 12),
           FilledButton(
@@ -284,7 +285,7 @@ class _SecurityView extends StatelessWidget {
     );
   }
 
-  Widget _body(BuildContext context, TeamProfile p) {
+  Widget _body(BuildContext context, TeamProfile profile) {
     final scheme = Theme.of(context).colorScheme;
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -295,17 +296,17 @@ class _SecurityView extends StatelessWidget {
         _InfoCard(rows: [
           _InfoRow(
             'Email',
-            p.email ?? 'Not set',
-            status: p.emailVerified
+            profile.email ?? 'Not set',
+            status: profile.emailVerified
                 ? 'Verified'
-                : (p.email == null ? null : 'Unverified'),
-            onVerify: p.email != null && !p.emailVerified
-                ? () => _verifyEmail(context, p)
+                : (profile.email == null ? null : 'Unverified'),
+            onVerify: profile.email != null && !profile.emailVerified
+                ? () => _verifyEmail(context, profile)
                 : null,
           ),
-          _InfoRow('Phone', p.phoneNumber ?? 'Not set'),
-          _InfoRow('Two-factor', p.twoFactorEnabled ? 'On' : 'Off',
-              status: p.twoFactorEnabled ? 'On' : 'Off'),
+          _InfoRow('Phone', profile.phoneNumber ?? 'Not set'),
+          _InfoRow('Two-factor', profile.twoFactorEnabled ? 'On' : 'Off',
+              status: profile.twoFactorEnabled ? 'On' : 'Off'),
         ]),
         const SizedBox(height: RvmSpacing.lg),
         const TeamSectionHeader(
@@ -336,7 +337,7 @@ class _SecurityView extends StatelessWidget {
                 subtitle:
                     const Text('Confirmed with a code to the new address'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => _changeEmail(context, p),
+                onTap: () => _changeEmail(context, profile),
               ),
               const Divider(height: 1),
               ListTile(
@@ -344,16 +345,16 @@ class _SecurityView extends StatelessWidget {
                 title: const Text('Change phone number'),
                 subtitle: const Text('Confirmed with an SMS code'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => _changePhone(context, p),
+                onTap: () => _changePhone(context, profile),
               ),
               const Divider(height: 1),
               SwitchListTile(
                 secondary: const Icon(Icons.verified_user_outlined),
                 title: const Text('Two-factor sign-in'),
-                subtitle: Text(p.twoFactorEnabled
+                subtitle: Text(profile.twoFactorEnabled
                     ? 'On — a code is emailed at sign-in'
                     : 'Off'),
-                value: p.twoFactorEnabled,
+                value: profile.twoFactorEnabled,
                 onChanged: (v) =>
                     v ? _enableTwoFactor(context) : _disableTwoFactor(context),
               ),
@@ -451,18 +452,18 @@ class _SecurityView extends StatelessWidget {
         context, AccountUploadPhoto(bytes: bytes, filename: file.name));
   }
 
-  void _changeEmail(BuildContext context, TeamProfile p) => _showActionDialog(
+  void _changeEmail(BuildContext context, TeamProfile profile) => _showActionDialog(
         context,
         build: (close, bloc) =>
-            _ChangeEmailFlow(bloc: bloc, close: close, current: p.email),
+            _ChangeEmailFlow(bloc: bloc, close: close, current: profile.email),
       );
 
   /// Verifies the address already on the account. The Scheduler's email-change
   /// route accepts the current address while it is unverified and sends a code
   /// to it; confirming that code stamps `email_verified_at`, so no new endpoint
   /// is needed and the address itself never moves.
-  void _verifyEmail(BuildContext context, TeamProfile p) {
-    final email = p.email;
+  void _verifyEmail(BuildContext context, TeamProfile profile) {
+    final email = profile.email;
     if (email == null || email.isEmpty) return;
     _showActionDialog(
       context,
@@ -471,10 +472,10 @@ class _SecurityView extends StatelessWidget {
     );
   }
 
-  void _changePhone(BuildContext context, TeamProfile p) => _showActionDialog(
+  void _changePhone(BuildContext context, TeamProfile profile) => _showActionDialog(
         context,
         build: (close, bloc) =>
-            _ChangePhoneFlow(bloc: bloc, close: close, current: p.phoneNumber),
+            _ChangePhoneFlow(bloc: bloc, close: close, current: profile.phoneNumber),
       );
 
   void _enableTwoFactor(BuildContext context) => _showActionDialog(
@@ -552,6 +553,7 @@ class _ActionDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocBuilder<AccountActionBloc, AccountActionState>(
       bloc: bloc,
       builder: (context, state) {
@@ -583,8 +585,8 @@ class _ActionDialog extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: RvmSpacing.sm),
                     child: Text(state.error!,
-                        style: const TextStyle(
-                            color: RvmColors.danger, fontSize: 12)),
+                        style: TextStyle(
+                            color: p.danger, fontSize: 12)),
                   ),
                 if (state.status == WriteStatus.submitting)
                   const Padding(
@@ -642,6 +644,7 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return BlocConsumer<AccountActionBloc, AccountActionState>(
       bloc: widget.bloc,
@@ -676,7 +679,7 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
               const SizedBox(height: 12),
               Text('Current password',
                   style: text.labelMedium
-                      ?.copyWith(fontSize: 11, color: RvmColors.ink)),
+                      ?.copyWith(fontSize: 11, color: p.ink)),
               const SizedBox(height: 5),
               TextField(
                 controller: _old,
@@ -698,11 +701,11 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
                 children: [
                   Text('New password',
                       style: text.labelMedium
-                          ?.copyWith(fontSize: 11, color: RvmColors.ink)),
+                          ?.copyWith(fontSize: 11, color: p.ink)),
                   const SizedBox(width: 4),
                   Text('(min. 8 chars)',
                       style: text.bodySmall
-                          ?.copyWith(fontSize: 9, color: RvmColors.subtle)),
+                          ?.copyWith(fontSize: 9, color: p.subtle)),
                 ],
               ),
               const SizedBox(height: 5),
@@ -731,8 +734,8 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
                         height: 4,
                         decoration: BoxDecoration(
                           color: i < _strength
-                              ? RvmColors.success
-                              : RvmColors.sand,
+                              ? p.success
+                              : p.sand,
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
@@ -747,8 +750,8 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
                     style: text.labelSmall?.copyWith(
                       fontSize: 9,
                       color: _strength >= 3
-                          ? RvmColors.success
-                          : RvmColors.warning,
+                          ? p.success
+                          : p.warning,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -772,7 +775,7 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
               const SizedBox(height: 10),
               Text('Confirm new password',
                   style: text.labelMedium
-                      ?.copyWith(fontSize: 11, color: RvmColors.ink)),
+                      ?.copyWith(fontSize: 11, color: p.ink)),
               const SizedBox(height: 5),
               TextField(
                 controller: _confirm,
@@ -794,14 +797,14 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  const Icon(Icons.shield_outlined,
-                      size: 13, color: RvmColors.subtle),
+                  Icon(Icons.shield_outlined,
+                      size: 13, color: p.subtle),
                   const SizedBox(width: 5),
                   Expanded(
                     child: Text(
                         'All active sessions except this will be logged out.',
                         style: text.bodySmall
-                            ?.copyWith(fontSize: 9, color: RvmColors.subtle)),
+                            ?.copyWith(fontSize: 9, color: p.subtle)),
                   ),
                 ],
               ),
@@ -854,16 +857,17 @@ class _ChangePasswordFormState extends State<_ChangePasswordForm> {
   }
 
   Widget _rule(BuildContext context, bool ok, String label) {
+    final p = context.palette;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(ok ? Icons.check_rounded : Icons.circle_outlined,
-            size: 10, color: ok ? RvmColors.success : RvmColors.subtle),
+            size: 10, color: ok ? p.success : p.subtle),
         const SizedBox(width: 3),
         Text(label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontSize: 8.5,
-                  color: ok ? RvmColors.success : RvmColors.subtle,
+                  color: ok ? p.success : p.subtle,
                   fontWeight: FontWeight.w600,
                 )),
       ],
@@ -1272,7 +1276,7 @@ class _InfoCard extends StatelessWidget {
                       .textTheme
                       .bodySmall
                       ?.copyWith(fontSize: 10)),
-              trailing: _trailing(rows[i]),
+              trailing: _trailing(context, rows[i]),
             ),
           ],
         ],
@@ -1280,34 +1284,35 @@ class _InfoCard extends StatelessWidget {
     );
   }
 
-  Widget? _trailing(_InfoRow row) {
+  Widget? _trailing(BuildContext context, _InfoRow row) {
+    final p = context.palette;
     final status = row.status;
     if (status == null) return null;
     if (status == 'Unverified') {
       return OutlinedButton(
         onPressed: row.onVerify,
         style: OutlinedButton.styleFrom(
-          foregroundColor: RvmColors.danger,
-          side: const BorderSide(color: RvmColors.danger),
+          foregroundColor: p.danger,
+          side: BorderSide(color: p.danger),
           minimumSize: const Size(0, 30),
           padding: const EdgeInsets.symmetric(horizontal: 10),
           visualDensity: VisualDensity.compact,
         ),
-        child: const Text('Verify Now',
+        child: Text('Verify Now',
             style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700)),
       );
     }
     if (status == 'Verified') {
-      return const Row(
+      return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.verified_rounded, size: 14, color: RvmColors.success),
+          Icon(Icons.verified_rounded, size: 14, color: p.success),
           SizedBox(width: 3),
           Text('Verified',
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: RvmColors.success)),
+                  color: p.success)),
         ],
       );
     }
