@@ -159,12 +159,19 @@ void main() {
               if (tab.sensitive) tab.id
           ],
           ['crm']);
-      final sensitiveTiles = [
+      final sensitiveTiles = {
         for (final section in meSectionRegistry)
           for (final tile in section.tiles)
             if (tile.sensitive) tile.id
-      ];
-      expect(sensitiveTiles, ['crm']);
+      };
+      expect(sensitiveTiles, {
+        'crm',
+        'ops',
+        'fees',
+        'desk',
+        'placement',
+        'complaints',
+      });
     });
   });
 

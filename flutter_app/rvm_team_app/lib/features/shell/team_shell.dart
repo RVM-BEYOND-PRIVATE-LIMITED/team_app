@@ -13,6 +13,7 @@ import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/secure_scope.dart';
+import '../security/sensitive_gate.dart';
 import '../../router/module_routes.dart';
 import 'open_modules.dart';
 import 'tab_registry.dart';
@@ -203,7 +204,8 @@ class _TeamShellState extends State<TeamShell> {
 /// opened tab built, and the block covers the whole window (team_app #52,
 /// item 1). Every other tab is its body as it is.
 Widget shellTabBody(TeamTab tab, {required bool selected}) => tab.sensitive
-    ? SecureScope(enabled: selected, child: tab.body)
+    ? SecureScope(
+        enabled: selected, child: SensitiveGate(child: tab.body))
     : tab.body;
 
 /// Shown instead of the tabs when the ESS refuses the capabilities call. The

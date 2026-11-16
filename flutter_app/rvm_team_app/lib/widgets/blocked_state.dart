@@ -91,9 +91,16 @@ enum BlockedReason {
 BlockedReason? blockedReasonFor(Object? failure) => switch (failure) {
       ModuleUnavailableFailure() => BlockedReason.moduleOff,
       TooManyRequestsFailure() => BlockedReason.rateLimited,
-      ForbiddenFailure(code: 'CRM_NOT_PUNCHED_IN') =>
+      ForbiddenFailure(code: 'CRM_NOT_PUNCHED_IN') ||
+      ForbiddenFailure(code: 'NOT_PUNCHED_IN') =>
         BlockedReason.notPunchedIn,
-      ForbiddenFailure(code: 'CRM_OUTSIDE_SHIFT') => BlockedReason.outsideShift,
+      ForbiddenFailure(code: 'CRM_OUTSIDE_SHIFT') ||
+      ForbiddenFailure(code: 'OUTSIDE_SHIFT') =>
+        BlockedReason.outsideShift,
+      ForbiddenFailure(code: 'DEVICE_APPROVAL_PENDING') =>
+        BlockedReason.pilotOnly,
+      ForbiddenFailure(code: 'SESSION_SUPERSEDED') =>
+        BlockedReason.notOwner,
       ForbiddenFailure(code: 'CRM_NOT_YOUR_LEAD') => BlockedReason.notOwner,
       ForbiddenFailure(code: 'CRM_NO_ACCESS') ||
       ForbiddenFailure(code: 'CRM_ACCESS_DENIED') ||

@@ -37,6 +37,9 @@ dependencies:
   # POST_NOTIFICATIONS runtime grant on Android 13+ (Inbox alerts).
   permission_handler: ^12.0.3
 
+  # Fingerprint / face / PIN unlock for the sensitive-module idle lock (#52).
+  local_auth: ^2.3.0
+
   # navigation (matches staff_app / student_app)
   go_router: ^14.0.0
 

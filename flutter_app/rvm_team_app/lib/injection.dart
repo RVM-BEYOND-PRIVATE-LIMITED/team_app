@@ -18,6 +18,7 @@ import 'data/datasources/me_remote_data_source.dart';
 import 'data/datasources/my_attendance_remote_data_source.dart';
 import 'data/datasources/priority_tasks_remote_data_source.dart';
 import 'data/datasources/team_modules_remote_data_source.dart';
+import 'data/datasources/team_stage2_remote_data_source.dart';
 import 'data/datasources/work_remote_data_source.dart';
 import 'data/location_service.dart';
 import 'data/repositories/announcements_repository.dart';
@@ -30,6 +31,7 @@ import 'data/repositories/me_repository.dart';
 import 'data/repositories/my_attendance_repository.dart';
 import 'data/repositories/priority_tasks_repository.dart';
 import 'data/repositories/team_modules_repository.dart';
+import 'data/repositories/team_stage2_repository.dart';
 import 'data/repositories/work_repository.dart';
 import 'domain/ess_models.dart';
 import 'domain/models.dart';
@@ -175,6 +177,8 @@ void configureDependencies(AuthSession session) {
     // The modules open to the person (#50 item 5), on the Scheduler client.
     ..registerLazySingleton<TeamModulesRemoteDataSource>(
         () => TeamModulesRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<TeamStage2RemoteDataSource>(
+        () => TeamStage2RemoteDataSource(getIt<Dio>()))
     ..registerLazySingleton<LocationService>(LocationService.new)
     // Dialer hand-off for module calls (#50 item 1). No screen uses it yet: a
     // module wires it when its start-call route exists.
@@ -216,6 +220,8 @@ void configureDependencies(AuthSession session) {
         () => LeaveRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<TeamModulesRepository>(
         () => TeamModulesRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<TeamStage2Repository>(
+        () => TeamStage2Repository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<ThemePreferencesRepository>(
         () => ThemePreferencesRepository(
               remote: getIt(),

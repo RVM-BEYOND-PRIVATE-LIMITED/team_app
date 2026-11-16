@@ -3,6 +3,17 @@ import 'package:go_router/go_router.dart';
 
 import '../bloc/team_auth_bloc.dart';
 import '../features/attendance/punch_screen.dart';
+import '../features/complaints/complaints_screens.dart';
+import '../features/desk/desk_screens.dart';
+import '../features/marks/marks_screen.dart';
+import '../features/moderation/moderation_screens.dart';
+import '../features/ops/ops_screens.dart';
+import '../features/placement/placement_screens.dart';
+import '../features/scorecards/scorecard_screens.dart';
+import '../features/security/security_screens.dart';
+import '../features/security/sensitive_gate.dart';
+import '../features/social/social_screens.dart';
+import '../features/tasks/tasks_screen.dart';
 import '../features/crm/crm_add_lead_screen.dart';
 import '../features/crm/crm_call_screen.dart';
 import '../features/crm/crm_calendar_screen.dart';
@@ -92,7 +103,7 @@ CrmBucket _crmBucket(String? wire) => switch (wire) {
 /// (sensitive_registry_issue52_test.dart) fails for one that does not.
 Widget _screen(GoRouterState state, Widget screen, {required bool roster}) =>
     isSensitiveLocation(state.matchedLocation, roster: roster)
-        ? SecureScope(child: screen)
+        ? SecureScope(child: SensitiveGate(child: screen))
         : screen;
 
 /// Auth-gated router. Redirect reads [TeamAuthBloc] state; the app calls
@@ -143,6 +154,137 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       GoRoute(
           path: '/forgot', builder: (_, __) => const ForgotPasswordScreen()),
       GoRoute(path: '/home', builder: (_, __) => const TeamShell()),
+      // ── Stage 2/3 modules (#52–#58) ─────────────────────────────────────
+      GoRoute(
+          path: '/security/wait',
+          builder: (_, state) =>
+              _screen(state, const SecurityWaitScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/security/alerts',
+          builder: (_, state) => _screen(
+              state, const SecurityAlertsScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/security/phones',
+          builder: (_, state) => _screen(
+              state, const PhoneApprovalsScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/ops',
+          builder: (_, state) =>
+              _screen(state, const OpsHomeScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/ops/absent',
+          builder: (_, state) => _screen(
+              state, const AbsentStreaksScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/fees',
+          builder: (_, state) =>
+              _screen(state, const FeesListScreen(), roster: secureRoster)),
+      GoRoute(
+        path: '/fees/:id',
+        builder: (_, state) => _screen(
+          state,
+          FeeDetailScreen(admissionId: state.pathParameters['id'] ?? ''),
+          roster: secureRoster,
+        ),
+      ),
+      GoRoute(
+          path: '/scorecards',
+          builder: (_, state) => _screen(
+              state, const ScorecardScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/scorecards/branches',
+          builder: (_, state) => _screen(
+              state, const BranchScorecardsScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/scorecards/ceo',
+          builder: (_, state) => _screen(
+              state, const CeoScorecardScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/scorecards/targets',
+          builder: (_, state) => _screen(
+              state, const TargetsScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/tasks',
+          builder: (_, state) =>
+              _screen(state, const MyTasksScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/social',
+          builder: (_, state) =>
+              _screen(state, const SocialHomeScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/social/board',
+          builder: (_, state) => _screen(
+              state, const SocialBoardScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/social/calendar',
+          builder: (_, state) => _screen(
+              state, const SocialCalendarScreen(),
+              roster: secureRoster)),
+      GoRoute(
+        path: '/social/card/:id',
+        builder: (_, state) => _screen(
+          state,
+          SocialCardScreen(cardId: state.pathParameters['id'] ?? ''),
+          roster: secureRoster,
+        ),
+      ),
+      GoRoute(
+          path: '/desk',
+          builder: (_, state) =>
+              _screen(state, const DeskHomeScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/desk/link',
+          builder: (_, state) =>
+              _screen(state, const LinkPhoneScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/desk/phone-changes',
+          builder: (_, state) => _screen(
+              state, const PhoneChangesScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/desk/views',
+          builder: (_, state) =>
+              _screen(state, const ViewRequestsScreen(),
+              roster: secureRoster)),
+      GoRoute(
+          path: '/placement',
+          builder: (_, state) => _screen(
+              state, const PlacementHomeScreen(),
+              roster: secureRoster)),
+      GoRoute(
+        path: '/placement/verify/:id',
+        builder: (_, state) => _screen(
+          state,
+          PlacementVerifyScreen(id: state.pathParameters['id'] ?? ''),
+          roster: secureRoster,
+        ),
+      ),
+      GoRoute(
+          path: '/complaints',
+          builder: (_, state) => _screen(
+              state, const ComplaintsScreen(),
+              roster: secureRoster)),
+      GoRoute(
+        path: '/complaints/:id',
+        builder: (_, state) => _screen(
+          state,
+          ComplaintThreadScreen(id: state.pathParameters['id'] ?? ''),
+          roster: secureRoster,
+        ),
+      ),
+      GoRoute(
+          path: '/moderation',
+          builder: (_, state) => _screen(
+              state, const ModerationScreen(),
+              roster: secureRoster)),
       // ── Sales CRM (team_app #51) ─────────────────────────────────────────
       GoRoute(
           path: '/crm',
@@ -208,6 +350,17 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       GoRoute(
           path: '/work/interviews',
           builder: (_, __) => const InterviewsScreen()),
+      GoRoute(
+        path: '/work/batch/:id/marks',
+        builder: (_, state) => _screen(
+          state,
+          MarksScreen(
+            batchId: state.pathParameters['id']!,
+            batchName: state.extra is String ? state.extra as String : null,
+          ),
+          roster: secureRoster,
+        ),
+      ),
       GoRoute(
         path: '/work/batch/:id/mark',
         builder: (_, state) => _screen(

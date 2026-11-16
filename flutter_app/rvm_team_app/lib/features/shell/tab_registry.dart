@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../auth/team_permissions.dart';
 import '../../router/module_routes.dart';
 import '../crm/crm_home_screen.dart';
+import '../social/social_screens.dart';
+import '../tasks/tasks_screen.dart';
 import '../home/home_screen.dart';
 import '../inbox/inbox_screen.dart';
 import '../me/me_screen.dart';
@@ -98,6 +100,30 @@ final List<TeamTabSpec> teamTabRegistry = [
               teaching ? Icons.fact_check_rounded : Icons.inbox_rounded,
           body: const InboxScreen());
     },
+  ),
+  TeamTabSpec(
+    id: 'tasks',
+    moduleTab: true,
+    visible: (v) => v.modules.contains(TeamModule.tasks),
+    tab: (_) => const TeamTab(
+      id: 'tasks',
+      label: 'Tasks',
+      icon: Icons.event_note_outlined,
+      selectedIcon: Icons.event_note,
+      body: MyTasksScreen(),
+    ),
+  ),
+  TeamTabSpec(
+    id: 'social',
+    moduleTab: true,
+    visible: (v) => v.modules.contains(TeamModule.social),
+    tab: (_) => const TeamTab(
+      id: 'social',
+      label: 'Social',
+      icon: Icons.photo_camera_back_outlined,
+      selectedIcon: Icons.photo_camera_back,
+      body: SocialHomeScreen(),
+    ),
   ),
   TeamTabSpec(
     id: 'wall',
