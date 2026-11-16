@@ -328,6 +328,8 @@ const REFUSALS = Object.freeze({
   ESCALATION_KEPT: { code: '23505', name: 'hr_ess_approval_escalations_family_request_id_to_employee_id_key' },
   // F-51: the job already claimed this period, so the process started by a deploy sends nothing.
   JOB_RUN_KEPT: { code: '23505', name: 'hr_ess_job_runs_pkey' },
+  // team_app #95: the same writer key for the same person again (the partial unique index, 20261231100000).
+  NOTIFICATION_KEPT: { code: '23505', name: 'hr_ess_notifications_dedupe_uq' },
 });
 
 const isRefusal = (error, { code, name }) =>
@@ -1179,7 +1181,22 @@ function createSupabaseStore(config, { client } = {}) {
 
     /* ── D6, D8: notifications and their settings ── */
 
-    createNotification: (row) => write('hr_ess_notifications', (q) => q.insert([row]).select('id, employee_id').single()),
+    /**
+     * One notification. With `dedupe_key` (team_app #95) a second row for the same person and key is refused by
+     * the database and answers null ("already there"); before migration 20261231100000 the key is left off and
+     * the row is written as before.
+     */
+    createNotification: async (row) => {
+      if (!row.dedupe_key) return write('hr_ess_notifications', (q) => q.insert([row]).select('id, employee_id').single());
+      try {
+        const out = await write('hr_ess_notifications', (q) => q.insert([row]).select('id, employee_id').single(), REFUSALS.NOTIFICATION_KEPT);
+        return out === REFUSED ? null : out;
+      } catch (e) {
+        if (!(e instanceof HttpError && e.code === 'MODULE_NOT_INSTALLED')) throw e;
+        const { dedupe_key: _key, ...rest } = row;
+        return write('hr_ess_notifications', (q) => q.insert([rest]).select('id, employee_id').single());
+      }
+    },
     /** Newest first, one more than LIST_LIMITS.notifications so the caller can say it was cut. */
     listNotifications: async (employeeId) =>
       (await read('hr_ess_notifications', (q) => q.select(COLUMNS.notification).eq('employee_id', employeeId)
@@ -1210,6 +1227,20 @@ function createSupabaseStore(config, { client } = {}) {
       (await read('hr_ess_notifications', (q) => q.select(COLUMNS.notificationWorkerPriority)
         .neq('priority', 'urgent').is('pushed_at', null)
         .order('created_at', { ascending: true }).limit(limit))) || [],
+    /**
+     * team_app #93: urgent rows that a phone never got in time. `waiting`: unpushed and older than `olderThanIso`;
+     * `late`: dropped for age (push_error 'too_late') since `sinceIso`.
+     */
+    countLateUrgent: async ({ olderThanIso, sinceIso }) => {
+      const waiting = (await read('hr_ess_notifications', (q) => q.select('id').eq('priority', 'urgent')
+        .is('pushed_at', null).lt('created_at', olderThanIso).limit(500))) || [];
+      const late = (await read('hr_ess_notifications', (q) => q.select('id').eq('priority', 'urgent')
+        .eq('push_error', 'too_late').gte('pushed_at', sinceIso).limit(500))) || [];
+      return { waiting: waiting.length, late: late.length };
+    },
+    /** team_app #92: the push loop's run record, one row per loop. */
+    recordWorkerRun: (worker, patch) => write('hr_ess_worker_runs',
+      (q) => q.upsert([{ worker, ...patch }], { onConflict: 'worker' })),
     markNotificationPushed: (id, patch) => write('hr_ess_notifications',
       (q) => q.update(patch).eq('id', id).select('id').maybeSingle()),
     notificationSettingsFor: async (employeeIds) =>

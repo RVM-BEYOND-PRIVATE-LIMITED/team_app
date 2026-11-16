@@ -262,7 +262,8 @@ describe('the urgent lane', () => {
     const log = vi.fn();
     const job = start(world, { now: () => new Date('2026-10-16T10:00:00.000Z'), log: { log, error: () => {} } });
     expect(await job.runUrgentOnce()).toMatchObject({ skipped: 1 });
-    expect(world.db.tables.hr_ess_notifications[0]).toMatchObject({ push_mode: 'skipped', push_error: null });
+    // #93: a row dropped for age says so, so the late-push check can count it.
+    expect(world.db.tables.hr_ess_notifications[0]).toMatchObject({ push_mode: 'skipped', push_error: 'too_late' });
     expect(world.db.tables.hr_ess_notifications[0].pushed_at).toEqual(expect.any(String));
     expect(log).not.toHaveBeenCalled();
   });
@@ -313,11 +314,84 @@ describe('the urgent lane', () => {
     expect(await job.runOnce()).toMatchObject({ sent: 1 });
     const sent = calls.filter((c) => c.url.includes('messages:send')).map((c) => JSON.parse(c.options.body).message);
     expect(sent).toHaveLength(2);
+    // #94: the collapse key says what the push is about, so a second one replaces the first on the phone.
     expect(sent[0].android).toEqual({
       priority: 'high',
       ttl: '60s',
-      notification: { channel_id: 'team_rvm_urgent' },
+      notification: { channel_id: 'team_rvm_urgent', tag: `crm_callback:row:${NID(1)}` },
+      collapse_key: `crm_callback:row:${NID(1)}`,
     });
     expect(sent[1].android).toEqual({ priority: 'high' });
+  });
+});
+
+describe('push reliability (team_app #92 to #95)', () => {
+  const { collapseKeyFor } = require('../src/jobs/push');
+
+  it('#94: the collapse key is the lead, the call or the row the push is about', () => {
+    expect(collapseKeyFor({ id: 'r1', category: 'crm_callback', data: { lead_id: 41 } })).toBe('crm_callback:lead:41');
+    expect(collapseKeyFor({ id: 'r2', category: 'crm_call', data: { call_id: 9 } })).toBe('crm_call:call:9');
+    expect(collapseKeyFor({ id: 'r3', category: 'crm_callback', data: {} })).toBe('crm_callback:row:r3');
+  });
+
+  it('#95: a second row with the same key for the same person is refused and answers null; another person gets theirs', async () => {
+    const world = buildApp();
+    const a = world.people.attendance.employee.id;
+    const b = world.people.hr.employee.id;
+    const row = (employeeId) => ({ employee_id: employeeId, category: 'decisions', title: 'Request approved', body: 'Approved.', data: {}, dedupe_key: 'decision:leave:r-1:approved' });
+    expect(await world.store.createNotification(row(a))).toMatchObject({ employee_id: a });
+    expect(await world.store.createNotification(row(a))).toBe(null);
+    expect(await world.store.createNotification(row(b))).toMatchObject({ employee_id: b });
+    expect(world.db.tables.hr_ess_notifications.filter((r) => r.dedupe_key === 'decision:leave:r-1:approved')).toHaveLength(2);
+  });
+
+  it('#95: before the migration the key is left off and the row is written as before', async () => {
+    quietErrors();
+    const world = buildApp();
+    world.db.dropColumn('hr_ess_notifications', 'dedupe_key');
+    const id = world.people.attendance.employee.id;
+    const row = { employee_id: id, category: 'decisions', title: 'Request approved', body: 'Approved.', data: {}, dedupe_key: 'k-123' };
+    expect(await world.store.createNotification(row)).toMatchObject({ employee_id: id });
+    expect(await world.store.createNotification(row)).toMatchObject({ employee_id: id });
+  });
+
+  it('#92: each minute run writes its record; the urgent loop writes when it did something or once a minute', async () => {
+    const world = buildApp({ setup: (w) => {
+      w.tables.hr_ess_notifications = [
+        notificationRow(w.people.attendance.employee.id, 1, { created_at: '2026-10-16T05:00:00+00:00' }),
+      ];
+    } });
+    let t = new Date('2026-10-16T06:30:00.000Z').getTime();
+    const job = start(world, { now: () => new Date(t) });
+    await job.runOnce();
+    const runs = () => world.db.tables.hr_ess_worker_runs || [];
+    expect(runs().find((r) => r.worker === 'push_minute')).toMatchObject({ last_ok: true, runs: 1, failures: 0, last_counts: expect.objectContaining({ skipped: 1 }) });
+    await job.runUrgentOnce();
+    expect(runs().find((r) => r.worker === 'push_urgent')).toMatchObject({ runs: 1 });
+    t += 5000;
+    await job.runUrgentOnce();
+    expect(runs().find((r) => r.worker === 'push_urgent').runs).toBe(1); // idle, inside the minute: not written
+    t += 60000;
+    await job.runUrgentOnce();
+    expect(runs().find((r) => r.worker === 'push_urgent').runs).toBe(2);
+  });
+
+  it('#93: off by default; on, it tells each Super Admin once in 30 minutes when urgent rows are late', async () => {
+    const lateRows = (id) => [
+      notificationRow(id, 1, { category: 'crm_callback', priority: 'urgent', created_at: '2026-10-16T06:28:00+00:00' }),
+    ];
+    const off = buildApp({ setup: (w) => { w.tables.hr_ess_notifications = lateRows(w.people.attendance.employee.id); } });
+    const at = () => new Date('2026-10-16T06:30:00.000Z');
+    expect(await start(off, { now: at }).runOnce()).not.toHaveProperty('alerted');
+
+    const on = buildApp({ env: { PUSH_URGENT_ALERT: 'on' }, setup: (w) => { w.tables.hr_ess_notifications = lateRows(w.people.attendance.employee.id); } });
+    const job = start(on, { now: at });
+    const first = await job.runOnce();
+    expect(first.alerted).toBeGreaterThanOrEqual(1);
+    const alerts = on.db.tables.hr_ess_notifications.filter((r) => r.category === 'crm_alert');
+    expect(alerts.length).toBe(first.alerted);
+    expect(alerts[0]).toMatchObject({ title: 'Callback pushes are late', priority: 'normal', data: { kind: 'push_urgent_late', count: 1 } });
+    expect(JSON.stringify(alerts)).not.toMatch(/9\d{9}/);
+    expect(await job.runOnce()).not.toHaveProperty('alerted');
   });
 });
