@@ -11,6 +11,7 @@ import 'package:rvm_team_app/router/app_router.dart';
 import 'package:rvm_team_app/router/module_routes.dart';
 import 'package:rvm_team_app/router/sensitive_routes.dart';
 import 'package:rvm_team_app/widgets/secure_scope.dart';
+import 'package:rvm_team_app/features/security/sensitive_gate.dart';
 
 import 'app_routes.dart';
 
@@ -403,7 +404,12 @@ Future<List<BuiltRoute>> appRoutes(WidgetTester tester) async {
 /// The file that declares [screen]'s class. [what] names the route or tab in
 /// the failure: a screen whose file cannot be found must not pass unscanned.
 String screenFile(Widget? screen, Map<String, String> classes, String what) {
-  final shown = screen is SecureScope ? screen.child : screen;
+  var shown = screen;
+  while (shown is SecureScope || shown is SensitiveGate) {
+    shown = shown is SecureScope
+        ? shown.child
+        : (shown as SensitiveGate).child;
+  }
   final name = '${shown?.runtimeType}'.split('<').first;
   final file = classes[name];
   expect(file, isNotNull, reason: '$what: no file for $name');

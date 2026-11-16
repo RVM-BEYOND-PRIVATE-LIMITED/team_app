@@ -3334,6 +3334,7 @@ class FacultySession extends Equatable {
     this.startTime,
     this.endTime,
     this.locationName,
+    this.meetLink,
     required this.covered,
     required this.students,
     required this.marked,
@@ -3343,6 +3344,9 @@ class FacultySession extends Equatable {
   final String? startTime;
   final String? endTime;
   final String? locationName;
+
+  /// The Google Meet link for this class, when the server sends one (#57).
+  final String? meetLink;
   final bool covered;
   final int students;
   final bool marked;
@@ -3352,13 +3356,14 @@ class FacultySession extends Equatable {
         startTime: _str(j['start_time']),
         endTime: _str(j['end_time']),
         locationName: _str(j['location_name']),
+        meetLink: _str(j['meet_link'] ?? j['meetLink']),
         covered: _bool(j['covered']),
         students: _int(j['students']) ?? 0,
         marked: _bool(j['marked']),
       );
   @override
   List<Object?> get props =>
-      [id, name, startTime, endTime, covered, students, marked];
+      [id, name, startTime, endTime, locationName, meetLink, covered, students, marked];
 }
 
 class FacultyDay extends Equatable {

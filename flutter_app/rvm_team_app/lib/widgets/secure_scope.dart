@@ -1,5 +1,13 @@
-import 'package:flutter/widgets.dart';
+import 'dart:async';
 
+import 'package:core_network/core_network.dart';
+import 'package:core_ui/core_ui.dart';
+import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
+import 'package:local_auth/local_auth.dart';
+
+import '../bloc/team_auth_bloc.dart';
+import '../data/repositories/team_stage2_repository.dart';
 import '../platform/secure_window.dart';
 
 /// Blocks screenshots while [child] is on screen (team_app #52, item 1).
@@ -75,5 +83,133 @@ class _SecureScopeState extends State<SecureScope> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) =>
+      _IdleLock(enabled: widget.enabled, child: widget.child);
+}
+
+/// The 30-minute idle lock (team_app #52, item 2). It counts time in the
+/// foreground and in the background; a sensitive screen covers itself with
+/// this overlay at the limit, and unlocking asks the phone's own screen lock.
+/// The child stays mounted underneath, so a half-filled form survives.
+class _IdleLock extends StatefulWidget {
+  const _IdleLock({required this.enabled, required this.child});
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_IdleLock> createState() => _IdleLockState();
+}
+
+class _IdleLockState extends State<_IdleLock> {
+  static const _limit = Duration(minutes: 30);
+  DateTime _lastActive = DateTime.now();
+  bool _locked = false;
+  Timer? _ticker;
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 20), (_) => _check());
+    _lifecycle = AppLifecycleListener(onShow: _check);
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  void _touch() {
+    if (!_locked) _lastActive = DateTime.now();
+  }
+
+  void _check() {
+    if (!mounted || !widget.enabled || _locked) return;
+    if (DateTime.now().difference(_lastActive) >= _limit) {
+      setState(() => _locked = true);
+    }
+  }
+
+  Future<void> _unlock() async {
+    final auth = LocalAuthentication();
+    bool ok = false;
+    try {
+      ok = await auth.authenticate(
+        localizedReason: 'Unlock Team RVM',
+        options: const AuthenticationOptions(
+            biometricOnly: false, stickyAuth: true),
+      );
+    } catch (_) {
+      ok = false;
+    }
+    if (!ok) {
+      // No screen lock, or the person cancelled: signing in again is the only
+      // way back (the issue's default for a phone with no screen lock).
+      final getIt = GetIt.instance;
+      if (getIt.isRegistered<TeamAuthBloc>()) {
+        getIt<TeamAuthBloc>().add(const TeamSignedOut());
+      }
+      return;
+    }
+    final getIt = GetIt.instance;
+    if (getIt.isRegistered<TeamStage2Repository>()) {
+      try {
+        await getIt<TeamStage2Repository>().unlock(
+            key: 'unlock-${DateTime.now().microsecondsSinceEpoch}');
+      } on Failure {
+        // The overlay still opens locally; the server decides on the next call.
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _locked = false;
+      _lastActive = DateTime.now();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_locked) {
+      return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => _touch(),
+          child: widget.child);
+    }
+    final p = context.palette;
+    return Stack(
+      children: [
+        widget.child,
+        Positioned.fill(
+          child: Material(
+            color: p.canvas,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_outline, size: 56, color: p.primary),
+                    const SizedBox(height: 14),
+                    Text('Team RVM is locked',
+                        style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 8),
+                    Text('Unlock with your fingerprint, face or PIN.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium),
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                        onPressed: _unlock,
+                        icon: const Icon(Icons.fingerprint),
+                        label: const Text('Unlock')),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

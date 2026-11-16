@@ -1,6 +1,8 @@
 import 'package:core_network/core_network.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
@@ -146,11 +148,30 @@ class _FacultyDayScreenState extends State<FacultyDayScreen> {
                     '${s.students} students',
                     if (s.covered) 'covered',
                   ].join(' · ')),
-                  trailing: Text(s.marked ? 'Marked' : 'Not marked',
-                      style: TextStyle(
-                          color: s.marked
-                              ? p.success
-                              : p.warning)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if ((s.meetLink ?? '').isNotEmpty)
+                        TextButton(
+                          onPressed: () async {
+                            final link = s.meetLink!;
+                            await launchUrl(Uri.parse(link),
+                                mode: LaunchMode.externalApplication);
+                          },
+                          child: const Text('Join'),
+                        ),
+                      IconButton(
+                        tooltip: 'Test marks',
+                        onPressed: () => context.push(
+                            '/work/batch/${s.id}/marks',
+                            extra: s.name),
+                        icon: const Icon(Icons.grade_outlined),
+                      ),
+                      Text(s.marked ? 'Marked' : 'Not marked',
+                          style: TextStyle(
+                              color: s.marked ? p.success : p.warning)),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: RvmSpacing.sm),

@@ -9,6 +9,7 @@ import '../../app_feedback.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/states.dart';
+import '../../widgets/team_kit.dart';
 import 'bloc/absent_remark_bloc.dart';
 import 'bloc/mark_attendance_bloc.dart';
 
@@ -204,14 +205,25 @@ class _Roster extends StatelessWidget {
                 final canRemark = s.isAbsent;
                 return CheckboxListTile(
                   value: present,
-                  onChanged: state.canEdit
+                  // A fee hold disables Present, never Absent (#57 item 1).
+                  onChanged: state.canEdit && (!s.feeHold || present)
                       ? (_) => context
                           .read<MarkAttendanceBloc>()
                           .add(MarkToggled(s.id))
                       : null,
-                  title: Text(s.fullName ?? 'Student'),
+                  title: Row(
+                    children: [
+                      Expanded(child: Text(s.fullName ?? 'Student')),
+                      if (s.feeHold)
+                        TeamPill(
+                            label: 'Fee hold',
+                            tone: TeamPillTone.warning,
+                            dense: true),
+                    ],
+                  ),
                   subtitle: Text([
                     if (s.admissionNumber != null) s.admissionNumber!,
+                    if (s.feeHold) 'Present is off until the fee is paid',
                     if (s.isAbsent && (s.absentReason?.isNotEmpty ?? false))
                       'reason: ${s.absentReason}',
                   ].join(' · ')),

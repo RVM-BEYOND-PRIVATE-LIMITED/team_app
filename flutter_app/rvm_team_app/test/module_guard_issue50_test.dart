@@ -148,10 +148,10 @@ void main() {
       signedIn();
       final router =
           await pumpRouter(tester, modules: () => {TeamModule.tasks});
-      // No module screen exists yet, so a granted route reaches the router's
-      // not-found page instead of being sent home.
+      // The My Tasks screen exists now (#54); a granted route reaches it
+      // instead of being sent home.
       expect(await open(tester, router, '/tasks'), '/tasks');
-      expect(find.text('Route not found: /tasks'), findsOneWidget);
+      expect(find.text('My Tasks'), findsWidgets);
       expect(await open(tester, router, '/crm'), '/home');
     });
 
