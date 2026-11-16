@@ -64,10 +64,17 @@ class CallLauncher {
       return const CallStartFailed(UnknownFailure());
     }
 
-    if (!_dialable.hasMatch(number)) return const CallNumberInvalid();
+    return dialNumber(number);
+  }
 
+  /// Opens the dialer with [number], already returned by a module's start-call
+  /// request. The CRM uses it after it has kept the call id from that reply.
+  /// The number is never stored, shown or logged.
+  Future<CallLaunchResult> dialNumber(String number) async {
+    final value = number.trim();
+    if (!_dialable.hasMatch(value)) return const CallNumberInvalid();
     try {
-      final opened = await _launch(Uri(scheme: 'tel', path: number));
+      final opened = await _launch(Uri(scheme: 'tel', path: value));
       return opened ? const CallDialerOpened() : const CallDialerUnavailable();
     } catch (_) {
       // url_launcher's PlatformException names the URL, and with it the

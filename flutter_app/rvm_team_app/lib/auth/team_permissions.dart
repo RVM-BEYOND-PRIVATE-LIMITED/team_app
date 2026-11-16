@@ -1,6 +1,7 @@
 import 'package:domain/domain.dart';
 
 import '../domain/ess_models.dart';
+import '../router/module_routes.dart';
 
 /// What a role may see and do in Team RVM, limited to what the Scheduler
 /// backend actually serves today. Encoded from `Scheduler_Backend`:
@@ -83,8 +84,12 @@ class TeamPermissions {
 /// Who is looking: what every tab, Home card and Me tile rule reads
 /// (team_app #50, item 6).
 class TeamViewer {
-  TeamViewer({required this.role, this.attendance = false, this.caps})
-      : perms = TeamPermissions.forRole(role);
+  TeamViewer({
+    required this.role,
+    this.attendance = false,
+    this.caps,
+    this.modules = const {},
+  }) : perms = TeamPermissions.forRole(role);
 
   final AppRole role;
 
@@ -94,6 +99,11 @@ class TeamViewer {
 
   /// The ESS capabilities, once they have loaded.
   final EssCapabilities? caps;
+
+  /// The staff modules the Scheduler opened for this sign-in (team_app #50,
+  /// item 6). Empty before the first answer and when nothing is open, which is
+  /// how every screen looked before modules existed.
+  final Set<TeamModule> modules;
 
   final TeamPermissions perms;
 }
