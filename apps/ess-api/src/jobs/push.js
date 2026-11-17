@@ -25,6 +25,15 @@ const { isQuietHours, dmy } = require('../policy/notifications');
  * Nothing else is pushed between 21:00 and 08:00 IST; the rows wait for the morning. Failures are
  * logged and never stop the next notification.
  *
+ * Reliability (team_app #92 to #95):
+ *   - an urgent push carries a collapse key (the lead or call it is about), so one sent again
+ *     replaces the first on the phone (#94); a row dropped for age is marked push_error 'too_late';
+ *   - each loop writes its run record in hr_ess_worker_runs ('push_minute' every run, 'push_urgent'
+ *     when it did something or once a minute), so a stopped loop shows (#92);
+ *   - with PUSH_URGENT_ALERT=on, the minute loop tells the Super Admins, at most once in 30 minutes,
+ *     when urgent rows wait over a minute or were dropped as too late (#93);
+ *   - a priority task's notification carries a dedupe key, so a re-run cannot write it twice (#95).
+ *
  * Before the priority migration, the urgent lane sends nothing and says so once per process; the
  * minute loop keeps its old queue, so notifications work exactly as they did.
  *
@@ -38,6 +47,16 @@ const BATCH = 50;
 const URGENT_INTERVAL_MS = 5 * 1000;
 const URGENT_TTL_MS = 60 * 1000;
 const URGENT_BATCH = 50;
+const ALERT_EVERY_MS = 30 * 60 * 1000;
+const LATE_WINDOW_MS = 10 * 60 * 1000;
+const URGENT_RECORD_EVERY_MS = 60 * 1000;
+
+/** #94: what an urgent push is about, so a second one about the same thing replaces the first. */
+function collapseKeyFor(row) {
+  const d = row.data || {};
+  const about = d.lead_id ? `lead:${d.lead_id}` : d.call_id ? `call:${d.call_id}` : d.inbound_call_id ? `inbound:${d.inbound_call_id}` : `row:${row.id}`;
+  return `${row.category}:${about}`.slice(0, 100);
+}
 
 /** A missing column is the priority migration not applied yet, not a broken row. */
 const isMissingPriority = (e) => Boolean(e && e.code === 'MODULE_NOT_INSTALLED');
@@ -63,6 +82,12 @@ function startPushJob({
   // 'missing'. Shared by both loops, so the migration is probed once per process.
   let priorityState = 'unknown';
   let missingPriorityLogged = false;
+  // #92: the run record, per loop. 'missing' once the table is not there (the migration not applied).
+  let runsTable = 'unknown';
+  const runCounts = { push_minute: { runs: 0, failures: 0 }, push_urgent: { runs: 0, failures: 0 } };
+  let urgentRecordedAt = 0;
+  // #93: when the Super Admins were last told.
+  let alertedAt = 0;
   const fcm = config && config.push && config.push.enabled
     ? createFcm({ ...config.firebase, fetchImpl, now })
     : null;
@@ -88,6 +113,7 @@ function startPushJob({
           title: 'New priority task',
           body: `${task.title}${task.due_date ? ` Due ${dmy(task.due_date)}.` : ''}`,
           data: { task_id: task.id },
+          dedupe_key: `priority_task:${task.id}`,
         });
         created += 1;
       } catch (e) {
@@ -116,6 +142,7 @@ function startPushJob({
         body: row.body,
         data: { category: row.category, ...(row.data || {}) },
         urgent,
+        collapseKey: urgent ? collapseKeyFor(row) : null,
       });
       if (out.ok) {
         await store.markNotificationPushed(row.id, { pushed_at: at, push_mode: 'fcm', push_error: null });
@@ -219,8 +246,9 @@ function startPushJob({
         const age = at.getTime() - Date.parse(row.created_at);
         if (Number.isFinite(age) && age > URGENT_TTL_MS) {
           // Too old to be useful: a callback rung an hour late is worse than one not rung.
-          await store.markNotificationPushed(row.id, { pushed_at: atIso, push_mode: 'skipped', push_error: null });
+          await store.markNotificationPushed(row.id, { pushed_at: atIso, push_mode: 'skipped', push_error: 'too_late' });
           counts.skipped += 1;
+          counts.too_late = (counts.too_late || 0) + 1;
           continue;
         }
         const outcome = await deliverOne(
@@ -235,9 +263,70 @@ function startPushJob({
     return counts;
   }
 
+  /** #92: one loop's run record. Never fails the run; a missing table is said once and then left alone. */
+  async function record(worker, startedAt, ok, counts) {
+    if (runsTable === 'missing' || typeof store.recordWorkerRun !== 'function') return;
+    const c = runCounts[worker];
+    c.runs += 1;
+    if (!ok) c.failures += 1;
+    try {
+      await store.recordWorkerRun(worker, {
+        last_started_at: startedAt.toISOString(), last_finished_at: now().toISOString(), last_ok: ok,
+        last_counts: counts && typeof counts === 'object' ? counts : {}, runs: c.runs, failures: c.failures, updated_at: now().toISOString(),
+      });
+      runsTable = 'present';
+    } catch (e) {
+      if (e && e.code === 'MODULE_NOT_INSTALLED') {
+        runsTable = 'missing';
+        log.error('[ess] push job: runs are not recorded until db/migrations/20261231100000_hr_ess_push_reliability.sql is applied.');
+      }
+    }
+  }
+
+  /** #93: tell the Super Admins, at most once in 30 minutes, that urgent pushes are late. */
+  async function alertIfLate() {
+    if (!(config && config.push && config.push.urgentAlert)) return null;
+    const at = now();
+    if (at.getTime() - alertedAt < ALERT_EVERY_MS) return null;
+    let late;
+    try {
+      late = await store.countLateUrgent({
+        olderThanIso: new Date(at.getTime() - URGENT_TTL_MS).toISOString(),
+        sinceIso: new Date(at.getTime() - LATE_WINDOW_MS).toISOString(),
+      });
+    } catch {
+      return null;
+    }
+    if (!late || (late.waiting + late.late) === 0) return { late: 0 };
+    alertedAt = at.getTime();
+    const userIds = (await store.listFinalDeciderUserIds()).map((u) => u.id);
+    const employees = await store.listEmployeesByUserIds(userIds);
+    const bucket = Math.floor(at.getTime() / ALERT_EVERY_MS);
+    let told = 0;
+    for (const e of employees) {
+      try {
+        const out = await store.createNotification({
+          employee_id: e.id,
+          category: 'crm_alert',
+          title: 'Callback pushes are late',
+          body: `${late.waiting} urgent push(es) waiting over a minute, ${late.late} dropped as too late in the last 10 minutes. Check the Team app's push worker.`,
+          data: { kind: 'push_urgent_late', count: late.waiting + late.late },
+          dedupe_key: `push_urgent_late:${bucket}`,
+        });
+        if (out) told += 1;
+      } catch (err) {
+        log.error(`[ess] push job: the late-push alert failed: ${err && err.message ? err.message : err}`);
+      }
+    }
+    return { late: late.waiting + late.late, told };
+  }
+
   async function runOnce() {
     if (running) return null;
     running = true;
+    const startedAt = now();
+    let ok = true;
+    let result = null;
     try {
       let created = 0;
       try {
@@ -249,10 +338,19 @@ function startPushJob({
       try {
         delivery = (await deliver()) || {};
       } catch (e) {
+        ok = false;
         log.error(`[ess] push job: delivery: ${e && e.message ? e.message : e}`);
       }
-      return { created, ...delivery };
+      let alert = null;
+      try {
+        alert = await alertIfLate();
+      } catch (e) {
+        log.error(`[ess] push job: late-push check: ${e && e.message ? e.message : e}`);
+      }
+      result = { created, ...delivery, ...(alert && alert.told ? { alerted: alert.told } : {}) };
+      return result;
     } finally {
+      await record('push_minute', startedAt, ok, result || {});
       running = false;
     }
   }
@@ -260,12 +358,23 @@ function startPushJob({
   async function runUrgentOnce() {
     if (urgentRunning) return null;
     urgentRunning = true;
+    const startedAt = now();
+    let ok = true;
+    let result = null;
     try {
-      return await deliverUrgent();
+      result = await deliverUrgent();
+      return result;
     } catch (e) {
+      ok = false;
       log.error(`[ess] push job: urgent delivery: ${e && e.message ? e.message : e}`);
       return null;
     } finally {
+      // Every five seconds is too often to write: a run that did something, failed, or a minute's beat.
+      const busy = result && Object.entries(result).some(([k, v]) => k !== 'missing' && Number(v) > 0);
+      if (!ok || busy || startedAt.getTime() - urgentRecordedAt >= URGENT_RECORD_EVERY_MS) {
+        urgentRecordedAt = startedAt.getTime();
+        await record('push_urgent', startedAt, ok, result || {});
+      }
       urgentRunning = false;
     }
   }
@@ -290,4 +399,4 @@ function startPushJob({
   };
 }
 
-module.exports = { startPushJob, MAX_ATTEMPTS, PRIORITY_WINDOW_MS, URGENT_INTERVAL_MS, URGENT_TTL_MS };
+module.exports = { startPushJob, collapseKeyFor, MAX_ATTEMPTS, PRIORITY_WINDOW_MS, URGENT_INTERVAL_MS, URGENT_TTL_MS };

@@ -72,6 +72,8 @@ async function notifyApprovers({ store, requester, request, family }) {
         title,
         body,
         data: { request_id: request.id, request_family: family },
+        // team_app #95: a retried write tells each approver once.
+        dedupe_key: `approval:${family}:${request.id}`,
       });
     }
   } catch (e) {
@@ -90,6 +92,7 @@ async function notifyDecision({ store, request, family, approved, byName }) {
       title: approved ? 'Request approved' : 'Request rejected',
       body: `Your request for ${what} on ${when} was ${approved ? 'approved' : 'rejected'}${byName ? ` by ${byName}` : ''}.`,
       data: { request_id: request.id, request_family: family },
+      dedupe_key: `decision:${family}:${request.id}:${approved ? 'approved' : 'rejected'}`,
     });
   } catch (e) {
     console.error(`[ess] notification for a decision failed: ${e && e.message ? e.message : e}`);

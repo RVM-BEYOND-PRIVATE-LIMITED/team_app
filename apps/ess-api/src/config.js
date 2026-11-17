@@ -87,7 +87,11 @@ function loadConfig(env = process.env) {
     firebase,
     // Until all three Firebase values exist, push writes each message to the log instead of
     // sending it (ADR-0016).
-    push: Object.freeze({ enabled: Boolean(firebase.projectId && firebase.clientEmail && firebase.privateKeyB64) }),
+    push: Object.freeze({
+      enabled: Boolean(firebase.projectId && firebase.clientEmail && firebase.privateKeyB64),
+      // team_app #93: tell the Super Admins when urgent pushes are late. Off unless the variable is "on".
+      urgentAlert: String(env.PUSH_URGENT_ALERT ?? '').trim().toLowerCase() === 'on',
+    }),
   });
 }
 

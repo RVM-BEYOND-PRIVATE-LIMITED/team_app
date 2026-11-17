@@ -131,7 +131,9 @@ const SCHEMA = {
   // 20261107000000_hr_ess_push_devices.sql
   hr_ess_push_devices: ['id', 'employee_id', 'token', 'platform', 'device_label', 'install_id', 'created_at', 'updated_at', 'last_seen_at', 'revoked_at'],
   // 20261107000001_hr_ess_notifications.sql
-  hr_ess_notifications: ['id', 'employee_id', 'category', 'title', 'body', 'data', 'read_at', 'pushed_at', 'push_mode', 'push_attempts', 'push_error', 'priority', 'created_at'],
+  hr_ess_notifications: ['id', 'employee_id', 'category', 'title', 'body', 'data', 'read_at', 'pushed_at', 'push_mode', 'push_attempts', 'push_error', 'priority', 'created_at', 'dedupe_key'],
+  // 20261231100000_hr_ess_push_reliability.sql (team_app #92)
+  hr_ess_worker_runs: ['worker', 'last_started_at', 'last_finished_at', 'last_ok', 'last_counts', 'runs', 'failures', 'updated_at'],
   hr_ess_notification_settings: ['employee_id', 'disabled_categories', 'updated_at'],
   // 20261108000001_hr_ess_wall_posts.sql
   hr_ess_wall_posts: ['id', 'employee_id', 'kind', 'scope', 'branch_id', 'body', 'attachments', 'mentions', 'badge',
@@ -217,6 +219,10 @@ const UNIQUE = {
   ],
   hr_ess_push_devices: [
     { name: 'hr_ess_push_devices_token_key', columns: ['token'] },
+  ],
+  // team_app #95: one row per person per writer key (the partial unique index, 20261231100000).
+  hr_ess_notifications: [
+    { name: 'hr_ess_notifications_dedupe_uq', columns: ['employee_id', 'dedupe_key'], where: (row) => row.dedupe_key != null },
   ],
   // F2, F4, F5, F6, F7: the partial unique indexes, as db/migrations/20261108000001-3 declare them.
   hr_ess_wall_poll_options: [
@@ -467,6 +473,8 @@ const KEYS = {
   hr_ess_profile_details: ['employee_id'],
   // F-51: one run per job per period is the table's primary key (20261211000000).
   hr_ess_job_runs: ['job', 'period_key'],
+  // team_app #92: one run record per push loop (20261231100000).
+  hr_ess_worker_runs: ['worker'],
 };
 
 /** What the database fills in on insert: the hr_ess_* DEFAULTs in db/migrations. */

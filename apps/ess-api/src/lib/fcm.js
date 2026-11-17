@@ -85,8 +85,11 @@ function createFcm({ projectId, clientEmail, privateKeyB64, fetchImpl = fetch, n
    * `urgent` puts the message on the urgent channel with a 60-second TTL: a callback that cannot
    * be delivered in a minute is better dropped than rung at somebody hours late. Normal messages
    * are unchanged.
+   *
+   * `collapseKey` (team_app #94): a message sent again with the same key replaces the one on the phone
+   * (Android's collapse key and notification tag), so a re-sent callback rings once, not twice.
    */
-  async function send({ token, title, body, data = {}, urgent = false }) {
+  async function send({ token, title, body, data = {}, urgent = false, collapseKey = null }) {
     const auth = await accessToken();
     if (auth.error) return { ok: false, invalidToken: false, error: auth.error };
     const message = {
@@ -99,7 +102,8 @@ function createFcm({ projectId, clientEmail, privateKeyB64, fetchImpl = fetch, n
           ? {
             priority: 'high',
             ttl: `${URGENT_TTL_SECONDS}s`,
-            notification: { channel_id: URGENT_CHANNEL_ID },
+            notification: { channel_id: URGENT_CHANNEL_ID, ...(collapseKey ? { tag: collapseKey } : {}) },
+            ...(collapseKey ? { collapse_key: collapseKey } : {}),
           }
           : { priority: 'high' },
       },
