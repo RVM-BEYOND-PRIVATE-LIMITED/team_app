@@ -83,7 +83,22 @@ class _SensitiveGateState extends State<SensitiveGate> {
       return _SignedOut(failure: _failure!);
     }
     final access = _access;
-    if (access == null) return widget.child;
+    if (access == null) {
+      final failure = _failure;
+      if (failure != null) {
+        final blocked = blockedReasonFor(failure);
+        if (blocked != null) {
+          return BlockedState(
+            reason: blocked,
+            message: failure.message,
+            actionLabel: 'Try again',
+            onAction: _check,
+          );
+        }
+        return AppError(message: failure.message, onRetry: _check);
+      }
+      return widget.child;
+    }
     if (access.devicePending) {
       return _Wait(
           icon: Icons.phone_android,
