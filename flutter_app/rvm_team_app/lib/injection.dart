@@ -2,23 +2,27 @@ import 'package:core_auth/core_auth.dart';
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_network/core_network.dart';
 import 'package:dio/dio.dart';
-import 'package:domain/domain.dart' show Jwt;
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 
 import 'bloc/connectivity_bloc.dart';
 import 'bloc/forgot_password_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
+import 'bloc/team_modules_bloc.dart';
 import 'data/datasources/announcements_remote_data_source.dart';
+import 'data/datasources/crm_remote_data_source.dart';
 import 'data/datasources/auth_remote_data_source.dart';
 import 'data/datasources/ess_remote_data_source.dart';
 import 'data/datasources/hod_remote_data_source.dart';
 import 'data/datasources/me_remote_data_source.dart';
 import 'data/datasources/my_attendance_remote_data_source.dart';
 import 'data/datasources/priority_tasks_remote_data_source.dart';
+import 'data/datasources/team_modules_remote_data_source.dart';
+import 'data/datasources/team_stage2_remote_data_source.dart';
 import 'data/datasources/work_remote_data_source.dart';
 import 'data/location_service.dart';
 import 'data/repositories/announcements_repository.dart';
+import 'data/repositories/crm_repository.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/ess_repository.dart';
 import 'data/repositories/hod_repository.dart';
@@ -26,6 +30,8 @@ import 'data/repositories/leave_repository.dart';
 import 'data/repositories/me_repository.dart';
 import 'data/repositories/my_attendance_repository.dart';
 import 'data/repositories/priority_tasks_repository.dart';
+import 'data/repositories/team_modules_repository.dart';
+import 'data/repositories/team_stage2_repository.dart';
 import 'data/repositories/work_repository.dart';
 import 'domain/ess_models.dart';
 import 'domain/models.dart';
@@ -50,6 +56,11 @@ import 'features/requests/bloc/requests_bloc.dart';
 import 'features/work/bloc/absent_remark_bloc.dart';
 import 'features/work/bloc/interview_action_bloc.dart';
 import 'features/work/bloc/mark_attendance_bloc.dart';
+import 'theme/theme_cubit.dart';
+import 'theme/theme_local_store.dart';
+import 'theme/theme_preferences_remote_data_source.dart';
+import 'theme/theme_preferences_repository.dart';
+import 'platform/call_launcher.dart';
 
 /// Service locator — same provided stack as staff_app / student_app:
 /// get_it + dio behind the data layer + bloc. Blocs get deps by constructor;
@@ -90,12 +101,21 @@ void configureDependencies(AuthSession session) {
     ..registerSingleton<AuthSession>(session)
     ..registerLazySingleton<ConnectivityService>(ConnectivityService.new)
     ..registerLazySingleton<ApiEnvironment>(ApiEnvironment.fromDefines)
+    // One renewal of the kept sign-in for both clients (#50): the one-hour
+    // access token serves the Scheduler and the ESS, and the two renew it in
+    // one flight, so a Scheduler-only screen keeps working past the hour.
+    ..registerLazySingleton<SessionRotator>(() => DioFactory.sessionRotator(
+          env: getIt<ApiEnvironment>(),
+          tokens: getIt<AuthSession>(),
+          essTokens: getIt<AuthSession>(),
+        ))
     // Scheduler client: bearer JWT + the persistent punch device cookie (B8/B13).
     ..registerLazySingleton<Dio>(() {
       final dio = DioFactory.scheduler(
         env: getIt<ApiEnvironment>(),
         tokens: getIt<AuthSession>(),
         cookieJar: getIt<AuthSession>().schedulerCookieJar,
+        sessions: getIt<SessionRotator>(),
         logging: kDebugMode,
       );
       // Refused responses are values, not exceptions (the same rule the ESS
@@ -114,6 +134,7 @@ void configureDependencies(AuthSession session) {
           env: getIt<ApiEnvironment>(),
           tokens: getIt<AuthSession>(),
           essTokens: getIt<AuthSession>(),
+          sessions: getIt<SessionRotator>(),
           logging: kDebugMode,
         );
         // Let refused responses reach the data source as a typed Failure instead
@@ -136,6 +157,9 @@ void configureDependencies(AuthSession session) {
   getIt
     ..registerLazySingleton<AuthRemoteDataSource>(
         () => AuthRemoteDataSource(getIt<Dio>()))
+    // The Sales CRM's own API (#51), on the Scheduler client.
+    ..registerLazySingleton<CrmRemoteDataSource>(
+        () => CrmRemoteDataSource(getIt<Dio>()))
     ..registerLazySingleton<MeRemoteDataSource>(
         () => MeRemoteDataSource(getIt<Dio>()))
     ..registerLazySingleton<PriorityTasksRemoteDataSource>(
@@ -150,12 +174,24 @@ void configureDependencies(AuthSession session) {
         () => EssRemoteDataSource(getIt<Dio>(instanceName: 'ess')))
     ..registerLazySingleton<MyAttendanceRemoteDataSource>(
         () => MyAttendanceRemoteDataSource(getIt<Dio>()))
-    ..registerLazySingleton<LocationService>(LocationService.new);
+    // The modules open to the person (#50 item 5), on the Scheduler client.
+    ..registerLazySingleton<TeamModulesRemoteDataSource>(
+        () => TeamModulesRemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<TeamStage2RemoteDataSource>(
+        () => TeamStage2RemoteDataSource(getIt<Dio>()))
+    ..registerLazySingleton<LocationService>(LocationService.new)
+    // Dialer hand-off for module calls (#50 item 1). No screen uses it yet: a
+    // module wires it when its start-call route exists.
+    ..registerLazySingleton<CallLauncher>(CallLauncher.new)
+    ..registerLazySingleton<ThemePreferencesRemoteDataSource>(
+        () => ThemePreferencesRemoteDataSource(getIt<Dio>()));
 
   // Repositories.
   getIt
     ..registerLazySingleton<AuthRepository>(
         () => AuthRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<CrmRepository>(
+        () => CrmRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<MeRepository>(
         () => MeRepository(remote: getIt(), connectivity: getIt()))
     ..registerLazySingleton<EssRepository>(() => EssRepository(
@@ -178,18 +214,34 @@ void configureDependencies(AuthSession session) {
               location: getIt(),
               connectivity: getIt(),
             ))
-    // Casual leave / leave without pay on the Scheduler (#43).
-    ..registerLazySingleton<LeaveRepository>(() => LeaveRepository(
-          remote: getIt(),
-          connectivity: getIt(),
-          freshenSession: _freshenSchedulerSession,
-        ));
+    // Casual leave / leave without pay on the Scheduler (#43). The Scheduler
+    // client renews the kept sign-in itself now (#50).
+    ..registerLazySingleton<LeaveRepository>(
+        () => LeaveRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<TeamModulesRepository>(
+        () => TeamModulesRepository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<TeamStage2Repository>(
+        () => TeamStage2Repository(remote: getIt(), connectivity: getIt()))
+    ..registerLazySingleton<ThemePreferencesRepository>(
+        () => ThemePreferencesRepository(
+              remote: getIt(),
+              connectivity: getIt(),
+            ));
 
   // Session-wide blocs.
   getIt
+    ..registerLazySingleton<ThemeLocalStore>(() => SharedPreferencesThemeStore())
+    ..registerLazySingleton<ThemeCubit>(() => ThemeCubit(
+          repository: getIt(),
+          localStore: getIt(),
+        ))
     ..registerLazySingleton<TeamAuthBloc>(
         () => TeamAuthBloc(repository: getIt(), session: getIt(), ess: getIt()))
-    ..registerLazySingleton<ConnectivityBloc>(() => ConnectivityBloc(getIt()));
+    ..registerLazySingleton<ConnectivityBloc>(() => ConnectivityBloc(getIt()))
+    // The router's module guard reads it (#50 items 5 and 7b); the shell
+    // loads it, main.dart clears it on sign-out.
+    ..registerLazySingleton<TeamModulesBloc>(
+        () => TeamModulesBloc(getIt<TeamModulesRepository>().modules));
 
   // Feature blocs.
   getIt
@@ -320,24 +372,3 @@ String _monthStart() {
   final d = DateTime.now();
   return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-01';
 }
-
-/// One shared freshen for every Scheduler-only call (#43). The kept sign-in's
-/// 1-hour access token is rotated only by the ESS client's interceptor, which
-/// has its own single-flight; a cheap ESS read lets that interceptor rotate an
-/// expiring token, so concurrent leave calls never race two rotations of the
-/// same refresh token.
-Future<void>? _freshening;
-
-Future<void> _freshenSchedulerSession() => _freshening ??= () async {
-      try {
-        final session = getIt<AuthSession>();
-        final token = await session.readSchedulerToken();
-        final soon = DateTime.now().add(const Duration(seconds: 30));
-        if (!Jwt.isExpired(token, now: soon)) return;
-        if (await session.readEssRefreshToken() == null) return;
-        await getIt<EssRepository>().capabilitiesSafe();
-      } catch (_) {
-        // Best effort: the Scheduler call still decides what the token is worth.
-      }
-    }()
-        .whenComplete(() => _freshening = null);

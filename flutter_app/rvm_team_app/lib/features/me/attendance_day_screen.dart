@@ -230,12 +230,13 @@ class _TodayHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(RvmSpacing.md),
       decoration: BoxDecoration(
-        color: RvmColors.teamSeed.withValues(alpha: 0.10),
+        color: p.secondary.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(RvmRadii.md),
       ),
       child: Column(
@@ -397,11 +398,12 @@ class _LogDay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final color = switch (_logTone(day.status)) {
-      0 => RvmColors.success,
-      1 => RvmColors.danger,
-      2 => RvmColors.warning,
-      _ => RvmColors.muted,
+      0 => p.success,
+      1 => p.danger,
+      2 => p.warning,
+      _ => p.muted,
     };
     final parsed = DateTime.tryParse(day.day);
     final times = [
@@ -445,7 +447,7 @@ class _LogDay extends StatelessWidget {
                               .bodySmall
                               ?.copyWith(
                                   fontWeight: FontWeight.w600,
-                                  color: RvmColors.ink)),
+                                  color: p.ink)),
                     ),
                     Text(_logStatus(day.status, day.leaveType),
                         style: Theme.of(context)

@@ -31,25 +31,26 @@ class EarnedBadgeFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     if (badgeCount <= 0) return child;
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
           padding: const EdgeInsets.all(3),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFFF5C451), RvmColors.teamSeed, Color(0xFFB86F36)],
+              colors: [Color(0xFFF5C451), p.secondary, Color(0xFFB86F36)],
             ),
           ),
           child: Container(
             padding: const EdgeInsets.all(2),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: RvmColors.ivory,
+              color: p.canvas,
             ),
             child: child,
           ),
@@ -60,9 +61,9 @@ class EarnedBadgeFrame extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
             decoration: BoxDecoration(
-              color: RvmColors.teamSeed,
+              color: p.secondary,
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: RvmColors.ivory, width: 2),
+              border: Border.all(color: p.canvas, width: 2),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -95,6 +96,7 @@ class EarnedBadgesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     if (badges.isEmpty) return const SizedBox.shrink();
     final text = Theme.of(context).textTheme;
     return Card(
@@ -105,8 +107,8 @@ class EarnedBadgesCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.emoji_events_outlined,
-                    size: 20, color: RvmColors.teamSeed),
+                Icon(Icons.emoji_events_outlined,
+                    size: 20, color: p.secondary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text('Badges earned',
@@ -115,7 +117,7 @@ class EarnedBadgesCard extends StatelessWidget {
                 ),
                 Text('${badges.length}',
                     style: text.labelLarge
-                        ?.copyWith(color: RvmColors.subtle)),
+                        ?.copyWith(color: p.subtle)),
               ],
             ),
             const SizedBox(height: 10),
@@ -140,25 +142,26 @@ class _BadgeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: RvmColors.cream,
+        color: p.cardElevated,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: RvmColors.sand),
+        border: Border.all(color: p.sand),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(praiseBadgeIcon(badge.forGroup),
-              size: 16, color: RvmColors.teamSeed),
+              size: 16, color: p.secondary),
           const SizedBox(width: 6),
           Text(
             badge.label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: RvmColors.ink,
+                  color: p.ink,
                 ),
           ),
           if (badge.count > 1) ...[
@@ -166,7 +169,7 @@ class _BadgeChip extends StatelessWidget {
             Text(
               '×${badge.count}',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: RvmColors.teamSeed,
+                    color: p.secondary,
                     fontWeight: FontWeight.w700,
                   ),
             ),

@@ -21,8 +21,9 @@ class MyBatchesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
-      backgroundColor: RvmColors.ivory,
+      backgroundColor: p.canvas,
       body: SafeArea(
         bottom: false,
         child: BlocProvider(
@@ -190,6 +191,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -201,10 +203,10 @@ class _Header extends StatelessWidget {
             child: Container(
               width: 36,
               height: 36,
-              decoration: const BoxDecoration(
-                  color: RvmColors.white, shape: BoxShape.circle),
-              child: const Icon(Icons.arrow_back_ios_new_rounded,
-                  size: 16, color: RvmColors.ink),
+              decoration: BoxDecoration(
+                  color: p.card, shape: BoxShape.circle),
+              child: Icon(Icons.arrow_back_ios_new_rounded,
+                  size: 16, color: p.ink),
             ),
           ),
           const SizedBox(width: 12),
@@ -218,12 +220,12 @@ class _Header extends StatelessWidget {
                 const SizedBox(height: 1),
                 Text('Instructor portal & schedules',
                     style: text.bodySmall
-                        ?.copyWith(fontSize: 11, color: RvmColors.muted)),
+                        ?.copyWith(fontSize: 11, color: p.muted)),
               ],
             ),
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: RvmColors.ink),
+            icon: Icon(Icons.more_vert_rounded, color: p.ink),
             onSelected: (_) => onRefresh(),
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'refresh', child: Text('Refresh')),
@@ -249,27 +251,28 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Container(
       decoration: BoxDecoration(
-        color: RvmColors.white,
+        color: p.card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: RvmColors.line),
+        border: Border.all(color: p.line),
       ),
       child: Row(
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(left: 12),
             child: Icon(Icons.search_rounded,
-                size: 18, color: RvmColors.subtle),
+                size: 18, color: p.subtle),
           ),
           Expanded(
             child: TextField(
               controller: controller,
               onChanged: (_) => onQuery(),
               style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Search batch, skill or faculty',
-                hintStyle: TextStyle(fontSize: 13, color: RvmColors.subtle),
+                hintStyle: TextStyle(fontSize: 13, color: p.subtle),
                 // The app theme draws an OutlineInputBorder for every field;
                 // this one is already inside the rounded white container, so
                 // all three must be cleared or a second box shows inside.
@@ -284,13 +287,13 @@ class _SearchField extends StatelessWidget {
           ),
           PopupMenuButton<_Sort>(
             tooltip: 'Sort',
-            icon: const Icon(Icons.tune_rounded,
-                size: 18, color: RvmColors.ink),
+            icon: Icon(Icons.tune_rounded,
+                size: 18, color: p.ink),
             onSelected: onSort,
             itemBuilder: (_) => [
-              _sortItem(_Sort.newest, 'Newest first', sort),
-              _sortItem(_Sort.name, 'Name (A–Z)', sort),
-              _sortItem(_Sort.status, 'Status', sort),
+              _sortItem(context, _Sort.newest, 'Newest first', sort),
+              _sortItem(context, _Sort.name, 'Name (A–Z)', sort),
+              _sortItem(context, _Sort.status, 'Status', sort),
             ],
           ),
         ],
@@ -298,7 +301,7 @@ class _SearchField extends StatelessWidget {
     );
   }
 
-  PopupMenuItem<_Sort> _sortItem(_Sort value, String label, _Sort current) =>
+  PopupMenuItem<_Sort> _sortItem(BuildContext context, _Sort value, String label, _Sort current) =>
       PopupMenuItem(
         value: value,
         child: Row(
@@ -308,7 +311,9 @@ class _SearchField extends StatelessWidget {
                   ? Icons.radio_button_checked
                   : Icons.radio_button_off,
               size: 16,
-              color: current == value ? RvmColors.clay : RvmColors.subtle,
+              color: current == value
+                  ? context.palette.primary
+                  : context.palette.subtle,
             ),
             const SizedBox(width: 8),
             Text(label, style: const TextStyle(fontSize: 13)),
@@ -331,16 +336,17 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? RvmColors.brand : RvmColors.white,
+          color: selected ? p.brand : p.card,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-              color: selected ? RvmColors.brand : RvmColors.line),
+              color: selected ? p.brand : p.line),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -350,7 +356,7 @@ class _StatusPill extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w600,
-                color: selected ? RvmColors.ivory : RvmColors.ink,
+                color: selected ? p.canvas : p.ink,
               ),
             ),
             const SizedBox(width: 5),
@@ -360,8 +366,8 @@ class _StatusPill extends StatelessWidget {
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: selected
-                    ? RvmColors.ivory.withValues(alpha: 0.75)
-                    : RvmColors.muted,
+                    ? p.canvas.withValues(alpha: 0.75)
+                    : p.muted,
               ),
             ),
           ],
@@ -403,6 +409,7 @@ class _BatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     final status = (batch.status ?? 'active').toLowerCase();
     final time = [_hhmm(batch.startTime), _hhmm(batch.endTime)]
@@ -416,7 +423,7 @@ class _BatchCard extends StatelessWidget {
         batch.scheduleDays.isEmpty ? const <int>[] : batch.scheduleDays;
 
     return Material(
-      color: RvmColors.white,
+      color: p.card,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -425,7 +432,7 @@ class _BatchCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: RvmColors.line),
+            border: Border.all(color: p.line),
           ),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
           child: Column(
@@ -433,8 +440,8 @@ class _BatchCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.star_rounded,
-                      size: 13, color: RvmColors.clay),
+                  Icon(Icons.star_rounded,
+                      size: 13, color: p.primary),
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
@@ -445,7 +452,7 @@ class _BatchCard extends StatelessWidget {
                         fontSize: 10.5,
                         letterSpacing: 0.5,
                         fontWeight: FontWeight.w800,
-                        color: RvmColors.clay,
+                        color: p.primary,
                       ),
                     ),
                   ),
@@ -453,7 +460,7 @@ class _BatchCard extends StatelessWidget {
                   if (_code.isNotEmpty)
                     Text(_code,
                         style: text.labelSmall?.copyWith(
-                            fontSize: 9.5, color: RvmColors.subtle)),
+                            fontSize: 9.5, color: p.subtle)),
                   const Spacer(),
                   _StatusBadge(status: status),
                 ],
@@ -479,12 +486,12 @@ class _BatchCard extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.groups_2_outlined,
-                          size: 13, color: RvmColors.muted),
+                      Icon(Icons.groups_2_outlined,
+                          size: 13, color: p.muted),
                       const SizedBox(width: 4),
                       Text('${batch.joinedCount}/${batch.students} students',
                           style: text.bodySmall
-                              ?.copyWith(fontSize: 11, color: RvmColors.ink)),
+                              ?.copyWith(fontSize: 11, color: p.ink)),
                     ],
                   ),
                   if (roll.isNotEmpty)
@@ -493,7 +500,7 @@ class _BatchCard extends StatelessWidget {
                       children: [
                         Text('Class roll:',
                             style: text.bodySmall?.copyWith(
-                                fontSize: 10, color: RvmColors.muted)),
+                                fontSize: 10, color: p.muted)),
                         const SizedBox(width: 5),
                         for (final n in roll.take(6)) _RollChip(number: n),
                       ],
@@ -503,12 +510,12 @@ class _BatchCard extends StatelessWidget {
               const SizedBox(height: 7),
               Row(
                 children: [
-                  const Icon(Icons.schedule_rounded,
-                      size: 13, color: RvmColors.muted),
+                  Icon(Icons.schedule_rounded,
+                      size: 13, color: p.muted),
                   const SizedBox(width: 4),
                   Text(time.isEmpty ? '—' : time,
                       style: text.bodySmall
-                          ?.copyWith(fontSize: 11, color: RvmColors.ink)),
+                          ?.copyWith(fontSize: 11, color: p.ink)),
                   if (days.isNotEmpty) ...[
                     const SizedBox(width: 10),
                     Expanded(
@@ -516,7 +523,7 @@ class _BatchCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: text.bodySmall?.copyWith(
-                              fontSize: 11, color: RvmColors.muted)),
+                              fontSize: 11, color: p.muted)),
                     ),
                   ] else
                     const Spacer(),
@@ -525,17 +532,17 @@ class _BatchCard extends StatelessWidget {
               const SizedBox(height: 5),
               Row(
                 children: [
-                  const Icon(Icons.calendar_month_outlined,
-                      size: 13, color: RvmColors.muted),
+                  Icon(Icons.calendar_month_outlined,
+                      size: 13, color: p.muted),
                   const SizedBox(width: 4),
                   Text(dates.isEmpty ? 'Dates not set' : dates,
                       style: text.bodySmall
-                          ?.copyWith(fontSize: 11, color: RvmColors.ink)),
+                          ?.copyWith(fontSize: 11, color: p.ink)),
                 ],
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Divider(height: 1, color: RvmColors.line),
+                child: Divider(height: 1, color: p.line),
               ),
               Row(
                 children: [
@@ -545,7 +552,7 @@ class _BatchCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: text.bodySmall?.copyWith(
-                          fontSize: 11, color: RvmColors.muted),
+                          fontSize: 11, color: p.muted),
                     ),
                   ),
                   const Spacer(),
@@ -563,9 +570,9 @@ class _BatchCard extends StatelessWidget {
                               style: text.labelSmall?.copyWith(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: RvmColors.clay)),
-                          const Icon(Icons.chevron_right_rounded,
-                              size: 15, color: RvmColors.clay),
+                                  color: p.primary)),
+                          Icon(Icons.chevron_right_rounded,
+                              size: 15, color: p.primary),
                         ],
                       ),
                     ),
@@ -586,10 +593,11 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (label, fg, bg) = switch (status) {
-      'completed' => ('COMPLETED', RvmColors.clay, RvmColors.claySoft),
-      'upcoming' => ('UPCOMING', RvmColors.info, RvmColors.infoSoft),
-      _ => ('ACTIVE', RvmColors.success, RvmColors.successSoft),
+      'completed' => ('COMPLETED', p.primary, p.cardElevated),
+      'upcoming' => ('UPCOMING', p.info, p.infoSoft),
+      _ => ('ACTIVE', p.success, p.successSoft),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -613,21 +621,22 @@ class _RollChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Container(
       width: 18,
       height: 18,
       margin: const EdgeInsets.only(right: 3),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: RvmColors.ivory,
+        color: p.canvas,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: RvmColors.line),
+        border: Border.all(color: p.line),
       ),
       child: Text('$number',
-          style: const TextStyle(
+          style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.w600,
-              color: RvmColors.ink)),
+              color: p.ink)),
     );
   }
 }

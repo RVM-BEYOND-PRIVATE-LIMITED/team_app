@@ -151,12 +151,13 @@ class _StatusPill extends StatelessWidget {
   final String status;
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (label, color) = switch (status) {
-      'open' => ('Open', RvmColors.brand),
-      'in_progress' => ('In progress', RvmColors.warning),
-      'on_hold' => ('On hold', RvmColors.warning),
-      'resolved' => ('Resolved', RvmColors.success),
-      'closed' => ('Closed', RvmColors.success),
+      'open' => ('Open', p.brand),
+      'in_progress' => ('In progress', p.warning),
+      'on_hold' => ('On hold', p.warning),
+      'resolved' => ('Resolved', p.success),
+      'closed' => ('Closed', p.success),
       'withdrawn' => (
           'Withdrawn',
           Theme.of(context).colorScheme.onSurfaceVariant

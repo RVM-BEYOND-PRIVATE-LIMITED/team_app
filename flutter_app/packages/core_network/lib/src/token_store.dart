@@ -7,7 +7,11 @@ abstract interface class TokenStore {
 
   /// Called when the Scheduler rejects the token (expired / "Please
   /// authenticate" / "No token provided") — clear session, bounce to login.
-  Future<void> onUnauthorized();
+  ///
+  /// [message] is the server's own words when the person's access has ended
+  /// (an exited account, a changed password; team_app #52 item 8), for the
+  /// sign-in screen to show. Null otherwise.
+  Future<void> onUnauthorized({String? message});
 }
 
 /// A no-op store, handy for tests / unauthenticated screens.
@@ -18,5 +22,5 @@ class NullTokenStore implements TokenStore {
   Future<String?> readSchedulerToken() async => null;
 
   @override
-  Future<void> onUnauthorized() async {}
+  Future<void> onUnauthorized({String? message}) async {}
 }

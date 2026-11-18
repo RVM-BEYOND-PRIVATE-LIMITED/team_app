@@ -4,8 +4,15 @@ class ApiEnvironment {
   const ApiEnvironment({
     required this.schedulerBaseUrl,
     required this.jobPortalBaseUrl,
-    this.essBaseUrl = 'https://team-api.rvmcad.org/api/ess',
+    this.essBaseUrl = liveEssBaseUrl,
   });
+
+  /// The live servers: the only URLs [isProduction] accepts, and the defaults
+  /// of [ApiEnvironment.fromDefines]. One constant each, so the two can never
+  /// disagree about where production is.
+  static const liveSchedulerBaseUrl = 'https://scheduler.rvmcad.org/api';
+  static const liveJobPortalBaseUrl = 'https://jobs.rvmcad.org/api/v1';
+  static const liveEssBaseUrl = 'https://team-api.rvmcad.org/api/ess';
 
   /// Scheduler (Express) mounts everything under `/api`.
   final String schedulerBaseUrl;
@@ -24,16 +31,41 @@ class ApiEnvironment {
     return const ApiEnvironment(
       schedulerBaseUrl: String.fromEnvironment(
         'SCHEDULER_BASE_URL',
-        defaultValue: 'https://scheduler.rvmcad.org/api',
+        defaultValue: liveSchedulerBaseUrl,
       ),
       jobPortalBaseUrl: String.fromEnvironment(
         'JOBPORTAL_BASE_URL',
-        defaultValue: 'https://jobs.rvmcad.org/api/v1',
+        defaultValue: liveJobPortalBaseUrl,
       ),
       essBaseUrl: String.fromEnvironment(
         'ESS_BASE_URL',
-        defaultValue: 'https://team-api.rvmcad.org/api/ess',
+        defaultValue: liveEssBaseUrl,
       ),
     );
   }
+
+  /// True only when every backend is its live server. Any other URL (a local
+  /// server, a tunnel, a typo) means the build talks to something that is not
+  /// production (team_app #60). Scheme and host are compared without case, and
+  /// a trailing slash on the path does not count.
+  bool get isProduction =>
+      _same(schedulerBaseUrl, liveSchedulerBaseUrl) &&
+      _same(jobPortalBaseUrl, liveJobPortalBaseUrl) &&
+      _same(essBaseUrl, liveEssBaseUrl);
+
+  static bool _same(String url, String live) {
+    final a = Uri.tryParse(url.trim());
+    final b = Uri.parse(live);
+    if (a == null || !a.hasScheme || a.host.isEmpty) return false;
+    return a.scheme.toLowerCase() == b.scheme &&
+        a.host.toLowerCase() == b.host &&
+        a.port == b.port &&
+        _path(a.path) == _path(b.path) &&
+        !a.hasQuery &&
+        !a.hasFragment &&
+        a.userInfo.isEmpty;
+  }
+
+  static String _path(String path) =>
+      path.endsWith('/') ? path.substring(0, path.length - 1) : path;
 }

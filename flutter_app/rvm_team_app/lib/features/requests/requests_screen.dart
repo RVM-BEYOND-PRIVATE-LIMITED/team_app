@@ -39,6 +39,7 @@ class _RequestsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final caps = context.watch<CapabilitiesBloc>().state.data;
     // Leave approvers come from HR's approver mapping too (#43).
     final leaveApprover = context
@@ -47,7 +48,7 @@ class _RequestsView extends StatelessWidget {
         caps?.approvalsAnyRequest == true ||
         leaveApprover;
     return Scaffold(
-      backgroundColor: RvmColors.ivory,
+      backgroundColor: p.canvas,
       body: Column(
         children: [
           TeamPageHeader(
@@ -105,7 +106,7 @@ class _RequestsView extends StatelessWidget {
       ),
       floatingActionButton: Builder(
         builder: (context) => FloatingActionButton.extended(
-          backgroundColor: RvmColors.clay,
+          backgroundColor: p.primary,
           foregroundColor: Colors.white,
           onPressed: () => showRaiseRequestSheet(context),
           icon: const Icon(Icons.add_rounded, size: 19),
@@ -117,6 +118,7 @@ class _RequestsView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, RequestsState state) {
+    final p = context.palette;
     final hasContent = state.requests.isNotEmpty || state.balances != null;
     if (state.status == LoadStatus.initial ||
         (state.status == LoadStatus.loading && !hasContent)) {
@@ -131,7 +133,7 @@ class _RequestsView extends StatelessWidget {
     }
     final active = state.requests.where((r) => r.isPending).length;
     return RefreshIndicator(
-      color: RvmColors.clay,
+      color: p.primary,
       onRefresh: () async =>
           context.read<RequestsBloc>().add(const RequestsRefreshed()),
       child: ListView(
@@ -170,11 +172,11 @@ class _RequestsView extends StatelessWidget {
                   Text('History',
                       style: TextStyle(
                           fontSize: 11.5,
-                          color: RvmColors.clay,
+                          color: p.primary,
                           fontWeight: FontWeight.w600)),
                   const SizedBox(width: 2),
-                  const Icon(Icons.arrow_forward_rounded,
-                      size: 12, color: RvmColors.clay),
+                  Icon(Icons.arrow_forward_rounded,
+                      size: 12, color: p.primary),
                 ],
               ),
             ),
@@ -184,8 +186,8 @@ class _RequestsView extends StatelessWidget {
             TeamCard(
               child: Column(
                 children: [
-                  const Icon(Icons.event_note_outlined,
-                      size: 30, color: RvmColors.subtle),
+                  Icon(Icons.event_note_outlined,
+                      size: 30, color: p.subtle),
                   const SizedBox(height: 8),
                   Text('No requests yet.',
                       style: Theme.of(context).textTheme.bodySmall),
@@ -194,7 +196,7 @@ class _RequestsView extends StatelessWidget {
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
-                          ?.copyWith(fontSize: 10, color: RvmColors.subtle)),
+                          ?.copyWith(fontSize: 10, color: p.subtle)),
                 ],
               ),
             )
@@ -246,6 +248,7 @@ class _QuotaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final offered = balances.types.where((t) => t.offered).toList();
     // Excuse-late and short leave were switched off on 12 Nov 2026 (#44), so
     // they have no allowance to show.
@@ -264,8 +267,8 @@ class _QuotaCard extends StatelessWidget {
               Container(
                 width: 7,
                 height: 7,
-                decoration: const BoxDecoration(
-                    color: RvmColors.success, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                    color: p.success, shape: BoxShape.circle),
               ),
               const SizedBox(width: 7),
               Text('Monthly Quota',
@@ -281,7 +284,7 @@ class _QuotaCard extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(fontSize: 9.5, color: RvmColors.subtle)),
+                        ?.copyWith(fontSize: 9.5, color: p.subtle)),
               ),
               const Spacer(),
               const TeamPill(
@@ -300,10 +303,10 @@ class _QuotaCard extends StatelessWidget {
               children: [
                 Expanded(
                     child: _quotaTile(
-                        context, cl, 'Casual Leave', RvmColors.clay)),
+                        context, cl, 'Casual Leave', p.primary)),
                 const SizedBox(width: 8),
                 Expanded(
-                    child: _quotaTile(context, fix, 'Fix a Day', RvmColors.clay,
+                    child: _quotaTile(context, fix, 'Fix a Day', p.primary,
                         available: true)),
               ],
             ),
@@ -313,7 +316,7 @@ class _QuotaCard extends StatelessWidget {
                 Expanded(
                   child: _secondaryUsage(context, 'On Duty', onDuty?.used ?? 0),
                 ),
-                Container(width: 1, height: 16, color: RvmColors.line),
+                Container(width: 1, height: 16, color: p.line),
                 Expanded(
                     child: _secondaryUsage(
                         context, 'Without Pay', lwp?.used ?? 0)),
@@ -339,6 +342,7 @@ class _QuotaCard extends StatelessWidget {
     Color accent, {
     bool available = false,
   }) {
+    final p = context.palette;
     final allowed = t?.allowed;
     final remaining =
         t?.remaining ?? (allowed == null ? null : allowed - (t?.used ?? 0));
@@ -352,9 +356,9 @@ class _QuotaCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
-        color: RvmColors.cream,
+        color: p.cardElevated,
         borderRadius: BorderRadius.circular(RvmRadii.md),
-        border: Border.all(color: RvmColors.sand),
+        border: Border.all(color: p.sand),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,7 +379,7 @@ class _QuotaCard extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .labelSmall
-                        ?.copyWith(fontSize: 9, color: RvmColors.subtle)),
+                        ?.copyWith(fontSize: 9, color: p.subtle)),
             ],
           ),
           const SizedBox(height: 12),
@@ -387,8 +391,8 @@ class _QuotaCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontSize: 19,
                         color: used > 0 && remaining == 0
-                            ? RvmColors.danger
-                            : RvmColors.ink,
+                            ? p.danger
+                            : p.ink,
                       )),
               const SizedBox(width: 3),
               Flexible(
@@ -398,7 +402,7 @@ class _QuotaCard extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(fontSize: 8.5, color: RvmColors.muted)),
+                        ?.copyWith(fontSize: 8.5, color: p.muted)),
               ),
             ],
           ),
@@ -410,25 +414,26 @@ class _QuotaCard extends StatelessWidget {
   }
 
   Widget _secondaryUsage(BuildContext context, String label, num used) {
+    final p = context.palette;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
           width: 5,
           height: 5,
-          decoration: const BoxDecoration(
-              color: RvmColors.subtle, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+              color: p.subtle, shape: BoxShape.circle),
         ),
         const SizedBox(width: 5),
         Text('$label: ',
             style: Theme.of(context)
                 .textTheme
                 .labelSmall
-                ?.copyWith(fontSize: 9.5, color: RvmColors.subtle)),
+                ?.copyWith(fontSize: 9.5, color: p.subtle)),
         Text('${_n(used)} used',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontSize: 9.5,
-                color: RvmColors.muted,
+                color: p.muted,
                 fontWeight: FontWeight.w600)),
       ],
     );
@@ -464,6 +469,7 @@ class _RequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (label, tone) = switch (request.status) {
       'approved' => ('Approved', TeamPillTone.success),
       'rejected' => ('Rejected', TeamPillTone.danger),
@@ -471,7 +477,7 @@ class _RequestCard extends StatelessWidget {
       'cancelled' => ('Cancelled', TeamPillTone.neutral),
       _ => ('Pending Review', TeamPillTone.warning),
     };
-    final (icon, color, soft) = _typeStyle(request.type);
+    final (icon, color, soft) = _typeStyle(context, request.type);
     final submitted = request.createdAt == null
         ? null
         : 'Submitted ${_monthDay(request.createdAt!)}';
@@ -518,7 +524,7 @@ class _RequestCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: RvmColors.cream,
+                color: p.cardElevated,
                 borderRadius: BorderRadius.circular(RvmRadii.sm),
               ),
               child: Text('“${request.reason.trim()}”',
@@ -526,7 +532,7 @@ class _RequestCard extends StatelessWidget {
                         fontSize: 10.5,
                         fontStyle: FontStyle.italic,
                         height: 1.45,
-                        color: RvmColors.muted,
+                        color: p.muted,
                       )),
             ),
           ],
@@ -565,7 +571,7 @@ class _RequestCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 10.5,
                     height: 1.45,
-                    color: RvmColors.muted,
+                    color: p.muted,
                   ),
             ),
           ],
@@ -578,7 +584,7 @@ class _RequestCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 10.5,
                     height: 1.45,
-                    color: RvmColors.teamSeed,
+                    color: p.secondary,
                     fontWeight: FontWeight.w600,
                   ),
             ),
@@ -590,7 +596,7 @@ class _RequestCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 10.5,
                     height: 1.45,
-                    color: RvmColors.muted,
+                    color: p.muted,
                     fontWeight: FontWeight.w600,
                   ),
             ),
@@ -604,7 +610,7 @@ class _RequestCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 10.5,
                     height: 1.45,
-                    color: RvmColors.teamSeed,
+                    color: p.secondary,
                     fontWeight: FontWeight.w600,
                   ),
             ),
@@ -613,14 +619,14 @@ class _RequestCard extends StatelessWidget {
           Row(
             children: [
               if (submitted != null) ...[
-                const Icon(Icons.schedule_rounded,
-                    size: 11, color: RvmColors.subtle),
+                Icon(Icons.schedule_rounded,
+                    size: 11, color: p.subtle),
                 const SizedBox(width: 4),
                 Text(submitted,
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(fontSize: 9, color: RvmColors.subtle)),
+                        ?.copyWith(fontSize: 9, color: p.subtle)),
               ],
               const Spacer(),
               if (request.isPending)
@@ -630,14 +636,14 @@ class _RequestCard extends StatelessWidget {
                           family: request.family, id: request.id)),
                   child: Row(
                     children: [
-                      const Icon(Icons.undo_rounded,
-                          size: 12, color: RvmColors.muted),
+                      Icon(Icons.undo_rounded,
+                          size: 12, color: p.muted),
                       const SizedBox(width: 4),
                       Text('Withdraw',
                           style:
                               Theme.of(context).textTheme.labelMedium?.copyWith(
                                     fontSize: 10.5,
-                                    color: RvmColors.muted,
+                                    color: p.muted,
                                     fontWeight: FontWeight.w600,
                                   )),
                     ],
@@ -648,7 +654,7 @@ class _RequestCard extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(fontSize: 9, color: RvmColors.subtle)),
+                        ?.copyWith(fontSize: 9, color: p.subtle)),
             ],
           ),
         ],
@@ -656,34 +662,37 @@ class _RequestCard extends StatelessWidget {
     );
   }
 
-  (IconData, Color, Color) _typeStyle(String type) => switch (type) {
+  (IconData, Color, Color) _typeStyle(BuildContext context, String type) {
+    final p = context.palette;
+    return switch (type) {
         'cl' || 'leave_cl' => (
             Icons.calendar_today_rounded,
-            RvmColors.warning,
-            RvmColors.warningSoft
+            p.warning,
+            p.warningSoft
           ),
         'lwp' || 'leave_lwp' => (
             Icons.event_busy_rounded,
-            RvmColors.muted,
-            RvmColors.cream
+            p.muted,
+            p.cardElevated
           ),
         'excuse_late' => (
             Icons.access_time_rounded,
-            RvmColors.teamSeed,
+            p.secondary,
             const Color(0xFFFCEBE2)
           ),
         'fix_a_day' => (
             Icons.build_circle_outlined,
-            RvmColors.info,
-            RvmColors.infoSoft
+            p.info,
+            p.infoSoft
           ),
         'on_duty' => (
             Icons.work_outline_rounded,
-            RvmColors.success,
-            RvmColors.successSoft
+            p.success,
+            p.successSoft
           ),
-        _ => (Icons.event_note_outlined, RvmColors.clay, RvmColors.claySoft),
+        _ => (Icons.event_note_outlined, p.primary, p.cardElevated),
       };
+  }
 
   String _typeSubtitle(EssRequest r) {
     final parts = <String>[];

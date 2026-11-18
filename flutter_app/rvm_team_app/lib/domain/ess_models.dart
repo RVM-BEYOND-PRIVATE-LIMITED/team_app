@@ -3334,6 +3334,7 @@ class FacultySession extends Equatable {
     this.startTime,
     this.endTime,
     this.locationName,
+    this.meetLink,
     required this.covered,
     required this.students,
     required this.marked,
@@ -3343,6 +3344,9 @@ class FacultySession extends Equatable {
   final String? startTime;
   final String? endTime;
   final String? locationName;
+
+  /// The Google Meet link for this class, when the server sends one (#57).
+  final String? meetLink;
   final bool covered;
   final int students;
   final bool marked;
@@ -3352,13 +3356,14 @@ class FacultySession extends Equatable {
         startTime: _str(j['start_time']),
         endTime: _str(j['end_time']),
         locationName: _str(j['location_name']),
+        meetLink: _str(j['meet_link'] ?? j['meetLink']),
         covered: _bool(j['covered']),
         students: _int(j['students']) ?? 0,
         marked: _bool(j['marked']),
       );
   @override
   List<Object?> get props =>
-      [id, name, startTime, endTime, covered, students, marked];
+      [id, name, startTime, endTime, locationName, meetLink, covered, students, marked];
 }
 
 class FacultyDay extends Equatable {
@@ -3428,6 +3433,7 @@ class ClassRosterStudent extends Equatable {
     this.marked,
     this.absentReason,
     this.followUpComment,
+    this.feeHold = false,
   });
 
   final String id;
@@ -3438,6 +3444,12 @@ class ClassRosterStudent extends Equatable {
   final String? marked;
   final String? absentReason;
   final String? followUpComment;
+
+  /// The server's yes/no fee hold (`fee_hold: boolean`, the roster flag agreed
+  /// in Scheduler_Backend#178). Today's roster does not send it, so a missing
+  /// or non-boolean value reads as false. The app never works a hold out and
+  /// never sees an amount or a date. Nothing shows it yet (#57 item 1).
+  final bool feeHold;
 
   bool get isPresent => marked == 'present';
   bool get isAbsent => marked == 'absent';
@@ -3451,11 +3463,19 @@ class ClassRosterStudent extends Equatable {
         marked: _str(j['marked']),
         absentReason: _str(j['absent_reason']),
         followUpComment: _str(j['follow_up_comment']),
+        feeHold: _bool(j['fee_hold']),
       );
 
   @override
-  List<Object?> get props =>
-      [id, fullName, admissionNumber, marked, absentReason, followUpComment];
+  List<Object?> get props => [
+        id,
+        fullName,
+        admissionNumber,
+        marked,
+        absentReason,
+        followUpComment,
+        feeHold
+      ];
 }
 
 /// `GET /me/batches/{id}/roster?date=` — the day and its lock state.

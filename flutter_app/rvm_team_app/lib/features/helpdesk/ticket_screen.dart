@@ -167,6 +167,7 @@ class _TicketScreenState extends State<TicketScreen> {
   }
 
   Widget _body() {
+    final p = context.palette;
     if (_loading) return const AppLoading();
     if (_failure != null) {
       return AppError(message: _failure!.message, onRetry: _load);
@@ -201,7 +202,7 @@ class _TicketScreenState extends State<TicketScreen> {
                 ],
                 if (t.overdue)
                   Text('Overdue by ${t.overdueMinutes} working minutes',
-                      style: const TextStyle(color: RvmColors.danger)),
+                      style: TextStyle(color: p.danger)),
                 if (t.body != null) ...[
                   const SizedBox(height: RvmSpacing.sm),
                   Text(t.body!),
@@ -275,6 +276,7 @@ class _CloseDialogState extends State<_CloseDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return AlertDialog(
       title: const Text('Close the ticket'),
       content: Column(
@@ -297,7 +299,7 @@ class _CloseDialogState extends State<_CloseDialog> {
                       setState(() => _rating = _rating == i ? null : i),
                   icon: Icon(
                       i <= (_rating ?? 0) ? Icons.star : Icons.star_border,
-                      color: RvmColors.warning),
+                      color: p.warning),
                 ),
             ],
           ),

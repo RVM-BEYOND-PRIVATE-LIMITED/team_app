@@ -13,15 +13,16 @@ class AppLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const SizedBox(
+          SizedBox(
             width: 26,
             height: 26,
             child: CircularProgressIndicator(
-                strokeWidth: 2.4, color: RvmColors.clay),
+                strokeWidth: 2.4, color: p.primary),
           ),
           if (label != null) ...[
             const SizedBox(height: 12),
@@ -41,16 +42,17 @@ class AppError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const TeamIconBadge(
+            TeamIconBadge(
               icon: Icons.cloud_off_outlined,
-              color: RvmColors.danger,
-              background: RvmColors.dangerSoft,
+              color: p.danger,
+              background: p.dangerSoft,
               size: 56,
               iconSize: 26,
               radius: 18,
@@ -80,6 +82,7 @@ class AppEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -88,8 +91,8 @@ class AppEmpty extends StatelessWidget {
           children: [
             TeamIconBadge(
               icon: icon,
-              color: RvmColors.muted,
-              background: RvmColors.cream,
+              color: p.muted,
+              background: p.cardElevated,
               size: 56,
               iconSize: 25,
               radius: 18,
@@ -100,7 +103,7 @@ class AppEmpty extends StatelessWidget {
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
-                    ?.copyWith(fontSize: 12, color: RvmColors.muted)),
+                    ?.copyWith(fontSize: 12, color: p.muted)),
           ],
         ),
       ),
@@ -114,27 +117,28 @@ class OfflineBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocBuilder<ConnectivityBloc, ConnectivityState>(
       buildWhen: (a, b) => a.online != b.online,
       builder: (context, state) {
         if (state.online) return const SizedBox.shrink();
         return Material(
-          color: RvmColors.dangerSoft,
+          color: p.dangerSoft,
           child: SafeArea(
             bottom: false,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
               child: Row(
                 children: [
-                  const Icon(Icons.wifi_off_rounded,
-                      size: 14, color: RvmColors.danger),
+                  Icon(Icons.wifi_off_rounded,
+                      size: 14, color: p.danger),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('No internet connection',
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
-                            ?.copyWith(fontSize: 11, color: RvmColors.danger)),
+                            ?.copyWith(fontSize: 11, color: p.danger)),
                   ),
                 ],
               ),

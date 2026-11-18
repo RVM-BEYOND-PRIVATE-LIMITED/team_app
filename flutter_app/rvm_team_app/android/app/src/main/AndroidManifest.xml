@@ -69,5 +69,18 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- The phone's dialer, for the call helper (lib/platform/call_launcher.dart,
+             team_app #50 item 1). It opens the dialer with the number filled in
+             and not dialled, so the app asks for no call permission. -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <!-- The phone's speech prompt, for voice typing a CRM remark (#51 item
+             10). The recogniser app holds RECORD_AUDIO; this app asks for no
+             microphone permission. -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
+        </intent>
     </queries>
 </manifest>

@@ -127,6 +127,7 @@ class _SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final scheme = Theme.of(context).colorScheme;
     return Card(
       child: ListTile(
@@ -145,7 +146,7 @@ class _SessionCard extends StatelessWidget {
         trailing: session.current
             ? Chip(
                 label: const Text('Current'),
-                backgroundColor: RvmColors.success.withValues(alpha: 0.14),
+                backgroundColor: p.success.withValues(alpha: 0.14),
                 side: BorderSide(color: scheme.outlineVariant),
               )
             : TextButton(

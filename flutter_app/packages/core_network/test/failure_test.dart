@@ -115,6 +115,31 @@ void main() {
       final f =
           Failure.fromDio(_dio(DioExceptionType.badResponse, status: 429));
       expect(f.message, contains('Too many attempts'));
+      expect(f.code, isNull);
+    });
+
+    // team_app #50, item 12: the limiter's code stays on the typed failure.
+    // Scheduler middleware/punchCodeLimiter.js and apps/ess-api
+    // src/middleware/rateLimit.js both answer 429 {error, code: RATE_LIMITED}.
+    test('429 keeps the RATE_LIMITED code and its message', () {
+      final f = Failure.fromDio(
+          _dio(DioExceptionType.badResponse, status: 429, data: {
+        'error': 'Too many sign-in attempts from this network. '
+            'Wait fifteen minutes and try again.',
+        'code': 'RATE_LIMITED',
+      }));
+      expect(f, isA<TooManyRequestsFailure>());
+      expect(f.statusCode, 429);
+      expect(f.code, 'RATE_LIMITED');
+      expect(f.message, contains('Wait fifteen minutes'));
+    });
+
+    test('429 keeps any other limiter code (a lock-out is not a limit)', () {
+      // Scheduler controllers/hr/attendanceOtpController.js: 429 LOCKED.
+      final f = Failure.fromStatus(429, 'Too many wrong passwords.', 'LOCKED');
+      expect(f, isA<TooManyRequestsFailure>());
+      expect(f.code, 'LOCKED');
+      expect(f.message, 'Too many wrong passwords.');
     });
 
     test('5xx keeps the real status + machine code but NOT the server text',
@@ -142,6 +167,49 @@ void main() {
       }));
       expect(nested.code, 'VALIDATION');
       expect(nested.message, 'Bad input');
+    });
+  });
+
+  group('Failure.requestId', () {
+    test('is read from the error body\'s request_id for every refusal', () {
+      for (final status in [400, 401, 403, 404, 409, 429, 500, 503]) {
+        final f = Failure.fromDio(_dio(DioExceptionType.badResponse,
+            status: status,
+            data: {
+              'code': 'SOME_CODE',
+              'message': 'Refused.',
+              'details': <String, Object?>{},
+              'request_id': 'req-test-1',
+            }));
+        expect(f.requestId, 'req-test-1', reason: 'status $status');
+      }
+    });
+
+    test('stays null when the reply has none, as every reply has today', () {
+      final f = Failure.fromDio(_dio(DioExceptionType.badResponse,
+          status: 400,
+          data: {'error': 'That code is not right.', 'code': 'WRONG_CODE'}));
+      expect(f.requestId, isNull);
+      expect(f, const BadResponseFailure('That code is not right.',
+          statusCode: 400, code: 'WRONG_CODE'));
+      expect(f.toString(), isNot(contains('request')));
+      expect(Failure.fromDio(_dio(DioExceptionType.connectionError)).requestId,
+          isNull);
+    });
+
+    test('ignores a blank or non-text request_id', () {
+      for (final id in ['', '  ', <String, Object?>{}, true]) {
+        final f = Failure.fromDio(_dio(DioExceptionType.badResponse,
+            status: 404, data: {'error': 'Gone.', 'request_id': id}));
+        expect(f.requestId, isNull, reason: '$id');
+      }
+    });
+
+    test('is part of equality and of the text', () {
+      const a = NotFoundFailure('Gone.', null, 'req-a');
+      const b = NotFoundFailure('Gone.', null, 'req-b');
+      expect(a, isNot(b));
+      expect(a.toString(), contains('[request req-a]'));
     });
   });
 }

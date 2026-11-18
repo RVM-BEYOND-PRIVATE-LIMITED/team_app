@@ -144,7 +144,13 @@ class EssRemoteDataSource with DioExecutor {
   /// Rotate the kept sign-in without throwing when it has ended. The launch
   /// probe uses this instead of `me()`: a 401 from `/session/refresh` means
   /// "sign in again", and the splash must never pause on an exception for it.
-  Future<({KeptSession? session, Failure? failure})> refreshKeptSignIn({
+  ///
+  /// [accessEnded] is the ESS's own message when it refused the refresh
+  /// because the person left or changed their password (the `reason` of
+  /// apps/ess-api src/routes/sessions.js; [SessionRotator.accessEndedMessage],
+  /// team_app #52 item 8), else null.
+  Future<({KeptSession? session, Failure? failure, String? accessEnded})>
+      refreshKeptSignIn({
     required String refreshToken,
     required String installId,
   }) async {
@@ -155,7 +161,11 @@ class EssRemoteDataSource with DioExecutor {
       });
       final status = res.statusCode ?? 0;
       if (status < 200 || status >= 300) {
-        return (session: null, failure: failureFromResponse(status, res.data));
+        return (
+          session: null,
+          failure: failureFromResponse(status, res.data),
+          accessEnded: SessionRotator.accessEndedMessage(res.data),
+        );
       }
       final data = _body(res);
       final session = _obj(data['session']);
@@ -167,13 +177,19 @@ class EssRemoteDataSource with DioExecutor {
           sessionId: session['id']?.toString(),
         ),
         failure: null,
+        accessEnded: null,
       );
     } on DioException catch (e) {
-      return (session: null, failure: Failure.fromDio(e));
+      return (
+        session: null,
+        failure: Failure.fromDio(e),
+        accessEnded: SessionRotator.accessEndedMessage(e.response?.data),
+      );
     } catch (_) {
       return (
         session: null,
         failure: const UnknownFailure('Could not restore your session.'),
+        accessEnded: null,
       );
     }
   }

@@ -4,4 +4,6 @@
     <color name="ic_launcher_background">#35120C</color>
     <!-- Accent used for the small notification icon background wash. -->
     <color name="notification_color">#35120C</color>
+    <!-- Ironwood, so a cold start never flashes white (#115 item 6). -->
+    <color name="launch_background">#2E1712</color>
 </resources>

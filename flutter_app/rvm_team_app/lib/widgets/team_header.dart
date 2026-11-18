@@ -32,10 +32,9 @@ class TeamPageHeader extends StatelessWidget {
   final Widget? titleTrailing;
   final EdgeInsetsGeometry padding;
 
-  static const _onHeader = RvmColors.ivory;
-
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     final canPop = ModalRoute.of(context)?.canPop ?? false;
     final effectiveLeading = leading ??
@@ -78,7 +77,7 @@ class TeamPageHeader extends StatelessWidget {
                             Text(
                               eyebrow!.toUpperCase(),
                               style: text.labelSmall?.copyWith(
-                                color: _onHeader.withValues(alpha: 0.62),
+                                color: p.onHeader.withValues(alpha: 0.62),
                                 fontSize: 9.5,
                                 letterSpacing: 0.9,
                                 fontWeight: FontWeight.w600,
@@ -93,7 +92,7 @@ class TeamPageHeader extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: text.headlineSmall?.copyWith(
-                                    color: _onHeader,
+                                    color: p.onHeader,
                                     fontSize: 23,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: -0.4,
@@ -110,7 +109,7 @@ class TeamPageHeader extends StatelessWidget {
                             const SizedBox(height: 3),
                             DefaultTextStyle.merge(
                               style: text.bodySmall?.copyWith(
-                                    color: _onHeader.withValues(alpha: 0.68),
+                                    color: p.onHeader.withValues(alpha: 0.68),
                                     fontSize: 12,
                                   ) ??
                                   const TextStyle(),
@@ -294,6 +293,7 @@ class _CompactHeaderBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Padding(
       padding: EdgeInsets.only(top: topPadding, left: 16, right: 8),
@@ -307,7 +307,7 @@ class _CompactHeaderBar extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: text.titleMedium?.copyWith(
-                  color: RvmColors.ivory,
+                  color: p.canvas,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.2,
@@ -339,6 +339,7 @@ class TeamBrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Padding(
       padding: const EdgeInsets.only(left: 6),
       child: Image.asset(
@@ -348,7 +349,7 @@ class TeamBrandMark extends StatelessWidget {
         errorBuilder: (_, __, ___) => Icon(
           Icons.business_rounded,
           size: size,
-          color: RvmColors.ivory,
+          color: p.canvas,
         ),
       ),
     );
@@ -373,6 +374,7 @@ class TeamHeaderAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Padding(
       padding: const EdgeInsets.only(left: 6),
       child: Stack(
@@ -389,7 +391,7 @@ class TeamHeaderAction extends StatelessWidget {
             child: IconButton(
               tooltip: tooltip,
               onPressed: onPressed,
-              icon: Icon(icon, size: 19, color: RvmColors.ivory),
+              icon: Icon(icon, size: 19, color: p.canvas),
               padding: EdgeInsets.zero,
               visualDensity: VisualDensity.compact,
             ),
@@ -402,7 +404,7 @@ class TeamHeaderAction extends StatelessWidget {
                 width: 7,
                 height: 7,
                 decoration: BoxDecoration(
-                  color: RvmColors.teamSeed,
+                  color: p.secondary,
                   shape: BoxShape.circle,
                   border: Border.all(color: RvmColors.ironwood, width: 1.5),
                 ),
@@ -423,10 +425,11 @@ class TeamHeaderPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: RvmColors.teamSeed,
+        color: p.secondary,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -457,6 +460,7 @@ class _HeaderBack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -467,8 +471,8 @@ class _HeaderBack extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.09),
           shape: BoxShape.circle,
         ),
-        child: const Icon(Icons.arrow_back_ios_new_rounded,
-            size: 15, color: RvmColors.ivory),
+        child: Icon(Icons.arrow_back_ios_new_rounded,
+            size: 15, color: p.canvas),
       ),
     );
   }

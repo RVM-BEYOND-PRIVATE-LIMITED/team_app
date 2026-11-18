@@ -227,9 +227,10 @@ class TeamScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
       resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-      backgroundColor: RvmColors.ivory,
+      backgroundColor: p.canvas,
       appBar: header != null
           ? null
           : AppBar(
@@ -324,6 +325,7 @@ class TeamSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Padding(
       padding: padding,
@@ -356,7 +358,7 @@ class TeamSectionHeader extends StatelessWidget {
               child: Text(caption!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: text.bodySmall?.copyWith(color: RvmColors.muted)),
+                  style: text.bodySmall?.copyWith(color: p.muted)),
             ),
           ],
           const Spacer(),
@@ -399,16 +401,17 @@ class TeamPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (bg, fg, border) = switch (tone) {
       TeamPillTone.neutral => (
-          RvmColors.white,
-          RvmColors.muted,
-          RvmColors.line
+          p.card,
+          p.muted,
+          p.line
         ),
       TeamPillTone.clay => (
-          RvmColors.claySoft,
-          RvmColors.clay,
-          RvmColors.claySoft
+          p.cardElevated,
+          p.primary,
+          p.cardElevated
         ),
       TeamPillTone.orange => (
           const Color(0xFFFCEBE2),
@@ -416,33 +419,33 @@ class TeamPill extends StatelessWidget {
           const Color(0xFFF7DCCD)
         ),
       TeamPillTone.success => (
-          RvmColors.successSoft,
-          RvmColors.success,
+          p.successSoft,
+          p.success,
           const Color(0xFFCDEBDC)
         ),
       TeamPillTone.warning => (
-          RvmColors.warningSoft,
+          p.warningSoft,
           const Color(0xFF9A6A08),
           const Color(0xFFF3E4BC)
         ),
       TeamPillTone.danger => (
-          RvmColors.dangerSoft,
-          RvmColors.danger,
+          p.dangerSoft,
+          p.danger,
           const Color(0xFFF3D4D0)
         ),
       TeamPillTone.info => (
-          RvmColors.infoSoft,
-          RvmColors.info,
+          p.infoSoft,
+          p.info,
           const Color(0xFFD9E2FA)
         ),
       TeamPillTone.dark => (
           RvmColors.ironwood,
-          RvmColors.ivory,
+          p.canvas,
           RvmColors.ironwood
         ),
       TeamPillTone.onDark => (
           Colors.white.withValues(alpha: 0.13),
-          RvmColors.ivory,
+          p.canvas,
           Colors.white.withValues(alpha: 0.10)
         ),
     };
@@ -489,16 +492,16 @@ class TeamIconBadge extends StatelessWidget {
   const TeamIconBadge({
     super.key,
     required this.icon,
-    this.color = RvmColors.clay,
-    this.background = RvmColors.claySoft,
+    this.color,
+    this.background,
     this.size = 40,
     this.iconSize = 19,
     this.radius = 12,
   });
 
   final IconData icon;
-  final Color color;
-  final Color background;
+  final Color? color;
+  final Color? background;
   final double size;
   final double iconSize;
   final double radius;
@@ -509,10 +512,11 @@ class TeamIconBadge extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: background,
+        color: background ?? context.palette.cardElevated,
         borderRadius: BorderRadius.circular(radius),
       ),
-      child: Icon(icon, size: iconSize, color: color),
+      child: Icon(icon,
+          size: iconSize, color: color ?? context.palette.primary),
     );
   }
 }
@@ -626,13 +630,14 @@ class TeamSegmentedTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     final track =
-        onDark ? Colors.white.withValues(alpha: 0.13) : RvmColors.white;
-    final selected = onDark ? RvmColors.white : RvmColors.claySoft;
-    final selectedText = onDark ? RvmColors.ironwood : RvmColors.clay;
+        onDark ? Colors.white.withValues(alpha: 0.13) : p.card;
+    final selected = onDark ? p.card : p.cardElevated;
+    final selectedText = onDark ? RvmColors.ironwood : p.primary;
     final unselectedText =
-        onDark ? RvmColors.ivory.withValues(alpha: 0.78) : RvmColors.muted;
+        onDark ? p.canvas.withValues(alpha: 0.78) : p.muted;
 
     return Container(
       padding: const EdgeInsets.all(4),
@@ -641,7 +646,7 @@ class TeamSegmentedTabs extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
             color:
-                onDark ? Colors.white.withValues(alpha: 0.08) : RvmColors.line),
+                onDark ? Colors.white.withValues(alpha: 0.08) : p.line),
       ),
       child: Row(
         mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
@@ -713,13 +718,14 @@ class TeamFieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Row(
       children: [
         Expanded(
           child: Text(
             label.toUpperCase(),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: RvmColors.muted,
+                  color: p.muted,
                   fontSize: 10.5,
                   letterSpacing: 0.7,
                   fontWeight: FontWeight.w600,
@@ -736,21 +742,22 @@ class TeamProgressBar extends StatelessWidget {
   const TeamProgressBar(
       {super.key,
       required this.value,
-      this.color = RvmColors.clay,
+      this.color,
       this.height = 5});
   final double value;
-  final Color color;
+  final Color? color;
   final double height;
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: LinearProgressIndicator(
         value: value.clamp(0, 1),
         minHeight: height,
-        color: color,
-        backgroundColor: RvmColors.sand,
+        color: color ?? context.palette.primary,
+        backgroundColor: p.sand,
       ),
     );
   }
@@ -777,13 +784,14 @@ class TeamNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (bg, fg) = switch (tone) {
-      TeamPillTone.warning => (RvmColors.warningSoft, RvmColors.warning),
-      TeamPillTone.danger => (RvmColors.dangerSoft, RvmColors.danger),
-      TeamPillTone.success => (RvmColors.successSoft, RvmColors.success),
-      TeamPillTone.info => (RvmColors.infoSoft, RvmColors.info),
-      TeamPillTone.orange => (const Color(0xFFFCEBE2), RvmColors.teamSeed),
-      _ => (const Color(0xFFFCF3ED), RvmColors.clay),
+      TeamPillTone.warning => (p.warningSoft, p.warning),
+      TeamPillTone.danger => (p.dangerSoft, p.danger),
+      TeamPillTone.success => (p.successSoft, p.success),
+      TeamPillTone.info => (p.infoSoft, p.info),
+      TeamPillTone.orange => (const Color(0xFFFCEBE2), p.secondary),
+      _ => (const Color(0xFFFCF3ED), p.primary),
     };
     return Container(
       padding: const EdgeInsets.all(12),
@@ -806,14 +814,14 @@ class TeamNotice extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
-                          color: RvmColors.ink)),
+                          color: p.ink)),
                   const SizedBox(height: 2),
                 ],
                 Text(text,
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(color: RvmColors.muted, height: 1.4)),
+                        ?.copyWith(color: p.muted, height: 1.4)),
               ],
             ),
           ),
@@ -839,6 +847,7 @@ class TeamInfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -849,14 +858,14 @@ class TeamInfoRow extends StatelessWidget {
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
-                      ?.copyWith(color: RvmColors.muted))),
+                      ?.copyWith(color: p.muted))),
           const SizedBox(width: RvmSpacing.sm),
           Flexible(
             child: Text(
               value,
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: valueColor ?? RvmColors.ink,
+                    color: valueColor ?? p.ink,
                     fontWeight: FontWeight.w600,
                     fontFeatures:
                         mono ? const [FontFeature.tabularFigures()] : null,
@@ -876,23 +885,26 @@ class TeamMetricTile extends StatelessWidget {
     super.key,
     required this.value,
     required this.label,
-    this.tone = RvmColors.clay,
-    this.soft = RvmColors.cream,
+    this.tone,
+    this.soft,
     this.unit,
     this.onTap,
   });
 
   final String value;
   final String label;
-  final Color tone;
-  final Color soft;
+  final Color? tone;
+  final Color? soft;
   final String? unit;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
+    final toneColor = tone ?? p.primary;
+    final softColor = soft ?? p.cardElevated;
     return Material(
-      color: soft,
+      color: softColor,
       borderRadius: BorderRadius.circular(RvmRadii.md),
       child: InkWell(
         onTap: onTap,
@@ -901,7 +913,7 @@ class TeamMetricTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(RvmRadii.md),
-            border: Border.all(color: tone.withValues(alpha: 0.10)),
+            border: Border.all(color: toneColor.withValues(alpha: 0.10)),
           ),
           child: Column(
             children: [
@@ -911,7 +923,7 @@ class TeamMetricTile extends StatelessWidget {
                   style: Theme.of(context)
                       .textTheme
                       .titleLarge
-                      ?.copyWith(color: tone, fontSize: 20),
+                      ?.copyWith(color: toneColor, fontSize: 20),
                   children: [
                     TextSpan(text: value),
                     if (unit != null)
@@ -920,7 +932,7 @@ class TeamMetricTile extends StatelessWidget {
                         style: Theme.of(context)
                             .textTheme
                             .labelSmall
-                            ?.copyWith(color: RvmColors.muted),
+                            ?.copyWith(color: p.muted),
                       ),
                   ],
                 ),
@@ -934,7 +946,7 @@ class TeamMetricTile extends StatelessWidget {
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       fontSize: 8.5,
                       letterSpacing: 0.5,
-                      color: RvmColors.muted,
+                      color: p.muted,
                     ),
               ),
             ],
@@ -952,7 +964,7 @@ class TeamPrimaryButton extends StatelessWidget {
     required this.label,
     this.onPressed,
     this.icon,
-    this.color = RvmColors.clay,
+    this.color,
     this.height = 54,
     this.busy = false,
   });
@@ -960,7 +972,7 @@ class TeamPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
-  final Color color;
+  final Color? color;
   final double height;
   final bool busy;
 
@@ -970,7 +982,8 @@ class TeamPrimaryButton extends StatelessWidget {
       height: height,
       child: FilledButton(
         onPressed: busy ? null : onPressed,
-        style: FilledButton.styleFrom(backgroundColor: color),
+        style: FilledButton.styleFrom(
+            backgroundColor: color ?? context.palette.primary),
         child: busy
             ? const SizedBox(
                 width: 20,

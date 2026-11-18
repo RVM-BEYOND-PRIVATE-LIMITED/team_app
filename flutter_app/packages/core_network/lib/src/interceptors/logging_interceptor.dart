@@ -7,10 +7,14 @@
 
 import 'package:dio/dio.dart';
 
+import '../redact.dart';
+
 /// Lightweight request/response/error logger (method · URL · status · duration
 /// · real cause). Success bodies are NOT logged — avoids leaking tokens/PII,
 /// keeping a clean Play data-safety posture. Error envelopes
 /// (`{error:{code,message}}`) carry no secrets, so their cause IS logged.
+/// URLs and causes pass through [Redact] first, so a phone number or a name in
+/// a path, a query or an error message never reaches the log (team_app #61).
 class LoggingInterceptor extends Interceptor {
   LoggingInterceptor();
 
@@ -19,13 +23,14 @@ class LoggingInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra[_key] = DateTime.now().millisecondsSinceEpoch;
-    print('[rvm.net] → ${options.method} ${options.uri}');
+    print('[rvm.net] → ${options.method} ${Redact.uri(options.uri)}');
     handler.next(options);
   }
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    print('[rvm.net] ← ${response.statusCode} ${response.requestOptions.uri} '
+    print('[rvm.net] ← ${response.statusCode} '
+        '${Redact.uri(response.requestOptions.uri)} '
         '${_ms(response.requestOptions)}');
     handler.next(response);
   }
@@ -33,8 +38,10 @@ class LoggingInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final status = err.response?.statusCode ?? err.type.name;
-    final cause = _serverError(err.response?.data) ?? err.error?.toString() ?? '';
-    print('[rvm.net] ✗ $status ${err.requestOptions.method} ${err.requestOptions.uri} '
+    final cause = Redact.text(
+        _serverError(err.response?.data) ?? err.error?.toString() ?? '');
+    print('[rvm.net] ✗ $status ${err.requestOptions.method} '
+        '${Redact.uri(err.requestOptions.uri)} '
         '${_ms(err.requestOptions)} (${err.type.name})'
         '${cause.isEmpty ? '' : ' — $cause'}');
     handler.next(err);

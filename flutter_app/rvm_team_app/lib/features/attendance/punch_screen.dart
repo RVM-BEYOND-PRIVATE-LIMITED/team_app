@@ -82,6 +82,7 @@ class _PunchView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, PunchState state, MyAttendance data) {
+    final p = context.palette;
     final today = data.today;
     final device = data.device;
     final isIn = today?.punchedIn ?? false;
@@ -145,11 +146,11 @@ class _PunchView extends StatelessWidget {
                       size: 32,
                       iconSize: 15,
                       color: today.punches[i].kind == 'in'
-                          ? RvmColors.success
-                          : RvmColors.clay,
+                          ? p.success
+                          : p.primary,
                       background: today.punches[i].kind == 'in'
-                          ? RvmColors.successSoft
-                          : RvmColors.claySoft,
+                          ? p.successSoft
+                          : p.cardElevated,
                     ),
                     title: Text(
                         today.punches[i].kind == 'in'
@@ -181,7 +182,7 @@ class _PunchView extends StatelessWidget {
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
-                ?.copyWith(fontSize: 10, color: RvmColors.subtle),
+                ?.copyWith(fontSize: 10, color: p.subtle),
           ),
         ),
         if (state.punching) ...[
@@ -265,6 +266,7 @@ class _StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     final shiftText = (shift?.start != null && shift?.end != null)
         ? 'Shift: ${shift!.start} – ${shift!.end}'
@@ -309,21 +311,21 @@ class _StatusCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: RvmColors.cream,
+              color: p.cardElevated,
               borderRadius: BorderRadius.circular(RvmRadii.sm),
-              border: Border.all(color: RvmColors.sand),
+              border: Border.all(color: p.sand),
             ),
             child: Row(
               children: [
-                const Icon(Icons.schedule_rounded,
-                    size: 14, color: RvmColors.muted),
+                Icon(Icons.schedule_rounded,
+                    size: 14, color: p.muted),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text('$shiftText$branchText',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: text.bodySmall
-                          ?.copyWith(fontSize: 11.5, color: RvmColors.muted)),
+                          ?.copyWith(fontSize: 11.5, color: p.muted)),
                 ),
               ],
             ),
@@ -340,7 +342,7 @@ class _StatusCard extends StatelessWidget {
                 : (allowed ? Icons.add_rounded : Icons.info_outline_rounded),
             color: isIn
                 ? RvmColors.ironwood
-                : (allowed ? RvmColors.clay : RvmColors.muted),
+                : (allowed ? p.primary : p.muted),
             busy: canPunch.punching,
             onPressed: (canPunch.punching || done)
                 ? null
@@ -386,8 +388,8 @@ class _StatusCard extends StatelessWidget {
                         ? 'Phone will be registered'
                         : 'Phone not verified'),
                 color: phoneVerified || phoneWillRegister
-                    ? RvmColors.success
-                    : RvmColors.danger,
+                    ? p.success
+                    : p.danger,
               ),
               const SizedBox(width: 14),
               _MiniStatus(
@@ -396,8 +398,8 @@ class _StatusCard extends StatelessWidget {
                     ? 'Office geofence active'
                     : 'Geofence not set up',
                 color: branch?.configured == true
-                    ? RvmColors.success
-                    : RvmColors.warning,
+                    ? p.success
+                    : p.warning,
               ),
             ],
           ),
@@ -411,10 +413,11 @@ class _StatusCard extends StatelessWidget {
   }
 
   void _showDeviceBlock(BuildContext context, String? reason) {
+    final p = context.palette;
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.phone_android_rounded, color: RvmColors.danger),
+        icon: Icon(Icons.phone_android_rounded, color: p.danger),
         title: const Text('Punch unavailable on this phone'),
         content: Text(reason ??
             'This phone is not the one registered for your attendance. Ask HR to reset it.'),
@@ -466,6 +469,7 @@ class _LiveClockState extends State<_LiveClock> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final clock =
         '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}:${_now.second.toString().padLeft(2, '0')}';
     return Column(
@@ -482,7 +486,7 @@ class _LiveClockState extends State<_LiveClock> {
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontSize: 8,
                 letterSpacing: 0.6,
-                color: RvmColors.subtle,
+                color: p.subtle,
                 fontWeight: FontWeight.w600)),
       ],
     );
@@ -511,6 +515,7 @@ class _MiniStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Flexible(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -522,7 +527,7 @@ class _MiniStatus extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: RvmColors.muted,
+                      color: p.muted,
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0,
@@ -561,8 +566,9 @@ class _MiniAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Material(
-      color: RvmColors.white,
+      color: p.card,
       borderRadius: BorderRadius.circular(RvmRadii.md),
       child: InkWell(
         onTap: onTap,
@@ -571,12 +577,12 @@ class _MiniAction extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(RvmRadii.md),
-            border: Border.all(color: RvmColors.line),
+            border: Border.all(color: p.line),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 16, color: RvmColors.clay),
+              Icon(icon, size: 16, color: p.primary),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(label,
@@ -584,7 +590,7 @@ class _MiniAction extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           fontSize: 11,
-                          color: RvmColors.ink,
+                          color: p.ink,
                           fontWeight: FontWeight.w600,
                         )),
               ),
@@ -604,6 +610,7 @@ class _MonthOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     var present = 0, half = 0, absent = 0, off = 0;
     for (final d in days) {
       switch (d.status) {
@@ -664,12 +671,12 @@ class _MonthOverview extends StatelessWidget {
                   Text('View full log',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                             fontSize: 10.5,
-                            color: RvmColors.clay,
+                            color: p.primary,
                             fontWeight: FontWeight.w600,
                           )),
                   const SizedBox(width: 2),
-                  const Icon(Icons.arrow_forward_rounded,
-                      size: 12, color: RvmColors.clay),
+                  Icon(Icons.arrow_forward_rounded,
+                      size: 12, color: p.primary),
                 ],
               ),
             ),
@@ -682,32 +689,32 @@ class _MonthOverview extends StatelessWidget {
               child: TeamMetricTile(
                   value: '$present',
                   label: 'Present',
-                  tone: RvmColors.success,
-                  soft: RvmColors.successSoft),
+                  tone: p.success,
+                  soft: p.successSoft),
             ),
             const SizedBox(width: 6),
             Expanded(
               child: TeamMetricTile(
                   value: '$half',
                   label: 'Half-day',
-                  tone: RvmColors.warning,
-                  soft: RvmColors.warningSoft),
+                  tone: p.warning,
+                  soft: p.warningSoft),
             ),
             const SizedBox(width: 6),
             Expanded(
               child: TeamMetricTile(
                   value: '$absent',
                   label: 'Absent',
-                  tone: RvmColors.danger,
-                  soft: RvmColors.dangerSoft),
+                  tone: p.danger,
+                  soft: p.dangerSoft),
             ),
             const SizedBox(width: 6),
             Expanded(
               child: TeamMetricTile(
                   value: '$off',
                   label: 'Off-days',
-                  tone: RvmColors.muted,
-                  soft: RvmColors.cream),
+                  tone: p.muted,
+                  soft: p.cardElevated),
             ),
           ],
         ),
@@ -771,12 +778,13 @@ class _DayRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (color, soft) = switch (day.status) {
-      'present' => (RvmColors.success, RvmColors.successSoft),
-      'absent' => (RvmColors.danger, RvmColors.dangerSoft),
-      'half_day' => (RvmColors.warning, RvmColors.warningSoft),
-      'holiday' => (RvmColors.info, RvmColors.infoSoft),
-      _ => (RvmColors.subtle, RvmColors.cream),
+      'present' => (p.success, p.successSoft),
+      'absent' => (p.danger, p.dangerSoft),
+      'half_day' => (p.warning, p.warningSoft),
+      'holiday' => (p.info, p.infoSoft),
+      _ => (p.subtle, p.cardElevated),
     };
     final label = _statusLabel(day.status);
     final inTime = day.firstIn == null
@@ -827,7 +835,7 @@ class _DayRow extends StatelessWidget {
                           style:
                               Theme.of(context).textTheme.labelSmall?.copyWith(
                                     color: day.status == 'present'
-                                        ? RvmColors.success
+                                        ? p.success
                                         : color,
                                     fontSize: 8.5,
                                     fontWeight: FontWeight.w700,
@@ -840,7 +848,7 @@ class _DayRow extends StatelessWidget {
                               .textTheme
                               .bodySmall
                               ?.copyWith(
-                                  fontSize: 9.5, color: RvmColors.muted)),
+                                  fontSize: 9.5, color: p.muted)),
                     ] else if (note != null) ...[
                       const SizedBox(width: 6),
                       Flexible(
@@ -851,7 +859,7 @@ class _DayRow extends StatelessWidget {
                                 .textTheme
                                 .bodySmall
                                 ?.copyWith(
-                                    fontSize: 9.5, color: RvmColors.muted)),
+                                    fontSize: 9.5, color: p.muted)),
                       ),
                     ],
                   ],
@@ -867,7 +875,7 @@ class _DayRow extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w600,
-                    color: RvmColors.ink,
+                    color: p.ink,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   )),
               const SizedBox(height: 2),
@@ -878,8 +886,8 @@ class _DayRow extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 8.5,
                       color: day.status == 'present'
-                          ? RvmColors.success
-                          : RvmColors.subtle,
+                          ? p.success
+                          : p.subtle,
                     ),
               ),
             ],
@@ -948,6 +956,7 @@ class _SetPasswordCardState extends State<_SetPasswordCard> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final busy = context.select<PunchBloc, bool>((b) => b.state.punching);
     return Center(
       child: SingleChildScrollView(
@@ -977,7 +986,7 @@ class _SetPasswordCardState extends State<_SetPasswordCard> {
                   style: Theme.of(context)
                       .textTheme
                       .bodyMedium
-                      ?.copyWith(color: RvmColors.muted),
+                      ?.copyWith(color: p.muted),
                 ),
                 const SizedBox(height: RvmSpacing.lg),
                 TextFormField(
@@ -1043,6 +1052,7 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Padding(
       padding:
@@ -1076,7 +1086,7 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
               icon: Icons.my_location_rounded,
               title: 'DETECTED LOCATION',
               value: widget.branch ?? 'Location unavailable',
-              color: RvmColors.success,
+              color: p.success,
             ),
             const SizedBox(height: 8),
             _sheetInfo(
@@ -1088,12 +1098,12 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
                   : (widget.device!.thisPhone == 'own'
                       ? 'Registered primary phone'
                       : 'Unregistered phone'),
-              color: RvmColors.clay,
+              color: p.primary,
             ),
             const SizedBox(height: 14),
             Text('ISSUE REASON',
                 style: text.labelSmall?.copyWith(
-                    fontSize: 9.5, letterSpacing: 0.7, color: RvmColors.muted)),
+                    fontSize: 9.5, letterSpacing: 0.7, color: p.muted)),
             const SizedBox(height: 8),
             for (var i = 0; i < _reasons.length; i++)
               Padding(
@@ -1105,12 +1115,12 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
                         horizontal: 11, vertical: 10),
                     decoration: BoxDecoration(
                       color:
-                          _reason == i ? RvmColors.claySoft : RvmColors.white,
+                          _reason == i ? p.cardElevated : p.card,
                       borderRadius: BorderRadius.circular(RvmRadii.sm),
                       border: Border.all(
                           color: _reason == i
-                              ? RvmColors.clay.withValues(alpha: 0.35)
-                              : RvmColors.line),
+                              ? p.primary.withValues(alpha: 0.35)
+                              : p.line),
                     ),
                     child: Row(
                       children: [
@@ -1120,7 +1130,7 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
                               : Icons.radio_button_unchecked,
                           size: 15,
                           color:
-                              _reason == i ? RvmColors.clay : RvmColors.subtle,
+                              _reason == i ? p.primary : p.subtle,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1131,8 +1141,8 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
                                     ? FontWeight.w600
                                     : FontWeight.w400,
                                 color: _reason == i
-                                    ? RvmColors.ink
-                                    : RvmColors.muted,
+                                    ? p.ink
+                                    : p.muted,
                               )),
                         ),
                         if (i == 0)
@@ -1148,7 +1158,7 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
             const SizedBox(height: 6),
             Text('ADD REMARK FOR HR',
                 style: text.labelSmall?.copyWith(
-                    fontSize: 9.5, letterSpacing: 0.7, color: RvmColors.muted)),
+                    fontSize: 9.5, letterSpacing: 0.7, color: p.muted)),
             const SizedBox(height: 6),
             TextField(
               controller: widget.controller,
@@ -1167,7 +1177,7 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
               controlAffinity: ListTileControlAffinity.leading,
               title: Text('Register this phone with HR',
                   style: text.bodySmall
-                      ?.copyWith(fontSize: 11, color: RvmColors.ink)),
+                      ?.copyWith(fontSize: 11, color: p.ink)),
             ),
             const SizedBox(height: 6),
             TeamPrimaryButton(
@@ -1177,8 +1187,8 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
             const SizedBox(height: 4),
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: RvmColors.muted)),
+              child: Text('Cancel',
+                  style: TextStyle(color: p.muted)),
             ),
           ],
         ),
@@ -1191,12 +1201,13 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
       required String title,
       required String value,
       required Color color}) {
+    final p = context.palette;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
-        color: RvmColors.cream,
+        color: p.cardElevated,
         borderRadius: BorderRadius.circular(RvmRadii.sm),
-        border: Border.all(color: RvmColors.sand),
+        border: Border.all(color: p.sand),
       ),
       child: Row(
         children: [
@@ -1210,13 +1221,13 @@ class _GpsIssueSheetState extends State<_GpsIssueSheet> {
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         fontSize: 7.5,
                         letterSpacing: 0.6,
-                        color: RvmColors.subtle)),
+                        color: p.subtle)),
                 const SizedBox(height: 1),
                 Text(value,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w600,
-                        color: RvmColors.ink)),
+                        color: p.ink)),
               ],
             ),
           ),

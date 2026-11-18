@@ -7,11 +7,11 @@ import 'package:test/test.dart';
 
 /// Fails the first [failures] calls with a DNS lookup failure, then answers 200.
 class _FlakyAdapter implements HttpClientAdapter {
-  _FlakyAdapter({this.failures = 0, this.status = 200, this.body = '{"ok":true}'});
+  _FlakyAdapter({this.failures = 0});
 
   final int failures;
-  final int status;
-  final String body;
+  final int status = 200;
+  final String body = '{"ok":true}';
   int calls = 0;
 
   @override

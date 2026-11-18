@@ -436,6 +436,7 @@ class CelebrationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final bloc = context.read<WallBloc>();
     final items = <_CelebrationItem>[
       for (final c in celebrations.birthdays)
@@ -482,8 +483,8 @@ class CelebrationsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.celebration_outlined,
-                    size: 18, color: RvmColors.teamSeed),
+                Icon(Icons.celebration_outlined,
+                    size: 18, color: p.secondary),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text('Celebrations',
@@ -493,7 +494,7 @@ class CelebrationsCard extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .labelSmall
-                        ?.copyWith(color: RvmColors.subtle)),
+                        ?.copyWith(color: p.subtle)),
               ],
             ),
             const SizedBox(height: 10),
@@ -516,6 +517,7 @@ class CelebrationsCard extends StatelessWidget {
   }
 
   void _openCelebration(BuildContext context, _CelebrationItem item) {
+    final p = context.palette;
     final card = item.card;
     showModalBottomSheet<void>(
       context: context,
@@ -528,8 +530,8 @@ class CelebrationsCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 30,
-              backgroundColor: item.kind.soft,
-              child: Icon(item.kind.icon, color: item.kind.color, size: 28),
+              backgroundColor: item.kind.soft(p),
+              child: Icon(item.kind.icon, color: item.kind.color(p), size: 28),
             ),
             const SizedBox(height: RvmSpacing.sm),
             Text(card.employee.fullName,
@@ -554,9 +556,9 @@ class CelebrationsCard extends StatelessWidget {
                 child: card.wishedByMe
                     ? Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
+                        children: [
                           Icon(Icons.check_circle,
-                              color: RvmColors.success, size: 18),
+                              color: p.success, size: 18),
                           SizedBox(width: 6),
                           Text('Already wished'),
                         ],
@@ -590,18 +592,18 @@ extension on _CelebrationKind {
         _CelebrationKind.promotion => Icons.trending_up_rounded,
       };
 
-  Color get color => switch (this) {
-        _CelebrationKind.birthday => RvmColors.danger,
-        _CelebrationKind.anniversary => RvmColors.warning,
-        _CelebrationKind.newJoiner => RvmColors.success,
-        _CelebrationKind.promotion => RvmColors.info,
+  Color color(RvmPalette p) => switch (this) {
+        _CelebrationKind.birthday => p.danger,
+        _CelebrationKind.anniversary => p.warning,
+        _CelebrationKind.newJoiner => p.success,
+        _CelebrationKind.promotion => p.info,
       };
 
-  Color get soft => switch (this) {
-        _CelebrationKind.birthday => RvmColors.dangerSoft,
-        _CelebrationKind.anniversary => RvmColors.warningSoft,
-        _CelebrationKind.newJoiner => RvmColors.successSoft,
-        _CelebrationKind.promotion => RvmColors.infoSoft,
+  Color soft(RvmPalette p) => switch (this) {
+        _CelebrationKind.birthday => p.dangerSoft,
+        _CelebrationKind.anniversary => p.warningSoft,
+        _CelebrationKind.newJoiner => p.successSoft,
+        _CelebrationKind.promotion => p.infoSoft,
       };
 
   String label(String? on) => switch (this) {
@@ -633,6 +635,7 @@ class _CelebrationIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final card = item.card;
     final name = card.employee.fullName.trim();
     final label = name.isEmpty ? 'Someone' : name;
@@ -651,13 +654,13 @@ class _CelebrationIcon extends StatelessWidget {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: item.kind.soft,
+                    color: item.kind.soft(p),
                     shape: BoxShape.circle,
                     border: Border.all(
-                        color: item.kind.color.withValues(alpha: 0.35)),
+                        color: item.kind.color(p).withValues(alpha: 0.35)),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(item.kind.icon, color: item.kind.color, size: 24),
+                  child: Icon(item.kind.icon, color: item.kind.color(p), size: 24),
                 ),
                 Positioned(
                   right: -2,
@@ -666,9 +669,9 @@ class _CelebrationIcon extends StatelessWidget {
                     width: 18,
                     height: 18,
                     decoration: BoxDecoration(
-                      color: done ? RvmColors.success : RvmColors.teamSeed,
+                      color: done ? p.success : p.secondary,
                       shape: BoxShape.circle,
-                      border: Border.all(color: RvmColors.white, width: 1.5),
+                      border: Border.all(color: p.card, width: 1.5),
                     ),
                     child: Icon(done ? Icons.check : Icons.auto_awesome,
                         size: 10, color: Colors.white),
@@ -684,7 +687,7 @@ class _CelebrationIcon extends StatelessWidget {
                 style: Theme.of(context)
                     .textTheme
                     .labelSmall
-                    ?.copyWith(color: RvmColors.ink, fontSize: 9.5)),
+                    ?.copyWith(color: p.ink, fontSize: 9.5)),
             const SizedBox(height: 1),
             Text(_shortKind(item.kind),
                 maxLines: 1,
@@ -693,7 +696,7 @@ class _CelebrationIcon extends StatelessWidget {
                 style: Theme.of(context)
                     .textTheme
                     .labelSmall
-                    ?.copyWith(fontSize: 8.5, color: item.kind.color)),
+                    ?.copyWith(fontSize: 8.5, color: item.kind.color(p))),
             const Spacer(),
             if (item.onWish != null && !card.wishedByMe)
               SizedBox(
@@ -704,7 +707,7 @@ class _CelebrationIcon extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     minimumSize: const Size(0, 24),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    foregroundColor: RvmColors.teamSeed,
+                    foregroundColor: p.secondary,
                   ),
                   child: const Text('Wish',
                       style:
@@ -750,6 +753,7 @@ class GivePraiseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(RvmSpacing.md),
@@ -758,10 +762,10 @@ class GivePraiseCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const TeamIconBadge(
+                TeamIconBadge(
                     icon: Icons.emoji_events_outlined,
-                    color: RvmColors.teamSeed,
-                    background: RvmColors.claySoft),
+                    color: p.secondary,
+                    background: p.cardElevated),
                 const SizedBox(width: RvmSpacing.sm),
                 Expanded(
                   child: Column(
@@ -788,7 +792,7 @@ class GivePraiseCard extends StatelessWidget {
                       _badgeGroupIcons[b.forGroup] ??
                           Icons.emoji_events_outlined,
                       size: 15,
-                      color: RvmColors.teamSeed,
+                      color: p.secondary,
                     ),
                     label:
                         Text(b.label, style: const TextStyle(fontSize: 11.5)),
@@ -810,6 +814,7 @@ class AnnouncementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final read = announcement.readAt != null;
     return Card(
       child: Padding(
@@ -832,9 +837,9 @@ class AnnouncementCard extends StatelessWidget {
             if (announcement.needsAck) ...[
               const SizedBox(height: RvmSpacing.sm),
               if (announcement.acked)
-                Row(children: const [
+                Row(children: [
                   Icon(Icons.verified_outlined,
-                      size: 16, color: RvmColors.success),
+                      size: 16, color: p.success),
                   SizedBox(width: 4),
                   Text('Acknowledged')
                 ])
@@ -885,6 +890,7 @@ class WallPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     // Compact by design (KP): tight padding and gaps so more of the feed fits
     // on one screen, with the author's role on the meta line for context.
     final meta = [
@@ -918,9 +924,9 @@ class WallPostCard extends StatelessWidget {
                 if (post.kind == 'praise')
                   _Chip(
                       label: post.badgeLabel ?? 'Praise',
-                      color: RvmColors.teamSeed)
+                      color: p.secondary)
                 else if (post.kind == 'poll')
-                  const _Chip(label: 'Poll', color: RvmColors.brand),
+                  _Chip(label: 'Poll', color: p.brand),
                 if (onEdit != null || onDelete != null || onReport != null)
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert, size: 18),

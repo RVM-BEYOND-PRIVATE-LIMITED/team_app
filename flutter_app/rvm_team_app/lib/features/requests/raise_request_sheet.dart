@@ -389,6 +389,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final types = _family == 'leave'
         // CL is automatic (#43): "Leave" uses CL where the person has it this
         // month and writes the rest as LWP; "Without pay" is all LWP.
@@ -483,7 +484,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                       'Leave in the next 3 days cannot be applied for here. Contact HR, who will enter it, and tell your approver. Leave can be applied for from the 4th day.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontSize: 10.5,
-                        color: RvmColors.subtle,
+                        color: p.subtle,
                       ),
                 ),
                 const SizedBox(height: RvmSpacing.sm),
@@ -545,7 +546,7 @@ class _RaiseSheetState extends State<_RaiseSheet> {
                           : 'Written as leave without pay. A half day counts as 0.5.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontSize: 10.5,
-                        color: RvmColors.subtle,
+                        color: p.subtle,
                       ),
                 ),
                 if (leave == null) ...[
@@ -659,6 +660,7 @@ class _RoutePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final summary = route?.summary;
     if (summary == null) {
       return Text(
@@ -666,7 +668,7 @@ class _RoutePreview extends StatelessWidget {
         style: Theme.of(context)
             .textTheme
             .bodySmall
-            ?.copyWith(fontSize: 10.5, color: RvmColors.subtle),
+            ?.copyWith(fontSize: 10.5, color: p.subtle),
       );
     }
     final note = route?.routingNoteLabel;

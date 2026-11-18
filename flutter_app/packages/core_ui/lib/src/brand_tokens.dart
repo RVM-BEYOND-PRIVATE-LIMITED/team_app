@@ -9,7 +9,7 @@ abstract final class RvmColors {
   static const brand = Color(0xFF7D432E); // clay — primary action
   static const studentSeed = Color(0xFF1E5EFF);
   static const staffSeed = Color(0xFF0F766E);
-  static const teamSeed = Color(0xFFC0562C); // Forge Orange accent
+  static const teamSeed = Color(0xFFB04E24); // Forge Orange accent (AA on ivory)
   static const ironwood = Color(0xFF2E1712); // header top
   static const ironwoodEnd = Color(0xFF52201A); // header gradient end
   static const clay = Color(0xFF7D432E);
@@ -20,17 +20,17 @@ abstract final class RvmColors {
   static const sand = Color(0xFFF3EBE1);
   static const line = Color(0xFFEDE4DA); // hairline card border
   static const ink = Color(0xFF2D2420);
-  static const muted = Color(0xFF8B7D73);
-  static const subtle = Color(0xFFB3A79D);
+  static const muted = Color(0xFF6E6157); // AA on ivory and white
+  static const subtle = Color(0xFF7B6E64); // AA on white
   static const white = Color(0xFFFFFFFF);
 
-  static const danger = Color(0xFFC5453A);
+  static const danger = Color(0xFFB23A30);
   static const dangerSoft = Color(0xFFFBECEA);
-  static const success = Color(0xFF1F9D6B);
+  static const success = Color(0xFF147A52);
   static const successSoft = Color(0xFFE7F6EE);
-  static const warning = Color(0xFFC58A12);
+  static const warning = Color(0xFF8A5A00);
   static const warningSoft = Color(0xFFFDF6E3);
-  static const info = Color(0xFF4E6FD0);
+  static const info = Color(0xFF3D5BB5);
   static const infoSoft = Color(0xFFEEF2FD);
 }
 

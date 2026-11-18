@@ -96,6 +96,7 @@ class _IdCardScreenState extends State<IdCardScreen> {
   }
 
   Widget _body() {
+    final p = context.palette;
     if (_loading) return const AppLoading();
     if (_failure != null) {
       return AppError(message: _failure!.message, onRetry: _load);
@@ -126,7 +127,7 @@ class _IdCardScreenState extends State<IdCardScreen> {
                       width: 80,
                       height: 80,
                       fallback: Container(
-                        color: RvmColors.ivory,
+                        color: p.canvas,
                         alignment: Alignment.center,
                         child: Text(
                           card.fullName.isEmpty
@@ -145,16 +146,16 @@ class _IdCardScreenState extends State<IdCardScreen> {
                 Text(card.fullName,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: RvmColors.ivory, fontWeight: FontWeight.w700)),
+                        color: p.canvas, fontWeight: FontWeight.w700)),
                 if (card.designation != null)
                   Text(card.designation!,
                       style: TextStyle(
-                          color: RvmColors.ivory.withValues(alpha: 0.85))),
+                          color: p.canvas.withValues(alpha: 0.85))),
                 if (card.employeeCode != null) ...[
                   const SizedBox(height: 4),
                   Text('Employee ${card.employeeCode}',
                       style: TextStyle(
-                          color: RvmColors.ivory.withValues(alpha: 0.75))),
+                          color: p.canvas.withValues(alpha: 0.75))),
                 ],
                 const SizedBox(height: 8),
                 Text(
@@ -163,11 +164,11 @@ class _IdCardScreenState extends State<IdCardScreen> {
                         .join(' · '),
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        color: RvmColors.ivory.withValues(alpha: 0.75))),
+                        color: p.canvas.withValues(alpha: 0.75))),
                 const SizedBox(height: 8),
                 Text('ACTIVE EMPLOYEE',
                     style: TextStyle(
-                        color: RvmColors.teamSeed,
+                        color: p.secondary,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1)),
               ],
@@ -212,7 +213,7 @@ class _IdCardScreenState extends State<IdCardScreen> {
                           icon: const Icon(Icons.share_outlined, size: 16),
                           label: const Text('Share'),
                           style: FilledButton.styleFrom(
-                              backgroundColor: RvmColors.clay),
+                              backgroundColor: p.primary),
                         ),
                       ),
                     ],

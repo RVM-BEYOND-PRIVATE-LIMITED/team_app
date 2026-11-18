@@ -15,10 +15,11 @@ class FacultyAttendanceInbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return BlocProvider(
       create: (_) => getIt<LoadBloc<FacultyDay>>()..add(const LoadRequested()),
       child: Scaffold(
-        backgroundColor: RvmColors.ivory,
+        backgroundColor: p.canvas,
         body: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) => [
             TeamCollapsingHeader(
@@ -172,6 +173,7 @@ class _SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final time = [
       if (session.startTime != null)
         '${session.startTime}${session.endTime != null ? '–${session.endTime}' : ''}',
@@ -220,8 +222,8 @@ class _SessionCard extends StatelessWidget {
             dense: true,
           ),
           const SizedBox(width: 2),
-          const Icon(Icons.chevron_right_rounded,
-              size: 18, color: RvmColors.subtle),
+          Icon(Icons.chevron_right_rounded,
+              size: 18, color: p.subtle),
         ],
       ),
     );

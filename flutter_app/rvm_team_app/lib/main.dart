@@ -2,21 +2,24 @@ import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:core_auth/core_auth.dart';
+import 'package:core_network/core_network.dart' show ApiEnvironment;
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 
 import 'app_bloc_observer.dart';
 import 'app_crash.dart';
 import 'app_feedback.dart';
 import 'bloc/connectivity_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
+import 'bloc/team_modules_bloc.dart';
 import 'data/notification_permission.dart';
 import 'features/startup/version_gate.dart';
 import 'injection.dart';
 import 'push/push_service.dart';
-import 'router/app_router.dart';
+import 'router/team_router_host.dart';
+import 'theme/theme_cubit.dart';
+import 'widgets/env_ribbon.dart';
 
 void main() {
   // Every async gap is guarded. A missed API refusal, a plugin failure or a
@@ -99,18 +102,19 @@ class _SafeErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Material(
-        color: RvmColors.ivory,
+        color: p.canvas,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline_rounded,
-                    size: 40, color: RvmColors.danger),
+                Icon(Icons.error_outline_rounded,
+                    size: 40, color: p.danger),
                 const SizedBox(height: 12),
                 Text(
                   'Something went wrong. Please reopen the app.',
@@ -135,8 +139,13 @@ class TeamApp extends StatefulWidget {
 
 class _TeamAppState extends State<TeamApp> {
   final TeamAuthBloc _auth = getIt<TeamAuthBloc>();
-  late final GoRouter _router =
-      createRouter(_auth, navigatorKey: rootNavigatorKey);
+
+  /// The staff modules open to the person (team_app #50 item 5). The router's
+  /// module guard reads it ([TeamRouterHost], item 7b): nothing is open before
+  /// its first answer, so every module route falls back to /home, as before.
+  final TeamModulesBloc _modules = getIt<TeamModulesBloc>();
+  final ThemeCubit _theme = getIt<ThemeCubit>();
+  late final AppLifecycleListener _themeLifecycle;
 
   static const _notificationPermission = NotificationPermission();
   bool _askedNotifications = false;
@@ -147,7 +156,21 @@ class _TeamAppState extends State<TeamApp> {
     if (_auth.state.status == TeamAuthStatus.authenticated) {
       _askNotificationPermission();
       unawaited(PushService.instance.onSignedIn());
+      unawaited(_theme.load());
     }
+    _themeLifecycle = AppLifecycleListener(
+      onResume: () {
+        if (_auth.state.status == TeamAuthStatus.authenticated) {
+          unawaited(_theme.resume());
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _themeLifecycle.dispose();
+    super.dispose();
   }
 
   /// Android 13+ hides notification alerts until POST_NOTIFICATIONS is granted.
@@ -166,30 +189,45 @@ class _TeamAppState extends State<TeamApp> {
       providers: [
         BlocProvider.value(value: _auth),
         BlocProvider.value(value: getIt<ConnectivityBloc>()),
+        BlocProvider.value(value: _modules),
+        BlocProvider.value(value: _theme),
       ],
       child: BlocListener<TeamAuthBloc, TeamAuthState>(
         listenWhen: (p, c) => p.status != c.status,
         listener: (_, state) {
-          _router.refresh();
           if (state.status == TeamAuthStatus.authenticated) {
             _askNotificationPermission();
             unawaited(PushService.instance.onSignedIn());
+            unawaited(_theme.load());
+          } else if (state.status == TeamAuthStatus.unauthenticated) {
+            unawaited(_theme.signOut());
           }
         },
-        child: MaterialApp.router(
-          title: 'Team RVM',
-          scaffoldMessengerKey: rootScaffoldMessengerKey,
-          debugShowCheckedModeBanner: false,
-          // The whole design system (ivory scaffolds, white cards, clay
-          // surfaces) is authored for the light palette: following the system
-          // into dark mode mixes white cards with dark fills and washed-out
-          // text (OnePlus 12R, issue14). Locked to light so every device shows
-          // the same colors. Revisit only with a full dark-mode audit.
-          theme: RvmTheme.light(seed: RvmColors.clay),
-          themeMode: ThemeMode.light,
-          builder: (context, child) =>
-              VersionGate(child: child ?? const SizedBox.shrink()),
-          routerConfig: _router,
+        // The router: its guards run again on every session change, and its
+        // module guard follows the modules bloc (#50 items 5 and 7b).
+        child: BlocBuilder<ThemeCubit, ThemeState>(
+          builder: (context, theme) => TeamRouterHost(
+            auth: _auth,
+            modules: _modules,
+            navigatorKey: rootNavigatorKey,
+            builder: (context, router) => MaterialApp.router(
+              title: 'Team RVM',
+              scaffoldMessengerKey: rootScaffoldMessengerKey,
+              debugShowCheckedModeBanner: false,
+              // The switch in Me decides; while the server's theme switch is
+              // closed ThemeCubit keeps themeMode at Light (#115/#121).
+              theme: RvmTheme.light(seed: RvmColors.clay),
+              darkTheme: RvmTheme.dark(seed: RvmColors.clay),
+              themeMode: theme.mode,
+              // The TEST SERVER ribbon (#60) is off unless
+              // SHOW_ENV_RIBBON=true, and never shows against the live servers.
+              builder: (context, child) => EnvRibbon(
+                environment: getIt<ApiEnvironment>(),
+                child: VersionGate(child: child ?? const SizedBox.shrink()),
+              ),
+              routerConfig: router,
+            ),
+          ),
         ),
       ),
     );

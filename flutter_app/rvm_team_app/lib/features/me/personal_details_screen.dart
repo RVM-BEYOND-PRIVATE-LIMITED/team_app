@@ -385,6 +385,7 @@ class _WorkExperienceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final dates = entry.isCurrent
         ? '${_monthYear(entry.fromDate)} – Present'
         : entry.toDate == null
@@ -425,8 +426,8 @@ class _WorkExperienceCard extends StatelessWidget {
                   tooltip: 'Remove',
                   visualDensity: VisualDensity.compact,
                   onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline,
-                      size: 18, color: RvmColors.danger),
+                  icon: Icon(Icons.delete_outline,
+                      size: 18, color: p.danger),
                 ),
               ],
             ),
@@ -434,8 +435,8 @@ class _WorkExperienceCard extends StatelessWidget {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  const Icon(Icons.location_on_outlined,
-                      size: 13, color: RvmColors.subtle),
+                  Icon(Icons.location_on_outlined,
+                      size: 13, color: p.subtle),
                   const SizedBox(width: 3),
                   Text(entry.location!,
                       style: Theme.of(context).textTheme.labelSmall),
@@ -478,10 +479,11 @@ class _WorkPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (color, background) = switch (tone) {
-      _WorkTone.info => (RvmColors.info, RvmColors.infoSoft),
-      _WorkTone.success => (RvmColors.success, RvmColors.successSoft),
-      _WorkTone.neutral => (RvmColors.muted, RvmColors.cream),
+      _WorkTone.info => (p.info, p.infoSoft),
+      _WorkTone.success => (p.success, p.successSoft),
+      _WorkTone.neutral => (p.muted, p.cardElevated),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -624,6 +626,7 @@ class _WorkExperienceSheetState extends State<_WorkExperienceSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + bottom),
@@ -707,7 +710,7 @@ class _WorkExperienceSheetState extends State<_WorkExperienceSheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(_error!,
-                    style: const TextStyle(color: RvmColors.danger)),
+                    style: TextStyle(color: p.danger)),
               ),
             const SizedBox(height: RvmSpacing.md),
             FilledButton.icon(

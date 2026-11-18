@@ -67,6 +67,7 @@ class _ColleagueProfileSheetState extends State<_ColleagueProfileSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final person = _profile?.person ?? widget.person;
     final photoUrl = _profile?.photoUrl;
     final badges = _profile?.badges ?? const <EarnedBadge>[];
@@ -88,8 +89,8 @@ class _ColleagueProfileSheetState extends State<_ColleagueProfileSheet> {
                 tooltip: 'Refresh profile',
                 onPressed: _load,
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.refresh_rounded,
-                    size: 19, color: RvmColors.muted),
+                icon: Icon(Icons.refresh_rounded,
+                    size: 19, color: p.muted),
               ),
             ),
             _Header(
@@ -151,6 +152,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     final subtitle = [
       person.designation,
@@ -167,8 +169,8 @@ class _Header extends StatelessWidget {
                 name: person.fullName,
                 photoUrl: photoUrl,
                 size: 88,
-                background: RvmColors.teamSeed.withValues(alpha: 0.16),
-                foreground: RvmColors.ink,
+                background: p.secondary.withValues(alpha: 0.16),
+                foreground: p.ink,
               ),
             ),
             const SizedBox(height: RvmSpacing.sm),
@@ -185,8 +187,8 @@ class _Header extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.location_on_outlined,
-                      size: 13, color: RvmColors.subtle),
+                  Icon(Icons.location_on_outlined,
+                      size: 13, color: p.subtle),
                   const SizedBox(width: 3),
                   Text(person.branch!.name, style: text.labelSmall),
                 ],
@@ -211,6 +213,7 @@ class _DetailsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final anniversary = profile?.anniversaryDate;
     final rows = <(IconData, String, String, Color)>[
       (
@@ -219,7 +222,7 @@ class _DetailsCard extends StatelessWidget {
         profile?.dateOfJoining != null
             ? _prettyDay(profile!.dateOfJoining!)
             : 'Not recorded',
-        RvmColors.teamSeed
+        p.secondary
       ),
       (
         Icons.celebration_outlined,
@@ -227,7 +230,7 @@ class _DetailsCard extends StatelessWidget {
         profile?.dateOfJoining != null
             ? _anniversaryText(profile!.dateOfJoining!)
             : 'Not recorded',
-        RvmColors.warning
+        p.warning
       ),
       (
         Icons.cake_outlined,
@@ -235,7 +238,7 @@ class _DetailsCard extends StatelessWidget {
         profile?.dateOfBirth != null
             ? _prettyDay(profile!.dateOfBirth!)
             : 'Not recorded',
-        RvmColors.info
+        p.info
       ),
       (
         Icons.bloodtype_outlined,
@@ -243,7 +246,7 @@ class _DetailsCard extends StatelessWidget {
         profile?.bloodGroup?.isNotEmpty == true
             ? profile!.bloodGroup!
             : 'Not set',
-        RvmColors.danger
+        p.danger
       ),
       (
         Icons.celebration_outlined,
@@ -251,43 +254,43 @@ class _DetailsCard extends StatelessWidget {
         anniversary != null && anniversary.isNotEmpty
             ? _prettyDay(anniversary)
             : 'Not set',
-        RvmColors.teamSeed
+        p.secondary
       ),
       (
         Icons.badge_outlined,
         'Employee code',
         person.employeeCode ?? 'Not recorded',
-        RvmColors.teamSeed
+        p.secondary
       ),
       (
         Icons.account_tree_outlined,
         'Department',
         person.department?.name ?? 'Not recorded',
-        RvmColors.teamSeed
+        p.secondary
       ),
       (
         Icons.location_city_outlined,
         'Branch',
         person.branch?.name ?? 'Not recorded',
-        RvmColors.teamSeed
+        p.secondary
       ),
       (
         Icons.alternate_email_rounded,
         'Email',
         person.email ?? 'Not shared',
-        RvmColors.info
+        p.info
       ),
       (
         person.phone != null ? Icons.phone_outlined : Icons.lock_outline,
         'Phone',
         person.phone ?? 'Visible to managers/HR only',
-        person.phone != null ? RvmColors.success : RvmColors.muted
+        person.phone != null ? p.success : p.muted
       ),
       (
         Icons.work_outline_rounded,
         'Status',
         person.employmentStatus?.replaceAll('_', ' ') ?? 'Not recorded',
-        RvmColors.muted
+        p.muted
       ),
     ];
     return Card(
@@ -396,6 +399,7 @@ class _AboutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final about = profile?.about?.trim();
     final likes = profile?.likes?.trim();
     final dislikes = profile?.dislikes?.trim();
@@ -416,15 +420,15 @@ class _AboutCard extends StatelessWidget {
               about == null || about.isEmpty ? 'Not added yet.' : about,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: about == null || about.isEmpty
-                      ? RvmColors.subtle
-                      : RvmColors.ink),
+                      ? p.subtle
+                      : p.ink),
             ),
             const SizedBox(height: 8),
             _SocialRow(
                 icon: Icons.thumb_up_outlined,
                 label: 'Likes',
                 value: likes == null || likes.isEmpty ? 'Not added' : likes,
-                color: RvmColors.success),
+                color: p.success),
             const SizedBox(height: 6),
             _SocialRow(
                 icon: Icons.thumb_down_outlined,
@@ -432,7 +436,7 @@ class _AboutCard extends StatelessWidget {
                 value: dislikes == null || dislikes.isEmpty
                     ? 'Not added'
                     : dislikes,
-                color: RvmColors.warning),
+                color: p.warning),
             const SizedBox(height: 6),
             _SocialRow(
                 icon: Icons.bloodtype_outlined,
@@ -440,7 +444,7 @@ class _AboutCard extends StatelessWidget {
                 value: profile?.bloodGroup?.isNotEmpty == true
                     ? profile!.bloodGroup!
                     : 'Not set',
-                color: RvmColors.danger),
+                color: p.danger),
             const SizedBox(height: 6),
             _SocialRow(
                 icon: Icons.celebration_outlined,
@@ -448,7 +452,7 @@ class _AboutCard extends StatelessWidget {
                 value: anniversary != null && anniversary.isNotEmpty
                     ? _prettyDay(anniversary)
                     : 'Not set',
-                color: RvmColors.teamSeed),
+                color: p.secondary),
           ],
         ),
       ),
@@ -471,6 +475,7 @@ class _SocialRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -489,7 +494,7 @@ class _SocialRow extends StatelessWidget {
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
-                  ?.copyWith(color: RvmColors.ink)),
+                  ?.copyWith(color: p.ink)),
         ),
       ],
     );
@@ -502,6 +507,7 @@ class _ExperienceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(RvmSpacing.md),
@@ -510,8 +516,8 @@ class _ExperienceCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.business_center_outlined,
-                    size: 18, color: RvmColors.teamSeed),
+                Icon(Icons.business_center_outlined,
+                    size: 18, color: p.secondary),
                 const SizedBox(width: 6),
                 Text('Work experience',
                     style: Theme.of(context)
@@ -526,7 +532,7 @@ class _ExperienceCard extends StatelessWidget {
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
-                      ?.copyWith(color: RvmColors.subtle)),
+                      ?.copyWith(color: p.subtle)),
             for (final entry in entries) ...[
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -535,8 +541,8 @@ class _ExperienceCard extends StatelessWidget {
                     width: 8,
                     height: 8,
                     margin: const EdgeInsets.only(top: 5),
-                    decoration: const BoxDecoration(
-                        color: RvmColors.teamSeed, shape: BoxShape.circle),
+                    decoration: BoxDecoration(
+                        color: p.secondary, shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -592,6 +598,7 @@ class _PraiseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(RvmSpacing.md),
@@ -610,8 +617,8 @@ class _PraiseCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.emoji_events_outlined,
-                        size: 18, color: RvmColors.teamSeed),
+                    Icon(Icons.emoji_events_outlined,
+                        size: 18, color: p.secondary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(

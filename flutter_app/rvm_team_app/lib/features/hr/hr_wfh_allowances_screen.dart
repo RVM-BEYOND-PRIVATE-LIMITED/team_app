@@ -222,6 +222,7 @@ class _AllowanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     final e = allowance.employee;
     final where = [
@@ -251,7 +252,7 @@ class _AllowanceCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: text.bodySmall?.copyWith(
-                            fontSize: 10, color: RvmColors.muted)),
+                            fontSize: 10, color: p.muted)),
                   const SizedBox(height: 3),
                   Row(
                     children: [
@@ -266,7 +267,7 @@ class _AllowanceCard extends StatelessWidget {
                       Text('${allowance.monthlyLimitDays} day'
                           '${allowance.monthlyLimitDays == 1 ? '' : 's'}/month',
                           style: text.bodySmall?.copyWith(
-                              fontSize: 10, color: RvmColors.muted)),
+                              fontSize: 10, color: p.muted)),
                     ],
                   ),
                   if (allowance.note != null &&
@@ -277,7 +278,7 @@ class _AllowanceCard extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: text.bodySmall?.copyWith(
-                              fontSize: 10, color: RvmColors.subtle)),
+                              fontSize: 10, color: p.subtle)),
                     ),
                 ],
               ),
@@ -339,6 +340,7 @@ class _AllowanceEditorState extends State<_AllowanceEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return Padding(
       padding: EdgeInsets.only(
@@ -357,7 +359,7 @@ class _AllowanceEditorState extends State<_AllowanceEditor> {
           Text(
             'The person can file up to this many days a month. Turning it off '
             'keeps the limit for the next switch-on.',
-            style: text.bodySmall?.copyWith(color: RvmColors.muted),
+            style: text.bodySmall?.copyWith(color: p.muted),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

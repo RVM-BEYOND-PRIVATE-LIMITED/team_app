@@ -9,12 +9,16 @@ class _FakeTokens implements TokenStore {
   _FakeTokens(this.token);
   final String? token;
   int unauthorizedCalls = 0;
+  final List<String?> messages = [];
 
   @override
   Future<String?> readSchedulerToken() async => token;
 
   @override
-  Future<void> onUnauthorized() async => unauthorizedCalls++;
+  Future<void> onUnauthorized({String? message}) async {
+    unauthorizedCalls++;
+    messages.add(message);
+  }
 }
 
 /// Answers every request with a fixed status + body.
@@ -102,5 +106,38 @@ void main() {
   test('403 never signs out', () async {
     final (tokens, _) = await _call(403, {'error': 'Access denied. Insufficient privileges.'});
     expect(tokens.unauthorizedCalls, 0);
+  });
+
+  group('the reply code decides (Scheduler middleware/auth.js)', () {
+    // These two used to leave the app signed in with every call failing.
+    for (final code in ['ACCOUNT_EXITED', 'PASSWORD_CHANGED']) {
+      test('401 $code signs out', () async {
+        final (tokens, _) = await _call(401, {'error': 'Please sign in again.', 'code': code});
+        expect(tokens.unauthorizedCalls, 1);
+      });
+    }
+
+    for (final code in ['NO_TOKEN', 'USER_NOT_FOUND', 'TOKEN_EXPIRED', 'INVALID_TOKEN']) {
+      test('401 $code signs out when nothing can renew the token', () async {
+        final (tokens, _) = await _call(401, {'error': 'Please authenticate', 'code': code});
+        expect(tokens.unauthorizedCalls, 1);
+      });
+    }
+
+    test('a code that is not about the session never signs out', () async {
+      final (tokens, _) = await _call(401, {'error': 'Wrong password.', 'code': 'WRONG_PASSWORD'});
+      expect(tokens.unauthorizedCalls, 0);
+    });
+
+    test('a live attendance token refused off the punch path is kept', () async {
+      final attendance = _jwt({
+        'k': 'punch',
+        'e': '00000000-0000-4000-8000-0000000000e1',
+        'exp': _now.add(const Duration(minutes: 30)).millisecondsSinceEpoch ~/ 1000,
+      });
+      final (tokens, _) = await _call(401, {'error': 'Please authenticate', 'code': 'INVALID_TOKEN'},
+          token: attendance);
+      expect(tokens.unauthorizedCalls, 0);
+    });
   });
 }

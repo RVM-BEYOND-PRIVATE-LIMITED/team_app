@@ -175,14 +175,15 @@ class _TeamRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final scheme = Theme.of(context).colorScheme;
     final (label, color) = switch (person.state) {
-      'in' => ('In', RvmColors.success),
+      'in' => ('In', p.success),
       'done' => ('Done', scheme.primary),
-      'on_leave' => ('On leave', RvmColors.warning),
+      'on_leave' => ('On leave', p.warning),
       'week_off' => ('Week off', scheme.onSurfaceVariant),
       'holiday' => ('Holiday', scheme.onSurfaceVariant),
-      _ => ('Not in', RvmColors.danger),
+      _ => ('Not in', p.danger),
     };
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -193,7 +194,7 @@ class _TeamRow extends StatelessWidget {
       trailing: person.late
           ? Text('Late',
               style: TextStyle(
-                  color: RvmColors.danger, fontWeight: FontWeight.w600))
+                  color: p.danger, fontWeight: FontWeight.w600))
           : _Chip(label: label, color: color),
     );
   }
@@ -324,6 +325,7 @@ class _OrgTreeState extends State<_OrgTree> {
   }
 
   Widget _node(OrgNode node) {
+    final p = context.palette;
     final hasChildren = node.children.isNotEmpty;
     final expanded = !_collapsed.contains(node.card.id);
     return Column(
@@ -345,7 +347,7 @@ class _OrgTreeState extends State<_OrgTree> {
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
                     size: 18,
-                    color: RvmColors.subtle,
+                    color: p.subtle,
                   ),
                 )
               : null,
@@ -397,6 +399,7 @@ class _ReportingTreeState extends State<_ReportingTree> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final topDown = widget.chain.reversed.toList(growable: false);
     final allOpen = _collapsed.isEmpty;
     return Column(
@@ -439,7 +442,7 @@ class _ReportingTreeState extends State<_ReportingTree> {
                               ? Icons.keyboard_arrow_down_rounded
                               : Icons.keyboard_arrow_up_rounded,
                           size: 20,
-                          color: RvmColors.subtle,
+                          color: p.subtle,
                         ),
                       )
                     : null,
@@ -469,6 +472,7 @@ class _PersonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final text = Theme.of(context).textTheme;
     return InkWell(
       onTap: () => showColleagueProfile(context, card),
@@ -497,16 +501,16 @@ class _PersonRow extends StatelessWidget {
                       ),
                       if (isMe) ...[
                         const SizedBox(width: 4),
-                        const _Chip(
+                        _Chip(
                             label: 'You',
-                            color: RvmColors.teamSeed,
+                            color: p.secondary,
                             dense: true),
                       ],
                       if (card.noticePeriod) ...[
                         const SizedBox(width: 4),
-                        const _Chip(
+                        _Chip(
                             label: 'Notice',
-                            color: RvmColors.warning,
+                            color: p.warning,
                             dense: true),
                       ],
                     ],
@@ -517,7 +521,7 @@ class _PersonRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: text.bodySmall?.copyWith(
-                        fontSize: 10.5, height: 1.2, color: RvmColors.muted),
+                        fontSize: 10.5, height: 1.2, color: p.muted),
                   ),
                 ],
               ),

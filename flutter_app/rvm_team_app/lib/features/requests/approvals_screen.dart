@@ -33,8 +33,9 @@ class _ApprovalsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
-      backgroundColor: RvmColors.ivory,
+      backgroundColor: p.canvas,
       body: Column(
         children: [
           BlocBuilder<ApprovalsBloc, ApprovalsState>(
@@ -101,6 +102,7 @@ class _ApprovalsView extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, ApprovalsState state) {
+    final p = context.palette;
     if (state.status == LoadStatus.initial ||
         (state.status == LoadStatus.loading && state.inbox == null)) {
       return const AppLoading();
@@ -155,12 +157,12 @@ class _ApprovalsView extends StatelessWidget {
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             fontSize: 8,
                             letterSpacing: 0.6,
-                            color: RvmColors.subtle)),
+                            color: p.subtle)),
                     Text('JUST NOW',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             fontSize: 8,
                             letterSpacing: 0.6,
-                            color: RvmColors.subtle)),
+                            color: p.subtle)),
                   ],
                 ),
               ],
@@ -171,7 +173,7 @@ class _ApprovalsView extends StatelessWidget {
               ? const AppEmpty(
                   icon: Icons.task_alt, message: 'Nothing to decide here.')
               : RefreshIndicator(
-                  color: RvmColors.clay,
+                  color: p.primary,
                   onRefresh: () async => context
                       .read<ApprovalsBloc>()
                       .add(const ApprovalsRefreshed()),
@@ -197,6 +199,7 @@ class _SyncStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -204,8 +207,8 @@ class _SyncStat extends StatelessWidget {
           margin: const EdgeInsets.only(top: 3),
           width: 4,
           height: 4,
-          decoration: const BoxDecoration(
-              color: RvmColors.subtle, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+              color: p.subtle, shape: BoxShape.circle),
         ),
         const SizedBox(width: 4),
         Column(
@@ -215,12 +218,12 @@ class _SyncStat extends StatelessWidget {
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontSize: 7.5,
                     letterSpacing: 0.7,
-                    color: RvmColors.subtle)),
+                    color: p.subtle)),
             Text(value,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontSize: 8,
                     letterSpacing: 0.4,
-                    color: RvmColors.muted,
+                    color: p.muted,
                     fontWeight: FontWeight.w600)),
           ],
         ),
@@ -301,8 +304,9 @@ class _FilterPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Material(
-      color: selected ? RvmColors.claySoft : RvmColors.white,
+      color: selected ? p.cardElevated : p.card,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
@@ -313,22 +317,22 @@ class _FilterPill extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
                 color: selected
-                    ? RvmColors.clay.withValues(alpha: 0.30)
-                    : RvmColors.line),
+                    ? p.primary.withValues(alpha: 0.30)
+                    : p.line),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (selected) ...[
-                const Icon(Icons.check_rounded,
-                    size: 12, color: RvmColors.clay),
+                Icon(Icons.check_rounded,
+                    size: 12, color: p.primary),
                 const SizedBox(width: 4),
               ],
               Text(
                 count == null ? label : '$label ($count)',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       fontSize: 11,
-                      color: selected ? RvmColors.clay : RvmColors.muted,
+                      color: selected ? p.primary : p.muted,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     ),
               ),
@@ -391,6 +395,7 @@ class _ApprovalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final ctx = request.context;
     final employee = request.employee?.fullName ?? 'Employee';
     final isLeave = request.family == 'leave';
@@ -428,8 +433,8 @@ class _ApprovalCard extends StatelessWidget {
               TeamAvatar(
                   name: employee.toUpperCase(),
                   size: 36,
-                  background: RvmColors.sand,
-                  foreground: RvmColors.muted),
+                  background: p.sand,
+                  foreground: p.muted),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -448,7 +453,7 @@ class _ApprovalCard extends StatelessWidget {
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
-                          ?.copyWith(fontSize: 9.5, color: RvmColors.muted),
+                          ?.copyWith(fontSize: 9.5, color: p.muted),
                     ),
                   ],
                 ),
@@ -470,7 +475,7 @@ class _ApprovalCard extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(typeChip.$1, size: 11, color: RvmColors.clay),
+                    Icon(typeChip.$1, size: 11, color: p.primary),
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(typeChip.$2,
@@ -479,7 +484,7 @@ class _ApprovalCard extends StatelessWidget {
                           style:
                               Theme.of(context).textTheme.labelSmall?.copyWith(
                                     fontSize: 9.5,
-                                    color: RvmColors.clay,
+                                    color: p.primary,
                                     fontWeight: FontWeight.w600,
                                   )),
                     ),
@@ -494,7 +499,7 @@ class _ApprovalCard extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(fontSize: 9.5, color: RvmColors.subtle)),
+                        ?.copyWith(fontSize: 9.5, color: p.subtle)),
               ),
             ],
           ),
@@ -546,14 +551,14 @@ class _ApprovalCard extends StatelessWidget {
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
-                    ?.copyWith(fontSize: 10, color: RvmColors.muted)),
+                    ?.copyWith(fontSize: 10, color: p.muted)),
           ],
           if (request.coverageLabel != null) ...[
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.swap_horiz_rounded,
-                    size: 13, color: RvmColors.muted),
+                Icon(Icons.swap_horiz_rounded,
+                    size: 13, color: p.muted),
                 const SizedBox(width: 4),
                 Flexible(
                   child: Text('Coverage: ${request.coverageLabel}',
@@ -561,7 +566,7 @@ class _ApprovalCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             fontSize: 10.5,
-                            color: RvmColors.muted,
+                            color: p.muted,
                             fontWeight: FontWeight.w600,
                           )),
                 ),
@@ -577,7 +582,7 @@ class _ApprovalCard extends StatelessWidget {
                     : 'Admin Manager’s remark: ${request.managerRemark!.trim()}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 10.5,
-                      color: RvmColors.teamSeed,
+                      color: p.secondary,
                       fontWeight: FontWeight.w600,
                     )),
           ],
@@ -586,7 +591,7 @@ class _ApprovalCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(
-              color: RvmColors.cream,
+              color: p.cardElevated,
               borderRadius: BorderRadius.circular(RvmRadii.sm),
             ),
             child: Text('“${request.reason.trim()}”',
@@ -594,7 +599,7 @@ class _ApprovalCard extends StatelessWidget {
                       fontSize: 10.5,
                       fontStyle: FontStyle.italic,
                       height: 1.5,
-                      color: RvmColors.muted,
+                      color: p.muted,
                     )),
           ),
           if (request.decisionNote != null &&
@@ -604,7 +609,7 @@ class _ApprovalCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 10.5,
                       height: 1.45,
-                      color: RvmColors.teamSeed,
+                      color: p.secondary,
                       fontWeight: FontWeight.w600,
                     )),
           ],
@@ -619,7 +624,7 @@ class _ApprovalCard extends StatelessWidget {
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
-                          ?.copyWith(fontSize: 9, color: RvmColors.muted)),
+                          ?.copyWith(fontSize: 9, color: p.muted)),
                 ),
               const Spacer(),
               if (request.isSchedulerLeave) ...[
@@ -628,7 +633,7 @@ class _ApprovalCard extends StatelessWidget {
                   child: Text('Who else is off',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                             fontSize: 9.5,
-                            color: RvmColors.clay,
+                            color: p.primary,
                             fontWeight: FontWeight.w600,
                           )),
                 ),
@@ -642,12 +647,12 @@ class _ApprovalCard extends StatelessWidget {
                         style:
                             Theme.of(context).textTheme.labelMedium?.copyWith(
                                   fontSize: 9.5,
-                                  color: RvmColors.clay,
+                                  color: p.primary,
                                   fontWeight: FontWeight.w600,
                                 )),
                     const SizedBox(width: 2),
-                    const Icon(Icons.arrow_forward_rounded,
-                        size: 11, color: RvmColors.clay),
+                    Icon(Icons.arrow_forward_rounded,
+                        size: 11, color: p.primary),
                   ],
                 ),
               ),
@@ -683,7 +688,7 @@ class _ApprovalCard extends StatelessWidget {
                     onPressed: () => _reject(context),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(40),
-                      foregroundColor: RvmColors.ink,
+                      foregroundColor: p.ink,
                     ),
                     child: const Text('Reject',
                         style: TextStyle(
@@ -718,7 +723,7 @@ class _ApprovalCard extends StatelessWidget {
                       style: TextButton.styleFrom(
                           minimumSize: const Size(0, 30),
                           padding: const EdgeInsets.symmetric(horizontal: 6),
-                          foregroundColor: RvmColors.muted),
+                          foregroundColor: p.muted),
                       child: const Text('Cancel (HR)',
                           style: TextStyle(fontSize: 10.5)),
                     ),
@@ -731,7 +736,7 @@ class _ApprovalCard extends StatelessWidget {
                     style: TextButton.styleFrom(
                         minimumSize: const Size(0, 30),
                         padding: const EdgeInsets.symmetric(horizontal: 6),
-                        foregroundColor: RvmColors.muted),
+                        foregroundColor: p.muted),
                     child:
                         const Text('Archive', style: TextStyle(fontSize: 10.5)),
                   ),
@@ -782,6 +787,7 @@ class _ApprovalCard extends StatelessWidget {
   /// "Who else is off" on this leave's dates, in the same branch and
   /// approver team (`/leave/whos-off`, #43).
   Future<void> _showWhosOff(BuildContext context) {
+    final p = context.palette;
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -822,8 +828,8 @@ class _ApprovalCard extends StatelessWidget {
                           for (final o in off)
                             ListTile(
                               dense: true,
-                              leading: const Icon(Icons.event_busy_rounded,
-                                  size: 18, color: RvmColors.muted),
+                              leading: Icon(Icons.event_busy_rounded,
+                                  size: 18, color: p.muted),
                               title: Text(o.name,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
@@ -911,6 +917,7 @@ class _ApprovalCard extends StatelessWidget {
   }
 
   Future<void> _showChain(BuildContext context) async {
+    final p = context.palette;
     if (request.isSchedulerLeave) {
       _showLeaveChain(context);
       return;
@@ -939,7 +946,7 @@ class _ApprovalCard extends StatelessWidget {
                               e.mayDecide
                                   ? Icons.check_circle
                                   : Icons.circle_outlined,
-                              color: e.mayDecide ? RvmColors.success : null),
+                              color: e.mayDecide ? p.success : null),
                           title: Text(e.employee.fullName),
                           subtitle: e.skipped == null
                               ? null
@@ -1088,6 +1095,7 @@ class _ApprovalCard extends StatelessWidget {
   /// The 1st approver's coverage choice for a teaching leave. The substitute
   /// list comes from the request's own branch (Scheduler `/leave/faculty`).
   Future<_CoverageChoice?> _askCoverage(BuildContext context) async {
+    final p = context.palette;
     List<LeaveFacultyOption> faculty;
     try {
       faculty = request.isSchedulerLeave
@@ -1156,8 +1164,8 @@ class _ApprovalCard extends StatelessWidget {
                 ),
                 if (error != null)
                   Text(error!,
-                      style: const TextStyle(
-                          color: RvmColors.danger, fontSize: 12)),
+                      style: TextStyle(
+                          color: p.danger, fontSize: 12)),
               ],
             ),
           ),

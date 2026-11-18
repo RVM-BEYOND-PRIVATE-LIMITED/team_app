@@ -28,6 +28,7 @@ class _LeadersView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
       body: Column(
         children: [
@@ -119,8 +120,8 @@ class _LeadersView extends StatelessWidget {
                               if (o.oldestDays != null)
                                 Text(
                                     'Oldest waiting ${o.oldestDays} day${o.oldestDays == 1 ? '' : 's'}',
-                                    style: const TextStyle(
-                                        color: RvmColors.warning)),
+                                    style: TextStyle(
+                                        color: p.warning)),
                             ],
                           ),
                         ),

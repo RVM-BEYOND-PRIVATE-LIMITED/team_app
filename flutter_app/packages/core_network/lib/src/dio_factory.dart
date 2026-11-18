@@ -9,8 +9,10 @@ import 'interceptors/bearer_auth_interceptor.dart';
 import 'interceptors/envelope_interceptor.dart';
 import 'interceptors/error_mapping_interceptor.dart';
 import 'interceptors/ess_auth_interceptor.dart';
+import 'interceptors/idempotency_interceptor.dart';
 import 'interceptors/logging_interceptor.dart';
 import 'interceptors/retry_interceptor.dart';
+import 'session_rotator.dart';
 import 'token_store.dart';
 
 /// One centralized place that builds the two configured [Dio] instances the app
@@ -39,19 +41,24 @@ abstract final class DioFactory {
   /// [cookieJar], when given, persists the punch device cookie (`rvm_att_dev`)
   /// across launches (tasks B8/B13); without it the cookie is dropped after the
   /// first punch and every later punch is refused.
+  ///
+  /// [sessions], when given, renews the kept sign-in's access token for this
+  /// client too (team_app #50). Pass the same [SessionRotator] to [ess].
   static Dio scheduler({
     required ApiEnvironment env,
     required TokenStore tokens,
     CookieJar? cookieJar,
+    SessionRotator? sessions,
     bool logging = false,
   }) {
     final dio = Dio(_base(env.schedulerBaseUrl));
     dio.httpClientAdapter = DohHttpClientAdapter.create();
     dio.options.headers['User-Agent'] = userAgent;
     dio.interceptors.addAll([
+      IdempotencyInterceptor(),
       RetryInterceptor(dio: dio),
       if (cookieJar != null) CookieManager(cookieJar),
-      BearerAuthInterceptor(tokens),
+      BearerAuthInterceptor(tokens, sessions: sessions, dio: dio),
       if (logging) LoggingInterceptor(),
       const ErrorMappingInterceptor(),
     ]);
@@ -60,10 +67,14 @@ abstract final class DioFactory {
 
   /// Team RVM ESS (Express, `/api/ess`) — bearer token, with a kept sign-in that
   /// rotates the refresh token on a rejected access token (task A3).
+  ///
+  /// [sessions] is the renewal shared with the Scheduler client; without it
+  /// this client renews on its own.
   static Dio ess({
     required ApiEnvironment env,
     required TokenStore tokens,
     required EssTokenStore essTokens,
+    SessionRotator? sessions,
     bool logging = false,
   }) {
     final refreshDio = Dio(_base(env.essBaseUrl));
@@ -72,12 +83,35 @@ abstract final class DioFactory {
     dio.httpClientAdapter = DohHttpClientAdapter.create();
     dio.options.headers['User-Agent'] = userAgent;
     dio.interceptors.addAll([
+      IdempotencyInterceptor(),
       RetryInterceptor(dio: dio),
-      EssAuthInterceptor(tokens: tokens, essTokens: essTokens, refreshDio: refreshDio),
+      EssAuthInterceptor(
+        tokens: tokens,
+        essTokens: essTokens,
+        refreshDio: refreshDio,
+        sessions: sessions,
+      ),
       if (logging) LoggingInterceptor(),
       const ErrorMappingInterceptor(),
     ]);
     return dio;
+  }
+
+  /// The kept sign-in's renewal, built once and passed to both [scheduler] and
+  /// [ess] so the two clients renew the shared access token in one flight. Its
+  /// refresh call goes through a bare client on the ESS host.
+  static SessionRotator sessionRotator({
+    required ApiEnvironment env,
+    required TokenStore tokens,
+    required EssTokenStore essTokens,
+  }) {
+    final refreshDio = Dio(_base(env.essBaseUrl))
+      ..httpClientAdapter = DohHttpClientAdapter.create();
+    return SessionRotator(
+      tokens: tokens,
+      essTokens: essTokens,
+      refreshDio: refreshDio,
+    );
   }
 
   /// JobPortal (Next.js) — `rvm_session` cookie + `{success,data}` envelope.
@@ -89,6 +123,7 @@ abstract final class DioFactory {
     final dio = Dio(_base(env.jobPortalBaseUrl));
     dio.httpClientAdapter = DohHttpClientAdapter.create();
     dio.interceptors.addAll([
+      IdempotencyInterceptor(),
       RetryInterceptor(dio: dio),
       CookieManager(cookieJar),
       const EnvelopeInterceptor(),

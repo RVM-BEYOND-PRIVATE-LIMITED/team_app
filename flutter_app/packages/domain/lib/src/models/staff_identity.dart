@@ -33,11 +33,17 @@ class StaffIdentity {
   /// HR, HR Executive and HOD (Placement). `team_app`'s
   /// `policy/capabilities.js` names them all (HR_SCOPE, WORK_ROLES), so these
   /// are valid Team RVM logins and must not be turned away.
+  ///
+  /// Sales Executive too (team_app #50): the ESS admits every linked staff
+  /// role (`policy/staff.js`), and the Scheduler serves this one its own
+  /// workspace (the dialer, `/api/me`, the own password and the own punch and
+  /// leave). The app hides the cards that workspace refuses.
   bool get isTeamMember =>
       isStaff ||
       role == AppRole.hr ||
       role == AppRole.hrExecutive ||
       role == AppRole.hodPlacement ||
+      role == AppRole.salesExecutive ||
       attendance;
 
   /// Location-scope bypass — backend SEES_ALL_LOCATIONS (ceo, super_admin,
