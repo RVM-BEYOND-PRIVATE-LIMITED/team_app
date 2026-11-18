@@ -1,3 +1,4 @@
+import 'package:domain/domain.dart';
 import 'package:flutter/material.dart';
 
 import '../../auth/team_permissions.dart';
@@ -73,7 +74,9 @@ final List<TeamTabSpec> teamTabRegistry = [
   TeamTabSpec(
     id: 'crm',
     moduleTab: true,
-    visible: (v) => v.modules.contains(TeamModule.crm),
+    visible: (v) =>
+        v.modules.contains(TeamModule.crm) &&
+        v.role == AppRole.salesExecutive,
     tab: (_) => const TeamTab(
       id: 'crm',
       label: 'CRM',

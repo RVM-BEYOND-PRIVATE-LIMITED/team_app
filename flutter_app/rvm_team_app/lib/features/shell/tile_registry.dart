@@ -42,7 +42,11 @@ class HomeCardSpec {
 /// Scheduler reads, so they are for portal sign-ins only; the ESS cards work
 /// for everyone.
 final List<HomeCardSpec> homeCardRegistry = [
-  HomeCardSpec(HomeCard.crm, (v) => v.modules.contains(TeamModule.crm)),
+  HomeCardSpec(
+      HomeCard.crm,
+      (v) =>
+          v.modules.contains(TeamModule.crm) &&
+          v.role == AppRole.salesExecutive),
   const HomeCardSpec(HomeCard.schedule, _everyone),
   const HomeCardSpec(HomeCard.offThisWeek, _everyone),
   HomeCardSpec(HomeCard.faculty, (v) => v.perms.canSeeFacultyWork),
@@ -257,7 +261,9 @@ final List<MeSectionSpec> meSectionRegistry = [
         title: 'Sales CRM',
         subtitle: 'Call leads and follow-ups',
         route: '/crm',
-        visible: (v) => v.modules.contains(TeamModule.crm)),
+        visible: (v) =>
+            v.modules.contains(TeamModule.crm) &&
+            v.role == AppRole.salesExecutive),
     MeTileSpec(
         id: 'batches',
         icon: Icons.menu_book_outlined,
