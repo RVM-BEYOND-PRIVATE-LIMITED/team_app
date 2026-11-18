@@ -122,6 +122,8 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
         { category: 'crm_lead_assigned', enabled: true, locked: false },
         { category: 'crm_followup', enabled: true, locked: false },
         { category: 'crm_alert', enabled: true, locked: false },
+        { category: 'shoots', enabled: true, locked: false },
+        { category: 'social', enabled: true, locked: false },
       ],
       quiet_hours: { from: '21:00', to: '08:00' },
     });
@@ -149,6 +151,8 @@ describe('GET and PUT /api/ess/notifications/settings', () => {
       { category: 'crm_lead_assigned', enabled: true, locked: false },
       { category: 'crm_followup', enabled: true, locked: false },
       { category: 'crm_alert', enabled: true, locked: false },
+      { category: 'shoots', enabled: true, locked: false },
+      { category: 'social', enabled: true, locked: false },
     ]);
     expect(db.tables.hr_ess_notification_settings).toEqual([
       expect.objectContaining({ employee_id: people.attendance.employee.id, disabled_categories: ['approvals'] }),

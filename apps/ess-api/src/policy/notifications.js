@@ -24,6 +24,9 @@ const CATEGORIES = Object.freeze([
   // The CRM's (team_app #59, TA-P-01): a callback the sales team promised, a call placed from
   // the web, a lead assigned to me, a follow-up due, and a sales alert.
   'crm_callback', 'crm_call', 'crm_lead_assigned', 'crm_followup', 'crm_alert',
+  // The social module's (team_app #129; written by the Scheduler's relay): a shoot I am tagged on, and the social
+  // media team's work (a card allotted to me, a stuck card, a clash).
+  'shoots', 'social',
 ]);
 
 /**
@@ -33,13 +36,15 @@ const CATEGORIES = Object.freeze([
  */
 const URGENT_CATEGORIES = Object.freeze(['crm_callback', 'crm_call']);
 
-/** How each CRM category is named on screen. */
+/** How each CRM and social category is named on screen. */
 const CATEGORY_LABELS = Object.freeze({
   crm_callback: 'Callback',
   crm_call: 'Call from the web',
   crm_lead_assigned: 'Lead assigned',
   crm_followup: 'Follow-up due',
   crm_alert: 'Sales alert',
+  shoots: 'Shoots',
+  social: 'Social media',
 });
 
 const QUIET_FROM = '21:00';

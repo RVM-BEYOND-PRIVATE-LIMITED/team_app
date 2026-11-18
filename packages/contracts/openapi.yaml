@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.17.0
+  version: 0.18.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -3849,6 +3849,8 @@ paths:
                       - { category: crm_lead_assigned, enabled: true, locked: false }
                       - { category: crm_followup, enabled: true, locked: false }
                       - { category: crm_alert, enabled: true, locked: false }
+                      - { category: shoots, enabled: true, locked: false }
+                      - { category: social, enabled: true, locked: false }
                     quiet_hours: { from: '21:00', to: '08:00' }
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
@@ -3902,6 +3904,8 @@ paths:
                       - { category: crm_lead_assigned, enabled: true, locked: false }
                       - { category: crm_followup, enabled: true, locked: false }
                       - { category: crm_alert, enabled: true, locked: false }
+                      - { category: shoots, enabled: true, locked: false }
+                      - { category: social, enabled: true, locked: false }
                     quiet_hours: { from: '21:00', to: '08:00' }
         '400':
           $ref: '#/components/responses/EssRequestBad'
@@ -13830,7 +13834,7 @@ components:
           format: uuid
         category:
           type: string
-          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert]
+          enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert, shoots, social]
         priority:
           type: string
           enum: [normal, urgent]
@@ -13879,7 +13883,7 @@ components:
             properties:
               category:
                 type: string
-                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert]
+                enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert, shoots, social]
               enabled:
                 type: boolean
               locked:
@@ -13905,7 +13909,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert]
+            enum: [approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert, shoots, social]
 
     PersonCard:
       type: object
@@ -17706,7 +17710,7 @@ components:
 
     EssNotificationCategories:
       value:
-        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup or crm_alert.'
+        error: 'Choose the notification categories: approvals, decisions, priority_tasks, mentions, replies, praise, announcements, acknowledgements, polls, helpdesk, documents, crm_callback, crm_call, crm_lead_assigned, crm_followup, crm_alert, shoots or social.'
         code: VALIDATION_FAILED
 
     EssNotificationCategoryLocked:
