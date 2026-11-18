@@ -81,6 +81,7 @@ The lint checks the file against itself. Whether the ESS really answers as the f
 
 ## Changes
 
+- **0.18.0 (18 Nov 2026).** Two notification categories, `shoots` and `social`, written by the Scheduler's social module relay (team_app #129); the settings reply lists them, neither is urgent.
 - **0.17.0 (15 Nov 2026).** `GET` and `PUT /me/preferences` on the Scheduler (`x-owner: scheduler`, Scheduler_Backend
   #449 and #452): the theme (light, dark or system) and whether the `theme` switch is open, for both sign-in kinds.
   `light` / `false` while the switch is closed. Picked up by the app's client in team_app #121. The header now says what
