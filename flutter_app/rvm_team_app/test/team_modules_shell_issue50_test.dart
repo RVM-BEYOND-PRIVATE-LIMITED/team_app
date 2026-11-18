@@ -78,11 +78,12 @@ const _caps = EssCapabilities(
   integrityRequired: false,
 );
 
-TeamAuthState _signedIn({bool attendance = false}) => TeamAuthState(
+TeamAuthState _signedIn({bool attendance = false, AppRole? role}) =>
+    TeamAuthState(
       status: TeamAuthStatus.authenticated,
       identity: StaffIdentity(
         userId: 'u-test',
-        role: attendance ? AppRole.unknown : AppRole.admin,
+        role: attendance ? AppRole.unknown : (role ?? AppRole.admin),
         username: 'Test Admin',
         locationName: 'Test Branch',
         attendance: attendance,
@@ -471,8 +472,9 @@ void main() {
     });
 
     Future<void> pumpShell(WidgetTester tester,
-        {bool attendance = false}) async {
-      when(() => auth.state).thenReturn(_signedIn(attendance: attendance));
+        {bool attendance = false, AppRole? role}) async {
+      when(() => auth.state)
+          .thenReturn(_signedIn(attendance: attendance, role: role));
       tester.view.physicalSize = const Size(1080, 6000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -549,11 +551,12 @@ void main() {
 
         expect(tester.takeException(), isNull);
         if (reply.key == 'open modules') {
-          // A module with a screen now shows it: the CRM tab and its Home
-          // card (#51). Every other reply leaves the shell as it was.
+          // The open Tasks module adds its tab. The Sales CRM is for a sales
+          // sign-in, so an admin does not get its tab or Home card.
           expect(looks(tester), isNot(today));
-          expect(find.text('CRM'), findsWidgets);
-          expect(find.text('Sales CRM'), findsWidgets);
+          expect(find.text('Tasks'), findsWidgets);
+          expect(find.text('CRM'), findsNothing);
+          expect(find.text('Sales CRM'), findsNothing);
         } else {
           expect(looks(tester), today);
         }
@@ -567,6 +570,23 @@ void main() {
         await tester.pump();
       });
     }
+
+    testWidgets('an open CRM shows its tab and Home card for a sales sign-in',
+        (tester) async {
+      await pumpShell(tester, role: AppRole.salesExecutive);
+      final before = looks(tester);
+      expect(before, isNot(contains('CRM')));
+      await tester.pumpWidget(const SizedBox());
+
+      final modules = registerModules(() async => _open);
+      await pumpShell(tester, role: AppRole.salesExecutive);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('CRM'), findsWidgets);
+      expect(find.text('Sales CRM'), findsWidgets);
+      expect(looks(tester), isNot(before));
+      expect(modules.asks, [1]);
+    });
 
     testWidgets('asks again when the app comes back to the foreground',
         (tester) async {
