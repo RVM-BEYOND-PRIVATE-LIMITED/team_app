@@ -32,7 +32,7 @@ async function withPhotoLinks(store, body) {
   collectCards(body, cards);
   if (!cards.length) return body;
   const ids = [...new Set(cards.map((c) => c.id.toLowerCase()))];
-  let byId = new Map();
+  let byId;
   try {
     const rows = typeof store.employeePhotos === 'function' ? await store.employeePhotos(ids) : [];
     const paths = [...new Set(rows.map((r) => r.photo_path).filter(Boolean))];
