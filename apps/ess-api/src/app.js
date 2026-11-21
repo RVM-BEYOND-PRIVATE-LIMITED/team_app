@@ -430,7 +430,8 @@ function errorHandler(err, req, res, next) {
     const code = CLIENT_ERROR_CODES[status] || 'BAD_REQUEST';
     return sendError(res, status, code, MESSAGES[code]);
   }
-  console.error(`[ess] ${req.method} ${req.path} failed:`, err);
+  // The path is an argument, never part of the format: a path holding %s or %o must not reshape the line (#140).
+  console.error('[ess] %s %s failed:', req.method, req.path, err);
   return sendError(res, 500, 'INTERNAL_ERROR', MESSAGES.INTERNAL_ERROR);
 }
 
