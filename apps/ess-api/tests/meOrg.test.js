@@ -8,7 +8,7 @@ const { expectRefusal, expectInvalid } = require('./helpers/expect');
 const ORG = '/api/ess/me/org';
 const DIR = '/api/ess/directory';
 
-const cardFields = ['id', 'full_name', 'employee_code', 'designation', 'department', 'branch', 'email', 'phone', 'employment_status', 'notice_period'];
+const cardFields = ['id', 'full_name', 'employee_code', 'designation', 'department', 'branch', 'email', 'phone', 'employment_status', 'notice_period', 'photo_url', 'photo_updated_at'];
 
 describe('GET /api/ess/me/org', () => {
   it('shows the chain, peers, reports and the department, with the contact rule applied', async () => {

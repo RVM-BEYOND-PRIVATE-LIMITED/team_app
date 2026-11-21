@@ -1,6 +1,7 @@
 const { asyncRoute } = require('../lib/errors');
 const { istDay } = require('../lib/time');
 const { teamDayState, weekBounds } = require('../policy/me');
+const { withPhotoLinks } = require('../lib/photoLinks');
 
 /**
  * Phase 2D (task H5): the leaders' overview. One read of the whole organisation, in counts only
@@ -44,12 +45,12 @@ function leadersOverview({ store, now }) {
       ? null
       : Math.max(0, Math.floor((Date.parse(`${today}T00:00:00+05:30`) - oldest) / 86400000));
 
-    res.json({
+    res.json(await withPhotoLinks(store, {
       headcount: people.length,
       attendance_today: attendanceToday,
       off_this_week: offThisWeek,
       pending,
-    });
+    }));
   });
 }
 

@@ -5,6 +5,7 @@ const { resolveMentions, peopleFor, notFound, seesHidden } = require('../lib/wal
 const { commentView } = require('./wallViews');
 const { notifyMentions, notifyReply } = require('../lib/wallNotify');
 const { recordAfter } = require('../lib/audit');
+const { withPhotoLinks } = require('../lib/photoLinks');
 
 /**
  * Task F2, the comments: comments with ONE level of replies, each carrying @mentions and the six
@@ -104,14 +105,14 @@ function editWallComment({ store, now }) {
     // Read back after the stamp, so the reply says "edited" as the app will see it.
     const fresh = await store.getWallComment(id);
     const people = await peopleFor(store, [fresh]);
-    res.json({
+    res.json(await withPhotoLinks(store, {
       comment: commentView(fresh, {
         me: employee.id,
         author: people.get(fresh.employee_id) || null,
         mentioned,
         myReaction: await store.getMyCommentReaction(id, employee.id),
       }),
-    });
+    }));
   });
 }
 
