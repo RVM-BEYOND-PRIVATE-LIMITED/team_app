@@ -3,6 +3,7 @@ const { oneQueryValue, invalid } = require('../lib/validate');
 const { istDay } = require('../lib/time');
 const { weekBounds, teamDayState } = require('../policy/me');
 const { contactContext } = require('../lib/contactCards');
+const { withPhotoLinks } = require('../lib/photoLinks');
 
 /**
  * Task E6 and H4: Team today and Off this week.
@@ -71,7 +72,7 @@ function teamToday({ store, now }) {
           : filter === 'late' ? x.late
             : x.state === 'on_leave'
     ));
-    res.json({ scope, date: today, filter, counts, people: shown });
+    res.json(await withPhotoLinks(store, { scope, date: today, filter, counts, people: shown }));
   });
 }
 
@@ -106,7 +107,7 @@ function teamOffThisWeek({ store, now }) {
       .filter((e) => byEmployee.has(e.id))
       .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
       .map((e) => ({ ...ctx.card(e), days: byEmployee.get(e.id).sort() }));
-    res.json({ week, scope, people });
+    res.json(await withPhotoLinks(store, { week, scope, people }));
   });
 }
 

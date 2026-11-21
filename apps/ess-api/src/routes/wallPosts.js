@@ -1,6 +1,7 @@
 const { HttpError, MESSAGES, asyncRoute } = require('../lib/errors');
 const { bodyWith, requiredText, optionalText, chars, idParam, oneQueryValue, invalid } = require('../lib/validate');
 const { istDay, addDays } = require('../lib/time');
+const { withPhotoLinks } = require('../lib/photoLinks');
 const { LIST_LIMITS } = require('../lib/store');
 const { MAX_POLL_OPTIONS, MIN_POLL_OPTIONS, SCOPES, withinEditWindow } = require('../policy/wall');
 const {
@@ -82,12 +83,12 @@ function listWallPosts({ store, now }) {
         poll: row.kind === 'poll' ? await pollOfRow(store, row, employee.id, day) : undefined,
       }));
     }
-    res.json({
+    res.json(await withPhotoLinks(store, {
       posts,
       // The app pages with ?before=<next_before>: the last row's created_at.
       next_before: truncated && page.length ? page[page.length - 1].created_at : null,
       truncated,
-    });
+    }));
   });
 }
 
@@ -141,7 +142,7 @@ function getWallPost({ store, now }) {
         seesHidden: privilegedOver(req.auth, c),
       }));
     }
-    res.json({ post: { ...view, comments: commentsOut }, truncated });
+    res.json(await withPhotoLinks(store, { post: { ...view, comments: commentsOut }, truncated }));
   });
 }
 

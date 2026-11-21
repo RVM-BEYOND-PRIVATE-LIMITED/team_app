@@ -1350,6 +1350,30 @@ function createSupabaseStore(config, { client } = {}) {
         return null;
       }
     },
+    /**
+     * #141: the HR photo pointer of each of these employees, in one query per 300 ids. Only id, photo_path and
+     * photo_updated_at: lib/photoLinks.js signs them and never returns the path.
+     */
+    employeePhotos: async (ids) => {
+      const out = [];
+      for (let i = 0; i < ids.length; i += 300) {
+        const { data, error } = await db.from('hr_employees').select('id, photo_path, photo_updated_at')
+          .in('id', ids.slice(i, i + 300)).not('photo_path', 'is', null);
+        if (error) throw new HttpError(503, 'UNAVAILABLE', MESSAGES.UNAVAILABLE);
+        out.push(...(data || []));
+      }
+      return out;
+    },
+    /** #141: 300-second signed links for many photos in ONE storage call; path -> link. Empty on any failure. */
+    signedPhotoUrls: async (paths, expiresIn = 300) => {
+      const links = new Map();
+      if (!paths.length) return links;
+      try {
+        const { data } = await db.storage.from(PHOTO_BUCKET).createSignedUrls(paths, expiresIn);
+        for (const row of data || []) if (row && row.path && row.signedUrl && !row.error) links.set(row.path, row.signedUrl);
+      } catch { /* a photo is never a reason to fail a list */ }
+      return links;
+    },
     /** Upload bytes under `path`; a storage failure is an outage, never a 500 with a stack. */
     uploadProfilePhoto: async (path, buffer, contentType) => {
       const { error } = await db.storage.from(PHOTO_BUCKET).upload(path, buffer, { contentType, upsert: false });

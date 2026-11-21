@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Team RVM API
-  version: 0.18.0
+  version: 0.19.0
   summary: Every endpoint the Team RVM Android app calls, new and existing, in one file.
   description: |
     The one contract the Team RVM app is built against (ADR-0010). Two services, on two hosts, answer the app, and every operation says which one owns it, with its tag and with `x-owner`.
@@ -13916,6 +13916,13 @@ components:
       description: 'One colleague as the org views show them (E2, E8): email always, phone by the contact rule.'
       required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period]
       properties:
+        photo_url:
+          type: [string, 'null']
+          description: A 5-minute signed link to the person's photo, or null (#141). Never the stored path.
+        photo_updated_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the photo last changed, for caching by person and time (#141).
         id:
           type: string
           format: uuid
@@ -14438,6 +14445,13 @@ components:
       type: object
       required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period, is_me, children]
       properties:
+        photo_url:
+          type: [string, 'null']
+          description: A 5-minute signed link to the person's photo, or null (#141). Never the stored path.
+        photo_updated_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the photo last changed, for caching by person and time (#141).
         id: { type: string, format: uuid }
         full_name: { type: string }
         employee_code: { type: [string, 'null'] }
@@ -14478,6 +14492,13 @@ components:
       type: object
       required: [id, full_name, employee_code, designation, department, branch, email, phone, employment_status, notice_period, state, late, late_minutes, first_in, last_out]
       properties:
+        photo_url:
+          type: [string, 'null']
+          description: A 5-minute signed link to the person's photo, or null (#141). Never the stored path.
+        photo_updated_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the photo last changed, for caching by person and time (#141).
         id: { type: string, format: uuid }
         full_name: { type: string }
         employee_code: { type: [string, 'null'] }
@@ -14547,6 +14568,8 @@ components:
             properties:
               id: { type: string, format: uuid }
               full_name: { type: string }
+              photo_url: { type: [string, 'null'], description: "A 5-minute signed link to the person's photo, or null (#141)." }
+              photo_updated_at: { type: [string, 'null'], format: date-time }
               employee_code: { type: [string, 'null'] }
               designation: { type: [string, 'null'] }
               department:
@@ -15259,6 +15282,13 @@ components:
       description: Somebody a Wall row refers to (its author, who it is about, somebody mentioned).
       required: [id, full_name, employee_code]
       properties:
+        photo_url:
+          type: [string, 'null']
+          description: A 5-minute signed link to the person's photo, or null (#141). Never the stored path.
+        photo_updated_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the photo last changed, for caching by person and time (#141).
         id:
           type: string
           format: uuid
@@ -15290,6 +15320,13 @@ components:
       type: object
       required: [id, full_name, employee_code, reacted_at]
       properties:
+        photo_url:
+          type: [string, 'null']
+          description: A 5-minute signed link to the person's photo, or null (#141). Never the stored path.
+        photo_updated_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the photo last changed, for caching by person and time (#141).
         id:
           type: string
           format: uuid
@@ -15990,6 +16027,13 @@ components:
       type: object
       required: [id, full_name, employee_code, designation, branch_id]
       properties:
+        photo_url:
+          type: [string, 'null']
+          description: A 5-minute signed link to the person's photo, or null (#141). Never the stored path.
+        photo_updated_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the photo last changed, for caching by person and time (#141).
         id:
           type: string
           format: uuid

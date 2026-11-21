@@ -1580,6 +1580,14 @@ function createFakeSupabase(tables = {}, { now = () => new Date() } = {}) {
             data: { signedUrl: `https://storage.test/${bucket}/${path}?token=test-signed&expires=${expiresIn}` },
             error: null,
           }),
+          // #141: many links in one call, the way storage-js answers createSignedUrls.
+          createSignedUrls: async (paths, expiresIn) => {
+            fake.storageCalls.push({ op: 'signMany', bucket, count: paths.length });
+            return {
+              data: paths.map((path) => ({ path, signedUrl: `https://storage.test/${bucket}/${path}?token=test-signed&expires=${expiresIn}`, error: null })),
+              error: null,
+            };
+          },
           // The bytes an inline photo needs. The fixtures' paths have no real file; a JPEG header
           // and footer are enough for the tests to prove the shape and the content type.
           download: async (path) => {
