@@ -3,6 +3,7 @@ const { oneQueryValue, chars, isUuid, invalid } = require('../lib/validate');
 const { istDay } = require('../lib/time');
 const { chainOf, canSeeFullOrgTree, orgTree } = require('../policy/me');
 const { contactContext } = require('../lib/contactCards');
+const { withPhotoLinks } = require('../lib/photoLinks');
 
 /**
  * Tasks E2, E8 and E11: the reporting chain up to the CEO, peers, direct reports, the
@@ -42,7 +43,7 @@ function myOrg({ store }) {
       ? ctx.people.filter((e) => ctx.onStrength(e) && e.department_id === department.id && e.id !== employee.id)
       : [];
 
-    res.json({
+    res.json(await withPhotoLinks(store, {
       manager_chain: chain.map(ctx.card),
       reports_to_ceo_not_recorded: reportsToCeoNotRecorded,
       peers: peers.sort(ctx.byName).map(ctx.card),
@@ -61,7 +62,7 @@ function myOrg({ store }) {
         viewerId: employee.id,
         full: canSeeFullOrgTree({ role, employee, people: ctx.people, onStrength: ctx.onStrength }),
       }),
-    });
+    }));
   });
 }
 
@@ -101,7 +102,7 @@ function directory({ store }) {
 
     matches.sort(ctx.byName);
     const truncated = matches.length > DIRECTORY_LIMIT;
-    res.json({ people: matches.slice(0, DIRECTORY_LIMIT).map(ctx.card), truncated });
+    res.json(await withPhotoLinks(store, { people: matches.slice(0, DIRECTORY_LIMIT).map(ctx.card), truncated }));
   });
 }
 

@@ -6,6 +6,7 @@ const { notFound } = require('../lib/wallKit');
 const { postView } = require('./wallViews');
 const { isActive } = require('../policy/employment');
 const { recordAfter } = require('../lib/audit');
+const { withPhotoLinks } = require('../lib/photoLinks');
 
 /**
  * Task F6, celebrations: today's birthdays and work anniversaries, recent promotions, the new
@@ -112,7 +113,7 @@ function listCelebrations({ store, now }) {
       wish_count: (wishedBy.get(`${cardOut.employee.id}:${occasion}`) || []).length,
     });
 
-    res.json({
+    res.json(await withPhotoLinks(store, {
       today,
       window_days: days,
       birthdays: birthdays.sort((a, b) => a.on.localeCompare(b.on)).map((c) => markWished(c, 'birthday')),
@@ -120,7 +121,7 @@ function listCelebrations({ store, now }) {
       new_joiners: newJoiners.sort((a, b) => b.date_of_joining.localeCompare(a.date_of_joining)),
       promotions: promotions.map((c) => markWished(c, 'promotion')),
       birthdays_hidden: hiddenCount,
-    });
+    }));
   });
 }
 
