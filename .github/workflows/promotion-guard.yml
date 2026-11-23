@@ -1,0 +1,54 @@
+# Why this check exists: main deploys production. Normal work goes
+# feature branch -> develop -> main, so a pull request into main should only
+# ever come from develop.
+#
+# The only two allowed sources for a pull request into main are:
+#   1. develop
+#   2. a branch named hotfix/<something>, for urgent fixes
+#
+# This repository has no branch protection rule for main, so this
+# workflow cannot stop a merge by itself. It is a visible red cross on the
+# pull request and a written rule, not a hard lock.
+
+name: promotion-guard
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  promotion-guard:
+    name: Check source branch
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check source branch
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "promotion-guard: pull requests into main must come from a branch of this repository, not a fork."
+            exit 1
+          fi
+
+          case "$HEAD_REF" in
+            develop)
+              echo "promotion-guard: develop -> main, allowed."
+              exit 0
+              ;;
+            hotfix/?*)
+              echo "promotion-guard: hotfix branch ${HEAD_REF#hotfix/} -> main, allowed. Merge main back into develop after it lands."
+              exit 0
+              ;;
+            *)
+              echo "promotion-guard: $HEAD_REF -> main is not allowed. Open the pull request into develop instead; only develop or hotfix/* may merge into main."
+              exit 1
+              ;;
+          esac
