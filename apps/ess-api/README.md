@@ -108,6 +108,7 @@ Phase 2A adds the Wall's own limits and windows:
 | A Helpdesk raise's body | the same five files as a Wall post, each up to 1 MB decoded | `src/lib/wallKit.js`, `src/app.js` (`7mb` for a Helpdesk raise) |
 | The Helpdesk's reads | 50 tickets in my list, 100 in a queue, 200 rows in a thread | `src/lib/store.js` `LIST_LIMITS` |
 | The Helpdesk's clock | once at boot, then hourly: escalation of a past-due live ticket to its team, then the HoO, then the CEO | `src/jobs/helpdesk.js` |
+| App feedback (#151) | 20 a day per employee on `POST /feedback`; a 5 to 2,000 character message; one PNG or JPEG screenshot up to 2 MB (`3mb` body); 100 a page in the super admins' list | `src/policy/feedback.js`, `src/middleware/rateLimit.js` (`feedback`), `src/app.js` |
 | The infra register mirror | lab and facility tickets only; the hourly job retries skipped links and resolves a ticket whose register row was closed | `src/lib/infraMirror.js`, `src/jobs/infra.js` |
 
 Phase 2C adds the documents', changes', bank's and card's own numbers:
@@ -243,6 +244,9 @@ Everything is under `/api/ess`. Every reply is JSON and is sent with `Cache-Cont
 | `POST /api/ess/helpdesk/tickets/{id}/status` | the team | Move to `in_progress`, `on_hold` or `resolved`, where the lifecycle allows |
 | `POST /api/ess/helpdesk/tickets/{id}/assign` | the team | Hand a live ticket to a named handler (KP 5): `{ employee_id, note? }`; the assignee must hold the category's queue role; sets `claimed_at` and the first response, moves open to in progress, and the history row in `hr_ess_helpdesk_assignments` keeps who pointed it there |
 | `GET /api/ess/helpdesk/queue` | portal | The team's queue (G5): the tickets of my role's categories, `?status=` and `?category=`; an attendance session is 403 `PORTAL_LOGIN_REQUIRED` |
+| `POST /api/ess/feedback` | either | Send feedback about the app (#151, 201): `{ kind: bug\|suggestion\|other, message, context?, screenshot? }`; the context is the screen, app version and build, platform, OS and device; one PNG or JPEG screenshot up to 2 MB, kept under `feedback/` in the ESS bucket; 20 a day per person; the sender gets a receipt only |
+| `GET /api/ess/admin/feedback?kind=&before=` | portal: super_admin only (exact; not the CEO) | Everybody's feedback, newest first, 100 a page (`next_before`), with who sent it; never the bucket path |
+| `GET /api/ess/admin/feedback/{id}/screenshot` | portal: super_admin only | A 300-second signed link to one item's screenshot; the opening is audited first (`feedback.screenshot_opened`), and a failed audit refuses the link |
 | `GET /api/ess/team/off-this-week` | either | Who is off this week: reports, else peers; names and days only (E6) |
 | `GET, POST, DELETE /api/ess/me/documents` | either | My documents (E4): `POST` uploads one base64 (201; the fixed types, `others` with its remark; at most 50 kept, 30 a day), `GET` lists mine newest first, `DELETE` takes one of mine off |
 | `GET /api/ess/hr/employees/{id}/documents` | portal: hr, hr_executive, ceo, super_admin | A person's documents for review (E5); identity rows are hidden from a reader who may not open them |

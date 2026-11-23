@@ -18,6 +18,7 @@ const { WAVE_10 } = require('./helpers/wave10');
 const { WAVE_11 } = require('./helpers/wave11');
 const { WAVE_12 } = require('./helpers/wave12');
 const { WAVE_13 } = require('./helpers/wave13');
+const { WAVE_15 } = require('./helpers/wave15');
 
 /**
  * The ESS against packages/contracts/openapi.yaml (ADR-0010): the routes it serves are the ESS
@@ -1317,13 +1318,13 @@ const WAVE_14 = {
 };
 
 describe('the scenario tables', () => {
-  it('cover every route Wave 2 to Wave 14 added', () => {
+  it('cover every route Wave 2 to Wave 15 added', () => {
     const wave1 = ['GET /api/ess/health', 'GET /api/ess/me', 'GET /api/ess/me/capabilities'];
     const served = C.essRoutes(buildApp().app).filter((route) => !wave1.includes(route));
-    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4), ...Object.keys(WAVE_5), ...Object.keys(WAVE_6), ...Object.keys(WAVE_7), ...Object.keys(WAVE_8), ...Object.keys(WAVE_9), ...Object.keys(WAVE_10), ...Object.keys(WAVE_11), ...Object.keys(WAVE_12), ...Object.keys(WAVE_13), ...Object.keys(WAVE_14)].sort()).toEqual(served);
+    expect([...Object.keys(WAVE_2), ...Object.keys(WAVE_3), ...Object.keys(WAVE_4), ...Object.keys(WAVE_5), ...Object.keys(WAVE_6), ...Object.keys(WAVE_7), ...Object.keys(WAVE_8), ...Object.keys(WAVE_9), ...Object.keys(WAVE_10), ...Object.keys(WAVE_11), ...Object.keys(WAVE_12), ...Object.keys(WAVE_13), ...Object.keys(WAVE_14), ...Object.keys(WAVE_15)].sort()).toEqual(served);
   });
 
-  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13), ...Object.entries(WAVE_14)])('provoke every status %s documents', (route, scenarios) => {
+  it.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13), ...Object.entries(WAVE_14), ...Object.entries(WAVE_15)])('provoke every status %s documents', (route, scenarios) => {
     const [method, path] = route.split(' ');
     const documented = Object.keys(C.operation(method, path).operation.responses).filter((s) => s !== 'default');
     const provoked = new Set(scenarios.map(([label]) => label.slice(0, 3)));
@@ -1331,7 +1332,7 @@ describe('the scenario tables', () => {
   });
 });
 
-describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13), ...Object.entries(WAVE_14)])('%s', (route, scenarios) => {
+describe.each([...Object.entries(WAVE_2), ...Object.entries(WAVE_3), ...Object.entries(WAVE_4), ...Object.entries(WAVE_5), ...Object.entries(WAVE_6), ...Object.entries(WAVE_7), ...Object.entries(WAVE_8), ...Object.entries(WAVE_9), ...Object.entries(WAVE_10), ...Object.entries(WAVE_11), ...Object.entries(WAVE_12), ...Object.entries(WAVE_13), ...Object.entries(WAVE_14), ...Object.entries(WAVE_15)])('%s', (route, scenarios) => {
   const [method, path] = route.split(' ');
   it.each(scenarios)('%s', async (label, provoke) => {
     quietErrors();

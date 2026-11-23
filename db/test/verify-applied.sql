@@ -19,7 +19,7 @@ WITH expected_tables(name) AS (VALUES
   ('hr_ess_helpdesk_messages'), ('hr_ess_document_types'), ('hr_ess_documents'),
   ('hr_ess_change_requests'), ('hr_ess_bank_details'), ('hr_ess_helpdesk_assignments'),
   ('hr_ess_approval_escalations'), ('hr_ess_infra_links'), ('hr_ess_wfh_allowances'),
-  ('hr_ess_work_experience'), ('hr_ess_profile_details')
+  ('hr_ess_work_experience'), ('hr_ess_profile_details'), ('hr_ess_feedback')
 ),
 expected_functions(name) AS (VALUES
   ('hr_ess_session_rotate'), ('hr_ess_session_revoke'), ('hr_ess_session_password_current'),

@@ -349,6 +349,19 @@ const MESSAGES = Object.freeze({
 
   // Phase 2C: the ID card's verification link.
   ID_CARD_BAD_TOKEN: 'That verification link is not valid, or it has expired.',
+
+  // #151: in-app feedback.
+  FEEDBACK_KIND: 'Choose what this is: bug, suggestion or other.',
+  FEEDBACK_MESSAGE: 'Say what happened or what you would like, in 5 to 2,000 characters.',
+  FEEDBACK_CONTEXT: 'context takes only screen, app_version, build_number, platform, os_version and device_model, each as short text.',
+  FEEDBACK_SCREENSHOT: 'Send the screenshot as { content_type, data_base64 }: one PNG or JPEG image.',
+  FEEDBACK_SCREENSHOT_SIZE: 'A screenshot must be up to 2 MB.',
+  FEEDBACK_KIND_FILTER: 'kind must be bug, suggestion, other or all.',
+  FEEDBACK_BEFORE: 'before must be a date and time, as next_before gives it.',
+  FEEDBACK_LIMIT: 'That is more feedback than one person can send in a day. Try again tomorrow.',
+  FEEDBACK_ACCESS_DENIED: 'Only super admins can read app feedback.',
+  FEEDBACK_NOT_FOUND: 'That feedback was not found.',
+  FEEDBACK_NO_SCREENSHOT: 'That feedback has no screenshot.',
 });
 
 /** error and code first, and an extra field can never replace either of them. */
