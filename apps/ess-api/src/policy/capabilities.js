@@ -1,6 +1,7 @@
 const { ROLES } = require('./roles');
 const { ATTENDANCE_OVERRIDE_ROLES } = require('./hrPolicy');
 const { offeredRequestTypes, requestPolicy } = require('./requestLimits');
+const { FEEDBACK_REVIEW_ROLES } = require('./feedback');
 
 /**
  * What the app may show and offer one signed-in employee (task A4), from KP's decisions of
@@ -89,6 +90,8 @@ function capabilitiesFor({ kind, role, directReports, pushEnabled, limitRows = n
     wall: { post: true, announce: ANNOUNCE_ROLES.has(r), moderate: MODERATE_ROLES.has(r) },
     push: { enabled: pushEnabled === true },
     integrity: { required: INTEGRITY_REQUIRED },
+    // #151: everybody sends feedback; only super admins read it (exact role, never inherited).
+    feedback: { send: true, review: FEEDBACK_REVIEW_ROLES.has(r) },
   };
 }
 

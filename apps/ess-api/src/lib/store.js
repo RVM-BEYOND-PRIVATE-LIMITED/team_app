@@ -112,6 +112,9 @@ const COLUMNS = Object.freeze({
   myRemark: 'day, remarks, updated_at',
   // resolved_by_user_id is kept for the record and never sent: the name is what people read.
   dataRequest: 'id, employee_id, kind, details, status, created_at, resolved_at, resolved_by_name, resolution_note',
+  // #151: in-app feedback. screenshot_path is read for the signed link and never sent.
+  feedback: 'id, employee_id, kind, message, screen, app_version, build_number, platform, os_version, device_model, '
+    + 'screenshot_path, screenshot_content_type, screenshot_bytes, created_at',
   personal: 'employee_id, date_of_birth, blood_group, address_line1, address_line2, city, state, pincode, '
     + 'emergency_name, emergency_relation, emergency_phone, updated_at, updated_by_name',
   mockReport: 'id, employee_id, branch_id, reported_at, client_at, kind, latitude, longitude, accuracy_m, provider, app_version, install_id',
@@ -393,6 +396,8 @@ const LIST_LIMITS = Object.freeze({
   helpdeskAssignments: 50,
   // WFH's per-employee allowance list (KP, 22 Oct).
   wfhAllowances: 200,
+  // #151: one page of the super admins' feedback list; the app asks for more with ?before=.
+  feedback: 100,
 });
 
 /**
@@ -830,6 +835,20 @@ function createSupabaseStore(config, { client } = {}) {
     resolveDataRequest: (id, patch) =>
       write('hr_ess_data_requests', (q) => q.update(patch).eq('id', id).eq('status', 'open')
         .select(COLUMNS.dataRequest).maybeSingle()),
+
+    /* ── #151: in-app feedback ── */
+
+    createFeedback: (row) =>
+      write('hr_ess_feedback', (q) => q.insert([row]).select(COLUMNS.feedback).single()),
+    /** Newest first, optionally one kind and only rows older than `before`; one more than a page, to tell a cut list. */
+    listFeedback: async ({ kind = null, before = null } = {}) =>
+      (await read('hr_ess_feedback', (q) => {
+        let base = q.select(COLUMNS.feedback);
+        if (kind) base = base.eq('kind', kind);
+        if (before) base = base.lt('created_at', before);
+        return base.order('created_at', { ascending: false }).limit(LIST_LIMITS.feedback + 1);
+      })) || [],
+    getFeedback: (id) => one('hr_ess_feedback', COLUMNS.feedback, 'id', id),
 
     /* ── E9: personal details ── */
 

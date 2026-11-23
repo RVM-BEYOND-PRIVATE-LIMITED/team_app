@@ -33,6 +33,7 @@ const { signInKey } = require('../policy/signIn');
  *   wallReactions        reactions, per employee per minute: tapping six emoji is normal use.
  *   helpdeskTickets      ticket raises, per employee per day (G2): a raise is one form, and a
  *                        stuck phone must not fill HR's and the teams' queues.
+ *   feedback             in-app feedback items, per employee per day (#151).
  *
  * All count in this process's memory, as the Scheduler's limiters do: there is exactly one
  * ESS instance (ADR-0005), and a restart starting the counts again is acceptable.
@@ -59,6 +60,9 @@ const DEFAULT_LIMITS = Object.freeze({
   // My Documents (KP 1): uploads per person per day — one file each, so a stuck phone cannot
   // fill the bucket or HR's review queue.
   documentsUploads: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 30 }),
+  // #151: feedback items per person per day; each may carry a screenshot, so a stuck phone must
+  // not fill the bucket or the super admins' list.
+  feedback: Object.freeze({ windowMs: 24 * 60 * 60 * 1000, limit: 20 }),
   // The ID card's verification link: opened by whoever the holder shows the card to, with no
   // token, so it is bounded per address like the sign-in is.
   idCardVerify: Object.freeze({ windowMs: 60 * 1000, limit: 30 }),

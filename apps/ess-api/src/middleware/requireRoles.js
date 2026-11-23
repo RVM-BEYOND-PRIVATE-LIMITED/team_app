@@ -11,7 +11,7 @@ const { HttpError, MESSAGES } = require('../lib/errors');
  * attendance session does not have.
  *
  * @param {Set<string>} roles
- * @param {'HR_ACCESS_DENIED'|'ATTENDANCE_OVERRIDE_DENIED'} code  the Scheduler's code for the same refusal
+ * @param {'HR_ACCESS_DENIED'|'ATTENDANCE_OVERRIDE_DENIED'|'FEEDBACK_ACCESS_DENIED'} code  the Scheduler's code for the same refusal, or the ESS's own (FEEDBACK_ACCESS_DENIED, #151)
  */
 function requireRoles(roles, code) {
   return function roleGuard(req, _res, next) {

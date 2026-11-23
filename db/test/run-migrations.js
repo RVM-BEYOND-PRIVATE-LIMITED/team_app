@@ -157,6 +157,15 @@ const REFUSALS = [
   refusal('a data request in an unknown status', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details, status, resolved_at, resolved_by_name) VALUES (e, 'delete', 'Please delete it', 'lost', now(), 'HR')"),
   refusal('a sixth open data request for one person', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details) SELECT e, 'correct', 'Request ' || g FROM generate_series(1, 5) g; INSERT INTO public.hr_ess_data_requests (employee_id, kind, details) VALUES (e, 'correct', 'One too many')"),
   refusal('a resolution note over 1000 characters', "INSERT INTO public.hr_ess_data_requests (employee_id, kind, details, status, resolved_at, resolved_by_name, resolution_note) VALUES (e, 'delete', 'Please delete it', 'done', now(), 'HR', repeat('x', 1001))"),
+  // #151: in-app feedback.
+  refusal('feedback of an unknown kind', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message) VALUES (e, 'praise', 'The app is great')"),
+  refusal('feedback with a blank message', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message) VALUES (e, 'bug', '   ')"),
+  refusal('feedback over 2000 characters', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message) VALUES (e, 'bug', repeat('x', 2001))"),
+  refusal('feedback with a screen name over 200 characters', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message, screen) VALUES (e, 'bug', 'It crashed', repeat('x', 201))"),
+  refusal('a feedback screenshot outside feedback/', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message, screenshot_path, screenshot_content_type, screenshot_bytes) VALUES (e, 'bug', 'It crashed', 'documents/x.png', 'image/png', 10)"),
+  refusal('a feedback screenshot that is not PNG or JPEG', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message, screenshot_path, screenshot_content_type, screenshot_bytes) VALUES (e, 'bug', 'It crashed', 'feedback/x.gif', 'image/gif', 10)"),
+  refusal('a feedback screenshot over 2 MB', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message, screenshot_path, screenshot_content_type, screenshot_bytes) VALUES (e, 'bug', 'It crashed', 'feedback/x.png', 'image/png', 2097153)"),
+  refusal('a feedback screenshot path with no type or size', "INSERT INTO public.hr_ess_feedback (employee_id, kind, message, screenshot_path) VALUES (e, 'bug', 'It crashed', 'feedback/x.png')"),
   refusal('a mocked-location report for a ping', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind) VALUES (e, 'ping')"),
   refusal('a mocked-location report with a latitude and no longitude', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, latitude) VALUES (e, 'punch', 28.4)"),
   refusal('a mocked-location report off the globe', "INSERT INTO public.hr_ess_mock_location_reports (employee_id, kind, latitude, longitude) VALUES (e, 'punch', 91, 77)"),
@@ -876,6 +885,15 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.hr_ess_change_requests WHERE employee_id = e) THEN RAISE EXCEPTION 'change requests kept'; END IF;
   IF EXISTS (SELECT 1 FROM public.hr_ess_bank_details WHERE employee_id = e) THEN RAISE EXCEPTION 'bank details kept'; END IF;
   IF EXISTS (SELECT 1 FROM public.hr_ess_helpdesk_assignments WHERE ticket_id = ticket) THEN RAISE EXCEPTION 'assignments kept'; END IF;
+
+  -- #151: feedback, with and without a screenshot, goes with its sender's record.
+  INSERT INTO public.hr_ess_feedback (employee_id, kind, message, screen, app_version)
+    VALUES (other, 'suggestion', 'A dark mode please.', '/home', '0.1.6');
+  INSERT INTO public.hr_ess_feedback (employee_id, kind, message, screenshot_path, screenshot_content_type, screenshot_bytes)
+    VALUES (other, 'bug', 'The punch button froze.', 'feedback/' || other || '/a.png', 'image/png', 2048);
+  IF (SELECT count(*) FROM public.hr_ess_feedback WHERE employee_id = other) <> 2 THEN RAISE EXCEPTION 'the feedback save'; END IF;
+  DELETE FROM public.hr_employees WHERE id = other;
+  IF EXISTS (SELECT 1 FROM public.hr_ess_feedback WHERE employee_id = other) THEN RAISE EXCEPTION 'feedback kept'; END IF;
 END $check$;`;
 
 function check(label, fn) {
