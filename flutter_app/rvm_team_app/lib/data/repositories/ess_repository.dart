@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:core_network/core_network.dart';
 
 import '../../domain/ess_models.dart';
@@ -1107,5 +1109,36 @@ class EssRepository with ConnectivityGuard {
   Future<void> unhideComment(String id) async {
     await ensureOnline();
     return _remote.unhideComment(id);
+  }
+
+  // ── in-app feedback (#151) ──────────────────────────────────────────────
+  Future<AppFeedbackReceipt> sendFeedback({
+    required AppFeedbackKind kind,
+    required String message,
+    required AppFeedbackContext context,
+    Uint8List? screenshotBytes,
+    String contentType = 'image/png',
+  }) async {
+    await ensureOnline();
+    return _remote.sendFeedback(
+      kind: kind,
+      message: message,
+      context: context,
+      screenshotBytes: screenshotBytes,
+      contentType: contentType,
+    );
+  }
+
+  Future<AppFeedbackPage> feedbackPage({
+    AppFeedbackKind? kind,
+    String? before,
+  }) async {
+    await ensureOnline();
+    return _remote.feedbackPage(kind: kind, before: before);
+  }
+
+  Future<AppFeedbackScreenshot> feedbackScreenshot(String id) async {
+    await ensureOnline();
+    return _remote.feedbackScreenshot(id);
   }
 }

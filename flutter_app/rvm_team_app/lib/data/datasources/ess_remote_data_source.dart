@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:core_network/core_network.dart';
 import 'package:dio/dio.dart';
 
@@ -222,13 +225,13 @@ class EssRemoteDataSource with DioExecutor {
       guard(() async => PersonalDetails.fromJson(_obj(
           _body(await _dio.put('/me/personal', data: patch))['personal'])));
 
-  Future<SocialProfile> readSocialProfile() => guard(() async =>
-      SocialProfile.fromJson(
+  Future<SocialProfile> readSocialProfile() =>
+      guard(() async => SocialProfile.fromJson(
           _obj(_body(await _dio.get('/me/profile-details'))['profile'])));
 
   Future<SocialProfile> updateSocialProfile(Map<String, dynamic> patch) =>
-      guard(() async => SocialProfile.fromJson(
-          _obj(_body(await _dio.put('/me/profile-details', data: patch))['profile'])));
+      guard(() async => SocialProfile.fromJson(_obj(_body(
+          await _dio.put('/me/profile-details', data: patch))['profile'])));
 
   Future<List<WorkExperience>> workExperience() => guard(() async => _list(
         _body(await _dio.get('/me/work-experience'))['entries'],
@@ -584,10 +587,9 @@ class EssRemoteDataSource with DioExecutor {
   /// The active faculty who can cover a teaching leave in the request's branch.
   Future<List<LeaveFacultyOption>> leaveFaculty({String? requestId}) =>
       guard(() async => _list(
-          _body(await _dio.get('/leave-faculty',
-              queryParameters: {
-                if (requestId != null) 'request_id': requestId
-              }))['faculty'],
+          _body(await _dio.get('/leave-faculty', queryParameters: {
+            if (requestId != null) 'request_id': requestId
+          }))['faculty'],
           LeaveFacultyOption.fromJson));
 
   // ── 1D: notifications ────────────────────────────────────────────────────
@@ -1270,4 +1272,41 @@ class EssRemoteDataSource with DioExecutor {
 
   Map<String, dynamic> _mapOf(dynamic v) =>
       v is Map ? v.cast<String, dynamic>() : const {};
+  // ── in-app feedback (#151) ──────────────────────────────────────────────
+  Future<AppFeedbackReceipt> sendFeedback({
+    required AppFeedbackKind kind,
+    required String message,
+    required AppFeedbackContext context,
+    Uint8List? screenshotBytes,
+    String contentType = 'image/png',
+  }) =>
+      guard(() async {
+        final res = await _dio.post('/feedback', data: {
+          'kind': kind.wire,
+          'message': message,
+          'context': context.toJson(),
+          if (screenshotBytes != null)
+            'screenshot': {
+              'content_type': contentType,
+              'data_base64': base64Encode(screenshotBytes),
+            },
+        });
+        return AppFeedbackReceipt.fromJson(_obj(_body(res)['feedback']));
+      });
+
+  Future<AppFeedbackPage> feedbackPage({
+    AppFeedbackKind? kind,
+    String? before,
+  }) =>
+      guard(() async {
+        final res = await _dio.get('/admin/feedback', queryParameters: {
+          if (kind != null) 'kind': kind.wire,
+          if (before != null) 'before': before,
+        });
+        return AppFeedbackPage.fromJson(_body(res));
+      });
+
+  Future<AppFeedbackScreenshot> feedbackScreenshot(String id) =>
+      guard(() async => AppFeedbackScreenshot.fromJson(
+          _body(await _dio.get('/admin/feedback/$id/screenshot'))));
 }

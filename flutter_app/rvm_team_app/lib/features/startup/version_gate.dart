@@ -5,6 +5,7 @@ import '../../app_version.dart';
 import '../../bloc/team_auth_bloc.dart';
 import '../../data/repositories/ess_repository.dart';
 import '../../injection.dart';
+import '../feedback/feedback_visibility.dart';
 import '../../widgets/blocked_state.dart';
 
 /// Advisory version gate (task K2). The ESS `/health` reports the minimum and
@@ -36,6 +37,7 @@ class _VersionGateState extends State<VersionGate> {
         _minVersion = min;
         _mustUpdate = min != null && _isOlder(appVersion, min);
       });
+      feedbackVersionBlocked.value = _mustUpdate;
     } catch (_) {
       if (!mounted) return;
       setState(() => _checking = false);
@@ -61,7 +63,8 @@ class _VersionGateState extends State<VersionGate> {
     // The shared blocked screen (#50, item 12), with the version to reach.
     return BlockedState(
       reason: BlockedReason.updateRequired,
-      message: 'This version of Team RVM is no longer supported. Please update to '
+      message:
+          'This version of Team RVM is no longer supported. Please update to '
           'continue (v$_minVersion or newer).',
       actionLabel: 'Check again',
       onAction: _checking ? null : _check,

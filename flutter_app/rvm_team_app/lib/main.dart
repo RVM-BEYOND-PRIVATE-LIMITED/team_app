@@ -14,6 +14,7 @@ import 'bloc/connectivity_bloc.dart';
 import 'bloc/team_auth_bloc.dart';
 import 'bloc/team_modules_bloc.dart';
 import 'data/notification_permission.dart';
+import 'features/feedback/feedback_overlay.dart';
 import 'features/startup/version_gate.dart';
 import 'injection.dart';
 import 'push/push_service.dart';
@@ -27,7 +28,7 @@ void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     Bloc.observer = const AppBlocObserver();
-    unawaited(CrashReporter.init());
+    await CrashReporter.init();
     FlutterError.onError = (details) {
       if (_isImageNoise(details.exception)) {
         // Dead avatar/photo URL (offline DNS like issue13's Supabase host,
@@ -113,8 +114,7 @@ class _SafeErrorView extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.error_outline_rounded,
-                    size: 40, color: p.danger),
+                Icon(Icons.error_outline_rounded, size: 40, color: p.danger),
                 const SizedBox(height: 12),
                 Text(
                   'Something went wrong. Please reopen the app.',
@@ -221,9 +221,12 @@ class _TeamAppState extends State<TeamApp> {
               themeMode: theme.mode,
               // The TEST SERVER ribbon (#60) is off unless
               // SHOW_ENV_RIBBON=true, and never shows against the live servers.
-              builder: (context, child) => EnvRibbon(
-                environment: getIt<ApiEnvironment>(),
-                child: VersionGate(child: child ?? const SizedBox.shrink()),
+              builder: (context, child) => FeedbackOverlay(
+                router: router,
+                child: EnvRibbon(
+                  environment: getIt<ApiEnvironment>(),
+                  child: VersionGate(child: child ?? const SizedBox.shrink()),
+                ),
               ),
               routerConfig: router,
             ),

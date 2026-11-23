@@ -2,6 +2,7 @@ import 'package:core_network/core_network.dart';
 import 'package:dio/dio.dart';
 
 import '../../domain/crm_models.dart';
+import '../../domain/quiz_models.dart';
 import '../../router/module_routes.dart';
 import '../dio_executor.dart';
 import '../module_request.dart';
@@ -20,12 +21,16 @@ class CrmRemoteDataSource with DioExecutor {
 
   final Dio _dio;
 
-  static Options _options({String? idempotencyKey, bool module = true}) =>
-      Options(extra: {
-        if (module) ...?TeamModule.crm.requestOptions.extra,
-        if (idempotencyKey != null && idempotencyKey.isNotEmpty)
-          IdempotencyInterceptor.extraKey: idempotencyKey,
-      });
+  static Options _options(
+          {String? idempotencyKey, bool module = true, bool soft = false}) =>
+      Options(
+        extra: {
+          if (module) ...?TeamModule.crm.requestOptions.extra,
+          if (idempotencyKey != null && idempotencyKey.isNotEmpty)
+            IdempotencyInterceptor.extraKey: idempotencyKey,
+        },
+        validateStatus: soft ? (status) => status != 401 : null,
+      );
 
   Map<String, dynamic> _map(Object? body) {
     if (body is Map) return body.cast<String, dynamic>();
@@ -277,4 +282,76 @@ class CrmRemoteDataSource with DioExecutor {
       '${value.year.toString().padLeft(4, '0')}-'
       '${value.month.toString().padLeft(2, '0')}-'
       '${value.day.toString().padLeft(2, '0')}';
+  // ── sales quiz (#152, Scheduler_Backend #692) ───────────────────────────
+  Future<QuizCurrent> quizCurrent() => guard(() async {
+        final res =
+            await _dio.get<Object?>('/crm/quiz/current', options: _options());
+        return QuizCurrent.fromJson(_map(bodyOf(res)));
+      });
+
+  /// The quiz without throwing when the switch is closed or nothing is due.
+  Future<({QuizCurrent? data, Failure? failure})> quizCurrentSafe() async {
+    try {
+      final res = await _dio.get<Object?>(
+        '/crm/quiz/current',
+        options: _options(soft: true),
+      );
+      final status = res.statusCode ?? 0;
+      if (status == 404) return (data: null, failure: null);
+      if (status < 200 || status >= 300) {
+        return (data: null, failure: failureFromResponse(status, res.data));
+      }
+      return (data: QuizCurrent.fromJson(_map(res.data)), failure: null);
+    } on DioException catch (e) {
+      return (data: null, failure: Failure.fromDio(e));
+    } on Failure catch (failure) {
+      return (data: null, failure: failure);
+    } catch (_) {
+      return (data: null, failure: const UnknownFailure());
+    }
+  }
+
+  Future<QuizOpened> quizOpen(int roundId, {String? idempotencyKey}) =>
+      guard(() async {
+        final res = await _dio.post<Object?>(
+          '/crm/quiz/rounds/$roundId/open',
+          options: _options(idempotencyKey: idempotencyKey),
+        );
+        return QuizOpened.fromJson(_map(bodyOf(res)));
+      });
+
+  Future<QuizAnswerResult> quizAnswer(int roundId, int choice,
+          {String? idempotencyKey}) =>
+      guard(() async {
+        final res = await _dio.post<Object?>(
+          '/crm/quiz/rounds/$roundId/answer',
+          data: {'choice': choice},
+          options: _options(idempotencyKey: idempotencyKey),
+        );
+        return QuizAnswerResult.fromJson(_map(bodyOf(res)));
+      });
+
+  Future<QuizMe> quizMe() => guard(() async {
+        final res =
+            await _dio.get<Object?>('/crm/quiz/me', options: _options());
+        return QuizMe.fromJson(_map(bodyOf(res)));
+      });
+
+  Future<QuizResults> quizResults({
+    required String from,
+    required String to,
+    String? userId,
+  }) =>
+      guard(() async {
+        final res = await _dio.get<Object?>(
+          '/crm/quiz/results',
+          queryParameters: {
+            'from': from,
+            'to': to,
+            if (userId != null) 'user_id': userId,
+          },
+          options: _options(),
+        );
+        return QuizResults.fromJson(_map(bodyOf(res)));
+      });
 }

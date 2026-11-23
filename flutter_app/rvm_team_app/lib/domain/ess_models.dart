@@ -260,6 +260,8 @@ class EssCapabilities extends Equatable {
     required this.wallModerate,
     required this.pushEnabled,
     required this.integrityRequired,
+    this.feedbackSend = false,
+    this.feedbackReview = false,
   });
 
   final List<String> tabs;
@@ -280,6 +282,11 @@ class EssCapabilities extends Equatable {
   final bool pushEnabled;
   final bool integrityRequired;
 
+  /// In-app feedback (#151): every staff login may send; only the exact
+  /// super_admin role may review.
+  final bool feedbackSend;
+  final bool feedbackReview;
+
   bool get canSeeHrTools => hrScope.isNotEmpty || approvalsAnyRequest;
 
   factory EssCapabilities.fromJson(Map<String, dynamic> j) {
@@ -289,6 +296,7 @@ class EssCapabilities extends Equatable {
     final wall = _map(j['wall']) ?? const {};
     final push = _map(j['push']) ?? const {};
     final integrity = _map(j['integrity']) ?? const {};
+    final feedback = _map(j['feedback']) ?? const {};
     return EssCapabilities(
       tabs: _strings(j['tabs']),
       sectionTime: _bool(sections['time']),
@@ -307,12 +315,22 @@ class EssCapabilities extends Equatable {
       wallModerate: _bool(wall['moderate']),
       pushEnabled: _bool(push['enabled']),
       integrityRequired: _bool(integrity['required']),
+      feedbackSend: _bool(feedback['send']),
+      feedbackReview: _bool(feedback['review']),
     );
   }
 
   @override
-  List<Object?> get props =>
-      [tabs, sectionTime, sectionWork, directReports, hrScope, wallPost];
+  List<Object?> get props => [
+        tabs,
+        sectionTime,
+        sectionWork,
+        directReports,
+        hrScope,
+        wallPost,
+        feedbackSend,
+        feedbackReview,
+      ];
 }
 
 /// `PersonalDetails` schema (E9).
@@ -382,8 +400,6 @@ class PersonalDetails extends Equatable {
         updatedAt,
       ];
 }
-
-
 
 class SocialProfile extends Equatable {
   const SocialProfile({
@@ -881,7 +897,6 @@ class OrgCard extends Equatable {
       ];
 }
 
-
 class ColleagueProfile extends Equatable {
   const ColleagueProfile({
     required this.person,
@@ -1210,11 +1225,7 @@ class MyProfileEmployee extends Equatable {
 
 class TimelineEvent extends Equatable {
   const TimelineEvent(
-      {required this.id,
-      required this.title,
-      this.kind,
-      this.at,
-      this.detail});
+      {required this.id, required this.title, this.kind, this.at, this.detail});
   final String id;
 
   /// The stable backend kind (`PROMOTED`, `REPORTING_LINE_CHANGED`, …).
@@ -1333,7 +1344,8 @@ String? leaveRoutingNoteText(String? note) => switch (note) {
         'Your usual approver is no longer active, so a backup decides.',
       'same_person' => 'Nobody approves their own leave, so a backup decides.',
       'no_approver' => 'No approver is set yet, so a backup decides.',
-      'switch_over_hr_close' => 'Moved to HR when the new leave policy started.',
+      'switch_over_hr_close' =>
+        'Moved to HR when the new leave policy started.',
       _ => null,
     };
 
@@ -1769,7 +1781,8 @@ class LeaveRoute extends Equatable {
 /// (Scheduler leave + ESS attendance and work from home), and whether the
 /// Scheduler's approver mapping makes them a leave approver at all.
 class ApprovalsSummary extends Equatable {
-  const ApprovalsSummary({required this.pending, required this.canApproveLeave});
+  const ApprovalsSummary(
+      {required this.pending, required this.canApproveLeave});
   final int pending;
   final bool canApproveLeave;
   @override
@@ -1904,8 +1917,8 @@ class LeaveOffEntry extends Equatable {
   factory LeaveOffEntry.fromJson(Map<String, dynamic> j) {
     final employee = _map(j['employee']);
     return LeaveOffEntry(
-      name: (employee == null ? null : _str(employee['full_name'])) ??
-          'Unknown',
+      name:
+          (employee == null ? null : _str(employee['full_name'])) ?? 'Unknown',
       status: _str(j['status']) ?? '',
       day: _str(j['day']) ?? '',
       endDay: _str(j['end_day']),
@@ -1926,7 +1939,8 @@ class LeaveWhosOff extends Equatable {
   factory LeaveWhosOff.fromJson(Map<String, dynamic> j) => LeaveWhosOff(
         from: _str(j['from']),
         to: _str(j['to']),
-        off: _maps(j['off']).map(LeaveOffEntry.fromJson).toList(growable: false),
+        off:
+            _maps(j['off']).map(LeaveOffEntry.fromJson).toList(growable: false),
       );
   @override
   List<Object?> get props => [from, to, off];
@@ -2489,9 +2503,7 @@ class EarnedBadge extends Equatable {
 
 class PraisePage extends Equatable {
   const PraisePage(
-      {required this.praise,
-      required this.badges,
-      this.earned = const []});
+      {required this.praise, required this.badges, this.earned = const []});
   final List<WallPost> praise;
   final List<PraiseBadge> badges;
   final List<EarnedBadge> earned;
@@ -3362,8 +3374,17 @@ class FacultySession extends Equatable {
         marked: _bool(j['marked']),
       );
   @override
-  List<Object?> get props =>
-      [id, name, startTime, endTime, locationName, meetLink, covered, students, marked];
+  List<Object?> get props => [
+        id,
+        name,
+        startTime,
+        endTime,
+        locationName,
+        meetLink,
+        covered,
+        students,
+        marked
+      ];
 }
 
 class FacultyDay extends Equatable {
@@ -3664,4 +3685,204 @@ class ModerationEntry extends Equatable {
       );
   @override
   List<Object?> get props => [id, at, actorName, action];
+}
+
+/// One in-app feedback item's kind (#151).
+enum AppFeedbackKind {
+  bug,
+  suggestion,
+  other;
+
+  String get wire => name;
+
+  static AppFeedbackKind fromWire(String? value) => switch (value) {
+        'suggestion' => AppFeedbackKind.suggestion,
+        'other' => AppFeedbackKind.other,
+        _ => AppFeedbackKind.bug,
+      };
+
+  String get label => switch (this) {
+        AppFeedbackKind.bug => 'Bug',
+        AppFeedbackKind.suggestion => 'Suggestion',
+        AppFeedbackKind.other => 'Other',
+      };
+}
+
+/// The context the app attaches to one item (#151). Every field is optional.
+class AppFeedbackContext extends Equatable {
+  const AppFeedbackContext({
+    this.screen,
+    this.appVersion,
+    this.buildNumber,
+    this.platform,
+    this.osVersion,
+    this.deviceModel,
+  });
+
+  final String? screen;
+  final String? appVersion;
+  final String? buildNumber;
+  final String? platform;
+  final String? osVersion;
+  final String? deviceModel;
+
+  Map<String, dynamic> toJson() => {
+        if (screen != null && screen!.isNotEmpty) 'screen': screen,
+        if (appVersion != null && appVersion!.isNotEmpty)
+          'app_version': appVersion,
+        if (buildNumber != null && buildNumber!.isNotEmpty)
+          'build_number': buildNumber,
+        if (platform != null && platform!.isNotEmpty) 'platform': platform,
+        if (osVersion != null && osVersion!.isNotEmpty) 'os_version': osVersion,
+        if (deviceModel != null && deviceModel!.isNotEmpty)
+          'device_model': deviceModel,
+      };
+
+  factory AppFeedbackContext.fromJson(Map<String, dynamic> j) =>
+      AppFeedbackContext(
+        screen: _str(j['screen']),
+        appVersion: _str(j['app_version']),
+        buildNumber: _str(j['build_number']),
+        platform: _str(j['platform']),
+        osVersion: _str(j['os_version']),
+        deviceModel: _str(j['device_model']),
+      );
+
+  String get summary => [
+        if (screen != null && screen!.isNotEmpty) screen,
+        if (appVersion != null && appVersion!.isNotEmpty) 'v$appVersion',
+        if (osVersion != null && osVersion!.isNotEmpty) osVersion,
+        if (deviceModel != null && deviceModel!.isNotEmpty) deviceModel,
+      ].join(' · ');
+
+  @override
+  List<Object?> get props =>
+      [screen, appVersion, buildNumber, platform, osVersion, deviceModel];
+}
+
+/// The receipt of a sent item.
+class AppFeedbackReceipt extends Equatable {
+  const AppFeedbackReceipt({
+    required this.id,
+    required this.kind,
+    required this.hasScreenshot,
+    this.createdAt,
+  });
+
+  final String id;
+  final AppFeedbackKind kind;
+  final bool hasScreenshot;
+  final DateTime? createdAt;
+
+  factory AppFeedbackReceipt.fromJson(Map<String, dynamic> j) =>
+      AppFeedbackReceipt(
+        id: _str(j['id']) ?? '',
+        kind: AppFeedbackKind.fromWire(_str(j['kind'])),
+        hasScreenshot: _bool(j['has_screenshot']),
+        createdAt: _date(j['created_at']),
+      );
+
+  @override
+  List<Object?> get props => [id, kind, hasScreenshot, createdAt];
+}
+
+/// One item in the super admins' list (#151).
+class AppFeedbackEntry extends Equatable {
+  const AppFeedbackEntry({
+    required this.id,
+    required this.kind,
+    required this.message,
+    required this.context,
+    required this.hasScreenshot,
+    this.createdAt,
+    this.employeeId,
+    this.employeeName,
+    this.employeeCode,
+  });
+
+  final String id;
+  final AppFeedbackKind kind;
+  final String message;
+  final AppFeedbackContext context;
+  final bool hasScreenshot;
+  final DateTime? createdAt;
+  final String? employeeId;
+  final String? employeeName;
+  final String? employeeCode;
+
+  factory AppFeedbackEntry.fromJson(Map<String, dynamic> j) {
+    final employee = _map(j['employee']) ?? const {};
+    return AppFeedbackEntry(
+      id: _str(j['id']) ?? '',
+      kind: AppFeedbackKind.fromWire(_str(j['kind'])),
+      message: _str(j['message']) ?? '',
+      context: AppFeedbackContext.fromJson(
+          _map(j['context']) ?? const <String, dynamic>{}),
+      hasScreenshot: _bool(j['has_screenshot']),
+      createdAt: _date(j['created_at']),
+      employeeId: _str(employee['id']),
+      employeeName: _str(employee['full_name']),
+      employeeCode: _str(employee['employee_code']),
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        id,
+        kind,
+        message,
+        context,
+        hasScreenshot,
+        createdAt,
+        employeeId,
+        employeeName,
+        employeeCode,
+      ];
+}
+
+class AppFeedbackPage extends Equatable {
+  const AppFeedbackPage({required this.items, this.nextBefore});
+
+  final List<AppFeedbackEntry> items;
+  final String? nextBefore;
+
+  factory AppFeedbackPage.fromJson(Map<String, dynamic> j) => AppFeedbackPage(
+        items: [
+          for (final row
+              in (j['feedback'] is List ? j['feedback'] as List : const []))
+            AppFeedbackEntry.fromJson(_map(row) ?? const <String, dynamic>{}),
+        ],
+        nextBefore: _str(j['next_before']),
+      );
+
+  @override
+  List<Object?> get props => [items, nextBefore];
+}
+
+/// A 5-minute signed link to one item's screenshot.
+class AppFeedbackScreenshot extends Equatable {
+  const AppFeedbackScreenshot({
+    required this.url,
+    required this.name,
+    required this.contentType,
+    required this.expiresIn,
+  });
+
+  final String url;
+  final String name;
+  final String contentType;
+  final int expiresIn;
+
+  factory AppFeedbackScreenshot.fromJson(Map<String, dynamic> j) {
+    final file = _map(j['file']) ?? const {};
+    return AppFeedbackScreenshot(
+      url: _str(file['url']) ?? '',
+      name: _str(file['name']) ?? '',
+      contentType: _str(file['content_type']) ?? 'image/png',
+      expiresIn: _int(file['expires_in']) ?? 300,
+    );
+  }
+
+  @override
+  List<Object?> get props => [url, name, contentType, expiresIn];
 }

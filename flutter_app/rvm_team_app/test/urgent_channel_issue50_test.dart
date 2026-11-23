@@ -23,9 +23,9 @@ void main() {
     AndroidNotificationChannel channel(String id) =>
         teamNotificationChannels.singleWhere((c) => c.id == id);
 
-    test('alerts stays as it was; urgent is added', () {
+    test('alerts stays as it was; urgent and the quiz lane are added', () {
       expect([for (final c in teamNotificationChannels) c.id],
-          ['team_rvm_alerts', 'team_rvm_urgent']);
+          ['team_rvm_alerts', 'team_rvm_urgent', 'team_rvm_sales_quiz']);
       final alerts = channel('team_rvm_alerts');
       expect(alerts.name, 'Team RVM alerts');
       expect(alerts.importance, Importance.max);
@@ -45,7 +45,16 @@ void main() {
       expect(sound!.sound, 'team_rvm_urgent');
     });
 
-    test('both are created, and one failure does not stop the other', () async {
+    test('the quiz lane has sound too', () {
+      final quiz = channel(salesQuizChannelId);
+      expect(quiz.id, 'team_rvm_sales_quiz');
+      expect(quiz.name, 'Sales quiz');
+      expect(quiz.importance, Importance.max);
+      expect(quiz.playSound, isTrue);
+      expect(quiz.sound, isNull);
+    });
+
+    test('all are created, and one failure does not stop the others', () async {
       final android = _MockAndroidPlugin();
       final created = <String>[];
       when(() => android.createNotificationChannel(any()))
@@ -57,8 +66,8 @@ void main() {
 
       await createTeamNotificationChannels(android);
 
-      verify(() => android.createNotificationChannel(any())).called(2);
-      expect(created, ['team_rvm_urgent']);
+      verify(() => android.createNotificationChannel(any())).called(3);
+      expect(created, ['team_rvm_urgent', 'team_rvm_sales_quiz']);
     });
 
     test('a foreground push is drawn on urgent only when it names it', () {

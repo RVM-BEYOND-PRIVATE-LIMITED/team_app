@@ -1,10 +1,12 @@
 import 'package:core_bloc/core_bloc.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:domain/domain.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app_crash.dart';
 import '../../app_version.dart';
 import '../../auth/team_permissions.dart';
 import '../../bloc/team_auth_bloc.dart';
@@ -66,9 +68,8 @@ class MeScreen extends StatelessWidget {
                         builder: (context) => TeamHeaderAction(
                           icon: Icons.refresh_rounded,
                           tooltip: 'Refresh',
-                          onPressed: () => context
-                              .read<MeBloc>()
-                              .add(const LoadRefreshed()),
+                          onPressed: () =>
+                              context.read<MeBloc>().add(const LoadRefreshed()),
                         ),
                       ),
                     ],
@@ -76,12 +77,10 @@ class MeScreen extends StatelessWidget {
                 ),
               ],
               body: switch (state.status) {
-                LoadStatus.loading ||
-                LoadStatus.initial =>
-                  const AppLoading(),
+                LoadStatus.loading || LoadStatus.initial => const AppLoading(),
                 LoadStatus.failure => AppError(
-                    message:
-                        state.failure?.message ?? 'Could not load your profile.',
+                    message: state.failure?.message ??
+                        'Could not load your profile.',
                     onRetry: () =>
                         context.read<MeBloc>().add(const LoadRefreshed()),
                   ),
@@ -203,6 +202,20 @@ class _MeBody extends StatelessWidget {
             ],
           ),
         ],
+        if (kDebugMode && !attendanceOnly) ...[
+          const SizedBox(height: RvmSpacing.md),
+          _Section(
+            title: 'Developer',
+            children: [
+              ListTile(
+                leading: const Icon(Icons.warning_amber_rounded),
+                title: const Text('Send test crash'),
+                subtitle: const Text('Fatal test report to Crashlytics'),
+                onTap: () => _sendTestCrash(context),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: RvmSpacing.lg),
         OutlinedButton.icon(
           onPressed: () =>
@@ -226,6 +239,18 @@ class _MeBody extends StatelessWidget {
         const SizedBox(height: RvmSpacing.lg),
       ],
     );
+  }
+
+  Future<void> _sendTestCrash(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final sent = await CrashReporter.testCrash();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(sent
+            ? 'Test crash sent. Check Firebase Crashlytics.'
+            : 'Crashlytics is not enabled in this build.'),
+      ));
   }
 }
 
@@ -368,13 +393,11 @@ class _Tile extends StatelessWidget {
               .textTheme
               .bodySmall
               ?.copyWith(fontSize: 12, height: 1.3)),
-      trailing: Icon(Icons.chevron_right_rounded,
-          size: 20, color: p.subtle),
+      trailing: Icon(Icons.chevron_right_rounded, size: 20, color: p.subtle),
       onTap: onTap,
     );
   }
 }
-
 
 ThemeState? _maybeThemeState(BuildContext context) {
   try {

@@ -13,6 +13,7 @@ EssCapabilities _caps({
   List<String> tabs = const ['home', 'inbox', 'wall', 'team', 'me'],
   List<String> hrScope = const [],
   bool anyRequest = false,
+  bool feedbackReview = false,
 }) =>
     EssCapabilities(
       tabs: tabs,
@@ -32,6 +33,7 @@ EssCapabilities _caps({
       wallModerate: false,
       pushEnabled: true,
       integrityRequired: false,
+      feedbackReview: feedbackReview,
     );
 
 final _capsCases = <EssCapabilities>[
@@ -310,5 +312,15 @@ void main() {
       expect(sales.canSeeFacultyWork, isFalse);
       expect(sales.canSeeHodWork, isFalse);
     });
+  });
+
+  test('App feedback appears only when the server says review is allowed', () {
+    List<String> ids(bool review) => [
+          for (final s in meSectionsFor(TeamViewer(
+              role: AppRole.superAdmin, caps: _caps(feedbackReview: review))))
+            for (final t in s.tiles) t.id,
+        ];
+    expect(ids(false), isNot(contains('app-feedback')));
+    expect(ids(true), contains('app-feedback'));
   });
 }

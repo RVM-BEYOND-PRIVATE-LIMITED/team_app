@@ -51,14 +51,14 @@ final List<HomeCardSpec> homeCardRegistry = [
   const HomeCardSpec(HomeCard.offThisWeek, _everyone),
   HomeCardSpec(HomeCard.faculty, (v) => v.perms.canSeeFacultyWork),
   HomeCardSpec(HomeCard.hod, (v) => v.perms.canSeeHodWork),
-  HomeCardSpec(HomeCard.priorityTasks,
-      (v) => _portal(v) && v.perms.canSeePriorityTasks),
+  HomeCardSpec(
+      HomeCard.priorityTasks, (v) => _portal(v) && v.perms.canSeePriorityTasks),
   HomeCardSpec(
       HomeCard.interviews, (v) => _portal(v) && v.perms.canSeeInterviews),
   const HomeCardSpec(HomeCard.quickActions, _everyone),
   const HomeCardSpec(HomeCard.workFromHome, _portal),
-  HomeCardSpec(HomeCard.announcements,
-      (v) => _portal(v) && v.perms.canSeeAnnouncements),
+  HomeCardSpec(
+      HomeCard.announcements, (v) => _portal(v) && v.perms.canSeeAnnouncements),
 ];
 
 /// The Home cards [viewer] sees, in order.
@@ -341,13 +341,20 @@ final List<MeSectionSpec> meSectionRegistry = [
         route: '/account/security-events',
         visible: _portal),
   ]),
-  const MeSectionSpec('Support', [
+  MeSectionSpec('Support', [
     MeTileSpec(
         id: 'helpdesk',
         icon: Icons.support_agent,
         title: 'Helpdesk',
         subtitle: 'Raise a ticket and follow its thread',
         route: '/helpdesk'),
+    MeTileSpec(
+        id: 'app-feedback',
+        icon: Icons.feedback_outlined,
+        title: 'App feedback',
+        subtitle: 'Bugs and suggestions sent by staff',
+        route: '/feedback',
+        visible: (v) => v.caps?.feedbackReview == true),
   ]),
 ];
 

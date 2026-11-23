@@ -1,6 +1,7 @@
 import 'package:core_network/core_network.dart';
 
 import '../../domain/crm_models.dart';
+import '../../domain/quiz_models.dart';
 import '../connectivity_guard.dart';
 import '../datasources/crm_remote_data_source.dart';
 
@@ -8,7 +9,8 @@ import '../datasources/crm_remote_data_source.dart';
 /// phone is online first, then returns the typed failure the data source
 /// raised; a screen shows it, or maps it to the shared blocked state.
 class CrmRepository with ConnectivityGuard {
-  CrmRepository({required CrmRemoteDataSource remote, required this.connectivity})
+  CrmRepository(
+      {required CrmRemoteDataSource remote, required this.connectivity})
       : _remote = remote;
 
   final CrmRemoteDataSource _remote;
@@ -137,5 +139,47 @@ class CrmRepository with ConnectivityGuard {
     await ensureOnline();
     return _remote.sendWhatsapp(leadId,
         templateId: templateId, idempotencyKey: idempotencyKey);
+  }
+
+  // ── sales quiz (#152) ───────────────────────────────────────────────────
+  Future<QuizCurrent> quizCurrent() async {
+    await ensureOnline();
+    return _remote.quizCurrent();
+  }
+
+  Future<({QuizCurrent? data, Failure? failure})> quizCurrentSafe() async {
+    try {
+      await ensureOnline();
+      return await _remote.quizCurrentSafe();
+    } on Failure catch (failure) {
+      return (data: null, failure: failure);
+    } catch (_) {
+      return (data: null, failure: const UnknownFailure());
+    }
+  }
+
+  Future<QuizOpened> quizOpen(int roundId, {String? idempotencyKey}) async {
+    await ensureOnline();
+    return _remote.quizOpen(roundId, idempotencyKey: idempotencyKey);
+  }
+
+  Future<QuizAnswerResult> quizAnswer(int roundId, int choice,
+      {String? idempotencyKey}) async {
+    await ensureOnline();
+    return _remote.quizAnswer(roundId, choice, idempotencyKey: idempotencyKey);
+  }
+
+  Future<QuizMe> quizMe() async {
+    await ensureOnline();
+    return _remote.quizMe();
+  }
+
+  Future<QuizResults> quizResults({
+    required String from,
+    required String to,
+    String? userId,
+  }) async {
+    await ensureOnline();
+    return _remote.quizResults(from: from, to: to, userId: userId);
   }
 }

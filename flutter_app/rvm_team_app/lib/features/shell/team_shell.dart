@@ -13,6 +13,7 @@ import '../../data/repositories/ess_repository.dart';
 import '../../domain/ess_models.dart';
 import '../../injection.dart';
 import '../../widgets/secure_scope.dart';
+import '../feedback/feedback_visibility.dart';
 import '../security/sensitive_gate.dart';
 import '../../router/module_routes.dart';
 import 'open_modules.dart';
@@ -90,6 +91,7 @@ class _TeamShellState extends State<TeamShell> {
   }
 
   Future<void> _load() async {
+    feedbackShellBlocked.value = true;
     if (mounted) {
       setState(() {
         _loading = true;
@@ -102,6 +104,7 @@ class _TeamShellState extends State<TeamShell> {
       if (result.data != null) {
         _caps.add(LoadSucceeded(result.data!));
         setState(() => _loading = false);
+        feedbackShellBlocked.value = false;
         _askModules(const TeamModulesLoadRequested());
         return;
       }
@@ -204,8 +207,7 @@ class _TeamShellState extends State<TeamShell> {
 /// opened tab built, and the block covers the whole window (team_app #52,
 /// item 1). Every other tab is its body as it is.
 Widget shellTabBody(TeamTab tab, {required bool selected}) => tab.sensitive
-    ? SecureScope(
-        enabled: selected, child: SensitiveGate(child: tab.body))
+    ? SecureScope(enabled: selected, child: SensitiveGate(child: tab.body))
     : tab.body;
 
 /// Shown instead of the tabs when the ESS refuses the capabilities call. The
@@ -236,8 +238,8 @@ class _AccessError extends StatelessWidget {
                     color: RvmColors.ironwood,
                     borderRadius: BorderRadius.circular(RvmRadii.lg),
                   ),
-                  child: Icon(Icons.link_off_rounded,
-                      color: p.canvas, size: 32),
+                  child:
+                      Icon(Icons.link_off_rounded, color: p.canvas, size: 32),
                 ),
                 const SizedBox(height: 20),
                 Text('Team RVM',
@@ -322,8 +324,7 @@ class _TeamBottomNav extends StatelessWidget {
                             letterSpacing: 0.1,
                             fontWeight:
                                 i == index ? FontWeight.w700 : FontWeight.w500,
-                            color:
-                                i == index ? p.primary : p.subtle,
+                            color: i == index ? p.primary : p.subtle,
                           ),
                         ),
                       ],

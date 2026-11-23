@@ -21,10 +21,13 @@ import '../features/crm/crm_disposition_screen.dart';
 import '../features/crm/crm_home_screen.dart';
 import '../features/crm/crm_lead_screen.dart';
 import '../features/crm/crm_leads_screen.dart';
+import '../features/crm/crm_quiz_screen.dart';
 import '../domain/crm_models.dart';
 import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/splash_screen.dart';
+import '../features/feedback/feedback_list_screen.dart';
+import '../features/feedback/feedback_visibility.dart';
 import '../features/helpdesk/helpdesk_screen.dart';
 import '../features/hr/hr_bank_screen.dart';
 import '../features/hr/hr_change_requests_screen.dart';
@@ -129,6 +132,7 @@ GoRouter createRouter(TeamAuthBloc authBloc,
   return GoRouter(
     navigatorKey: navigatorKey,
     initialLocation: '/splash',
+    observers: [feedbackModalObserver],
     redirect: (context, state) {
       final loc = state.matchedLocation;
       switch (authBloc.state.status) {
@@ -161,13 +165,11 @@ GoRouter createRouter(TeamAuthBloc authBloc,
               _screen(state, const SecurityWaitScreen(), roster: secureRoster)),
       GoRoute(
           path: '/security/alerts',
-          builder: (_, state) => _screen(
-              state, const SecurityAlertsScreen(),
+          builder: (_, state) => _screen(state, const SecurityAlertsScreen(),
               roster: secureRoster)),
       GoRoute(
           path: '/security/phones',
-          builder: (_, state) => _screen(
-              state, const PhoneApprovalsScreen(),
+          builder: (_, state) => _screen(state, const PhoneApprovalsScreen(),
               roster: secureRoster)),
       GoRoute(
           path: '/ops',
@@ -175,8 +177,7 @@ GoRouter createRouter(TeamAuthBloc authBloc,
               _screen(state, const OpsHomeScreen(), roster: secureRoster)),
       GoRoute(
           path: '/ops/absent',
-          builder: (_, state) => _screen(
-              state, const AbsentStreaksScreen(),
+          builder: (_, state) => _screen(state, const AbsentStreaksScreen(),
               roster: secureRoster)),
       GoRoute(
           path: '/fees',
@@ -192,24 +193,20 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       ),
       GoRoute(
           path: '/scorecards',
-          builder: (_, state) => _screen(
-              state, const ScorecardScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const ScorecardScreen(), roster: secureRoster)),
       GoRoute(
           path: '/scorecards/branches',
-          builder: (_, state) => _screen(
-              state, const BranchScorecardsScreen(),
+          builder: (_, state) => _screen(state, const BranchScorecardsScreen(),
               roster: secureRoster)),
       GoRoute(
           path: '/scorecards/ceo',
-          builder: (_, state) => _screen(
-              state, const CeoScorecardScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const CeoScorecardScreen(), roster: secureRoster)),
       GoRoute(
           path: '/scorecards/targets',
-          builder: (_, state) => _screen(
-              state, const TargetsScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const TargetsScreen(), roster: secureRoster)),
       GoRoute(
           path: '/tasks',
           builder: (_, state) =>
@@ -220,13 +217,11 @@ GoRouter createRouter(TeamAuthBloc authBloc,
               _screen(state, const SocialHomeScreen(), roster: secureRoster)),
       GoRoute(
           path: '/social/board',
-          builder: (_, state) => _screen(
-              state, const SocialBoardScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const SocialBoardScreen(), roster: secureRoster)),
       GoRoute(
           path: '/social/calendar',
-          builder: (_, state) => _screen(
-              state, const SocialCalendarScreen(),
+          builder: (_, state) => _screen(state, const SocialCalendarScreen(),
               roster: secureRoster)),
       GoRoute(
         path: '/social/card/:id',
@@ -246,18 +241,15 @@ GoRouter createRouter(TeamAuthBloc authBloc,
               _screen(state, const LinkPhoneScreen(), roster: secureRoster)),
       GoRoute(
           path: '/desk/phone-changes',
-          builder: (_, state) => _screen(
-              state, const PhoneChangesScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const PhoneChangesScreen(), roster: secureRoster)),
       GoRoute(
           path: '/desk/views',
           builder: (_, state) =>
-              _screen(state, const ViewRequestsScreen(),
-              roster: secureRoster)),
+              _screen(state, const ViewRequestsScreen(), roster: secureRoster)),
       GoRoute(
           path: '/placement',
-          builder: (_, state) => _screen(
-              state, const PlacementHomeScreen(),
+          builder: (_, state) => _screen(state, const PlacementHomeScreen(),
               roster: secureRoster)),
       GoRoute(
         path: '/placement/verify/:id',
@@ -269,9 +261,8 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       ),
       GoRoute(
           path: '/complaints',
-          builder: (_, state) => _screen(
-              state, const ComplaintsScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const ComplaintsScreen(), roster: secureRoster)),
       GoRoute(
         path: '/complaints/:id',
         builder: (_, state) => _screen(
@@ -282,14 +273,13 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       ),
       GoRoute(
           path: '/moderation',
-          builder: (_, state) => _screen(
-              state, const ModerationScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const ModerationScreen(), roster: secureRoster)),
       // ── Sales CRM (team_app #51) ─────────────────────────────────────────
       GoRoute(
           path: '/crm',
-          builder: (_, state) => _screen(state, const CrmHomeScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const CrmHomeScreen(), roster: secureRoster)),
       GoRoute(
         path: '/crm/leads',
         builder: (_, state) => _screen(
@@ -302,9 +292,8 @@ GoRouter createRouter(TeamAuthBloc authBloc,
       ),
       GoRoute(
           path: '/crm/calendar',
-          builder: (_, state) => _screen(
-              state, const CrmCalendarScreen(),
-              roster: secureRoster)),
+          builder: (_, state) =>
+              _screen(state, const CrmCalendarScreen(), roster: secureRoster)),
       GoRoute(
           path: '/crm/add',
           builder: (_, state) =>
@@ -341,6 +330,18 @@ GoRouter createRouter(TeamAuthBloc authBloc,
           roster: secureRoster,
         ),
       ),
+      GoRoute(
+          path: '/crm/quiz',
+          builder: (_, state) =>
+              _screen(state, const CrmQuizScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/crm/quiz/me',
+          builder: (_, state) =>
+              _screen(state, const CrmQuizMeScreen(), roster: secureRoster)),
+      GoRoute(
+          path: '/crm/quiz/results',
+          builder: (_, state) => _screen(state, const CrmQuizResultsScreen(),
+              roster: secureRoster)),
       GoRoute(
           path: '/work/batches', builder: (_, __) => const MyBatchesScreen()),
       GoRoute(
@@ -414,6 +415,8 @@ GoRouter createRouter(TeamAuthBloc authBloc,
               WallPostScreen(postId: state.pathParameters['id']!)),
       // ── Team RVM ESS (2B: Helpdesk) ─────────────────────────────────────
       GoRoute(path: '/helpdesk', builder: (_, __) => const HelpdeskScreen()),
+      GoRoute(
+          path: '/feedback', builder: (_, __) => const FeedbackListScreen()),
       GoRoute(
           path: '/helpdesk/queue',
           builder: (_, __) => const HelpdeskQueueScreen()),

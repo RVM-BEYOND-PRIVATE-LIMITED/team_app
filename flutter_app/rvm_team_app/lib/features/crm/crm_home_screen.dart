@@ -7,6 +7,7 @@ import '../../domain/crm_models.dart';
 import '../../widgets/states.dart';
 import '../../widgets/team_kit.dart';
 import 'bloc/crm_blocs.dart';
+import 'crm_quiz_screen.dart';
 import 'crm_shared.dart';
 
 /// `/crm` — the dialer's home (team_app #51, item 3): Start, Break, today's
@@ -20,12 +21,12 @@ class CrmHomeScreen extends StatelessWidget {
     final repository = crmRepositoryOrNull();
     if (repository == null) {
       return const Scaffold(
-        body: Center(child: Text('The Sales CRM is not available in this build.')),
+        body: Center(
+            child: Text('The Sales CRM is not available in this build.')),
       );
     }
     return BlocProvider(
-      create: (_) =>
-          CrmHomeBloc(repository)..add(const CrmHomeLoadRequested()),
+      create: (_) => CrmHomeBloc(repository)..add(const CrmHomeLoadRequested()),
       child: const _CrmHomeView(),
     );
   }
@@ -82,9 +83,8 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
           appBar: _bar(context, 'Sales CRM'),
           body: RefreshIndicator(
             color: p.primary,
-            onRefresh: () async => context
-                .read<CrmHomeBloc>()
-                .add(const CrmHomeRefreshed()),
+            onRefresh: () async =>
+                context.read<CrmHomeBloc>().add(const CrmHomeRefreshed()),
             child: ListView(
               padding: const EdgeInsets.all(RvmSpacing.md),
               children: [
@@ -92,8 +92,7 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
                   TeamCard(
                     color: p.warningSoft,
                     borderColor: p.warning,
-                    onTap: () => context.push(
-                        '/crm/lead/${open.leadId}/dispose'
+                    onTap: () => context.push('/crm/lead/${open.leadId}/dispose'
                         '?callId=${open.callId}&origin=dialer'),
                     child: Row(
                       children: [
@@ -123,6 +122,7 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
                   ),
                   const SizedBox(height: RvmSpacing.md),
                 ],
+                CrmQuizCard(hasOpenCall: open != null),
                 Row(
                   children: [
                     Expanded(
@@ -130,7 +130,8 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
                         label: 'Due today',
                         value: home?.followupsDueToday ?? 0,
                         icon: Icons.today_outlined,
-                        onTap: () => context.push('/crm/leads?bucket=follow_up'),
+                        onTap: () =>
+                            context.push('/crm/leads?bucket=follow_up'),
                       ),
                     ),
                     const SizedBox(width: RvmSpacing.sm),
@@ -140,7 +141,8 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
                         value: home?.missed ?? 0,
                         icon: Icons.alarm_off_outlined,
                         danger: true,
-                        onTap: () => context.push('/crm/leads?bucket=follow_up'),
+                        onTap: () =>
+                            context.push('/crm/leads?bucket=follow_up'),
                       ),
                     ),
                     const SizedBox(width: RvmSpacing.sm),
@@ -149,7 +151,8 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
                         label: 'Callbacks',
                         value: home?.callbacksWaiting ?? 0,
                         icon: Icons.phone_callback_outlined,
-                        onTap: () => context.push('/crm/leads?bucket=uncontacted'),
+                        onTap: () =>
+                            context.push('/crm/leads?bucket=uncontacted'),
                       ),
                     ),
                   ],
@@ -178,9 +181,8 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
                   icon: Icon((home?.onBreak ?? false)
                       ? Icons.play_circle_outline
                       : Icons.pause_circle_outline),
-                  label: Text((home?.onBreak ?? false)
-                      ? 'End break'
-                      : 'Go on break'),
+                  label: Text(
+                      (home?.onBreak ?? false) ? 'End break' : 'Go on break'),
                 ),
                 const SizedBox(height: RvmSpacing.lg),
                 TeamCard(
@@ -221,6 +223,7 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => context.push('/crm/leads'),
                       ),
+                      const CrmQuizLinks(),
                     ],
                   ),
                 ),
@@ -274,8 +277,7 @@ class _CrmHomeViewState extends State<_CrmHomeView> {
         return;
       }
       await startCrmCall(context,
-          leadId: lead.id,
-          origin: bucket == null ? 'dialer' : 'dialer');
+          leadId: lead.id, origin: bucket == null ? 'dialer' : 'dialer');
     } catch (failure) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)

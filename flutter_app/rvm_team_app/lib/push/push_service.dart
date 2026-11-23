@@ -34,9 +34,13 @@ const _channelDescription = 'Tasks, approvals, announcements and reminders';
 /// `res/raw/keep.xml`.
 const urgentChannelId = 'team_rvm_urgent';
 const urgentChannelName = 'Team RVM urgent';
-const urgentChannelDescription =
-    'Time-critical alerts, with their own sound';
+const urgentChannelDescription = 'Time-critical alerts, with their own sound';
 const urgentSoundResource = 'team_rvm_urgent';
+
+/// The quiz lane (#152): its own channel with sound.
+const salesQuizChannelId = 'team_rvm_sales_quiz';
+const salesQuizChannelName = 'Sales quiz';
+const salesQuizChannelDescription = 'The sales quiz of the day, with sound';
 
 /// The two channels Team RVM owns: the alerts one and the urgent one.
 @visibleForTesting
@@ -56,6 +60,14 @@ const teamNotificationChannels = [
     importance: Importance.max,
     playSound: true,
     sound: RawResourceAndroidNotificationSound(urgentSoundResource),
+    enableVibration: true,
+  ),
+  AndroidNotificationChannel(
+    salesQuizChannelId,
+    salesQuizChannelName,
+    description: salesQuizChannelDescription,
+    importance: Importance.max,
+    playSound: true,
     enableVibration: true,
   ),
 ];
@@ -97,6 +109,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         'route': _routeFrom(message.data),
         'data': message.data,
       }),
+      quiz: isSalesQuiz(message.data),
     );
   } catch (error) {
     pushLog('RVM background push could not be shown: $error');
@@ -270,6 +283,7 @@ class PushService {
       imagePath: imagePath,
       payload: jsonEncode({'route': _routeFrom(data), 'data': data}),
       urgent: isUrgentChannel(notification?.android?.channelId),
+      quiz: isSalesQuiz(data),
     );
   }
 
@@ -370,12 +384,27 @@ Future<void> createTeamNotificationChannels(
 @visibleForTesting
 bool isUrgentChannel(String? channelId) => channelId?.trim() == urgentChannelId;
 
+/// A sales quiz push/inbox row (#152). The backend's newer name is
+/// `crm_quiz_due`; the issue's name `sales_quiz` is accepted too.
+@visibleForTesting
+bool isSalesQuiz(Map<String, dynamic> data) {
+  final kind = _text(data['kind']);
+  return kind == 'sales_quiz' || kind == 'crm_quiz_due';
+}
+
+@visibleForTesting
+String? quizRouteFor(Map<String, dynamic> data) =>
+    isSalesQuiz(data) ? '/crm/quiz' : null;
+
 String _routeFrom(Map<String, dynamic> data) {
   for (final key in const ['route', 'link', 'url', 'deep_link', 'screen']) {
     final route = _inAppRoute(_text(data[key]));
     if (route != null) return route;
   }
-  return crmRouteFor(data) ?? requestRouteFor(data) ?? '/notifications';
+  return quizRouteFor(data) ??
+      crmRouteFor(data) ??
+      requestRouteFor(data) ??
+      '/notifications';
 }
 
 /// An in-app location from a route value: a path, or the path (and query) of
@@ -399,6 +428,7 @@ String? _inAppRoute(String value) {
 String? notificationRowRoute(String category, Map<String, dynamic> data) {
   final withCategory = {'category': category, ...data};
   final route = _inAppRoute(_text(data['route'])) ??
+      quizRouteFor(withCategory) ??
       crmRouteFor(withCategory) ??
       requestRouteFor(withCategory);
   return route == '/notifications' ? null : route;
@@ -449,6 +479,7 @@ Future<void> _showNotification(
   required String? imagePath,
   required String payload,
   bool urgent = false,
+  bool quiz = false,
 }) async {
   StyleInformation? style;
   // Without a push image, show the Team RVM launcher icon on the right so the
@@ -468,10 +499,21 @@ Future<void> _showNotification(
 
   final details = NotificationDetails(
     android: AndroidNotificationDetails(
-      urgent ? urgentChannelId : notificationChannelId,
-      urgent ? urgentChannelName : _channelName,
-      channelDescription:
-          urgent ? urgentChannelDescription : _channelDescription,
+      quiz
+          ? salesQuizChannelId
+          : urgent
+              ? urgentChannelId
+              : notificationChannelId,
+      quiz
+          ? salesQuizChannelName
+          : urgent
+              ? urgentChannelName
+              : _channelName,
+      channelDescription: quiz
+          ? salesQuizChannelDescription
+          : urgent
+              ? urgentChannelDescription
+              : _channelDescription,
       sound: urgent
           ? const RawResourceAndroidNotificationSound(urgentSoundResource)
           : null,

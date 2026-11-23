@@ -60,6 +60,19 @@ void main() {
           '/requests');
     });
 
+    test('a sales quiz opens the quiz screen, by either backend name', () {
+      expect(
+          quizRouteFor({'kind': 'crm_quiz_due', 'round_id': 71}), '/crm/quiz');
+      expect(quizRouteFor({'kind': 'sales_quiz', 'round_id': 71}), '/crm/quiz');
+      expect(isSalesQuiz({'kind': 'crm_quiz_due'}), isTrue);
+      expect(isSalesQuiz({'kind': 'sales_quiz'}), isTrue);
+      expect(quizRouteFor({'kind': 'approvals'}), isNull);
+      expect(
+          notificationRowRoute(
+              'approvals', {'kind': 'crm_quiz_due', 'round_id': 71}),
+          '/crm/quiz');
+    });
+
     test('has nothing to open for other rows, or for this list itself', () {
       expect(notificationRowRoute('priority_tasks', {'task_id': 't1'}), isNull);
       expect(notificationRowRoute('praise', const {}), isNull);
