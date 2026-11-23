@@ -310,6 +310,9 @@ paths:
                       enabled: false
                     integrity:
                       required: false
+                    feedback:
+                      send: true
+                      review: false
                 hr:
                   summary: HR, with no direct reports
                   value:
@@ -347,6 +350,9 @@ paths:
                       enabled: false
                     integrity:
                       required: false
+                    feedback:
+                      send: true
+                      review: false
                 attendanceOnly:
                   summary: Attendance-only staff with no direct reports
                   value:
@@ -384,6 +390,9 @@ paths:
                       enabled: false
                     integrity:
                       required: false
+                    feedback:
+                      send: true
+                      review: false
         '401':
           $ref: '#/components/responses/EssNotAuthenticated'
         '403':
@@ -11789,6 +11798,267 @@ paths:
                 notInstalled:
                   value: {"error": "The leave policy is not switched on yet. Apply migration 20261206000000_leave_policy.sql.", "code": "MODULE_NOT_INSTALLED"}
 
+  /ess/feedback:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    post:
+      operationId: createFeedback
+      tags: [ESS]
+      x-owner: ess
+      summary: Send feedback about the app (#151)
+      description: |
+        Either token kind, with the checks of `GET /ess/me`. The floating Feedback button on every screen sends this: a bug report, a suggestion or anything else about the Team app. Only super admins read it (`GET /ess/admin/feedback`); the sender gets a receipt and cannot read it back (no status or reply yet).
+
+        - `kind`: `bug`, `suggestion` or `other`. `message`: 5 to 2,000 characters after trimming (counted as characters, so an emoji is one).
+        - `context` (optional): what the app attaches so a bug can be acted on. Each field is optional short text: `screen` (the route, up to 200), `app_version` (40), `build_number` (20), `platform` (40), `os_version` (80), `device_model` (120). An unknown key, a value that is not text or one too long is 400 with the same message.
+        - `screenshot` (optional): `{ content_type, data_base64 }`, one PNG or JPEG of up to 2 MB decoded. The bytes must be the type they say (the file's first bytes are checked). It is kept in the ESS's private bucket; nobody gets its path.
+        - The body takes these four fields and no others. There is no employee id: feedback is always from the caller.
+        - Its own bucket on top of the per-employee limit: 20 items per person per 24 hours (429 `RATE_LIMITED`). The body may be up to 3 MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackCreate'
+            examples:
+              bug:
+                value:
+                  kind: bug
+                  message: The punch button stays grey after I allow location.
+                  context:
+                    screen: /home
+                    app_version: 0.1.6
+                    build_number: '7'
+                    platform: android
+                    os_version: '14'
+                    device_model: Redmi Note 12
+              withScreenshot:
+                value:
+                  kind: suggestion
+                  message: Show my leave balance on the Home tab.
+                  screenshot:
+                    content_type: image/png
+                    data_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+      responses:
+        '201':
+          description: Sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [feedback]
+                properties:
+                  feedback:
+                    $ref: '#/components/schemas/FeedbackReceipt'
+              examples:
+                sent:
+                  value:
+                    feedback:
+                      id: 5b1d2c3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e
+                      kind: bug
+                      has_screenshot: false
+                      created_at: '2026-11-23T06:30:00+00:00'
+        '400':
+          description: |
+            `VALIDATION_FAILED`: the message says which rule. `INVALID_JSON`, `BAD_REQUEST`: a body the ESS cannot read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                kind:
+                  value: { error: 'Choose what this is: bug, suggestion or other.', code: VALIDATION_FAILED }
+                message:
+                  value: { error: 'Say what happened or what you would like, in 5 to 2,000 characters.', code: VALIDATION_FAILED }
+                context:
+                  value: { error: 'context takes only screen, app_version, build_number, platform, os_version and device_model, each as short text.', code: VALIDATION_FAILED }
+                screenshot:
+                  value: { error: 'Send the screenshot as { content_type, data_base64 }: one PNG or JPEG image.', code: VALIDATION_FAILED }
+                screenshotSize:
+                  value: { error: A screenshot must be up to 2 MB., code: VALIDATION_FAILED }
+                unknownField:
+                  $ref: '#/components/examples/EssUnknownField'
+                notObject:
+                  $ref: '#/components/examples/EssBodyNotObject'
+                invalidJson:
+                  $ref: '#/components/examples/EssInvalidJson'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/admin/feedback:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    get:
+      operationId: listFeedback
+      tags: [ESS]
+      x-owner: ess
+      summary: Everybody's app feedback, for super admins (#151)
+      description: |
+        A portal login whose role is exactly `super_admin` (`FEEDBACK_REVIEW_ROLES`, `src/policy/feedback.js`; nothing inherits its way in, so `ceo` is refused too), after the checks of `GET /ess/me`. An attendance session is 403 `PORTAL_LOGIN_REQUIRED`; any other role 403 `FEEDBACK_ACCESS_DENIED`. Show the list only when `GET /ess/me/capabilities` says `feedback.review`.
+
+        Newest first, 100 at a time. `next_before` is null on the last page; otherwise ask again with `?before=<next_before>`. A screenshot is never in the list: `has_screenshot` says whether one exists, and `GET /ess/admin/feedback/{id}/screenshot` opens it.
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          description: One kind, or `all` (the default).
+          schema:
+            type: string
+            enum: [bug, suggestion, other, all]
+        - name: before
+          in: query
+          required: false
+          description: Only items sent before this time; the previous page's `next_before`.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: One page of feedback.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [feedback, next_before]
+                properties:
+                  feedback:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: '#/components/schemas/FeedbackItem'
+                  next_before:
+                    type: [string, 'null']
+                    description: The last item's created_at when there are more; null on the last page.
+              examples:
+                onePage:
+                  value:
+                    feedback:
+                      - id: 5b1d2c3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e
+                        kind: bug
+                        message: The punch button stays grey after I allow location.
+                        context:
+                          screen: /home
+                          app_version: 0.1.6
+                          build_number: '7'
+                          platform: android
+                          os_version: '14'
+                          device_model: Redmi Note 12
+                        has_screenshot: true
+                        created_at: '2026-11-23T06:30:00+00:00'
+                        employee:
+                          id: e1000000-0000-4000-8000-000000000011
+                          full_name: Asha Verma
+                          employee_code: RVM-011
+                    next_before: null
+        '400':
+          description: '`VALIDATION_FAILED`: a `kind` or `before` the ESS does not take.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                kind:
+                  value: { error: 'kind must be bug, suggestion, other or all.', code: VALIDATION_FAILED }
+                before:
+                  value: { error: 'before must be a date and time, as next_before gives it.', code: VALIDATION_FAILED }
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssFeedbackForbidden'
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
+  /ess/admin/feedback/{id}/screenshot:
+    servers:
+      - url: 'https://{essHost}/api'
+        description: The ESS, on its own host name (ADR-0019).
+        variables:
+          essHost:
+            default: team-api.rvmcad.org
+            description: The ESS's own host name, chosen by KP on 16 Oct 2026 (ADR-0019).
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The feedback item's id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getFeedbackScreenshot
+      tags: [ESS]
+      x-owner: ess
+      summary: Open one feedback item's screenshot, for super admins (#151)
+      description: |
+        The same callers as `GET /ess/admin/feedback`. A 300-second signed link to the screenshot in the ESS's private bucket: never the bytes, never the path. Each opening is written to the audit trail (`feedback.screenshot_opened`) before the link is given, because a screenshot can show anybody's data; if the trail cannot be written, the link is refused (503). An item that does not exist, or has no screenshot, is 404.
+      responses:
+        '200':
+          description: The link, with a file name and the image type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentFile'
+              examples:
+                link:
+                  value:
+                    file:
+                      url: 'https://storage.test/ESS/feedback/e1000000-0000-4000-8000-000000000011/6f0a3c1e-8b2d-4c5a-9e7f-1d2b3a4c5d6f.png?token=test-signed&expires=300'
+                      name: feedback-5b1d2c3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e.png
+                      content_type: image/png
+                      expires_in: 300
+        '400':
+          description: '`VALIDATION_FAILED`: the id is not a UUID.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidId:
+                  $ref: '#/components/examples/EssInvalidId'
+        '401':
+          $ref: '#/components/responses/EssNotAuthenticated'
+        '403':
+          $ref: '#/components/responses/EssFeedbackForbidden'
+        '404':
+          description: '`NOT_FOUND`: no such feedback, or it has no screenshot.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  value: { error: That feedback was not found., code: NOT_FOUND }
+                noScreenshot:
+                  value: { error: That feedback has no screenshot., code: NOT_FOUND }
+        '429':
+          $ref: '#/components/responses/EssRateLimited'
+        '503':
+          $ref: '#/components/responses/EssUnavailable'
+        default:
+          $ref: '#/components/responses/EssUnexpected'
+
 components:
 
   securitySchemes:
@@ -12353,7 +12623,7 @@ components:
 
     Capabilities:
       type: object
-      required: [tabs, sections, team, approvals, requests, wall, push, integrity]
+      required: [tabs, sections, team, approvals, requests, wall, push, integrity, feedback]
       properties:
         tabs:
           type: array
@@ -12457,6 +12727,17 @@ components:
             required:
               type: boolean
               description: Whether a Play Integrity token is required. False until a Play project exists (ADR-0016).
+        feedback:
+          type: object
+          required: [send, review]
+          description: In-app feedback (#151).
+          properties:
+            send:
+              type: boolean
+              description: Show the floating Feedback button (POST /ess/feedback). True for every staff login.
+            review:
+              type: boolean
+              description: Show the feedback list (GET /ess/admin/feedback). True for super_admin only, exactly; false for the CEO and everyone else.
 
     RequestType:
       type: string
@@ -12654,6 +12935,118 @@ components:
           required: [kind]
           properties:
             kind: { type: string, const: unknown }
+
+    FeedbackContext:
+      type: object
+      description: What the app attaches to a feedback item so a bug can be acted on (#151). Every field optional short text, or null.
+      properties:
+        screen:
+          type: [string, 'null']
+          maxLength: 200
+          description: The route the person was on, e.g. /home or /helpdesk.
+        app_version:
+          type: [string, 'null']
+          maxLength: 40
+        build_number:
+          type: [string, 'null']
+          maxLength: 20
+        platform:
+          type: [string, 'null']
+          maxLength: 40
+          description: e.g. android, ios.
+        os_version:
+          type: [string, 'null']
+          maxLength: 80
+        device_model:
+          type: [string, 'null']
+          maxLength: 120
+
+    FeedbackCreate:
+      type: object
+      description: One feedback item (#151). No other field is taken.
+      required: [kind, message]
+      properties:
+        kind:
+          type: string
+          enum: [bug, suggestion, other]
+        message:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        context:
+          oneOf:
+            - $ref: '#/components/schemas/FeedbackContext'
+            - type: 'null'
+        screenshot:
+          oneOf:
+            - type: object
+              required: [content_type, data_base64]
+              properties:
+                content_type:
+                  type: string
+                  enum: [image/png, image/jpeg]
+                data_base64:
+                  type: string
+                  description: The image, base64 (no data URI prefix). Up to 2 MB decoded.
+            - type: 'null'
+
+    FeedbackReceipt:
+      type: object
+      description: 'What the sender is told: that the item arrived.'
+      required: [id, kind, has_screenshot, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [bug, suggestion, other]
+        has_screenshot:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    FeedbackItem:
+      type: object
+      description: One feedback item as a super admin reads it. Never the screenshot's bucket path.
+      required: [id, kind, message, context, has_screenshot, created_at, employee]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [bug, suggestion, other]
+        message:
+          type: string
+        context:
+          type: object
+          required: [screen, app_version, build_number, platform, os_version, device_model]
+          properties:
+            screen:
+              type: [string, 'null']
+            app_version:
+              type: [string, 'null']
+            build_number:
+              type: [string, 'null']
+            platform:
+              type: [string, 'null']
+            os_version:
+              type: [string, 'null']
+            device_model:
+              type: [string, 'null']
+        has_screenshot:
+          type: boolean
+          description: Open it with GET /ess/admin/feedback/{id}/screenshot.
+        created_at:
+          type: string
+          format: date-time
+        employee:
+          oneOf:
+            - $ref: '#/components/schemas/EmployeeCard'
+            - type: 'null'
+          description: Who sent it. Null only if the record can no longer be read.
 
     EmployeeCard:
       type: object
@@ -17448,6 +17841,12 @@ components:
         error: Only HR, the CEO and super admins can open this.
         code: HR_ACCESS_DENIED
 
+    EssFeedbackAccessDenied:
+      summary: A portal role other than super_admin
+      value:
+        error: Only super admins can read app feedback.
+        code: FEEDBACK_ACCESS_DENIED
+
     EssAttendanceOverrideDenied:
       summary: A portal role outside HR, the CEO and super admins
       value:
@@ -18465,6 +18864,26 @@ components:
           examples:
             rateLimited:
               $ref: '#/components/examples/EssRateLimited'
+
+    EssFeedbackForbidden:
+      description: |
+        Not a reason to sign out.
+        - `PORTAL_LOGIN_REQUIRED`: an attendance session. The feedback list needs the portal login.
+        - `FEEDBACK_ACCESS_DENIED`: a portal role other than `super_admin` (the CEO included).
+        - `NOT_AN_EMPLOYEE`, `NOT_LINKED`, `NOT_ACTIVE`, `NO_ATTENDANCE_LOGIN`, `PASSWORD_CHANGE_REQUIRED`: as for `GET /ess/me`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            feedbackAccessDenied:
+              $ref: '#/components/examples/EssFeedbackAccessDenied'
+            portalLoginRequired:
+              $ref: '#/components/examples/EssPortalLoginRequired'
+            notAnEmployee:
+              $ref: '#/components/examples/EssNotAnEmployee'
+            notLinked:
+              $ref: '#/components/examples/EssNotLinked'
 
     EssHrForbidden:
       description: |

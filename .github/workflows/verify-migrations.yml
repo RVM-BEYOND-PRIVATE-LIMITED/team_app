@@ -53,7 +53,7 @@ jobs:
             hr_ess_change_requests hr_ess_bank_details hr_ess_helpdesk_assignments \
             hr_ess_approval_escalations hr_ess_infra_links hr_ess_wfh_allowances \
             hr_ess_work_experience hr_ess_profile_details hr_ess_leave_approvers \
-            hr_ess_leave_final_approvers; do
+            hr_ess_leave_final_approvers hr_ess_feedback; do
             table "$t"
           done
 

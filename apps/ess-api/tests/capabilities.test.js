@@ -55,12 +55,14 @@ describe('GET /api/ess/me/capabilities, role by role', () => {
     expect(body.wall).toEqual({ post: true, announce, moderate });
     expect(body.push).toEqual({ enabled: false });
     expect(body.integrity).toEqual({ required: false });
+    // #151: everybody sends feedback; only the super_admin role itself reads it, never the CEO.
+    expect(body.feedback).toEqual({ send: true, review: who === 'super_admin' });
   });
 
   it('answers with exactly the documented blocks', async () => {
     const { app, people } = buildApp();
     const res = await capabilities(app, tokens.portal(people.hr));
-    expect(Object.keys(res.body).sort()).toEqual(['approvals', 'integrity', 'push', 'requests', 'sections', 'tabs', 'team', 'wall']);
+    expect(Object.keys(res.body).sort()).toEqual(['approvals', 'feedback', 'integrity', 'push', 'requests', 'sections', 'tabs', 'team', 'wall']);
   });
 });
 

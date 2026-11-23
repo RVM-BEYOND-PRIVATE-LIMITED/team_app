@@ -22,6 +22,7 @@ which the staff app does not collect from the person using it.
 | App activity: Wall posts/comments/reactions, helpdesk tickets, leave/attendance requests, poll votes, acknowledgements | Yes | No | App functionality | Yes (except the work actions) |
 | Device or other IDs: FCM push token, install id, device label | Yes | No | App functionality (push, kept sign-in) | Push can be refused at the OS level |
 | App info and performance: app version, provider label, mock flag, client time | Yes (with punches and reports) | No | App functionality, fraud prevention | No |
+| App feedback: message, screen, app version, device model, OS version, optional screenshot | Yes, when the person sends feedback | No | App functionality, diagnostics (bug reports) | Yes |
 | Messages (helpdesk thread, Wall comments) | Yes | No | App functionality | — |
 | Contacts, calendar, SMS, call log, microphone, camera roll browsing, health, browsing history | **No** | — | — | — |
 
@@ -53,6 +54,7 @@ processors acting for RVM.
 | Sessions and tokens | ESS `hr_ess_sessions` (hashes only) | The person (list/end); the ESS |
 | Push tokens | ESS `hr_ess_push_devices` | The person; no other person sees a token |
 | Audit trail | ESS `hr_ess_audit` | HR's technical roles; the trail records acts, not content |
+| App feedback (#151): message, kind, screen, app version and build, platform, OS version, device model, optional screenshot | ESS `hr_ess_feedback` + private bucket `ESS` (`feedback/`) | Super admins only; the sender cannot read it back; each screenshot opening is audited |
 
 ## 3. Location declaration
 

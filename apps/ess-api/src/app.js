@@ -12,7 +12,9 @@ const { requireRoles } = require('./middleware/requireRoles');
 const { HR_RECORD_ROLES, ATTENDANCE_ROLES } = require('./policy/hrAccess');
 const { PORTAL_ROLES } = require('./policy/helpdesk');
 const { LEADER_ROLES } = require('./policy/leaders');
+const { FEEDBACK_REVIEW_ROLES } = require('./policy/feedback');
 const dataRequests = require('./routes/dataRequests');
+const feedback = require('./routes/feedback');
 const personal = require('./routes/personal');
 const mockLocation = require('./routes/mockLocation');
 const devices = require('./routes/devices');
@@ -77,6 +79,9 @@ const LARGE_JSON_BODIES = Object.freeze({
   '/me/documents': '7mb',
   // Issue #31: up to 20 work-experience entries, each with a 1,000-character description.
   '/me/work-experience': '64kb',
+  // #151: one feedback item with an optional screenshot of up to 2 MB decoded, about 2.7 MB as
+  // base64, plus the message and context.
+  '/feedback': '3mb',
 });
 
 /**
@@ -369,6 +374,17 @@ function createApp({ config, store, now = () => new Date(), limits = {} } = {}) 
 
   // KP 5 (Phase 2C): the team assigns a live ticket to a named handler, and reassigns it.
   api.post('/helpdesk/tickets/:id/assign', asEmployee, helpdeskTickets.assignTicket({ store, now }));
+
+  /* ── #151: in-app feedback ── */
+
+  // Anybody signed in sends it, with either sign-in, under its own daily bucket. Only super
+  // admins read it (exact role, policy/feedback.js), so an attendance session is refused there
+  // with PORTAL_LOGIN_REQUIRED.
+  const feedbackLimiter = createEmployeeLimiter(limit('feedback'), MESSAGES.FEEDBACK_LIMIT);
+  const asFeedbackReviewer = [...asEmployee, requireRoles(FEEDBACK_REVIEW_ROLES, 'FEEDBACK_ACCESS_DENIED')];
+  api.post('/feedback', asEmployee, feedbackLimiter, feedback.createFeedback({ store }));
+  api.get('/admin/feedback', asFeedbackReviewer, feedback.listFeedback({ store }));
+  api.get('/admin/feedback/:id/screenshot', asFeedbackReviewer, feedback.getFeedbackScreenshot({ store }));
 
   /* ── Phase 2C: My Documents, profile-change requests, bank details, the ID card ── */
 

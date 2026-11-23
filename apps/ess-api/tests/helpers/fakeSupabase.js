@@ -192,6 +192,9 @@ const SCHEMA = {
     'updated_by_user_id'],
   // 20261211000000_hr_ess_job_runs.sql (team_app #49, F-51)
   hr_ess_job_runs: ['job', 'period_key', 'started_at', 'finished_at', 'status'],
+  // 20261231200000_hr_ess_feedback.sql (#151)
+  hr_ess_feedback: ['id', 'employee_id', 'kind', 'message', 'screen', 'app_version', 'build_number', 'platform',
+    'os_version', 'device_model', 'screenshot_path', 'screenshot_content_type', 'screenshot_bytes', 'created_at'],
   // The Scheduler's priority tasks, read for push only (20260814000001:30-53)
   priority_tasks: ['id', 'location_id', 'task_date', 'title', 'notes', 'priority', 'due_date', 'assigned_to', 'assigned_by',
     'assigned_by_name', 'assigned_by_role', 'status', 'progress_note', 'completed_by', 'completed_at', 'cancelled_by',
@@ -536,6 +539,8 @@ const DEFAULTS = {
   hr_ess_profile_details: (at) => ({ updated_at: at }),
   // F-51: the row starts running, timed by the database (20261211000000).
   hr_ess_job_runs: (at) => ({ started_at: at, finished_at: null, status: 'running' }),
+  // #151 (20261231200000).
+  hr_ess_feedback: (at) => ({ created_at: at }),
 };
 
 const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
